@@ -467,3 +467,32 @@ der Review vom 01.10.2026).
 Hinweis), Flugmodus waehrend die App offen ist, Rueckkehr online (normale Anzeige), 320 dp ohne
 Umbruch mitten im Wort, System-Status „nicht pruefbar".
 
+## Einstellbare Vorausschau (#51, 1.46.0)
+
+Bis 1.45 war das Abruf-Fenster fest 14 Tage (`CalendarConstants.DEFAULT_DAYS_AHEAD`, heute nur noch
+Standard- und Ersatzwert). Mit der Einstellung (7..90) entstanden zwei Fallen:
+
+1. **Verkleinern (28 → 7) hätte Wecker gelöscht.** Die neue Liste ist für 7 Tage VOLLSTÄNDIG
+   (`isComplete == true`), sagt über Tag 8..28 aber nichts. `syncAlarms()` Schritt 1, der Zweig ohne
+   Schichttreffer (`clearInternalAlarms`) und `BootAlarmValidation` kannten keinen Horizont: jeder
+   Wecker dahinter galt als „Termin gelöscht“ und wurde als „Schicht entfernt“ gemeldet. Abhilfe: der
+   Horizont reist mit der Liste; Wecker mit Schichtbeginn (Fallback Weckzeit) `>=` Horizont bleiben,
+   unberührt und ungemeldet. Die ausdrückliche Abwahl (leere Liste) räumt weiter ALLES.
+2. **Vergrößern (14 → 56) hätte eine Meldungsflut erzeugt.** Der Sync-Merker rechnete den Alt-Horizont
+   mit der AKTUELLEN Konstante — richtig, solange sie nur per Update wuchs, falsch für eine
+   Nutzereinstellung. Heute speichert `SyncHorizonStore` das Fenster des tatsächlich verarbeiteten
+   Abrufs (`last_successful_sync_window_days`); Horizont und Höchstalter (halbes Fenster) rechnen damit.
+
+**Am Emulator belegt (02.10.2026):** 14 → 28 stellte 3 neue Wecker still („neu in den Abruf-Horizont
+gerutscht“, keine Meldung); 28 → 7 behielt alle 9 Wecker, davon 6 hinter dem Horizont, `Deleted: 0`,
+keine Meldung. Eingabe 5 wird mit „Mindestens 7 Tage.“ abgelehnt.
+
+Grenzen: 7 = Hue-Vorausschau, das Merker-Höchstalter von 3,5 Tagen deckt ein Wochenende ohne Wartung;
+90 = weit unter der Seiten-Notbremse (2500 Termine je Kalender), deren Auslösen den Sync anhielte.
+
+**Akzeptierte Restlücke:** Der `tage`-Flow endet nach einem DataStore-Lesefehler mit dem Ersatzwert;
+die Anzeige bleibt dann bis zum nächsten App-Start bei 14. Der Sync liest per `tageNow()` je Abruf
+frisch, und ein zu kleiner Wert ist durch Punkt 1 ungefährlich (Review 02.10.2026, 2:1 widerlegt).
+
+**Noch nicht verifiziert:** ob Dimmer/DND bei einer Vorausschau < 14 Tage die Tage jenseits des
+Kalenderfensters als schichtfrei verplanen (`ShiftSpanStore` kennt nur die Schichten der Liste).

@@ -138,6 +138,12 @@ das baut man dieselbe Falle in neuer Form nach.
   jeder legitimen gleichzeitigen Rotation fehl und erzwingt einen Re-Login.
 - **`DataStoreTokenRepository.observe()` nutzt `retryWhen`, und der Fehlerfall emittiert NICHTS** —
   kein Signal statt falschem Signal.
+- **Der Restore-Schlüssel (#55) gehört zu „Abmelden heißt: nichts bleibt zurück“.** Er ist KEIN
+  Anmeldenachweis, nur der Hinweis „dieses Konto“ (E-Mail in `user.id`); Kalenderzugriff gibt weiter
+  allein `authorize()`. Abmelden setzt ZUERST einen gerätelokalen Vermerk (`noBackupFilesDir`, unlesbar
+  = gesetzt) und löscht dann den Schlüssel; solange der Vermerk steht, wird nicht gelesen, und das
+  Löschen wird beim Start nachgeholt. Lesen nur abgemeldet, 5 s gedeckelt, jeder Fehler = normaler
+  Login. Merker `restore_key_angelegt` in `auth_prefs` (reist nicht mit). Hergang `reference/auth-und-token.md`.
 
 ## Fehlerbehandlung — Kurzregeln
 

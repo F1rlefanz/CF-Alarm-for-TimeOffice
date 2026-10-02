@@ -185,7 +185,8 @@ Onboarding-Gates, `BackHandler`), `MainContentScreen` verteilt die Tab-Inhalte.
 - **Jeder `preferencesDataStore` braucht einen `corruptionHandler`.** Ohne ihn blockiert eine
   beschädigte `preferences_pb` dauerhaft auch das SCHREIBEN, reboot-fest.
 - **R8/Minify ist AN** (seit v1.23.0; APK 19,8 → 10,9 MB). `-dontshrink`/`-dontoptimize` müssen in
-  `proguard-rules.pro` auskommentiert bleiben.
+  `proguard-rules.pro` auskommentiert bleiben. **Obfuskation ist seit 1.46.0 AN** (Play-Vorgabe ab
+  Feb 2027); Rückübersetzen per R8-Retrace, **kein `mappingFile:` am Upload** (Skill Bauen).
 - `minSdk = 26`, `compileSdk = 37`, `targetSdk = 37`; Java 17 mit core library desugaring.
 
 ---
@@ -332,8 +333,9 @@ Vollständige Regellisten und Belege in den Skills oben. Was hier steht, gilt im
 
 ### Kalender und Schichterkennung
 
-- **Eine unvollständige Eventliste ist KEINE Löschgrundlage.** Zwei Quellen: Teilerfolg einzelner
-  Kalender und das Lazy-Präfix (10 Events pro Kalender). **Jeder löschende Konsument geht über
+- **Eine unvollständige Eventliste ist KEINE Löschgrundlage.** Drei Quellen: Teilerfolg einzelner
+  Kalender, das Lazy-Präfix (10 Events pro Kalender) und der Abruf-Horizont einer VERKLEINERTEN
+  Vorausschau — Wecker dahinter sind „nicht gelesen“, nicht „gelöscht“ (`abrufHorizontEnde`). **Jeder löschende Konsument geht über
   `getCalendarEventsWithStatus()` und prüft `isComplete`** — einzige Ausnahme ist die
   ausdrückliche Kalender-ABWAHL (leere Auswahl aus dem Speicher rückgelesen, nicht leeres
   Ladeergebnis); Einzelheiten im Kalender-Skill; der `CalendarStateHolder` trägt

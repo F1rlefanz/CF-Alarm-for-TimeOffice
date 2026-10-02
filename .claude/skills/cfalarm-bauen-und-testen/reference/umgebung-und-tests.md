@@ -277,3 +277,16 @@ am 25.08.2026 entfernt worden; die verschiedene Klassenzahl blieb dabei unverän
 die Läufe fielen von 1221 auf 1205. **Ein Rückgang der Testzahl ist hier also kein Verlust.**
 
 Für neue Testklassen gilt: nichts registrieren, nichts eintragen. Gradle findet sie.
+
+### Obfuskation und die Play-Vorgabe (#54, 1.46.0)
+
+Play prüft ab Februar 2027 für Apps mit mehr als 10 MB DEX, dass Obfuskation, Optimierung UND
+Shrinking je ≥ 25 % erreichen. Die Zahl steht pro Bundle im **App-Bundle-Explorer**, NICHT in Android
+Vitals — die Tester-Zahl blockiert sie also nicht (die frühere Annahme in Issue #54 war falsch). Quelle
+ist `BUNDLE-METADATA/com.android.tools/r8.json`. Vorher (1.45): 10,10 MB, Obfuskation 0,01 %. Nachher
+(1.46.0, gemessen am echten AAB): 9,23 MB, 77,8 / 77,3 / 77,8 %, APK 10,9 → 6,2 MB.
+
+Was beim Umbenennen bricht, sieht kein Unit-Test. Am 02.10.2026 am Emulator mit dem signierten
+Release-APK belegt: Anmeldung, Kalender laden (`@Key`-Reflexion), Schichterkennung, Wecker stellen,
+alle sechs Tabs, Statuszeile (Hue-Speicher) und `pruefe_direct_boot.py` (5/5 Wecker ohne Entsperren).
+Nicht belegt: Hue mit echter Bridge (Gson-Antworten) und Konfigurations-Import.

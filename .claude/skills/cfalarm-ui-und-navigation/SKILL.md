@@ -26,13 +26,20 @@ das baut man dieselbe Falle in neuer Form nach.
 - **VIER Gates sind nicht optional**: `BatteryExemption`, `UnusedAppRestrictions` und
   `TimeOfficeHealthCheck` müssen ihr Dismissed-Flag schreiben, `OEMWarning` muss `finishOnboarding()`
   anstoßen. Auf dem Home-Tab bleibt der Handler bewusst aus.
-- **„Später" beim Akku-Gate heißt ERLEDIGT, nicht abgebrochen** (`batteryGateResolved`) — sonst fällt
+- **„Später" beim Akku-Gate heißt ERLEDIGT, nicht abgebrochen** (`GateLage.akkuGateErledigt`, gilt für AUTO und NACH_KALENDER) — sonst fällt
   der Nutzer aus jedem Zweig heraus und bekommt den nächsten Schritt NIE angeboten.
 - **Die Navigationsschublade gehoert in `MainContentScreen`** - nur dort ist sie waehrend der
   Onboarding-Gates nicht komponiert. Und sie braucht `ModalDrawerSheet(drawerState = ...)`: nur
   diese Ueberladung behandelt Zurueck, sonst beendet ein Zurueck auf dem Home-Tab die App.
 - **`HueRuleConfig`/`DimmerRuleConfig` brauchen `cameFromSettingsList`**, nicht nur `returnToTab`:
   System-Back und screen-eigener Zurück-Pfeil MÜSSEN für denselben Einstiegspfad zum selben Ziel führen.
+- **„Später“ setzt die Gate-Kette SOFORT fort** (seit 1.46.0): erst das Dismissed-Flag abgewartet
+  schreiben, dann weiterlesen; ein `SPAETER_*`-Einstieg schaut nur nach vorne (keine Schleife, auch
+  bei degradiertem Read). Die Entscheidung ist die reine Funktion `naechsterGateSchritt()` in
+  `navigation/OnboardingGates.kt`; gelesen wird nur in `MainScreen.leseGateLage()`.
+- **Der Rückweg aus den Regel-Editoren wird NUR in `NavigationViewModel.navigateBackFrom()` aufgelöst.**
+- **Gate-Texte verweisen nicht auf vorige Schritte** („wie eben bei …“): seit „Später“ weiterführt,
+  kommt jedes Gate auch direkt nach einem ABGELEHNTEN Vorgänger.
 
 ## UI-Texte und Compose-Layout — Kurzregeln
 
@@ -86,3 +93,13 @@ das baut man dieselbe Falle in neuer Form nach.
   brechen dort mitten im Wort um.
 
 ---
+- **Die Statuszeile je Schicht (#70, `viewmodel/SchichtFolgen.kt`) zählt über DIESELBEN Funktionen wie
+  die Laufzeit**: `findRuleForShift` (eine wirksame Dimm-Regel, weitere = „+N ohne Wirkung“),
+  `passtAufSchicht` (eigene und ALL-Regeln feuern gemeinsam), exakter DND-Abgleich. Keine Nachbildung.
+  Hue nur über `IHueConfigRepository`, gelesen nur bei Abo. Umbruch nur hinter dem Trenner (NBSP).
+- **Texte, die das Kalenderfenster nennen, lesen `CalendarUiState.vorausschauTage`**, nie eine feste 14.
+- **Der Ladetext der Start-Wiederherstellung sagt „Suche nach einer Anmeldung …“**, nicht „wird
+  übernommen“ — er steht bei JEDER frischen Installation da.
+- **Endlos-Animationen in der Zeichenphase lesen** (`graphicsLayer { }` mit `State` ohne `by`), und
+  Listen mit `rememberSaveable` je Eintrag brauchen `key = { it.id }` — sonst wandert ein offener
+  Löschdialog zur Nachbarregel.

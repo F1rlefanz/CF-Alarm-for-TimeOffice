@@ -37,13 +37,13 @@
   dünne Android-Wrapper ohne eigene Logik werden hier nicht getestet, nur reine Funktionen wie
   `UnusedAppRestrictionsHelper.needsPrompt()`.
 - **Das automatische Onboarding-Gate für den TimeOffice-Health-Prompt hängt an
-  `NavigationViewModel.handleAuthenticationSuccess()`, NICHT nur an `proceedPastGates()`.**
-  `proceedPastGates()` (MainScreen) verkettet die Gates nur, wenn der Nutzer die vorherigen Screens
+  `NavigationViewModel.handleAuthenticationSuccess()`, NICHT nur an `setzeGateKetteFort()` (bis 1.45: `proceedPastGates()`).**
+  `setzeGateKetteFort()` (bis 1.45: `proceedPastGates()`) (MainScreen) verkettet die Gates nur, wenn der Nutzer die vorherigen Screens
   gerade durchläuft. `handleAuthenticationSuccess()` ist der EINZIGE Pfad, der bei jedem
   App-Vordergrund/Auth-Erfolg automatisch prüft, ob noch ein Gate offen ist — ohne einen eigenen
   Zweig dafür sehen Bestandsnutzer, die Kalender/Akku/Unused-App-Gates schon vor diesem Feature
   durchlaufen hatten, den TimeOffice-Prompt NIE automatisch (nur noch über die permanente
   Status-Tab-Karte). Genau der Fall, für den das Feature gebaut wurde. Fix seit v1.22.0: vierter
   `else if`-Zweig in `handleAuthenticationSuccess()`, gleiche Gate-Reihenfolge wie
-  `proceedPastGates()`.
+  `setzeGateKetteFort()` (bis 1.45: `proceedPastGates()`).
 

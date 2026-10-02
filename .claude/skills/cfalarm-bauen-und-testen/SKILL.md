@@ -75,3 +75,14 @@ das baut man dieselbe Falle in neuer Form nach.
   (gemessen, nicht vermutet). Der verbleibende Hinweis ist Absicht.
 - Debug-SHA-1 ist in der Google Cloud Console eingetragen. Getestet wird auf einem echten Gerät
   **und** einem Emulator; Logcat-Auszüge kommen vom Nutzer.
+- **R8 benennt seit 1.46.0 um (#54).** Stacktraces zeigen `a.b.c(SourceFile:412)`. Rückübersetzen mit
+  der mapping.txt DESSELBEN Builds (eingebettet im AAB, CI-Artefakt 90 Tage; zuordnen über „Version:“
+  in `last_crash.txt`): `java -cp <builder-9.4.0.jar> com.android.tools.r8.retrace.Retrace mapping.txt
+  last_crash.txt` (JAR unter `~/.gradle/caches/modules-2/files-2.1/com.android.tools.build/builder/`).
+- **Kennzahlen lokal:** `python tools/release/r8_kennzahlen.py app/build/outputs/bundle/release/app-release.aab`
+  (Play-Sicht: Obfuskation/Optimierung/Shrinking je ≥ 25 % ab 10 MB DEX). 1.46.0: 77,8/77,3/77,8 %, 9,2 MB.
+- **Release-Rauchtest: Bildschirm AUSLESEN, nicht nur „Prozess lebt“ prüfen.** Ein Tap-Rundgang über die
+  Schublade lief am 02.10.2026 „grün“, während die ganze Zeit ein Onboarding-Gate davor lag. In Git Bash
+  dabei `MSYS_NO_PATHCONV=1` setzen, sonst wird `/sdcard/...` zu einem Windows-Pfad.
+- **„Activity class … does not exist“ / „No activities found“ nach einem Emulator-Boot** heißt fast
+  immer: Nutzer noch `RUNNING_LOCKED` (PIN 1234). Erst entsperren, dann installieren und starten.

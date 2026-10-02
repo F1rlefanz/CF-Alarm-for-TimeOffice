@@ -1,6 +1,7 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.usecase
 
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FakeFeedNeueinlesenStore
+import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FakeKalenderVorausschauPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FakeSyncHorizonStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.ShiftChangeNotifier
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.SyncHorizonStore
@@ -18,7 +19,6 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpanStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.AlarmSkipResult
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmSkipUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.SkipProcessResult
-import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.CalendarConstants
 import com.github.f1rlefanz.cf_alarmfortimeoffice.freietage.keineFreienTage
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -39,11 +39,12 @@ import java.time.LocalDateTime
 import java.time.LocalTime
 
 /**
- * Der wandernde 14-Tage-Horizont ist KEINE Dienstplan-Aenderung.
+ * Der wandernde Abruf-Horizont ist KEINE Dienstplan-Aenderung - und eine vergroesserte
+ * Vorausschau auch nicht (#51).
  *
  * DER BEFUND (Fairphone, v1.29.2, aus echter Nutzung gemeldet): Der Nutzer bekam "seit Tagen immer
  * wieder" die Meldung "Neue Schicht erkannt" und hielt sie fuer eine Aenderung seines Chefs. Sie
- * war keine. Die App holt Termine fuer [CalendarConstants.DEFAULT_DAYS_AHEAD] Tage ab JETZT; dieses
+ * war keine. Die App holt Termine fuer die eingestellte Vorausschau (Standard 14 Tage) ab JETZT; dieses
  * Fenster wandert taeglich einen Tag weiter, und der jeweils neue Randtag sieht fuer den Delta-Sync
  * aus wie ein neues Event. Der Alarm-Bestand war dabei voellig stabil ("Created: 0, Updated: 0,
  * Deleted: 0" im Folge-Sync), die Meldung lebte laut `dumpsys` ~6 Tage und wurde jeden Tag mit dem
@@ -57,6 +58,8 @@ import java.time.LocalTime
  *  - Schicht innerhalb des bereits abgedeckten Zeitraums -> Wecker JA, Meldung JA
  *  - unvollstaendiger Lauf        -> der Bezugspunkt wird NICHT fortgeschrieben, die echte
  *                                    Aenderung wird im naechsten Lauf gemeldet
+ *  - Vorausschau vergroessert     -> was hinter dem GESPEICHERTEN Fenster neu sichtbar wird, ist
+ *                                    ein Horizont-Eintritt (keine Meldungsflut, #51)
  *
  * "Schicht geaendert"/"Schicht entfernt" sind hier bewusst nicht beruehrt - sie betreffen
  * bestehende Eintraege und sind immer echte Aenderungen.
@@ -219,7 +222,8 @@ class HorizontEintrittTest {
         mock<ShiftSpanStore>(),
         horizonStore,
         feedStore,
-        keineFreienTage()
+        keineFreienTage(),
+        FakeKalenderVorausschauPrefs()
     )
 
     /** Der letzte vollstaendige Sync lief GESTERN - der bekannte Horizont endet also in 13 Tagen. */
@@ -235,7 +239,7 @@ class HorizontEintrittTest {
      */
     private fun letzterSyncKnappVor(event: CalendarEvent): Long {
         val beginn = event.startTime.atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
-        return beginn - CalendarConstants.DEFAULT_DAYS_AHEAD * 24L * 60 * 60 * 1000 - 60_000L
+        return beginn - SyncHorizonStore.ALTBESTAND_FENSTER_TAGE * 24L * 60 * 60 * 1000 - 60_000L
     }
 
     // --- Tests ---
@@ -381,6 +385,69 @@ class HorizontEintrittTest {
         val gemerkt = horizonStore.gemerkt
         assertNotNull("Nach einem vollstaendigen Lauf muss der Bezugspunkt stehen", gemerkt)
         assertTrue("Der Bezugspunkt ist der BEGINN dieses Laufs", gemerkt!! >= vorher)
+        assertEquals(
+            "Ohne mitgelieferten Abruf-Horizont gilt die eingestellte Vorausschau (Fake: 14)",
+            14,
+            horizonStore.gemerktesFenster
+        )
+    }
+
+    /**
+     * #51, VERGROESSERN: Der Nutzer stellt von 14 auf 56 Tage. Der folgende Sync sieht auf einen
+     * Schlag sechs weitere Wochen Dienstplan - keine davon ist eine Aenderung des Chefs. Weil der
+     * Merker sein GESPEICHERTES Fenster (14) kennt, gelten sie als Horizont-Eintritt: Wecker ja,
+     * Meldung nein. Fortgeschrieben wird danach das Fenster des tatsaechlichen Abrufs (56).
+     */
+    @Test
+    fun `vergroesserte Vorausschau meldet die neu sichtbaren Wochen nicht`() = runTest {
+        val repo = FakeAlarmRepository(listOf(bestandsAlarm("evBestand")))
+        val manager = mockManager()
+        val notifier = FakeShiftChangeNotifier()
+        val horizonStore = FakeSyncHorizonStore(letzterSync = gestern(), fensterTage = 14)
+        val tag = 24L * 60 * 60 * 1000
+        val syncBeginn = System.currentTimeMillis()
+
+        val result = useCase(repo, manager, notifier, horizonStore).syncAlarms(
+            listOf(
+                eventInTagen("evWoche3", 20, titel = "F Dienst"),
+                eventInTagen("evWoche7", 45),
+                eventInTagen("evBestand", 2)
+            ),
+            config,
+            abrufHorizontEnde = syncBeginn + 56 * tag
+        )
+
+        assertTrue(result.isSuccess)
+        assertEquals(
+            "Neu sichtbar durch die groessere Vorausschau ist KEINE neue Schicht",
+            emptyList<String>(),
+            notifier.gemeldetNeu
+        )
+        assertNotNull("Der Wecker in Woche 3 steht trotzdem", repo.current.find { it.eventId == "evWoche3" })
+        assertNotNull("Der Wecker in Woche 7 steht trotzdem", repo.current.find { it.eventId == "evWoche7" })
+        assertEquals("Fortgeschrieben wird das Fenster des Abrufs", 56, horizonStore.gemerktesFenster)
+    }
+
+    /**
+     * Gegenprobe zum Vergroessern: der Merker kennt bereits das grosse Fenster (56). Eine Schicht
+     * in Woche 3 lag damit beim letzten Lauf schon im Blick - kommt sie neu dazu, ist sie eine
+     * ECHTE Nachtragung und wird gemeldet. Das gespeicherte Fenster wirkt in beide Richtungen.
+     */
+    @Test
+    fun `mit gespeichertem grossem Fenster wird eine Nachtragung in Woche 3 gemeldet`() = runTest {
+        val repo = FakeAlarmRepository(listOf(bestandsAlarm("evBestand")))
+        val manager = mockManager()
+        val notifier = FakeShiftChangeNotifier()
+        val horizonStore = FakeSyncHorizonStore(letzterSync = gestern(), fensterTage = 56)
+        val tag = 24L * 60 * 60 * 1000
+
+        useCase(repo, manager, notifier, horizonStore).syncAlarms(
+            listOf(eventInTagen("evNachtrag", 20, titel = "F Dienst"), eventInTagen("evBestand", 2)),
+            config,
+            abrufHorizontEnde = System.currentTimeMillis() + 56 * tag
+        )
+
+        assertEquals(listOf("Frueh"), notifier.gemeldetNeu)
     }
 
     // --- Die reine Funktion, ohne Sync-Maschinerie ---
@@ -394,6 +461,8 @@ class HorizontEintrittTest {
         )
     }
 
+    private fun merker(syncAt: Long, fensterTage: Int = 14) = SyncHorizonStore.SyncMerker(syncAt, fensterTage)
+
     @Test
     fun `istHorizontEintritt - zwei Tage Pause lassen mehrere Tage auf einmal still hereinrutschen`() {
         val jetzt = System.currentTimeMillis()
@@ -403,11 +472,11 @@ class HorizontEintrittTest {
         // Bekannt war bis vorZweiTagen + 14 Tage = jetzt + 12 Tage.
         assertFalse(
             "Was schon bekannt war, ist kein Horizont-Eintritt",
-            SyncHorizonStore.istHorizontEintritt(vorZweiTagen, jetzt + 5 * tag, jetzt)
+            SyncHorizonStore.istHorizontEintritt(merker(vorZweiTagen), jetzt + 5 * tag, jetzt)
         )
         assertTrue(
             "Tag 13 und 14 rutschen erst jetzt herein - still",
-            SyncHorizonStore.istHorizontEintritt(vorZweiTagen, jetzt + 13 * tag, jetzt)
+            SyncHorizonStore.istHorizontEintritt(merker(vorZweiTagen), jetzt + 13 * tag, jetzt)
         )
     }
 
@@ -425,7 +494,7 @@ class HorizontEintrittTest {
         assertTrue(
             "An der Altersgrenze gilt der Merker noch",
             SyncHorizonStore.istHorizontEintritt(
-                jetzt - SyncHorizonStore.MAX_MERKER_ALTER_MS,
+                merker(jetzt - SyncHorizonStore.maxMerkerAlterMs(14)),
                 schichtBeginn,
                 jetzt
             )
@@ -433,14 +502,14 @@ class HorizontEintrittTest {
         assertFalse(
             "Eine Millisekunde darueber zaehlt er wie keiner - es wird gemeldet",
             SyncHorizonStore.istHorizontEintritt(
-                jetzt - SyncHorizonStore.MAX_MERKER_ALTER_MS - 1,
+                merker(jetzt - SyncHorizonStore.maxMerkerAlterMs(14) - 1),
                 schichtBeginn,
                 jetzt
             )
         )
         assertFalse(
             "Und erst recht nach zwei Wochen Pause",
-            SyncHorizonStore.istHorizontEintritt(jetzt - 14 * tag, schichtBeginn, jetzt)
+            SyncHorizonStore.istHorizontEintritt(merker(jetzt - 14 * tag), schichtBeginn, jetzt)
         )
     }
 
@@ -470,11 +539,47 @@ class HorizontEintrittTest {
     }
 
     @Test
-    fun `horizontEndeFuer - der Horizont ist genau DEFAULT_DAYS_AHEAD Tage nach dem Sync`() {
+    fun `horizontEndeFuer - der Horizont ist genau das GESPEICHERTE Fenster nach dem Sync`() {
         val syncAt = 1_700_000_000_000L
+        val tag = 24L * 60 * 60 * 1000
+        assertEquals(syncAt + 14 * tag, SyncHorizonStore.horizontEndeFuer(merker(syncAt, 14)))
         assertEquals(
-            syncAt + CalendarConstants.DEFAULT_DAYS_AHEAD * 24L * 60 * 60 * 1000,
-            SyncHorizonStore.horizontEndeFuer(syncAt)
+            "Mit 56 Tagen gespeichert reicht er 56 Tage - nicht die aktuelle Einstellung",
+            syncAt + 56 * tag,
+            SyncHorizonStore.horizontEndeFuer(merker(syncAt, 56))
         )
+    }
+
+    /** Das Hoechstalter waechst mit dem GESPEICHERTEN Fenster: halbe Fensterbreite. */
+    @Test
+    fun `maxMerkerAlterMs ist das halbe gespeicherte Fenster`() {
+        val tag = 24L * 60 * 60 * 1000
+        assertEquals(7 * tag, SyncHorizonStore.maxMerkerAlterMs(14))
+        assertEquals(3 * tag + tag / 2, SyncHorizonStore.maxMerkerAlterMs(7))
+        assertEquals(28 * tag, SyncHorizonStore.maxMerkerAlterMs(56))
+
+        // Ein 56-Tage-Merker von vor 20 Tagen gilt noch (bei 14 Tagen waere er laengst verfallen).
+        val jetzt = System.currentTimeMillis()
+        assertTrue(
+            SyncHorizonStore.istHorizontEintritt(merker(jetzt - 20 * tag, 56), jetzt + 40 * tag, jetzt)
+        )
+        assertFalse(
+            SyncHorizonStore.istHorizontEintritt(merker(jetzt - 20 * tag, 14), jetzt + 40 * tag, jetzt)
+        )
+    }
+
+    /** Das Fenster wird aus dem Abruf-Horizont auf ganze Tage gerundet - nie kleiner als 1. */
+    @Test
+    fun `fensterTageFuer rundet auf ganze Tage`() {
+        val tag = 24L * 60 * 60 * 1000
+        val syncAt = 1_700_000_000_000L
+        assertEquals(14, SyncHorizonStore.fensterTageFuer(syncAt, syncAt + 14 * tag - 30_000L))
+        assertEquals(28, SyncHorizonStore.fensterTageFuer(syncAt, syncAt + 28 * tag))
+        assertEquals(
+            "Eine drei Stunden alte Liste deckt trotzdem ~14 Tage ab",
+            14,
+            SyncHorizonStore.fensterTageFuer(syncAt, syncAt + 14 * tag - 3 * 60 * 60 * 1000L)
+        )
+        assertEquals(1, SyncHorizonStore.fensterTageFuer(syncAt, syncAt - tag))
     }
 }

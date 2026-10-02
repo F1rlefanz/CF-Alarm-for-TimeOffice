@@ -1,6 +1,7 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.usecase
 
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FakeFeedNeueinlesenStore
+import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FakeKalenderVorausschauPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FakeSyncHorizonStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.ShiftChangeNotifier
 import com.github.f1rlefanz.cf_alarmfortimeoffice.freietage.freieTageStoreMit
@@ -144,7 +145,8 @@ class TagFreigabeSyncGateTest {
         mock<ShiftSpanStore>(),
         FakeSyncHorizonStore(),
         FakeFeedNeueinlesenStore(),
-        freieTageStoreMit(freieTage)
+        freieTageStoreMit(freieTage),
+        FakeKalenderVorausschauPrefs(FakeKalenderVorausschauPrefs.UEBER_ALLE_TESTDATEN_TAGE)
     )
 
     private fun managerMit(protokoll: MutableList<String>): AlarmManagerService {

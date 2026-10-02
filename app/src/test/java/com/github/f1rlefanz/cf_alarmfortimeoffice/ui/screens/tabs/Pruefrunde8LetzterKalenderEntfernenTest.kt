@@ -12,7 +12,7 @@ import org.junit.Test
  *
  * DER ABLAUF: Der Knopf entfernt jeden nicht abrufbaren Kalender aus der Auswahl. Bleibt danach
  * keiner uebrig, ist das keine Bereinigung mehr, sondern eine Abwahl - und die raeumt seit
- * v1.29.3 alle Wecker der naechsten zwei Wochen samt der Dienstzeit-Fenster fuer Dimmer und
+ * v1.29.3 alle kalenderbasierten Wecker samt der Dienstzeit-Fenster fuer Dimmer und
  * "Nicht stoeren". Weder die Beschriftung noch die Karte sagten davon etwas, und ausgeloest wird
  * der Zustand haeufig durch eine voruebergehende Server- oder Freigabestoerung - also durch etwas,
  * das von allein vergeht.
@@ -79,7 +79,7 @@ class Pruefrunde8LetzterKalenderEntfernenTest {
     @Test
     fun `die Rueckfrage nennt Folge, Ausnahme und den harmlosen Weg`() {
         val text = ENTFERNEN_LEERT_AUSWAHL_TEXT
-        assertTrue("Die Folge fuer die Wecker fehlt", text.contains("Wecker der nächsten zwei Wochen"))
+        assertTrue("Die Folge fuer die Wecker fehlt", text.contains("alle Wecker aus dem Kalender"))
         assertTrue("Dimmer/DND fehlen", text.contains("Dimmer") && text.contains("Nicht stören"))
         assertTrue("Manuelle Wecker fehlen", text.contains("Selbst gestellte Wecker bleiben"))
         assertTrue("Die haeufigste Ursache fehlt", text.contains("vorübergehende"))

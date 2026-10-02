@@ -1,14 +1,15 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.usecase
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FakeKalenderVorausschauPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.data.TokenData
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.manager.OAuth2TokenManager
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.manager.TokenException
 import com.github.f1rlefanz.cf_alarmfortimeoffice.calendar.CalendarItem
 import com.github.f1rlefanz.cf_alarmfortimeoffice.error.AppError
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AuthData
-import com.github.f1rlefanz.cf_alarmfortimeoffice.model.CalendarEvent
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IAuthDataStoreRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.ICalendarRepository
+import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.KalenderEventAbruf
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
@@ -36,6 +37,8 @@ class CalendarUseCaseTokenAufloesungTest {
         override suspend fun clearAuthData(): Result<Unit> = Result.success(Unit)
         override suspend fun isAuthenticated(): Result<Boolean> = Result.success(false)
         override suspend fun getCurrentAuthData(): Result<AuthData> = Result.success(data)
+        override suspend fun istWiederherstellungsSchluesselAngelegt(): Result<Boolean> = Result.success(false)
+        override suspend fun merkeWiederherstellungsSchluesselAngelegt(): Result<Unit> = Result.success(Unit)
     }
 
     private class RecordingCalendarRepository : ICalendarRepository {
@@ -49,10 +52,11 @@ class CalendarUseCaseTokenAufloesungTest {
         override suspend fun getCalendarEventsWithCache(
             accessToken: String,
             calendarId: String,
-            forceRefresh: Boolean
-        ): Result<List<CalendarEvent>> {
+            forceRefresh: Boolean,
+            fensterTage: Int
+        ): Result<KalenderEventAbruf> {
             seenTokens += accessToken
-            return Result.success(emptyList())
+            return Result.success(KalenderEventAbruf(emptyList(), fensterTage, horizontEnde = 0L))
         }
 
         override suspend fun invalidateCalendarCache(calendarId: String) = Unit
@@ -73,7 +77,7 @@ class CalendarUseCaseTokenAufloesungTest {
     ): CalendarUseCase {
         val manager = mock<OAuth2TokenManager>()
         whenever(manager.getValidToken()).thenReturn(tokenResult)
-        return CalendarUseCase(repo, FakeAuthDataStoreRepository(authData), manager)
+        return CalendarUseCase(repo, FakeAuthDataStoreRepository(authData), manager, FakeKalenderVorausschauPrefs())
     }
 
     private suspend fun pruefeFehlertext(aufrufer: Aufrufer, fehler: Throwable, erwartet: String) {

@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FeedNeueinlesenStand
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FeedNeueinlesenStore
+import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.KalenderVorausschauPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.calendar.FehlschlagArt
 import com.github.f1rlefanz.cf_alarmfortimeoffice.calendar.PendingDeselectionCleanupStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.calendar.fehlschlagArt
@@ -22,7 +23,6 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.ICalendarUs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IShiftUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
-import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.CalendarConstants
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.FlowPreview
@@ -112,7 +112,7 @@ data class CalendarUiState(
      * gibt - geloescht oder nicht mehr freigegeben. Die IDs stehen dann in
      * [unavailableCalendarIds]; dieser Merker sagt, dass es der TOTALAUSFALL ist und nicht der
      * Teilerfolg. Aus `unavailableCalendarIds` plus leerer Terminliste liess sich das nicht
-     * ablesen: auch ein Teilerfolg, dessen funktionierender Kalender in den 14 Tagen leer ist, und
+     * ablesen: auch ein Teilerfolg, dessen funktionierender Kalender im Abruf-Fenster leer ist, und
      * der Beginn eines Neuladens sehen so aus. Setzt jeder abgeschlossene Ladevorgang neu.
      */
     val alleKalenderFehlen: Boolean = false,
@@ -152,7 +152,7 @@ data class CalendarUiState(
      * WARUM EIN EIGENES FELD UND KEIN [error]-TEXT: `error` ist ein Meldungspuffer - er wird in
      * MainContentScreen als Snackbar gezeigt und unmittelbar danach mit `clearError()` geleert.
      * Was hier gemeldet werden muss, ist aber kein Ereignis, sondern ein ZUSTAND: die Oberflaeche
-     * zeigt "kein Kalender ausgewaehlt", waehrend bis zu 14 Tage lang Wecker des entfernten
+     * zeigt "kein Kalender ausgewaehlt", waehrend weiter Wecker des entfernten
      * Dienstplans klingeln. Ueber `error` sah der Nutzer das genau eine Snackbar-Laenge lang, und
      * danach war der Hinweis endgueltig weg, obwohl der Zustand unveraendert weiterbestand. Als
      * Zustandsfeld bleibt er stehen, bis er wirklich behoben ist, und traegt die Wiedervorlage
@@ -187,7 +187,14 @@ data class CalendarUiState(
      * REIN INFORMATIV: An diesem Feld haengt keine Entscheidung, kein Sync und kein Wecker. Bleibt
      * es `null`, erscheint schlicht keine Zeile (siehe `FeedNeueinlesenStore.beobachte`).
      */
-    val feedNeueinlesen: FeedNeueinlesenStand? = null
+    val feedNeueinlesen: FeedNeueinlesenStand? = null,
+
+    /**
+     * Die eingestellte Kalender-Vorausschau in Tagen (#51) - fuer die Texte, die das Fenster
+     * nennen ("Keine Termine in den nächsten N Tagen"). Vorher stand dort fest "14": nach einer
+     * Umstellung haette die Oberflaeche ein Fenster behauptet, das nicht mehr gilt.
+     */
+    val vorausschauTage: Int = KalenderVorausschauPrefs.STANDARD_TAGE
 )
 
 /**
@@ -208,7 +215,10 @@ class CalendarViewModel @Inject constructor(
     private val pendingDeselectionCleanupStore: PendingDeselectionCleanupStore,
     // Nur fuer die stille Statuszeile "Dienstplan-Kalender zuletzt neu eingelesen" - gelesen,
     // niemals geschrieben. Geschrieben wird ausschliesslich im Sync (AlarmUseCase).
-    private val feedNeueinlesenStore: FeedNeueinlesenStore
+    private val feedNeueinlesenStore: FeedNeueinlesenStore,
+    // Die Kalender-Vorausschau (#51): beobachtet fuer die Anzeige und um nach einer Umstellung neu
+    // zu laden. Gelesen wird sie im Abruf selbst (CalendarUseCase), nicht hier.
+    private val kalenderVorausschauPrefs: KalenderVorausschauPrefs
 ) : ViewModel() {
 
     private val _localUiState = MutableStateFlow(CalendarUiState())
@@ -308,6 +318,44 @@ class CalendarViewModel @Inject constructor(
         checkTokenValidity()
         observeCalendarSelection()
         observeFeedNeueinlesen()
+        observeKalenderVorausschau()
+    }
+
+    /**
+     * Haelt [CalendarUiState.vorausschauTage] aktuell und laedt nach einer UMSTELLUNG neu (#51).
+     *
+     * Neu geladen wird ueber den bestehenden Ladeweg ([loadEventsForSelectedCalendars]) - Laden
+     * gehoert ausschliesslich diesem ViewModel, und nur dieser Weg bringt Vollstaendigkeits-Sperre,
+     * Generation-Counter und Alarm-Sync mit. Der Cache haelt das alte Fenster zwar noch, zaehlt es
+     * aber als Fehltreffer (`CalendarEventCache`); `forceRefresh` macht die Absicht zusaetzlich
+     * im Log sichtbar.
+     *
+     * Der ERSTE Wert ist keine Umstellung, sondern der Stand beim Start - fuer ihn laedt bereits
+     * [observeCalendarSelection]. Die lokale Variable statt einer Property: sie lebt nur in diesem
+     * Collector, und eine Property muesste VOR dem `init{}`-Block stehen (Textreihenfolge).
+     *
+     * Geschrieben wird die Einstellung von der Einstellungskarte (`KalenderVorausschauViewModel`)
+     * oder von einem Konfigurations-Import - beide erreichen diesen Beobachter gleichermassen.
+     */
+    private fun observeKalenderVorausschau() {
+        viewModelScope.launch {
+            var ersterWert = true
+            kalenderVorausschauPrefs.tage.collect { tage ->
+                if (_localUiState.value.vorausschauTage != tage) {
+                    updateLocalStateImmediate { it.copy(vorausschauTage = tage) }
+                }
+                if (ersterWert) {
+                    ersterWert = false
+                    return@collect
+                }
+                Logger.business(LogTags.CALENDAR, "📅 Kalender-Vorausschau jetzt $tage Tage - Termine werden neu geladen")
+                loadEventsForSelectedCalendars(
+                    forceRefresh = true,
+                    loadAll = false,
+                    initialPageSize = 10
+                )
+            }
+        }
     }
 
     /**
@@ -630,7 +678,7 @@ class CalendarViewModel @Inject constructor(
      * WARUM DAS SEIN MUSS: Jeder fail-safe-Abbruch in [clearAlarmsAfterCalendarDeselection] laesst
      * bewusst die bestehenden Wecker stehen - das ist richtig (ein Lesefehler darf keine Wecker
      * kosten), aber es stellt genau den Zustand wieder her, gegen den die Funktion gebaut wurde:
-     * die Oberflaeche zeigt "kein Kalender ausgewaehlt", waehrend bis zu 14 Tage lang Wecker des
+     * die Oberflaeche zeigt "kein Kalender ausgewaehlt", waehrend weiter Wecker des
      * entfernten Dienstplans klingeln. Stuende das nur im Log, waere der Fehler fuer den Nutzer
      * unsichtbar - und ein Zustand, der eine Funktion dauerhaft anhaelt, muss sichtbar sein.
      *
@@ -926,15 +974,26 @@ class CalendarViewModel @Inject constructor(
                 // Woran die Kalender gescheitert sind, entscheidet ueber die Warnung - Funkloch,
                 // fehlender Kalender oder Anmeldung. Siehe resolveCalendarAuthorizationOutcome.
                 val fehlschlagArten = mutableSetOf<FehlschlagArt>()
-                
+                // Abruf-Ende der geladenen Liste (#51): das KLEINSTE der beteiligten Kalender. Reist
+                // mit der Liste in den CalendarStateHolder und in syncAlarms().
+                var horizontEnde: Long? = null
+                fun merkeHorizont(ende: Long?) {
+                    if (ende != null) horizontEnde = horizontEnde?.let { minOf(it, ende) } ?: ende
+                }
+
                 // PERFORMANCE OPTIMIZATION: Process calendars sequentially but with proper async handling
                 selectedIds.forEach { calendarId ->
                     try {
                         val singleCalendarResult = if (loadAll) {
-                            calendarUseCase.getCalendarEventsWithCache(
+                            // ...WithStatus statt ...WithCache: dieselbe Fehler-Semantik fuer EINEN
+                            // Kalender, aber mit dem Abruf-Horizont.
+                            calendarUseCase.getCalendarEventsWithStatus(
                                 calendarIds = setOf(calendarId),
                                 forceRefresh = forceRefresh
-                            )
+                            ).map { outcome ->
+                                merkeHorizont(outcome.horizontEnde)
+                                outcome.events
+                            }
                         } else {
                             // LAZY LOADING: Load only initial page size
                             calendarUseCase.getCalendarEventsLazy(
@@ -943,6 +1002,7 @@ class CalendarViewModel @Inject constructor(
                                 offset = 0
                             ).map { eventPage ->
                                 totalEventCount += eventPage.totalEvents
+                                merkeHorizont(eventPage.horizontEnde)
                                 eventPage.events
                             }
                         }
@@ -984,7 +1044,7 @@ class CalendarViewModel @Inject constructor(
                             // CRITICAL: Update CalendarStateHolder with progressive events.
                             // Ein Zwischenstand ist per Definition unvollstaendig - es fehlen
                             // mindestens die noch nicht verarbeiteten Kalender.
-                            calendarStateHolder.updateEvents(sortedEvents, complete = false)
+                            calendarStateHolder.updateEvents(sortedEvents, complete = false, horizontEnde = horizontEnde)
                             
                     Logger.d(LogTags.CALENDAR, "Progressive loading: ${events.size} events loaded, total: $totalEventCount")
                         }.onFailure { error ->
@@ -1091,7 +1151,11 @@ class CalendarViewModel @Inject constructor(
                 )
 
                 // CRITICAL: Update CalendarStateHolder with final events
-                calendarStateHolder.updateEvents(finalSortedEvents, complete = displayedListIsComplete)
+                calendarStateHolder.updateEvents(
+                    finalSortedEvents,
+                    complete = displayedListIsComplete,
+                    horizontEnde = horizontEnde
+                )
 
                 // 🚨 CRITICAL FIX: Automatically create alarms from recognized shifts!
                 //
@@ -1099,8 +1163,9 @@ class CalendarViewModel @Inject constructor(
                 // [isEventListCompleteForAlarmSync]. Die ANZEIGE darf ein Praefix sein, die
                 // Grundlage einer Loeschentscheidung nicht.
                 if (finalSortedEvents.isNotEmpty()) {
-                    val eventsForAlarmSync = if (displayedListIsComplete) {
-                        finalSortedEvents
+                    // Liste UND ihr Abruf-Horizont - beide gehen gemeinsam an syncAlarms().
+                    val eventsForAlarmSync: Pair<List<CalendarEvent>, Long?>? = if (displayedListIsComplete) {
+                        finalSortedEvents to horizontEnde
                     } else {
                         // Die vollstaendige Liste nachfordern, statt den Sync einfach ausfallen zu
                         // lassen: "App geoeffnet -> Wecker sind aktuell" ist eine tragende
@@ -1118,7 +1183,7 @@ class CalendarViewModel @Inject constructor(
                             .getOrNull()
 
                         if (completeFetch != null && completeFetch.isComplete && completeFetch.events.isNotEmpty()) {
-                            completeFetch.events
+                            completeFetch.events to completeFetch.horizontEnde
                         } else {
                             null
                         }
@@ -1146,18 +1211,23 @@ class CalendarViewModel @Inject constructor(
                             // zugleich die bessere geteilte Wahrheit - ShiftViewModel gibt sie an
                             // syncAlarms() weiter und braucht deshalb den ganzen Bestand, nicht
                             // das Anzeige-Praefix.
-                            calendarStateHolder.updateEvents(eventsForAlarmSync, complete = true)
+                            val (syncEvents, syncHorizontEnde) = eventsForAlarmSync
+                            calendarStateHolder.updateEvents(
+                                syncEvents,
+                                complete = true,
+                                horizontEnde = syncHorizontEnde
+                            )
                             // DIES IST DIE EINZIGE AUFRUFSTELLE, und sie erreicht diesen Zweig
                             // nur mit einer nachweislich VOLLSTAENDIGEN, nicht leeren Liste.
                             // Darauf beruht, dass ein gelungener Sync dort den Raeumauftrag nach
                             // einer Kalender-Abwahl loeschen darf. Wer hier einen zweiten
                             // Aufrufer ergaenzt, muss diese Zusicherung mitbringen.
-                            createAlarmsFromLoadedEvents(eventsForAlarmSync)
+                            createAlarmsFromLoadedEvents(syncEvents, syncHorizontEnde)
                         }
                     }
                 }
                 
-                Logger.i(LogTags.CALENDAR, "Progressive calendar events loaded - ${finalSortedEvents.size} events for ${CalendarConstants.DEFAULT_DAYS_AHEAD} days, forceRefresh=$forceRefresh${if (!loadAll) " (lazy loaded)" else ""}")
+                Logger.i(LogTags.CALENDAR, "Progressive calendar events loaded - ${finalSortedEvents.size} events for ${_localUiState.value.vorausschauTage} days, forceRefresh=$forceRefresh${if (!loadAll) " (lazy loaded)" else ""}")
                 
             } catch (e: Exception) {
                 // Dieselbe Regel wie oben (resolveCalendarAuthorizationOutcome): ein Funkloch ist
@@ -1209,8 +1279,8 @@ class CalendarViewModel @Inject constructor(
      * im Regelfall bewusst ohne Bestaetigungsdialog.
      *
      * EINE AUSNAHME, und sie ist keine Formsache: Bliebe danach KEIN Kalender uebrig, ist das
-     * keine Bereinigung mehr, sondern eine Abwahl - und die raeumt seit v1.29.3 alle Wecker der
-     * naechsten zwei Wochen samt der Dienstzeit-Fenster fuer Dimmer und "Nicht stoeren"
+     * keine Bereinigung mehr, sondern eine Abwahl - und die raeumt seit v1.29.3 alle Kalender-Wecker
+     * samt der Dienstzeit-Fenster fuer Dimmer und "Nicht stoeren"
      * (`clearAlarmsAfterCalendarDeselection`). Ausgeloest wird der Zustand oft durch eine
      * voruebergehende Server- oder Freigabestoerung, also durch etwas, das von allein vergeht.
      * Deshalb fragt die Oberflaeche in genau diesem Fall vorher nach und bietet zuerst den
@@ -1332,8 +1402,6 @@ class CalendarViewModel @Inject constructor(
                 return@launch
             }
 
-            // PHASE 2 CLEANUP: daysAhead removed - fixed 14 days per PROJEKT-BRIEFING 4.0
-
             // Der uebergebene offset ist nur ein Hinweis des Aufrufers auf die bereits
             // angezeigte Menge; maszgeblich ist der aktuelle State (er kann inzwischen
             // gewachsen sein).
@@ -1382,10 +1450,11 @@ class CalendarViewModel @Inject constructor(
                 // den ganzen Bestand - vollstaendig nur, wenn nichts mehr aussteht.
                 calendarStateHolder.updateEvents(
                     merged.events,
-                    complete = !merged.hasMoreEvents && merged.events.size >= eventPage.totalEvents
+                    complete = !merged.hasMoreEvents && merged.events.size >= eventPage.totalEvents,
+                    horizontEnde = eventPage.horizontEnde
                 )
 
-                Logger.i(LogTags.CALENDAR, "Loaded ${eventPage.events.size} union-prefix events for ${CalendarConstants.DEFAULT_DAYS_AHEAD} days, total: ${merged.events.size}/${eventPage.totalEvents}")
+                Logger.i(LogTags.CALENDAR, "Loaded ${eventPage.events.size} union-prefix events for ${_localUiState.value.vorausschauTage} days, total: ${merged.events.size}/${eventPage.totalEvents}")
             }.onFailure { error ->
                 updateLocalStateImmediate {
                     it.copy(
@@ -1404,8 +1473,9 @@ class CalendarViewModel @Inject constructor(
      * @param events MUSS eine nachweislich VOLLSTAENDIGE Eventliste sein - die einzige
      *   Aufrufstelle in [loadEventsForSelectedCalendars] stellt das sicher. Nur deshalb darf der
      *   gelungene Sync hier den offenen Raeumauftrag nach einer Kalender-Abwahl loeschen.
+     * @param abrufHorizontEnde Abruf-Ende GENAU dieser Liste - reist mit ihr an syncAlarms() (#51).
      */
-    private fun createAlarmsFromLoadedEvents(events: List<CalendarEvent>) {
+    private fun createAlarmsFromLoadedEvents(events: List<CalendarEvent>, abrufHorizontEnde: Long?) {
         viewModelScope.launch {
             try {
                 // CRITICAL FIX: Don't create alarms if no events exist
@@ -1456,7 +1526,7 @@ class CalendarViewModel @Inject constructor(
                     // entfernte Events loescht und die System-Alarme INTERN setzt (inkl.
                     // idempotentem Re-Arming). Kein Vorab-deleteAllAlarms und kein separates
                     // scheduleSystemAlarm mehr im ViewModel (frueher: Verlustfenster + Doppel-Scheduling).
-                    alarmUseCase.syncAlarms(events, shiftConfig)
+                    alarmUseCase.syncAlarms(events, shiftConfig, abrufHorizontEnde)
                         .onSuccess { syncedAlarms ->
                             Logger.business(LogTags.ALARM, "✅ AUTO-ALARM: Alarm-Sync erfolgreich - ${syncedAlarms.size} Alarme aktiv")
                             // Nur hier ist "nichts mehr verwaist" belegt (Sync ueber vollstaendiger
@@ -1498,7 +1568,6 @@ class CalendarViewModel @Inject constructor(
                     allCalendarIds.chunked(3).forEach { batch ->
                         batch.forEach { calendarId ->
                             // Load events with cache (allows stale) for each calendar
-                            // PHASE 2 CLEANUP: daysAhead removed - fixed 14 days
                             calendarUseCase.getCalendarEventsWithCache(
                                 calendarIds = setOf(calendarId),
                                 forceRefresh = false
@@ -1541,8 +1610,8 @@ class CalendarViewModel @Inject constructor(
          */
         internal const val DESELECTION_CLEANUP_FAILED_MESSAGE: String =
             "Die Wecker des abgewählten Kalenders konnten nicht entfernt werden. " +
-                "Es können weiterhin Wecker aus diesem Dienstplan klingeln – bis zu zwei Wochen " +
-                "im Voraus. Tippe auf \"Erneut versuchen\"; hilft das nicht, lösche sie im Tab " +
+                "Es können weiterhin Wecker aus diesem Dienstplan klingeln. " +
+                "Tippe auf \"Erneut versuchen\"; hilft das nicht, lösche sie im Tab " +
                 "\"Wecker\" einzeln."
 
         /**

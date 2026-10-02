@@ -32,6 +32,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.KalenderVorausschauPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.LetzterSchichtStand
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpan
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.AlarmStatusHeader
@@ -156,13 +157,17 @@ internal const val KALENDER_NICHT_GEFUNDEN_TEXT: String =
  * ES STEHT IMMER HOECHSTENS EIN ZUSATZ DA, und die Master-Pause hat Vorrang: sie ist der
  * umfassendere Zustand (sie schaltet zusaetzlich Dimmer, "Nicht stoeren", Hue und die 6h-Wartung
  * ab), und zwei Hinweise nebeneinander liessen offen, welcher der wirksame ist.
+ *
+ * [vorausschauTage] ist die eingestellte Kalender-Vorausschau (#51) - der Text nennt das Fenster,
+ * das wirklich gelesen wurde, nicht ein fest verdrahtetes "14".
  */
 internal fun noShiftExplanation(
     reason: NoShiftReason,
     errorMessage: String? = null,
     sampleEventTitles: List<String> = emptyList(),
     autoAlarmEnabled: Boolean = true,
-    masterPausePaused: Boolean = false
+    masterPausePaused: Boolean = false,
+    vorausschauTage: Int = KalenderVorausschauPrefs.STANDARD_TAGE
 ): String {
     val core = when (reason) {
         NoShiftReason.NO_CALENDAR_SELECTED ->
@@ -195,7 +200,7 @@ internal fun noShiftExplanation(
         NoShiftReason.LOAD_ERROR ->
             "Termine konnten nicht geladen werden: ${errorMessage?.takeIf { it.isNotBlank() } ?: "unbekannter Fehler"}"
         NoShiftReason.NO_EVENTS ->
-            "Keine Termine in den nächsten 14 Tagen — im gewählten Kalender steht nichts."
+            "Keine Termine in den nächsten $vorausschauTage Tagen — im gewählten Kalender steht nichts."
         NoShiftReason.SHIFT_CONFIG_NOT_LOADED ->
             // NICHT nur "wird geladen": derselbe Zustand entsteht, wenn der Read DAUERHAFT
             // gescheitert ist (vorhandene, aber nicht dekodierbare Konfiguration - das Repository
@@ -405,7 +410,8 @@ fun HomeTabContent(
                                         .distinct()
                                         .take(3),
                                     autoAlarmEnabled = shiftConfig?.autoAlarmEnabled != false,
-                                    masterPausePaused = masterPausePaused
+                                    masterPausePaused = masterPausePaused,
+                                    vorausschauTage = calendarState.vorausschauTage
                                 ),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -550,7 +556,7 @@ fun HomeTabContent(
                         style = MaterialTheme.typography.bodyMedium
                     )
                 } else if (calendarState.events.isNotEmpty()) {
-                    Text("${calendarState.events.size} Events in den nächsten 14 Tagen")
+                    Text("${calendarState.events.size} Events in den nächsten ${calendarState.vorausschauTage} Tagen")
                     Text(
                         "${shiftState.recognizedShifts.size} Schichten erkannt",
                         style = MaterialTheme.typography.bodyMedium,

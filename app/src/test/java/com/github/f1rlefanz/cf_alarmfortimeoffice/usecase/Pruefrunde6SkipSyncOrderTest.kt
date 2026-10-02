@@ -1,6 +1,7 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.usecase
 
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FakeFeedNeueinlesenStore
+import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FakeKalenderVorausschauPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FakeSyncHorizonStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.ShiftChangeNotifier
 import com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPausePrefs
@@ -164,7 +165,8 @@ class Pruefrunde6SkipSyncOrderTest {
             mock<ShiftSpanStore>(),
             FakeSyncHorizonStore(),
             FakeFeedNeueinlesenStore(),
-            keineFreienTage()
+            keineFreienTage(),
+            FakeKalenderVorausschauPrefs(FakeKalenderVorausschauPrefs.UEBER_ALLE_TESTDATEN_TAGE)
         )
 
         val result = useCase.syncAlarms(listOf(futureEvent("evChanged", "F", 1)), config)

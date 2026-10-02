@@ -8,7 +8,16 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.util.business
 // CALENDAR & TIME CONSTANTS
 // ============================
 object CalendarConstants {
-    /** Standard-Vorausschau für Kalender-Events in Tagen */
+    /**
+     * STANDARD- und Ersatzwert der Kalender-Vorausschau in Tagen - NICHT der wirksame Wert.
+     *
+     * Seit #51 stellt der Nutzer die Vorausschau ein (`KalenderVorausschauPrefs`, 7..90 Tage). Wer
+     * wissen will, wie weit eine Eventliste reicht, liest NICHT diese Konstante, sondern das
+     * Abruf-Ende, das mit der Liste reist (`CalendarFetchOutcome.horizontEnde`). Unabhaengig davon
+     * haben Pre-Alarm-Refresh (`CalendarPreAlarmRefreshScheduler`), Dimmer
+     * (`DimWindowResolver.KONFLIKT_HORIZONT_TAGE`) und Hue (`MAX_LOOKAHEAD_DAYS`) eigene Horizonte -
+     * bewusst nicht an diesen Wert gekoppelt.
+     */
     const val DEFAULT_DAYS_AHEAD = 14
 
     /**
@@ -26,8 +35,8 @@ object CalendarConstants {
     /**
      * Seitengroesse der Google-Calendar-Event-Abfrage (Google-Default 250, Maximum 2500).
      *
-     * Gross genug, damit ein Dienstplan-Fenster von 14 Tagen praktisch immer in EINER Antwort
-     * liegt - die Seitenschleife ist die Absicherung, nicht der Normalfall.
+     * Gross genug, damit ein Dienstplan-Fenster (Standard 14, hoechstens 90 Tage) praktisch immer
+     * in EINER Antwort liegt - die Seitenschleife ist die Absicherung, nicht der Normalfall.
      */
     const val EVENTS_PER_API_PAGE = 250
 

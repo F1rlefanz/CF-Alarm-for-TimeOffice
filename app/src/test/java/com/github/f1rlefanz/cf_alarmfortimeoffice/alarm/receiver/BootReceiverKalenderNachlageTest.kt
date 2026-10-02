@@ -12,6 +12,7 @@ import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.mockito.kotlin.any
+import org.mockito.kotlin.anyOrNull
 import org.mockito.kotlin.doReturn
 import org.mockito.kotlin.mock
 import java.time.LocalDateTime
@@ -48,7 +49,7 @@ class BootReceiverKalenderNachlageTest {
         val receiver = BootReceiver().apply {
             alarmUseCase = mock<IAlarmUseCase> {
                 onBlocking { getAllAlarms() } doReturn Result.success(emptyList())
-                onBlocking { syncAlarms(any(), any()) } doReturn Result.success(listOf(nachgelegt))
+                onBlocking { syncAlarms(any(), any(), anyOrNull()) } doReturn Result.success(listOf(nachgelegt))
                 onBlocking { scheduleSystemAlarm(any()) } doReturn
                     Result.failure(IllegalStateException("uebersprungen"))
             }

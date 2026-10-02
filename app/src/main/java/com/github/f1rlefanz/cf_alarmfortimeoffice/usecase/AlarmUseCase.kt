@@ -1,6 +1,7 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.usecase
 
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FeedNeueinlesenStore
+import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.KalenderVorausschauPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.ShiftChangeNotifier
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.SyncHorizonStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.error.SafeExecutor
@@ -121,10 +122,25 @@ class AlarmUseCase @Inject constructor(
     private val shiftSpanStore: ShiftSpanStore,
     private val syncHorizonStore: SyncHorizonStore,
     private val feedNeueinlesenStore: FeedNeueinlesenStore,
-    private val freieTageStore: FreieTageStore
+    private val freieTageStore: FreieTageStore,
+    // Nur fuer den Rueckfall, wenn ein Aufrufer den Abruf-Horizont nicht mitliefert
+    // (syncAlarms(..., abrufHorizontEnde = null)). Gelesen wird erst im Sync, nie beim Bau -
+    // dieser UseCase haengt auch am Direct-Boot-Graphen (BootReceiver).
+    private val kalenderVorausschauPrefs: KalenderVorausschauPrefs
 ) : IAlarmUseCase {
 
     companion object {
+        private const val MS_PRO_TAG = 24L * 60L * 60L * 1000L
+
+        /**
+         * Der Schichtbeginn eines bestehenden Alarms - die Groesse, nach der die Kalender-Abfrage
+         * filtert (timeMin/timeMax), nicht die Weckzeit. `shiftStartTime <= 0` heisst "unbekannt"
+         * (wie in [scheduleSystemAlarm]); dann die Weckzeit - sie liegt VOR dem Beginn, gilt also
+         * eher als "gelesen" als zu spaet.
+         */
+        internal fun schichtBeginnVon(alarm: AlarmInfo): Long =
+            alarm.shiftStartTime.takeIf { it > 0 } ?: alarm.triggerTime
+
         /**
          * Ist [alarm] der Wecker, den der Nutzer ueberspringen wollte?
          *
@@ -228,7 +244,8 @@ class AlarmUseCase @Inject constructor(
 
     override suspend fun syncAlarms(
         events: List<CalendarEvent>,
-        shiftConfig: ShiftConfig
+        shiftConfig: ShiftConfig,
+        abrufHorizontEnde: Long?
     ): Result<List<AlarmInfo>> = withContext(Dispatchers.IO) {
         // Serialisiert konkurrierende Aufrufer, statt den zweiten mit leerer Liste abzuweisen.
         alarmSyncMutex.withLock {
@@ -318,7 +335,8 @@ class AlarmUseCase @Inject constructor(
 
                 // Bis wohin reichte das Abruf-Fenster beim LETZTEN vollstaendigen Sync? Alles, was
                 // dahinter beginnt, ist erst jetzt ueberhaupt sichtbar geworden - der wandernde
-                // 14-Tage-Horizont, keine Dienstplan-Aenderung. Der Alarm dafuer wird trotzdem ganz
+                // Abruf-Horizont (oder eine vergroesserte Vorausschau), keine Dienstplan-Aenderung.
+                // Der Alarm dafuer wird trotzdem ganz
                 // normal angelegt und gestellt; NUR die Meldung unterbleibt.
                 //
                 // getOrNull() fasst hier zwei Faelle zusammen, und das ist Absicht: "es gab noch
@@ -329,12 +347,28 @@ class AlarmUseCase @Inject constructor(
                 // Unterschied haelt der Store selbst im Log fest.
                 val letzterVollstaendigerSync = syncHorizonStore.letzterVollstaendigerSync().getOrNull()
 
+                // Bis wohin hat die uebergebene Liste den Kalender UEBERHAUPT gelesen (#51)? Ein
+                // Wecker dahinter ist "nicht gelesen", nicht "Termin geloescht" - siehe
+                // SyncHorizonStore.istJenseitsDesAbrufs. Der Horizont reist mit der Liste; fehlt er
+                // (alter oder kuenftiger Aufrufer ohne ihn), gilt Sync-Beginn + aktuelle
+                // Einstellung - dieselbe Rechnung, die das Repository beim Abruf anstellt. Erst
+                // HIER gelesen: die Frueh-Ausstiege oben brauchen ihn nicht, und die leere Liste
+                // (ausdrueckliche Kalender-Abwahl) raeumt bewusst ALLES.
+                val horizontEnde = abrufHorizontEnde
+                    ?: (syncStartedAt + kalenderVorausschauPrefs.tageNow() * MS_PRO_TAG)
+
                 val shiftMatches = shiftRecognitionEngine.getAllMatchingShifts(events)
-                
+
                 if (shiftMatches.isEmpty()) {
                     Logger.business(LogTags.ALARM, "✅ SYNC: No matching shifts found - clearing calendar alarms")
                     persistShiftSpans(emptyList())
-                    return@safeExecute clearInternalAlarms(keepManualAlarms = true)
+                    // Auch dieser datengetriebene Raeumzweig schont, was hinter dem Abruf liegt:
+                    // nach einer verkleinerten Vorausschau sind ein paar schichtfreie Tage im
+                    // kleinen Fenster sonst genug, um alle Wecker dahinter lautlos zu loeschen.
+                    return@safeExecute clearInternalAlarms(
+                        keepManualAlarms = true,
+                        behalteAbHorizont = horizontEnde
+                    )
                 }
 
                 // Schichtspannen VOR dem Vergangenheits-Filter unten schreiben - genau die
@@ -414,6 +448,9 @@ class AlarmUseCase @Inject constructor(
                 // Zaehlt ab hier - auch ein in Schritt 1 nicht abgebrochener Wecker macht den
                 // Sync unvollstaendig (und den Bezugspunkt unten nicht fortschreibbar).
                 var skippedCount = 0
+                // Wecker HINTER dem Abruf-Horizont: unberuehrt behalten und unten in den
+                // zurueckgegebenen Bestand aufgenommen - sie stehen ja weiter im Repository.
+                val jenseitsDesAbrufs = mutableListOf<AlarmInfo>()
                 for (existingAlarm in existingAlarms) {
                     // Manuelle Alarme (leere eventId) bleiben unberuehrt - sie sind die einzigen,
                     // die sich nicht aus dem Kalender rekonstruieren lassen.
@@ -424,6 +461,24 @@ class AlarmUseCase @Inject constructor(
                         // Gepaart UND weiterhin in der Zukunft: dieser Alarm wird in Schritt 2
                         // weiterverwendet - ggf. nur mit neuer Kalender-Kennung. Nichts loeschen,
                         // nichts cancellen, nichts melden.
+                        continue
+                    }
+
+                    // NICHT GELESEN IST NICHT GELOESCHT (#51). Ohne Kandidat UND hinter dem
+                    // Abruf-Horizont: die Liste konnte diesen Termin gar nicht enthalten. Das
+                    // passiert, sobald der Nutzer die Vorausschau verkleinert (28 -> 7 Tage) -
+                    // `isComplete` ist dann wahr, die Liste aber nur fuer 7 Tage. Ohne diese
+                    // Sperre wurden alle Wecker der Tage 8..28 als "Schicht entfernt" geloescht
+                    // und gemeldet. Behalten, nicht melden, nicht abbrechen: rueckt der Tag ins
+                    // Fenster, entscheidet der Sync dort wie gewohnt.
+                    if (kandidat == null &&
+                        SyncHorizonStore.istJenseitsDesAbrufs(schichtBeginnVon(existingAlarm), horizontEnde)
+                    ) {
+                        Logger.d(
+                            LogTags.ALARM,
+                            "🔭 SYNC: ${existingAlarm.shiftName} liegt hinter dem Abruf-Horizont - Wecker bleibt (nicht gelesen != geloescht)"
+                        )
+                        jenseitsDesAbrufs += existingAlarm
                         continue
                     }
 
@@ -706,7 +761,8 @@ class AlarmUseCase @Inject constructor(
                         //  1. isFirstSync - erster Sync ueberhaupt (existingAlarms war leer), sonst
                         //     flutet jede Neuinstallation.
                         //  2. Horizont-Eintritt - der Termin ist lediglich neu in das taeglich
-                        //     wandernde 14-Tage-Fenster gerutscht und war beim letzten Sync noch gar
+                        //     wandernde Abruf-Fenster gerutscht (oder die Vorausschau wurde
+                        //     vergroessert) und war beim letzten Sync noch gar
                         //     nicht abrufbar. Das ist keine Aenderung des Dienstplans, sondern ein
                         //     Artefakt der Abfrage. Genau das hat dem Nutzer tagelang jeden Morgen
                         //     "Neue Schicht erkannt" fuer den jeweils neuen Randtag gezeigt (siehe
@@ -730,7 +786,7 @@ class AlarmUseCase @Inject constructor(
                             ) {
                                 Logger.business(
                                     LogTags.ALARM,
-                                    "🗓️ SYNC: ${newAlarm.shiftName} ist neu in den ${CalendarConstants.DEFAULT_DAYS_AHEAD}-Tage-Horizont " +
+                                    "🗓️ SYNC: ${newAlarm.shiftName} ist neu in den Abruf-Horizont " +
                                         "gerutscht - Wecker gestellt, aber keine Aenderungsmeldung"
                                 )
                             } else {
@@ -786,6 +842,10 @@ class AlarmUseCase @Inject constructor(
                     persistFeedNeueinlesen(stilleUebernahmeCount, syncStartedAt)
                 }
 
+                // Die hinter dem Abruf-Horizont behaltenen Wecker gehoeren zum Bestand - wer die
+                // Rueckgabe zaehlt oder anzeigt, soll sie sehen.
+                resultAlarms.addAll(jenseitsDesAbrufs)
+
                 // "complete" nur, wenn wirklich alles durchlief - sonst behauptet die Abschlusszeile
                 // einen vollstaendigen Sync, den es nicht gab (die einzelnen Fehlerzeilen darueber
                 // sind in Release-Builds zwar sichtbar, aber leicht zu uebersehen).
@@ -798,7 +858,8 @@ class AlarmUseCase @Inject constructor(
                     }) +
                     "Created: $createdCount, Updated: $updatedCount, Deleted: $deletedCount, " +
                     "Freigegeben: $freigegebenCount, " +
-                    "Neue-Kennung: $neueKennungCount, Total: ${resultAlarms.size} alarms"
+                    "Neue-Kennung: $neueKennungCount, Hinter-Abruf-Horizont: ${jenseitsDesAbrufs.size}, " +
+                    "Total: ${resultAlarms.size} alarms"
                 )
 
                 // Bezugspunkt NUR nach einem vollstaendigen Lauf fortschreiben. Wurde auch nur ein
@@ -812,8 +873,14 @@ class AlarmUseCase @Inject constructor(
                 // also eher "Horizont-Eintritt" - genau dieselbe Lage wie "die App war eine Woche
                 // nicht dran", die laut Anforderung still bleiben soll. Sie bleibt eng begrenzt,
                 // weil der naechste vollstaendige Lauf sie sofort aufloest.
+                //
+                // Fortgeschrieben wird das Fenster der verarbeiteten LISTE, nicht die aktuelle
+                // Einstellung (SyncHorizonStore, Klassenkommentar).
                 if (skippedCount == 0) {
-                    persistSyncHorizon(syncStartedAt)
+                    persistSyncHorizon(
+                        syncStartedAt,
+                        SyncHorizonStore.fensterTageFuer(syncStartedAt, horizontEnde)
+                    )
                 }
 
                 resultAlarms
@@ -855,10 +922,15 @@ class AlarmUseCase @Inject constructor(
      *   `false` bleibt richtig fuer die AUSDRUECKLICHEN Abschaltungen (Master-Pause,
      *   "Automatische Alarme aus", [deleteAllAlarms]): dort will der Nutzer Stille, und der
      *   Direct-Boot-Spiegel muss wirklich leer werden.
+     * @param behalteAbHorizont Kalenderalarme, deren Schichtbeginn AB diesem Zeitpunkt liegt
+     *   (hinter dem Abruf-Horizont), ebenfalls NICHT anfassen - nur im datengetriebenen Zweig
+     *   "keine passende Schicht", siehe [SyncHorizonStore.istJenseitsDesAbrufs]. `null` = alle
+     *   Kalenderalarme raeumen (ausdrueckliche Abschaltungen und die leere Liste der Abwahl).
      */
     private suspend fun clearInternalAlarms(
         alsoCancelPendingSnoozes: Boolean = false,
-        keepManualAlarms: Boolean = false
+        keepManualAlarms: Boolean = false,
+        behalteAbHorizont: Long? = null
     ): List<AlarmInfo> {
         Logger.d(LogTags.ALARM, "🧹 INTERNAL-CLEAR: Fast internal clearing (system + repository)")
 
@@ -910,7 +982,10 @@ class AlarmUseCase @Inject constructor(
 
         val activeAlarmsList = alarmRepository.getAllAlarms().getOrThrow()
         val (kept, toRemove) = if (keepManualAlarms) {
-            activeAlarmsList.partition { it.eventId.isEmpty() }
+            activeAlarmsList.partition {
+                it.eventId.isEmpty() ||
+                    SyncHorizonStore.istJenseitsDesAbrufs(schichtBeginnVon(it), behalteAbHorizont)
+            }
         } else {
             emptyList<AlarmInfo>() to activeAlarmsList
         }
@@ -936,8 +1011,8 @@ class AlarmUseCase @Inject constructor(
             }
             Logger.business(
                 LogTags.ALARM,
-                "🛟 INTERNAL-CLEAR: ${kept.size} manuelle(r) Alarm bleibt erhalten " +
-                    "(${toRemove.size} kalenderbasierte entfernt)"
+                "🛟 INTERNAL-CLEAR: ${kept.size} Alarm(e) bleiben erhalten (manuell oder hinter " +
+                    "dem Abruf-Horizont), ${toRemove.size} kalenderbasierte entfernt"
             )
         }
 
@@ -1151,9 +1226,9 @@ class AlarmUseCase @Inject constructor(
      * [CancellationException] wird weitergeworfen (kein Schreibfehler, sondern das Ende der
      * umgebenden Coroutine).
      */
-    private suspend fun persistSyncHorizon(syncStartedAt: Long) {
+    private suspend fun persistSyncHorizon(syncStartedAt: Long, fensterTage: Int) {
         try {
-            syncHorizonStore.merkeVollstaendigenSync(syncStartedAt)
+            syncHorizonStore.merkeVollstaendigenSync(syncStartedAt, fensterTage)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

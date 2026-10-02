@@ -1,5 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.usecase
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.KalenderVorausschauPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.manager.OAuth2TokenManager
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.manager.TokenException
 import com.github.f1rlefanz.cf_alarmfortimeoffice.error.AppError
@@ -28,7 +29,12 @@ import javax.inject.Singleton
 class CalendarUseCase @Inject constructor(
     private val calendarRepository: ICalendarRepository,
     private val authDataStoreRepository: IAuthDataStoreRepository,
-    private val oauth2TokenManager: OAuth2TokenManager
+    private val oauth2TokenManager: OAuth2TokenManager,
+    // Die Vorausschau wird EINMAL pro Abruf gelesen und an jeden Kalender durchgereicht - nie
+    // getrennt fuer Abruf und Sync (der Horizont reist mit der Liste, CalendarFetchOutcome).
+    // Gelesen erst NACH der Token-Aufloesung: ohne Token (gesperrter Nutzer, Direct Boot) wird
+    // der CE-Store gar nicht erst angefasst.
+    private val kalenderVorausschauPrefs: KalenderVorausschauPrefs
 ) : ICalendarUseCase {
     
     /**
@@ -124,19 +130,27 @@ class CalendarUseCase @Inject constructor(
                     Logger.d(LogTags.CALENDAR, "Loading events (with cache) for ${calendarIds.size} calendars")
                 }
                 
+                val fensterTage = kalenderVorausschauPrefs.tageNow()
                 val allEvents = mutableListOf<CalendarEvent>()
                 val failedCalendarIds = mutableSetOf<String>()
                 var firstError: Throwable? = null
+                // Das KLEINSTE Abruf-Ende der beteiligten Kalender: nur bis dorthin ist die
+                // zusammengefuehrte Liste fuer alle vollstaendig (ein Cache-Treffer kann einige
+                // Minuten aelter sein als ein frischer Abruf).
+                var horizontEnde: Long? = null
                 
                 for (calendarId in calendarIds) {
                     try {
                             calendarRepository.getCalendarEventsWithCache(
                                 accessToken = accessToken,
                                 calendarId = calendarId,
-                                forceRefresh = forceRefresh
+                                forceRefresh = forceRefresh,
+                                fensterTage = fensterTage
                             ).fold(
-                            onSuccess = { events ->
-                                allEvents.addAll(events)
+                            onSuccess = { abruf ->
+                                allEvents.addAll(abruf.events)
+                                horizontEnde = horizontEnde?.let { minOf(it, abruf.horizontEnde) }
+                                    ?: abruf.horizontEnde
                             },
                             onFailure = { error ->
                                 Logger.e(LogTags.CALENDAR_API, "Failed to load events for calendar ${calendarId.take(8)}...", error)
@@ -197,13 +211,14 @@ class CalendarUseCase @Inject constructor(
                 }
                 Logger.i(
                     LogTags.CALENDAR,
-                    "Loaded total ${sortedEvents.size} events from ${calendarIds.size} calendars$logSuffix"
+                    "Loaded total ${sortedEvents.size} events from ${calendarIds.size} calendars for $fensterTage days$logSuffix"
                 )
 
                 CalendarFetchOutcome(
                     events = sortedEvents,
                     requestedCalendars = calendarIds.size,
-                    failedCalendarIds = failedCalendarIds
+                    failedCalendarIds = failedCalendarIds,
+                    horizontEnde = horizontEnde
                 )
             }
         }
@@ -266,8 +281,10 @@ class CalendarUseCase @Inject constructor(
             }
             
             
+            val fensterTage = kalenderVorausschauPrefs.tageNow()
             val allEvents = mutableListOf<CalendarEvent>()
             var totalEventsAcrossCalendars = 0
+            var horizontEnde: Long? = null
             
             // Process calendars and collect events until we have enough or reach end
             for (calendarId in calendarIds) {
@@ -275,7 +292,8 @@ class CalendarUseCase @Inject constructor(
                 val eventsResult = calendarRepository.getCalendarEventsWithCache(
                     accessToken = accessToken,
                     calendarId = calendarId,
-                    forceRefresh = false
+                    forceRefresh = false,
+                    fensterTage = fensterTage
                 )
 
                 // KEIN getOrElse { emptyList() } mehr!
@@ -292,11 +310,13 @@ class CalendarUseCase @Inject constructor(
                 //
                 // Fuer eine Wecker-App ist "leer" die gefaehrlichste Luege: sie ist von
                 // "du hast frei" nicht zu unterscheiden.
-                val cachedEvents = eventsResult.getOrElse { error ->
+                val abruf = eventsResult.getOrElse { error ->
                     Logger.e(LogTags.CALENDAR_API, "Lazy load failed for calendar ${calendarId.take(8)}...", error)
                     invalidateTokenIfRejectedByGoogle(error)
                     throw error
                 }
+                val cachedEvents = abruf.events
+                horizontEnde = horizontEnde?.let { minOf(it, abruf.horizontEnde) } ?: abruf.horizontEnde
 
                 totalEventsAcrossCalendars += cachedEvents.size
 
@@ -321,7 +341,8 @@ class CalendarUseCase @Inject constructor(
             
             EventPage(
                 events = pageEvents,
-                totalEvents = sortedEvents.size
+                totalEvents = sortedEvents.size,
+                horizontEnde = horizontEnde
             )
         }
     }

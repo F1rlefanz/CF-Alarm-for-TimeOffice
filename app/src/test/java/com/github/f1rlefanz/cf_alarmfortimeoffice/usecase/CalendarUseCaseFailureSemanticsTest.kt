@@ -1,5 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.usecase
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FakeKalenderVorausschauPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.data.TokenData
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.manager.OAuth2TokenManager
 import com.github.f1rlefanz.cf_alarmfortimeoffice.calendar.CalendarItem
@@ -8,6 +9,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AuthData
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.CalendarEvent
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IAuthDataStoreRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.ICalendarRepository
+import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.KalenderEventAbruf
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
@@ -49,26 +51,50 @@ class CalendarUseCaseFailureSemanticsTest {
         override suspend fun clearAuthData(): Result<Unit> = Result.success(Unit)
         override suspend fun isAuthenticated(): Result<Boolean> = Result.success(true)
         override suspend fun getCurrentAuthData(): Result<AuthData> = Result.success(data)
+        override suspend fun istWiederherstellungsSchluesselAngelegt(): Result<Boolean> = Result.success(false)
+        override suspend fun merkeWiederherstellungsSchluesselAngelegt(): Result<Unit> = Result.success(Unit)
     }
 
-    /** Liefert pro Kalender-ID ein vorbereitetes Ergebnis. */
+    /**
+     * Liefert pro Kalender-ID ein vorbereitetes Ergebnis. [horizontJeKalender] ist das Abruf-Ende,
+     * das der Kalender meldet (Voreinstellung: [STANDARD_HORIZONT]); [gesehenesFenster] haelt fest,
+     * mit welcher Vorausschau jeder Kalender angefragt wurde.
+     */
     private class FakeCalendarRepository(
-        private val perCalendar: Map<String, Result<List<CalendarEvent>>>
+        private val perCalendar: Map<String, Result<List<CalendarEvent>>>,
+        private val horizontJeKalender: Map<String, Long> = emptyMap()
     ) : ICalendarRepository {
+        val gesehenesFenster = mutableMapOf<String, Int>()
+
         override suspend fun getCalendarsWithToken(accessToken: String): Result<List<CalendarItem>> =
             Result.success(emptyList())
 
         override suspend fun getCalendarEventsWithCache(
             accessToken: String,
             calendarId: String,
-            forceRefresh: Boolean
-        ): Result<List<CalendarEvent>> =
-            perCalendar[calendarId] ?: Result.failure(AppError.UnknownError("unbekannter Kalender"))
+            forceRefresh: Boolean,
+            fensterTage: Int
+        ): Result<KalenderEventAbruf> {
+            gesehenesFenster[calendarId] = fensterTage
+            val ergebnis = perCalendar[calendarId]
+                ?: Result.failure(AppError.UnknownError("unbekannter Kalender"))
+            return ergebnis.map {
+                KalenderEventAbruf(it, fensterTage, horizontJeKalender[calendarId] ?: STANDARD_HORIZONT)
+            }
+        }
 
         override suspend fun invalidateCalendarCache(calendarId: String) = Unit
     }
 
-    private suspend fun useCase(perCalendar: Map<String, Result<List<CalendarEvent>>>): CalendarUseCase {
+    private companion object {
+        const val STANDARD_HORIZONT = 1_000_000L
+    }
+
+    private suspend fun useCase(
+        perCalendar: Map<String, Result<List<CalendarEvent>>>,
+        repo: FakeCalendarRepository = FakeCalendarRepository(perCalendar),
+        prefs: FakeKalenderVorausschauPrefs = FakeKalenderVorausschauPrefs()
+    ): CalendarUseCase {
         val manager = mock<OAuth2TokenManager>()
         whenever(manager.getValidToken()).thenReturn(
             Result.success(
@@ -81,9 +107,10 @@ class CalendarUseCaseFailureSemanticsTest {
         )
         whenever(manager.invalidate()).thenReturn(Result.success(Unit))
         return CalendarUseCase(
-            calendarRepository = FakeCalendarRepository(perCalendar),
+            calendarRepository = repo,
             authDataStoreRepository = FakeAuthDataStoreRepository(),
-            oauth2TokenManager = manager
+            oauth2TokenManager = manager,
+            kalenderVorausschauPrefs = prefs
         )
     }
 
@@ -174,6 +201,59 @@ class CalendarUseCaseFailureSemanticsTest {
 
         assertTrue("Ein einzelner kaputter Kalender darf den Sync nicht blockieren", result.isSuccess)
         assertEquals(listOf("e1"), result.getOrThrow().map { it.id })
+    }
+
+    /**
+     * #51: Die Vorausschau wird EINMAL pro Abruf gelesen und an JEDEN Kalender durchgereicht - nie
+     * getrennt pro Kalender (zwischen zwei Lesungen koennte der Nutzer umstellen, und die
+     * zusammengefuehrte Liste haette zwei Fenster).
+     */
+    @Test
+    fun `die Vorausschau wird einmal gelesen und an jeden Kalender weitergegeben`() = runTest {
+        val perCalendar = mapOf(
+            "cal-a" to Result.success(listOf(event("e1"))),
+            "cal-b" to Result.success(listOf(event("e2")))
+        )
+        val repo = FakeCalendarRepository(perCalendar)
+        val prefs = FakeKalenderVorausschauPrefs(tage = 42)
+
+        useCase(perCalendar, repo, prefs).getCalendarEventsWithStatus(setOf("cal-a", "cal-b"), forceRefresh = false)
+
+        assertEquals(1, prefs.leseAufrufe)
+        assertEquals(mapOf("cal-a" to 42, "cal-b" to 42), repo.gesehenesFenster)
+    }
+
+    /**
+     * #51: Der Horizont reist mit der Liste - und zwar das KLEINSTE Abruf-Ende der beteiligten
+     * Kalender. Ein Cache-Treffer kann einige Minuten aelter sein als ein frischer Abruf; nur bis
+     * zum frueheren Ende ist die zusammengefuehrte Liste fuer beide vollstaendig.
+     */
+    @Test
+    fun `das Abruf-Ende der Liste ist das kleinste der beteiligten Kalender`() = runTest {
+        val perCalendar = mapOf(
+            "cal-a" to Result.success(listOf(event("e1"))),
+            "cal-b" to Result.success(listOf(event("e2")))
+        )
+        val repo = FakeCalendarRepository(perCalendar, mapOf("cal-a" to 5_000L, "cal-b" to 3_000L))
+
+        val outcome = useCase(perCalendar, repo).getCalendarEventsWithStatus(setOf("cal-a", "cal-b"), forceRefresh = false)
+            .getOrThrow()
+
+        assertEquals(3_000L, outcome.horizontEnde)
+    }
+
+    @Test
+    fun `ein gescheiterter Kalender bestimmt das Abruf-Ende nicht mit`() = runTest {
+        val perCalendar = mapOf(
+            "cal-a" to Result.success(listOf(event("e1"))),
+            "cal-b" to Result.failure(AppError.NetworkError("kein Netz"))
+        )
+        val repo = FakeCalendarRepository(perCalendar, mapOf("cal-a" to 5_000L, "cal-b" to 1L))
+
+        val outcome = useCase(perCalendar, repo).getCalendarEventsWithStatus(setOf("cal-a", "cal-b"), forceRefresh = false)
+            .getOrThrow()
+
+        assertEquals(5_000L, outcome.horizontEnde)
     }
 
     @Test

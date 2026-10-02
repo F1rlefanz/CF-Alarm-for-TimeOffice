@@ -705,6 +705,8 @@ class ShiftViewModel @Inject constructor(
             // Events aus dem CalendarStateHolder - aber NUR, wenn sie nachweislich der vollstaendige
             // Bestand sind (dort liegt oft das Lazy-Praefix). Hergang: kalender-datenfluss.md.
             val currentEvents = calendarStateHolder.events.value
+            // Der Horizont reist mit der Liste (#51) - zusammen mit ihr gelesen, nicht spaeter.
+            val currentHorizontEnde = calendarStateHolder.horizontEnde.value
 
             if (currentEvents.isEmpty()) {
                 Logger.w(LogTags.ALARM, "⚠️ CONFIG-UPDATE: No events available for alarm sync")
@@ -726,7 +728,7 @@ class ShiftViewModel @Inject constructor(
             // Orchestrator: syncAlarms erkennt die Schichten selbst (frische Engine dank
             // Cache-Invalidierung in saveShiftConfig) und setzt die System-Alarme intern.
             // Kein Vor-Recognize und kein delay()-Hack mehr noetig.
-            alarmUseCase.syncAlarms(currentEvents, config)
+            alarmUseCase.syncAlarms(currentEvents, config, currentHorizontEnde)
                 .onSuccess { alarms ->
                     Logger.business(LogTags.ALARM, "✅ CONFIG-UPDATE: Alarm-Sync erfolgreich - ${alarms.size} Alarme aktiv")
                 }

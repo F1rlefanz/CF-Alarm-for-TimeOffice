@@ -109,7 +109,7 @@ class BootReceiverRecoveryCharakterisierungTest {
         // 6h-Kette gekappt (regulaer + Wachhund), nirgends neu gestellt.
         verify(f.alarmManager, atLeastOnce()).cancel(anyOrNull<PendingIntent>())
         verify(f.alarmManager, never()).setExactAndAllowWhileIdle(any(), any(), anyOrNull())
-        verifyBlocking(r.alarmUseCase, never()) { syncAlarms(any(), any()) }
+        verifyBlocking(r.alarmUseCase, never()) { syncAlarms(any(), any(), anyOrNull()) }
         verifyBlocking(f.dimSchedule, never()) { enable() }
         verifyBlocking(f.dndSchedule, never()) { enable() }
     }

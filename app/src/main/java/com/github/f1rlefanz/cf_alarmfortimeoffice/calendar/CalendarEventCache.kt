@@ -1,6 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.calendar
 
-import com.github.f1rlefanz.cf_alarmfortimeoffice.model.CalendarEvent
+import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.KalenderEventAbruf
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import kotlinx.coroutines.sync.Mutex
@@ -30,10 +30,18 @@ import java.time.LocalDateTime
  * KEIN ETAG MEHR: Die Klasse hielt zusaetzlich einen ETag fuer bedingte Abrufe vor. Dieser Pfad
  * war durch den Stunden-Schluessel nachweislich nie gelaufen und haette bei blosser
  * Schluesselreparatur eine unerprobte Falle scharf geschaltet: der ETag gehoert zu einer Abfrage
- * mit `timeMin = jetzt` / `timeMax = jetzt + 14 Tage`, also zu einem MITWANDERNDEN Fenster. Ein
+ * mit `timeMin = jetzt` / `timeMax = jetzt + Vorausschau`, also zu einem MITWANDERNDEN Fenster. Ein
  * "304 Not Modified" haette damit die Unveraendertheit eines ANDEREN Zeitfensters bescheinigt und
  * eine veraltete Liste als aktuell ausgeliefert - genau die Verwechslung, die in v1.26.2 schon
  * einmal Weckzeiten mit falschem Zonenversatz erzeugt hat.
+ *
+ * DAS FENSTER IST TEIL DER FRAGE (#51): Ein Eintrag beantwortet "alle Events der naechsten N Tage"
+ * fuer GENAU das N, mit dem er abgerufen wurde. Stellt der Nutzer die Vorausschau um, liefert ein
+ * Eintrag des alten Fensters innerhalb der TTL sonst die alte Liste - nach einer Vergroesserung
+ * fehlen dann die neuen Wochen, und der Sync haelt die kuerzere Liste fuer das neue Fenster. Ein
+ * Eintrag mit anderem Fenster ist deshalb ein FEHLTREFFER. Gespeichert wird ausserdem das
+ * Abruf-Ende ([KalenderEventAbruf.horizontEnde]) des URSPRUENGLICHEN Abrufs - ein Treffer reicht
+ * nur so weit wie dieser, nicht "jetzt + N".
  */
 class CalendarEventCache(
     /**
@@ -44,7 +52,7 @@ class CalendarEventCache(
 ) {
 
     private data class CacheEntry(
-        val events: List<CalendarEvent>,
+        val abruf: KalenderEventAbruf,
         val timestamp: LocalDateTime
     ) {
         fun isExpired(reference: LocalDateTime): Boolean =
@@ -55,52 +63,42 @@ class CalendarEventCache(
     private val cache = mutableMapOf<String, CacheEntry>()
 
     /**
-     * Prueft, ob ein gueltiger Cache-Eintrag fuer den Kalender existiert.
+     * Liefert den gecachten Abruf - oder null, wenn kein gueltiger Eintrag fuer GENAU dieses
+     * Fenster vorliegt (fehlt, abgelaufen, oder mit anderer Vorausschau abgerufen).
      */
-    suspend fun isCached(calendarId: String): Boolean = cacheMutex.withLock {
+    suspend fun get(calendarId: String, fensterTage: Int): KalenderEventAbruf? = cacheMutex.withLock {
         val entry = cache[calendarId]
 
-        if (entry != null && !entry.isExpired(now())) {
-            Logger.cache(LogTags.CALENDAR_CACHE, "HIT", "calendar ${calendarId.take(8)}...")
-            return@withLock true
-        }
-
-        if (entry != null) {
-            Logger.d(LogTags.CALENDAR_CACHE, "Cache EXPIRED for calendar ${calendarId.take(8)}..., removing entry")
+        if (entry != null && entry.isExpired(now())) {
             cache.remove(calendarId)
+            Logger.d(LogTags.CALENDAR_CACHE, "Cache EXPIRED for calendar ${calendarId.take(8)}..., removing entry")
+        } else if (entry != null && entry.abruf.fensterTage != fensterTage) {
+            // Nicht entfernen: der Abruf mit dem neuen Fenster ueberschreibt ihn gleich (put).
+            Logger.cache(
+                LogTags.CALENDAR_CACHE,
+                "MISS",
+                "calendar ${calendarId.take(8)}... (Fenster ${entry.abruf.fensterTage} statt $fensterTage Tage)"
+            )
+            return@withLock null
+        } else if (entry != null) {
+            Logger.cache(LogTags.CALENDAR_CACHE, "HIT", "calendar ${calendarId.take(8)}...")
+            return@withLock entry.abruf
         }
 
         Logger.cache(LogTags.CALENDAR_CACHE, "MISS", "calendar ${calendarId.take(8)}...")
-        return@withLock false
-    }
-
-    /**
-     * Liefert die gecachten Events - oder null, wenn kein gueltiger Eintrag vorliegt.
-     */
-    suspend fun get(calendarId: String): List<CalendarEvent>? = cacheMutex.withLock {
-        val entry = cache[calendarId]
-
-        return@withLock if (entry != null && !entry.isExpired(now())) {
-            entry.events
-        } else {
-            if (entry != null) {
-                cache.remove(calendarId)
-                Logger.d(LogTags.CALENDAR_CACHE, "Removed expired cache entry")
-            }
-            null
-        }
+        null
     }
 
     /**
      * Legt die Events des Kalenders ab.
      *
-     * Es gehoert IMMER die vollstaendige Liste des 14-Tage-Fensters hier hinein, nie eine
+     * Es gehoert IMMER die vollstaendige Liste des Abruf-Fensters hier hinein, nie eine
      * einzelne Seite: Leser dieses Caches geben den Inhalt als vollstaendige Liste weiter, und
      * "vollstaendig" ist fuer die loeschenden Konsumenten die Erlaubnis, Alarme zu entfernen.
      */
     suspend fun put(
         calendarId: String,
-        events: List<CalendarEvent>
+        abruf: KalenderEventAbruf
     ) = cacheMutex.withLock {
         // Limit cache size - remove oldest entries
         if (cache.size >= MAX_CACHE_SIZE && !cache.containsKey(calendarId)) {
@@ -115,10 +113,14 @@ class CalendarEventCache(
         }
 
         cache[calendarId] = CacheEntry(
-            events = events,
+            abruf = abruf,
             timestamp = now()
         )
-        Logger.cache(LogTags.CALENDAR_CACHE, "STORED", "${events.size} events (TTL: ${TTL_MINUTES}min)")
+        Logger.cache(
+            LogTags.CALENDAR_CACHE,
+            "STORED",
+            "${abruf.events.size} events, ${abruf.fensterTage} Tage (TTL: ${TTL_MINUTES}min)"
+        )
     }
 
     /**

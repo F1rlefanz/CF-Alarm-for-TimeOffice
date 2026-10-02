@@ -2,6 +2,7 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.backup
 
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.AlarmPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FeedNeueinlesenStore
+import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.KalenderVorausschauPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.SyncHorizonStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.calendar.PendingDeselectionCleanupStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimmerModellMigration
@@ -120,6 +121,10 @@ object ConfigBackupFilter {
         // zurueck, und das neue Geraet verschweigt dann echte Dienstplan-Aenderungen als blosse
         // Horizont-Eintritte. Ein frischerer Wert waere umgekehrt nur zu gespraechig.
         SyncHorizonStore.KEY_LAST_SYNC_NAME,
+        // ... und das Fenster der Liste, die dieser Sync verarbeitet hat (#51). Nur zusammen mit
+        // dem Zeitpunkt sinnvoll: ein fremdes Fenster neben dem eigenen Zeitpunkt behauptete einen
+        // Abruf, den es so nie gab, und verschwiege oder meldete Schichten am falschen Rand.
+        SyncHorizonStore.KEY_FENSTER_TAGE_NAME,
         // Wann DIESES Geraet zuletzt gesehen hat, dass sein Dienstplan-Feed neu eingelesen wurde,
         // und wie viele Wecker es dabei wiedererkannt hat (FeedNeueinlesenStore). Eine Beobachtung
         // dieses Geraets an DIESEM Kalenderabonnement, keine Einstellung - jeder eigene Sync
@@ -226,6 +231,9 @@ object ConfigBackupFilter {
         "login_status",
         "user_email",
         "user_id",
+        // "Restore-Schluessel fuer diese Anmeldung angelegt" (#55, auth_prefs): mitgereist hiesse
+        // er auf dem neuen Geraet "schon erledigt", und dort entstuende nie ein eigener Schluessel.
+        "restore_key_angelegt",
         // Die Kalenderauswahl ist an das Google-Konto gebunden: die IDs einer Kollegin zeigen auf
         // Kalender, die es auf diesem Geraet nicht gibt. Der Nutzer waehlt seinen Dienstplan selbst -
         // dafuer gibt es ein eigenes Gate im Onboarding.
@@ -259,7 +267,12 @@ object ConfigBackupFilter {
      *     aber hier wird der Nutzer nach einem Import auch DARUEBER INFORMIERT, statt den Wert
      *     stillschweigend zurechtzubiegen.
      *
-     * Bewusst NUR diese vier: fuer alles andere ist eine Klemme im Lesepfad die richtige Ebene,
+     *   - `kalender_vorausschau_tage` (#51): ausserhalb 7..90 Tage. Ueber 90 kann die Seiten-Notbremse
+     *     des Kalenderabrufs greifen - dann gilt jeder Abruf als FEHLER und der Alarm-Sync steht
+     *     still, ohne dass der Nutzer weiss, warum. Der Lesepfad (`KalenderVorausschauPrefs`) faellt
+     *     zwar auf 14 zurueck, aber der Import soll das SAGEN, statt den Wert still zu verwerfen.
+     *
+     * Bewusst NUR diese fuenf: fuer alles andere ist eine Klemme im Lesepfad die richtige Ebene,
      * und die ist dort vorhanden. Dieser Katalog ist keine zweite Validierungsschicht fuer alles,
      * sondern der Schutz an der Stelle, an der FREMDE Daten hereinkommen.
      */
@@ -272,7 +285,9 @@ object ConfigBackupFilter {
         "weckton_anstieg_sekunden" to
             AlarmPrefs.MIN_ANSTIEG_SEKUNDEN..AlarmPrefs.MAX_ANSTIEG_SEKUNDEN,
         "weckton_anstieg_start_prozent" to
-            AlarmPrefs.MIN_ANSTIEG_START_PROZENT..AlarmPrefs.MAX_ANSTIEG_START_PROZENT
+            AlarmPrefs.MIN_ANSTIEG_START_PROZENT..AlarmPrefs.MAX_ANSTIEG_START_PROZENT,
+        KalenderVorausschauPrefs.KEY_TAGE_NAME to
+            KalenderVorausschauPrefs.MIN_TAGE..KalenderVorausschauPrefs.MAX_TAGE
     )
 
     /**

@@ -252,4 +252,27 @@ class ConfigBackupFilterTest {
         assertNull(ConfigBackupFilter.rangeRejection("dim_strength", 99999))
         assertNull(ConfigBackupFilter.rangeRejection("irgendwas", -1))
     }
+
+    /**
+     * #51: Die Kalender-Vorausschau ist eine Nutzerentscheidung und reist mit - aber nur im Bereich
+     * 7..90 Tage. Darueber kann die Seiten-Notbremse des Abrufs greifen, und dann steht der
+     * Alarm-Sync still. Das Fenster des letzten Syncs ist dagegen Laufzeitzustand DIESES Geraets
+     * (wie sein Zeitpunkt) und bleibt draussen.
+     */
+    @Test
+    fun `Kalender-Vorausschau reist mit, aber nur plausibel - das Sync-Fenster nie`() {
+        assertTrue(ConfigBackupFilter.isExportable("kalender_vorausschau_tage"))
+        assertNull(ConfigBackupFilter.rangeRejection("kalender_vorausschau_tage", 7))
+        assertNull(ConfigBackupFilter.rangeRejection("kalender_vorausschau_tage", 90))
+        assertNotNull(ConfigBackupFilter.rangeRejection("kalender_vorausschau_tage", 6))
+        assertNotNull(ConfigBackupFilter.rangeRejection("kalender_vorausschau_tage", 91))
+        assertTrue(
+            "Der Typ steht auch ohne lokalen Wert fest (Int)",
+            "kalender_vorausschau_tage" in ConfigBackupFilter.knownIntKeys
+        )
+
+        assertFalse(ConfigBackupFilter.isExportable("last_successful_sync_at"))
+        assertFalse(ConfigBackupFilter.isExportable("last_successful_sync_window_days"))
+        assertEquals("Laufzeitzustand", ConfigBackupFilter.exclusionReason("last_successful_sync_window_days"))
+    }
 }

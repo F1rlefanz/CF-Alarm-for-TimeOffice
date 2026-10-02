@@ -4,6 +4,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.error.AppError
 import com.github.f1rlefanz.cf_alarmfortimeoffice.error.SafeExecutor
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.CalendarEvent
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.ICalendarRepository
+import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.KalenderEventAbruf
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.CalendarConstants
@@ -98,7 +99,8 @@ internal suspend fun <T> collectAllPages(
 
 /**
  * Der kurzlebige [CalendarEventCache] fasst nur Abrufe DESSELBEN Bedienvorgangs zusammen; jeder
- * Abruf, der wirklich an die API geht, holt ALLE Seiten des 14-Tage-Fensters ([collectAllPages]).
+ * Abruf, der wirklich an die API geht, holt ALLE Seiten des Abruf-Fensters ([collectAllPages]) -
+ * dessen Laenge gibt der Aufrufer vor (`fensterTage`, aus `KalenderVorausschauPrefs`).
  * Beides hängt zusammen: was dieses Repository zurückgibt, gilt weiter oben als vollständige Liste
  * und ist damit eine Löschgrundlage für `syncAlarms()`.
  */
@@ -170,17 +172,17 @@ class CalendarRepository @Inject constructor() : ICalendarRepository {
     override suspend fun getCalendarEventsWithCache(
         accessToken: String,
         calendarId: String,
-        forceRefresh: Boolean
-    ): Result<List<CalendarEvent>> = withContext(Dispatchers.IO) {
-        val daysAhead = CalendarConstants.DEFAULT_DAYS_AHEAD
+        forceRefresh: Boolean,
+        fensterTage: Int
+    ): Result<KalenderEventAbruf> = withContext(Dispatchers.IO) {
         SafeExecutor.safeExecute("CalendarRepository.getEventsWithCache") {
-            
-            if (!forceRefresh && eventCache.isCached(calendarId)) {
-                val cachedEvents = eventCache.get(calendarId)
-                if (cachedEvents != null) {
-                    Logger.i(LogTags.CALENDAR_CACHE, "Returning ${cachedEvents.size} cached events")
-                    
-                    return@safeExecute cachedEvents
+
+            // Ein Treffer zaehlt nur fuer DASSELBE Fenster - siehe CalendarEventCache.
+            if (!forceRefresh) {
+                val cached = eventCache.get(calendarId, fensterTage)
+                if (cached != null) {
+                    Logger.i(LogTags.CALENDAR_CACHE, "Returning ${cached.events.size} cached events")
+                    return@safeExecute cached
                 }
             }
             
@@ -194,10 +196,12 @@ class CalendarRepository @Inject constructor() : ICalendarRepository {
             try {
                 val now = LocalDateTime.now()
                 val timeMin = now.atZone(ZoneId.systemDefault()).toInstant().toString()
-                val timeMax = now.plusDays(daysAhead.toLong())
+                // Das Abruf-Ende wird EINMAL bestimmt und reist mit der Liste (horizontEnde): es ist
+                // die Grenze, hinter der "nicht in der Liste" nichts mehr bedeutet (#51).
+                val timeMaxInstant = now.plusDays(fensterTage.toLong())
                     .atZone(ZoneId.systemDefault())
                     .toInstant()
-                    .toString()
+                val timeMax = timeMaxInstant.toString()
 
                 // Muss vollstaendig sein (Loeschgrundlage) - siehe collectAllPages.
                 val rawEvents = collectAllPages(
@@ -220,14 +224,19 @@ class CalendarRepository @Inject constructor() : ICalendarRepository {
                     ApiPage(page.items ?: emptyList(), page.nextPageToken)
                 }
 
-                Logger.i(LogTags.CALENDAR_API, "${rawEvents.size} events loaded for next $daysAhead days")
+                Logger.i(LogTags.CALENDAR_API, "${rawEvents.size} events loaded for next $fensterTage days")
 
                 val calendarEvents = processEventsWithOptimization(rawEvents, calendarId)
+                val abruf = KalenderEventAbruf(
+                    events = calendarEvents,
+                    fensterTage = fensterTage,
+                    horizontEnde = timeMaxInstant.toEpochMilli()
+                )
 
-                eventCache.put(calendarId, calendarEvents)
+                eventCache.put(calendarId, abruf)
                 Logger.d(LogTags.CALENDAR_CACHE, "${calendarEvents.size} events cached for follow-up requests")
 
-                calendarEvents
+                abruf
             } catch (e: Exception) {
                 throw mapCalendarException(e)
             }

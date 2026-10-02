@@ -21,6 +21,7 @@ import org.junit.After
 import org.junit.Before
 import org.junit.Test
 import org.mockito.kotlin.any
+import org.mockito.kotlin.anyOrNull
 import org.mockito.kotlin.doReturn
 import org.mockito.kotlin.eq
 import org.mockito.kotlin.mock
@@ -106,7 +107,7 @@ class ShiftViewModelSyncGateTest {
         vm.updateShiftConfig(ShiftConfig(autoAlarmEnabled = true))
         advanceUntilIdle()
 
-        verify(alarmUseCase, never()).syncAlarms(any(), any())
+        verify(alarmUseCase, never()).syncAlarms(any(), any(), anyOrNull())
     }
 
     @Test
@@ -118,7 +119,7 @@ class ShiftViewModelSyncGateTest {
         // PFLICHT: der Erfolgszweig liest `alarms.size` - ein ungestubbtes `null` wirft dort eine
         // NPE, die wie ein Fehler im Gate aussieht, obwohl das Gate gerade korrekt durchgelassen hat.
         alarmUseCase.stub {
-            on { syncAlarms(any(), any()) } doReturn Result.success(emptyList())
+            on { syncAlarms(any(), any(), anyOrNull()) } doReturn Result.success(emptyList())
         }
         val vm = buildViewModel(holder, alarmUseCase)
         advanceUntilIdle()
@@ -126,7 +127,7 @@ class ShiftViewModelSyncGateTest {
         vm.updateShiftConfig(ShiftConfig(autoAlarmEnabled = true))
         advanceUntilIdle()
 
-        verify(alarmUseCase).syncAlarms(eq(events), any())
+        verify(alarmUseCase).syncAlarms(eq(events), any(), anyOrNull())
     }
 
     @Test
@@ -147,6 +148,25 @@ class ShiftViewModelSyncGateTest {
         advanceUntilIdle()
 
         verify(alarmUseCase).deleteAllAlarms()
-        verify(alarmUseCase, never()).syncAlarms(any(), any())
+        verify(alarmUseCase, never()).syncAlarms(any(), any(), anyOrNull())
+    }
+
+    /** #51: Der Abruf-Horizont aus dem Holder geht zusammen mit der Liste an syncAlarms(). */
+    @Test
+    fun `der Abruf-Horizont reist mit der Liste in den Alarm-Sync`() = runTest(dispatcher) {
+        val holder = CalendarStateHolder()
+        val events = listOf(event("A"), event("B"))
+        holder.updateEvents(events, complete = true, horizontEnde = 123_456L)
+        val alarmUseCase = mock<IAlarmUseCase>()
+        alarmUseCase.stub {
+            on { syncAlarms(any(), any(), anyOrNull()) } doReturn Result.success(emptyList())
+        }
+        val vm = buildViewModel(holder, alarmUseCase)
+        advanceUntilIdle()
+
+        vm.updateShiftConfig(ShiftConfig(autoAlarmEnabled = true))
+        advanceUntilIdle()
+
+        verify(alarmUseCase).syncAlarms(eq(events), any(), eq(123_456L))
     }
 }

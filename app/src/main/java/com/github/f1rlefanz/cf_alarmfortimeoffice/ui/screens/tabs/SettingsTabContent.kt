@@ -49,11 +49,13 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.CompactButton
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.CompactOutlinedButton
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.ErrorMessage
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.settings.KalenderVorausschauKarte
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.warning
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.BatteryOptimizationHelper
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.AuthViewModel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.ConfigBackupViewModel
+import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.KalenderVorausschauViewModel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.MasterPauseViewModel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.NotificationSettingsViewModel
 
@@ -75,6 +77,9 @@ fun SettingsTabContent(
     val notificationState by notificationSettingsViewModel.uiState.collectAsStateWithLifecycle()
     val masterPauseViewModel: MasterPauseViewModel = hiltViewModel()
     val masterPausePaused by masterPauseViewModel.paused.collectAsStateWithLifecycle()
+    val kalenderVorausschauViewModel: KalenderVorausschauViewModel = hiltViewModel()
+    val vorausschauTage by kalenderVorausschauViewModel.tage.collectAsStateWithLifecycle()
+    val vorausschauMeldung by kalenderVorausschauViewModel.meldung.collectAsStateWithLifecycle()
     // Rueckfrage vor dem Abmelden. WARUM (Pruefrunde 8, Befund 3): Abmelden ist nicht mehr nur
     // "Konto weg" - es entfernt dabei alle gestellten Wecker. Vorher loeste ein einzelner
     // Fehltipper auf dieser Karte das ohne jede Rueckfrage aus, und danach ist ausschliesslich
@@ -101,6 +106,16 @@ fun SettingsTabContent(
             titel = "Kalender auswählen",
             text = "Wähle die Kalender für Schichterkennung",
             onClick = onShowCalendarSelection
+        )
+
+        // Kalender-Vorausschau (#51) - direkt unter der Kalenderauswahl: beides bestimmt, WAS
+        // CF-Alarm aus dem Kalender liest.
+        KalenderVorausschauKarte(
+            tage = vorausschauTage,
+            meldung = vorausschauMeldung,
+            onChip = kalenderVorausschauViewModel::waehle,
+            onUebernehmen = kalenderVorausschauViewModel::uebernehmen,
+            onEingabeGeaendert = kalenderVorausschauViewModel::eingabeGeaendert
         )
 
         // Shows when user needs to authorize Calendar OR re-authorize due to invalid token

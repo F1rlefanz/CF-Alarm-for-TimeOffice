@@ -1331,7 +1331,8 @@ class AlarmMaintenanceService : Service() {
         // GANZ VORNE, und das ist die tragende Entscheidung: weiter unten steigt die Wartung
         // gleich zweimal aus, bevor sie die Kalenderauswahl ueberhaupt ansieht - beim
         // fehlgeschlagenen Token-Refresh und im Skip-Zweig des Lade-Gates. Genau der Skip-Zweig
-        // ist nach einer Abwahl der Normalfall: die verwaisten Wecker reichen 14 Tage weit, der
+        // ist nach einer Abwahl der Normalfall: die verwaisten Wecker reichen so weit wie die
+        // Kalender-Vorausschau (Standard 14 Tage), der
         // Puffer ist also reichlich, und die Kalenderdaten sind frisch. Stuende dieser Schritt
         // hinter dem Gate, waere er in genau der Lage blind, fuer die es ihn gibt. Ein Token
         // braucht er ohnehin nicht - geraeumt wird ohne jede Netzabfrage.
@@ -1595,7 +1596,9 @@ class AlarmMaintenanceService : Service() {
         // Teilliste steht (syncAlarms entfernt Alarme ohne passendes Event).
         // syncAlarms armiert die System-Alarme selbst - kein zusaetzliches scheduleSystemAlarm
         // (sonst Doppel-Planung).
-        val syncResult = alarmUseCase.syncAlarms(events, shiftConfig)
+        // Der Abruf-Horizont reist mit der Liste (#51): Wecker dahinter bleiben, statt als
+        // "Schicht entfernt" zu gelten, wenn der Nutzer die Vorausschau verkleinert hat.
+        val syncResult = alarmUseCase.syncAlarms(events, shiftConfig, fetchOutcome.horizontEnde)
 
         if (syncResult.isSuccess) {
             val syncedAlarms = syncResult.getOrThrow()

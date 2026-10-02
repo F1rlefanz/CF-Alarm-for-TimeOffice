@@ -632,8 +632,8 @@ private fun FeedNeueinlesenZeile(stand: FeedNeueinlesenStand?) {
  *
  * WARUM DAS EINE EIGENE FRAGE IST: Der Knopf ist als Bereinigung gedacht - "der Kalender ist weg,
  * nimm ihn aus der Auswahl". Trifft er den letzten ausgewaehlten Kalender, tut er etwas ganz
- * anderes: er loest eine Abwahl aus, und die raeumt seit v1.29.3 alle kalenderbasierten Wecker der
- * naechsten zwei Wochen samt der Dienstzeit-Fenster fuer Dimmer und "Nicht stoeren". Der Anlass
+ * anderes: er loest eine Abwahl aus, und die raeumt seit v1.29.3 alle kalenderbasierten Wecker
+ * samt der Dienstzeit-Fenster fuer Dimmer und "Nicht stoeren". Der Anlass
  * ist dabei haeufig voruebergehend (Server- oder Freigabestoerung), also etwas, das von allein
  * vergeht - deshalb darf dieser Fall nicht mit demselben beilaeufigen Tippen passieren wie das
  * Entfernen eines von mehreren Kalendern.
@@ -656,7 +656,7 @@ internal fun entfernenWuerdeAuswahlLeeren(
 internal const val ENTFERNEN_LEERT_AUSWAHL_TITEL: String = "Danach wäre kein Kalender ausgewählt"
 
 internal const val ENTFERNEN_LEERT_AUSWAHL_TEXT: String =
-    "CF-Alarm hat dann keine Schichtquelle mehr: alle Wecker der nächsten zwei Wochen werden " +
+    "CF-Alarm hat dann keine Schichtquelle mehr: alle Wecker aus dem Kalender werden " +
         "gelöscht, und der Dimmer sowie \"Nicht stören\" schalten nicht mehr nach deinen " +
         "Dienstzeiten. Selbst gestellte Wecker bleiben.\n\n" +
         "Dass ein Kalender gerade nicht abrufbar ist, liegt oft an einer vorübergehenden Störung " +

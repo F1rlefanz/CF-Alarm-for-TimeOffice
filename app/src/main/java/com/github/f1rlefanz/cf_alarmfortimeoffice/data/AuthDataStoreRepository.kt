@@ -60,6 +60,13 @@ class AuthDataStoreRepository @Inject constructor(
         private val ACCESS_TOKEN_KEY = stringPreferencesKey("access_token")
         private val REFRESH_TOKEN_KEY = stringPreferencesKey("refresh_token")
         private val TOKEN_EXPIRY_KEY = longPreferencesKey("token_expiry_long")
+
+        /**
+         * Merker "Restore-Schluessel fuer diese Anmeldung angelegt" (#55). In `auth_prefs` statt
+         * `settings`, weil `settings` per Backup mitreist - mitgereist hiesse er auf dem neuen
+         * Geraet "schon erledigt", und dort entstuende nie ein eigener Schluessel.
+         */
+        private val RESTORE_KEY_ANGELEGT_KEY = booleanPreferencesKey("restore_key_angelegt")
     }
 
     // .catch{}: derselbe Grund wie in ShiftConfigRepository.shiftConfig und
@@ -120,6 +127,20 @@ class AuthDataStoreRepository @Inject constructor(
     override suspend fun getCurrentAuthData(): Result<AuthData> = 
         SafeExecutor.safeExecute("AuthDataStoreRepository.getCurrentAuthData") {
             authData.first()
+        }
+
+    // Liest dataStore.data DIREKT und nicht den authData-Flow: dessen .catch degradiert auf
+    // "nicht angemeldet", hier soll ein Lesefehler als Failure ankommen (siehe Interface).
+    override suspend fun istWiederherstellungsSchluesselAngelegt(): Result<Boolean> =
+        SafeExecutor.safeExecute("AuthDataStoreRepository.istWiederherstellungsSchluesselAngelegt") {
+            dataStore.data.first()[RESTORE_KEY_ANGELEGT_KEY] == true
+        }
+
+    override suspend fun merkeWiederherstellungsSchluesselAngelegt(): Result<Unit> =
+        SafeExecutor.safeExecute("AuthDataStoreRepository.merkeWiederherstellungsSchluesselAngelegt") {
+            dataStore.edit { preferences ->
+                preferences[RESTORE_KEY_ANGELEGT_KEY] = true
+            }
         }
 
     private suspend fun updateAuthDataInternal(

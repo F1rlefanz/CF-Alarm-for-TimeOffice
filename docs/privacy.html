@@ -46,7 +46,7 @@
         </div>
 
         <div class="content-card">
-            <p><strong>Letzte Aktualisierung:</strong> 30. September 2026 | <strong>Version:</strong> 1.4 | <strong>Gültig ab:</strong> 11. August 2026</p>
+            <p><strong>Letzte Aktualisierung:</strong> 2. Oktober 2026 | <strong>Version:</strong> 1.5 | <strong>Gültig ab:</strong> 11. August 2026</p>
 
             <h3>1. Verantwortlicher</h3>
             <p><strong>Entwickler:</strong> f1rlefanz<br>
@@ -112,11 +112,21 @@
                 <li><strong>Speicherort:</strong> dort, wo Sie die Datei über den Android-Dateidialog selbst ablegen. Die Datei verlässt Ihr Gerät nur, wenn Sie sie selbst weitergeben.</li>
             </ul>
 
+            <h4>3.8 📲 Anmeldung auf einem neuen Gerät übernehmen (ab Android 9)</h4>
+            <p>Damit Sie nach einem Gerätewechsel nicht erneut „Mit Google anmelden" antippen müssen, legt die App nach der Anmeldung über Androids Credential Manager einen sogenannten Wiederherstellungsschlüssel an. Beim ersten Start auf dem neuen Gerät liest die App ihn und meldet Sie mit demselben Google-Konto an.</p>
+            <ul>
+                <li><strong>Inhalt:</strong> ausschließlich die E-Mail-Adresse Ihres Google-Kontos. Kein Passwort, kein Google-Token, keine Kalenderdaten.</li>
+                <li><strong>Speicherort:</strong> in der Datensicherung Ihres Google-Kontos, Ende-zu-Ende-verschlüsselt; der Entwickler betreibt keinen Server und erhält ihn nie. Ist auf dem Gerät keine solche Sicherung möglich, bleibt er nur auf dem Gerät und wird lediglich bei einer direkten Übertragung von Gerät zu Gerät mitgenommen.</li>
+                <li><strong>Zweck:</strong> nur der Hinweis, mit welchem Konto Sie angemeldet waren. Den Kalenderzugriff gewährt weiterhin allein Google; ist Ihre Zustimmung dort nicht mehr vorhanden, fragt die App wie bei einer normalen Anmeldung.</li>
+                <li><strong>Rechtsgrundlage:</strong> Einwilligung (Art. 6 Abs. 1 lit. a DSGVO) – erteilt durch die Anmeldung.</li>
+                <li><strong>Löschung:</strong> beim Abmelden in der App sowie beim Deinstallieren der App oder „Daten löschen" in den Android-Einstellungen.</li>
+            </ul>
+
             <h3>4. Datenweitergabe & Sicherheit</h3>
 
             <h4>4.1 🚫 Keine Weitergabe an Dritte</h4>
             <ul>
-                <li><strong>Grundsatz:</strong> Alle Daten bleiben lokal auf Ihrem Gerät</li>
+                <li><strong>Grundsatz:</strong> Alle Daten bleiben lokal auf Ihrem Gerät – einzige Ausnahme ist der Ende-zu-Ende-verschlüsselte Wiederherstellungsschlüssel in Ihrer eigenen Google-Datensicherung (Abschnitt 3.8)</li>
                 <li><strong>Google API:</strong> Direkte, verschlüsselte Kommunikation (HTTPS)</li>
                 <li><strong>Hue Bridge:</strong> Nur lokale Netzwerkkommunikation</li>
                 <li><strong>Keine Cloud-Server:</strong> CF Alarm betreibt keine eigenen Server</li>
@@ -153,7 +163,7 @@
 
             <h4>6.1 📱 In der App</h4>
             <ul>
-                <li><strong>Einstellungen-Tab → „Abmelden":</strong> Verwirft Anmeldedaten und Google-Token (auch im Zwischenspeicher der Google-Dienste).</li>
+                <li><strong>Einstellungen-Tab → „Abmelden":</strong> Verwirft Anmeldedaten und Google-Token (auch im Zwischenspeicher der Google-Dienste) sowie den Wiederherstellungsschlüssel (Abschnitt 3.8).</li>
                 <li><strong>Wecker-Tab → Schichttypen verwalten → „Auf Standardwerte zurücksetzen":</strong> Verwirft Ihre eigenen Schichtdefinitionen (Muster und Weckzeiten).</li>
             </ul>
             <p>Eine „Alle Daten löschen"-Funktion gibt es in der App bewusst nicht – dafür ist der Android-Weg unter 6.2 der vollständige und zuverlässige.</p>
@@ -171,7 +181,7 @@
             <p>Diese App ist nicht für Personen unter 16 Jahren bestimmt. Wir sammeln wissentlich keine personenbezogenen Daten von Minderjährigen ohne elterliche Einwilligung.</p>
 
             <h3>8. 🌍 Internationale Datenübertragung</h3>
-            <p>Da alle Daten lokal gespeichert bleiben, findet keine internationale Datenübertragung statt. Die Kommunikation mit Google Calendar API erfolgt direkt zwischen Ihrem Gerät und Google (EU-GDPR-konform).</p>
+            <p>Da alle Daten lokal gespeichert bleiben, findet keine internationale Datenübertragung statt; der Wiederherstellungsschlüssel (Abschnitt 3.8) liegt Ende-zu-Ende-verschlüsselt in der Datensicherung Ihres eigenen Google-Kontos. Die Kommunikation mit Google Calendar API erfolgt direkt zwischen Ihrem Gerät und Google (EU-GDPR-konform).</p>
 
             <h3>9. 📝 Änderungen der Datenschutzerklärung</h3>
             <p>Änderungen werden rechtzeitig in der App und auf dieser Website bekannt gegeben. Bei wesentlichen Änderungen werden Sie direkt in der App informiert.</p>
@@ -191,7 +201,7 @@
             <h3>🔓 Open Source & Transparenz</h3>
             <p>Diese App ist Open Source. Der vollständige Quellcode kann auf GitHub eingesehen werden: <a href="https://github.com/f1rlefanz/cf-alarmfortimeoffice" rel="external">https://github.com/f1rlefanz/cf-alarmfortimeoffice</a></p>
             
-            <p><strong>Letzte Aktualisierung:</strong> 30. September 2026 | <strong>Version:</strong> 1.4 | <strong>App-Version:</strong> 1.43.7</p>
+            <p><strong>Letzte Aktualisierung:</strong> 2. Oktober 2026 | <strong>Version:</strong> 1.5 | <strong>App-Version:</strong> 1.43.7</p>
         </div>
     </main>
 

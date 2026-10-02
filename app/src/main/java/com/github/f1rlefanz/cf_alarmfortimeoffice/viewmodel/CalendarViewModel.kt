@@ -1611,7 +1611,7 @@ class CalendarViewModel @Inject constructor(
         internal const val DESELECTION_CLEANUP_FAILED_MESSAGE: String =
             "Die Wecker des abgewählten Kalenders konnten nicht entfernt werden. " +
                 "Es können weiterhin Wecker aus diesem Dienstplan klingeln. " +
-                "Tippe auf \"Erneut versuchen\"; hilft das nicht, lösche sie im Tab " +
+                "Tippe auf \"Erneut versuchen\"; hilft das nicht, lösche sie im Bereich " +
                 "\"Wecker\" einzeln."
 
         /**

@@ -215,7 +215,7 @@ class DimCorrectionNotifier @Inject constructor(
             "Dimmer-Korrektur",
             NotificationManager.IMPORTANCE_LOW
         ).apply {
-            description = "Heller/Dunkler/Pause fuer den aktiven Schicht-Dimmer"
+            description = "Heller/Dunkler/Pause für den aktiven Schicht-Dimmer"
         }
         val notificationManager = context.getSystemService(NotificationManager::class.java)
         notificationManager.createNotificationChannel(channel)

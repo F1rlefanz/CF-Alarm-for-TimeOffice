@@ -596,7 +596,7 @@ class AlarmViewModel @Inject constructor(
                 LogTags.ALARM,
                 "❌ Freigabe fuer ${fehler.datum} abgebrochen, Markierung liess sich nicht raeumen - kein Re-Arming"
             )
-            return "Der Tag konnte nicht freigegeben werden und ließ sich nicht sauber zurücknehmen. Bitte im Wecker-Tab prüfen, ob die Wecker dieses Tages noch stehen."
+            return "Der Tag konnte nicht freigegeben werden und ließ sich nicht sauber zurücknehmen. Bitte im Bereich „Wecker“ prüfen, ob die Wecker dieses Tages noch stehen."
         }
 
         // EIN FEHLENDER EINTRAG IST EIN MISSLUNGENER, KEIN UEBERGANGENER. `alarmIds` traegt ALLE
@@ -738,7 +738,7 @@ class AlarmViewModel @Inject constructor(
                 "❌ Skip fuer Alarm ${fehler.alarmId} abgebrochen, Merker liess sich nicht raeumen - kein Re-Arming moeglich"
             )
             return "Das Überspringen hat nicht geklappt und ließ sich nicht sauber zurücknehmen. " +
-                "Bitte im Wecker-Tab prüfen, ob der Wecker noch steht."
+                "Bitte im Bereich „Wecker“ prüfen, ob der Wecker noch steht."
         }
 
         val alarm = alarmUseCase.getAllAlarms().getOrNull()?.find { it.id == fehler.alarmId }
@@ -748,7 +748,7 @@ class AlarmViewModel @Inject constructor(
                 "⚠️ Abgebrochener Skip: Alarm ${fehler.alarmId} ist nicht mehr im Bestand - kein Re-Arming"
             )
             return "Das Überspringen hat nicht geklappt. Der Wecker ist nicht mehr in der Liste – " +
-                "bitte im Wecker-Tab prüfen und gegebenenfalls neu stellen."
+                "bitte im Bereich „Wecker“ prüfen und gegebenenfalls neu stellen."
         }
 
         val armiert = alarmUseCase.scheduleSystemAlarm(alarm)
@@ -766,7 +766,7 @@ class AlarmViewModel @Inject constructor(
                 armiert.exceptionOrNull()
             )
             "Das Überspringen hat nicht geklappt. Der Wecker um ${alarm.formattedTime} konnte " +
-                "nicht wieder gestellt werden – bitte im Wecker-Tab prüfen."
+                "nicht wieder gestellt werden – bitte im Bereich „Wecker“ prüfen."
         }
     }
 
@@ -902,7 +902,7 @@ class AlarmViewModel @Inject constructor(
                             _skipState.value = _skipState.value.copy(
                                 restoreNotice = "Das Überspringen wurde aufgehoben, aber der gesicherte " +
                                     "Stand war beschädigt. Falls es ein manuell gestellter Wecker war, " +
-                                    "bitte im Wecker-Tab neu anlegen."
+                                    "bitte im Bereich „Wecker“ neu anlegen."
                             )
                         } else {
                             restoreSkippedManualAlarm(manualAlarm)
@@ -1076,7 +1076,7 @@ class AlarmViewModel @Inject constructor(
             )
             _skipState.value = _skipState.value.copy(
                 restoreNotice = "Der manuelle Wecker für ${alarm.formattedTime} konnte nicht " +
-                    "wiederhergestellt werden. Bitte im Wecker-Tab neu anlegen."
+                    "wiederhergestellt werden. Bitte im Bereich „Wecker“ neu anlegen."
             )
             return
         }
@@ -1101,7 +1101,7 @@ class AlarmViewModel @Inject constructor(
                 restoreNotice = "Der manuelle Wecker für ${alarm.formattedTime} ließ sich nicht " +
                     "mehr stellen und wurde deshalb NICHT wieder in die Liste aufgenommen – so " +
                     "kündigt keine Anzeige einen Wecker an, der stumm bliebe. Bitte im " +
-                    "Wecker-Tab neu anlegen."
+                    "Bereich „Wecker“ neu anlegen."
             )
             return
         }
@@ -1316,7 +1316,7 @@ class AlarmViewModel @Inject constructor(
             if (!autoAlarmEnabled) {
                 _manualAlarmState.value = state.copy(
                     error = AppErrorState.validationError(
-                        "„Automatische Alarme“ ist im Wecker-Tab ausgeschaltet – solange das so " +
+                        "„Automatische Alarme“ ist im Bereich „Wecker“ ausgeschaltet – solange das so " +
                             "ist, werden ALLE Wecker geloescht, auch manuell gestellte. Bitte " +
                             "zuerst dort einschalten."
                     )
@@ -1326,7 +1326,7 @@ class AlarmViewModel @Inject constructor(
 
             if (selectedShift == null) {
                 _manualAlarmState.value = state.copy(
-                    error = AppErrorState.validationError("Bitte wählen Sie eine Schicht aus")
+                    error = AppErrorState.validationError("Bitte wähle eine Schicht aus.")
                 )
                 return@launch
             }

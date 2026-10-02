@@ -488,7 +488,7 @@ internal const val ALLES_PAUSIERT_TEXT: String =
     "Du hast alle Hintergrunddienste pausiert. Es wird kein Wecker gestellt und keiner klingelt — " +
         "auch nicht für Schichten, die die App weiterhin anzeigt. Dimmen, \"Nicht stören\" und " +
         "die Hue-Automatik ruhen ebenfalls. Das bleibt so, bis du hier auf " +
-        "\"Alles wieder aktivieren\" tippst oder im Einstellungen-Tab den Schalter " +
+        "\"Alles wieder aktivieren\" tippst oder in den Einstellungen den Schalter " +
         "\"Hintergrunddienste pausieren\" ausschaltest."
 
 internal const val ALLES_PAUSIERT_AKTION: String = "Alles wieder aktivieren"
@@ -1025,12 +1025,12 @@ private fun DebugInfoCard() {
             )
             
             Text(
-                "Wie funktioniert das Logging?",
+                "Was steht im Protokoll?",
                 style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.Bold
             )
             Text(
-                "Die App schreibt Logs nun täglich in separate Dateien (z.B. debug_logs_2026-07-12.txt) und behält diese für genau 8 Tage, um eine vollständige Woche abbilden zu können. Ältere Dateien werden automatisch bereinigt. Beim Versenden werden alle vorhandenen Dateien angehängt.",
+                "Die App schreibt jeden Tag eine eigene Protokolldatei und behält sie 8 Tage, damit eine ganze Woche nachvollziehbar bleibt. Ältere Dateien löscht sie von selbst. Beim Senden werden alle vorhandenen Dateien angehängt.",
                 style = MaterialTheme.typography.bodySmall
             )
             Text(

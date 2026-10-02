@@ -213,12 +213,12 @@ fun AnimatedDiscoveryCard(
                     ) {
                         Icon(
                             imageVector = Icons.Default.Close,
-                            // dekorativ: "Cancel" steht als Knopftext daneben
+                            // dekorativ: "Abbrechen" steht als Knopftext daneben
                             contentDescription = null,
                             modifier = Modifier.size(16.dp)
                         )
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("Cancel", style = MaterialTheme.typography.bodySmall)
+                        Text("Abbrechen", style = MaterialTheme.typography.bodySmall)
                     }
                 }
             }

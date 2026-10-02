@@ -67,32 +67,32 @@ object ErrorHandler {
     
     private fun getUserMessage(error: AppError): String = when (error) {
         // NETWORK ERRORS
-        is AppError.NetworkError -> "Keine Internetverbindung. Bitte überprüfen Sie Ihre Verbindung und versuchen Sie es erneut."
+        is AppError.NetworkError -> "Keine Internetverbindung. Prüfe deine Verbindung und versuche es erneut."
         
         // STORAGE ERRORS
-        is AppError.DataStoreError -> "Einstellungen konnten nicht gespeichert werden. Bitte starten Sie die App neu."
-        is AppError.FileSystemError -> "Dateizugriff fehlgeschlagen. Überprüfen Sie den verfügbaren Speicherplatz."
+        is AppError.DataStoreError -> "Einstellungen konnten nicht gespeichert werden. Bitte starte die App neu."
+        is AppError.FileSystemError -> "Dateizugriff fehlgeschlagen. Prüfe, ob noch Speicherplatz frei ist."
         
         // AUTHENTICATION & PERMISSIONS
-        is AppError.AuthenticationError -> "Anmeldung fehlgeschlagen. Bitte melden Sie sich erneut an."
+        is AppError.AuthenticationError -> "Anmeldung fehlgeschlagen. Bitte melde dich erneut an."
         is AppError.PermissionError -> when (error.permission) {
-            "android.permission.READ_CALENDAR" -> "Kalenderzugriff verweigert. Bitte erlauben Sie den Zugriff in den App-Einstellungen."
-            "android.permission.POST_NOTIFICATIONS" -> "Benachrichtigungen sind deaktiviert. Bitte aktivieren Sie diese für Alarme."
-            "android.permission.SCHEDULE_EXACT_ALARM" -> "Exakte Alarme sind nicht erlaubt. Bitte aktivieren Sie diese in den Einstellungen."
+            "android.permission.READ_CALENDAR" -> "Kalenderzugriff verweigert. Bitte erlaube den Zugriff in den App-Einstellungen."
+            "android.permission.POST_NOTIFICATIONS" -> "Benachrichtigungen sind deaktiviert. Bitte schalte sie für die Wecker ein."
+            "android.permission.SCHEDULE_EXACT_ALARM" -> "Exakte Alarme sind nicht erlaubt. Bitte erlaube sie in den Android-Einstellungen."
             // permission == null: kein Android-Runtime-Permission-Fall, sondern eine
             // serverseitige Ablehnung (z.B. Kalender nicht freigegeben). Dann traegt
             // message den verstaendlichen Text - frueher stand hier stattdessen
             // "Berechtigung 'null' verweigert".
             null -> error.message
-            else -> "Berechtigung '${error.permission}' verweigert. Bitte überprüfen Sie die App-Einstellungen."
+            else -> "Berechtigung '${error.permission}' verweigert. Bitte prüfe die App-Einstellungen."
         }
         
         // CALENDAR ERRORS
-        is AppError.CalendarAccessError -> "Auf den Kalender konnte nicht zugegriffen werden. Überprüfen Sie die Berechtigung."
+        is AppError.CalendarAccessError -> "Auf den Kalender konnte nicht zugegriffen werden. Prüfe die Berechtigung."
         
         // VALIDATION & SYSTEM ERRORS
-        is AppError.ValidationError -> "Ungültige Eingabe: ${error.field ?: "Unbekanntes Feld"}. Bitte überprüfen Sie Ihre Daten."
-        is AppError.UnknownError -> "Ein unerwarteter Fehler ist aufgetreten. Bitte versuchen Sie es erneut."
+        is AppError.ValidationError -> "Ungültige Eingabe: ${error.field ?: "Unbekanntes Feld"}. Bitte prüfe deine Eingabe."
+        is AppError.UnknownError -> "Ein unerwarteter Fehler ist aufgetreten. Bitte versuche es erneut."
     }
     
     /**

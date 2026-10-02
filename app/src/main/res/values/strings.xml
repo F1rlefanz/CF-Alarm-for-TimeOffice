@@ -198,11 +198,11 @@
 
     <!-- Regel-Editor: Schichtmuster -->
     <string name="hue_shift_header">Schichtmuster</string>
-    <string name="hue_shift_intro">Wählen Sie aus, für welches Schichtmuster diese Regel gilt:</string>
+    <string name="hue_shift_intro">Wähle aus, für welches Schichtmuster diese Regel gilt:</string>
     <string name="hue_shift_none_title">Keine Schichtmuster konfiguriert</string>
-    <string name="hue_shift_none_body">Bitte konfigurieren Sie zunächst Ihre Schichtmuster in den Einstellungen.</string>
+    <string name="hue_shift_none_body">Lege zuerst Schichttypen an: Bereich „Wecker“ → „Schichttypen verwalten“.</string>
     <string name="hue_shift_universal_hint">Gilt für jede erkannte Schicht</string>
-    <string name="hue_shift_required">Bitte wählen Sie ein Schichtmuster aus</string>
+    <string name="hue_shift_required">Bitte wähle ein Schichtmuster aus.</string>
     <string name="hue_shift_universal_label">Alle Schichten</string>
 
     <!-- Regel-Editor: Automatisch ausschalten -->
@@ -242,15 +242,15 @@
 
     <!-- Regel-Editor: Zielauswahl -->
     <string name="hue_targets_refresh">Lichter aktualisieren</string>
-    <string name="hue_targets_intro">Wählen Sie aus, welche Lichter oder Gruppen diese Regel steuern soll:</string>
+    <string name="hue_targets_intro">Wähle aus, welche Lichter oder Gruppen diese Regel steuern soll:</string>
     <string name="hue_targets_unknown">Auf dieser Bridge unbekannt: %1$s. Diese Ziele stammen von einer anderen Bridge und sind unten nicht angehakt – bitte neu auswählen.</string>
-    <string name="hue_targets_no_groups">Keine Gruppen gefunden. Erstellen Sie zunächst Gruppen in der Hue-App.</string>
-    <string name="hue_targets_no_lights">Keine Lichter gefunden. Stellen Sie sicher, dass Ihre Bridge verbunden ist.</string>
+    <string name="hue_targets_no_groups">Keine Gruppen gefunden. Lege zuerst in der Hue-App Räume oder Zonen an.</string>
+    <string name="hue_targets_no_lights">Keine Lichter gefunden. Prüfe, ob deine Bridge verbunden ist.</string>
     <string name="hue_targets_group_state">Gruppe • %1$s</string>
     <string name="hue_targets_light_state">Licht • %1$s</string>
     <string name="hue_state_on">An</string>
     <string name="hue_state_off">Aus</string>
-    <string name="hue_targets_required">Bitte wählen Sie mindestens ein Licht oder eine Gruppe aus</string>
+    <string name="hue_targets_required">Bitte wähle mindestens ein Licht oder eine Gruppe aus.</string>
 
     <!-- Regel-Editor: Aktion (manuell) -->
     <string name="hue_action_on">Einschalten</string>
@@ -334,7 +334,7 @@
     <string name="hue_bridge_test">Test</string>
     <string name="hue_bridge_forget">Verbindung trennen / Bridge vergessen</string>
     <string name="hue_bridge_forget_title">Bridge vergessen?</string>
-    <string name="hue_bridge_forget_body">Die Verbindung zur Hue-Bridge wird getrennt. Um die App wieder mit der Bridge zu nutzen, muss sie erneut gekoppelt werden (Link-Taste drücken). Ihre gespeicherten Regeln bleiben erhalten.</string>
+    <string name="hue_bridge_forget_body">Die Verbindung zur Hue-Bridge wird getrennt. Um die App wieder mit der Bridge zu nutzen, muss sie erneut gekoppelt werden (Link-Taste drücken). Deine gespeicherten Regeln bleiben erhalten.</string>
     <string name="hue_bridge_forget_confirm">Trennen</string>
     <string name="hue_stats_header">Übersicht</string>
     <string name="hue_stats_rules">Regeln</string>
@@ -344,7 +344,7 @@
     <string name="hue_stats_active">aktiv</string>
     <string name="hue_stats_available">verfügbar</string>
     <string name="hue_empty_rules_title">Noch keine Regeln erstellt</string>
-    <string name="hue_empty_rules_body">Erstellen Sie Ihre erste Hue-Regel, um Ihre Beleuchtung automatisch zu steuern – mit einer Szene aus Ihrer Hue-App, eigenen Farbwerten oder einem sanften Sonnenaufgang.</string>
+    <string name="hue_empty_rules_body">Lege deine erste Hue-Regel an, um deine Beleuchtung automatisch zu steuern – mit einer Szene aus deiner Hue-App, eigenen Farbwerten oder einem sanften Sonnenaufgang.</string>
     <string name="hue_empty_rules_action">Erste Regel erstellen</string>
 
     <!-- Hue-Tab -->
@@ -366,11 +366,11 @@
     <string name="hue_connected_title">Bridge verbunden</string>
     <string name="hue_connected_manage">Regeln verwalten</string>
     <string name="hue_setup_done_title">🎉 Erfolgreich verbunden!</string>
-    <string name="hue_setup_done_body">Ihre Philips Hue Bridge ist jetzt mit der App verbunden. Sie können Lichtregeln für Ihre Alarme erstellen!</string>
-    <string name="hue_setup_done_next">Was möchten Sie als nächstes tun?</string>
+    <string name="hue_setup_done_body">Deine Philips Hue Bridge ist jetzt mit der App verbunden. Du kannst Lichtregeln für deine Wecker anlegen.</string>
+    <string name="hue_setup_done_next">Wie geht es weiter?</string>
     <string name="hue_setup_done_first_rule">Erste Hue-Regel erstellen</string>
     <string name="hue_setup_done_settings">Einstellungen</string>
-    <string name="hue_setup_done_tip">💡 Tipp: Erstellen Sie für jede Schicht eine eigene Licht-Regel mit verschiedenen Farben und Helligkeiten.</string>
+    <string name="hue_setup_done_tip">💡 Tipp: Lege für jede Schicht eine eigene Licht-Regel an, mit eigener Farbe und Helligkeit.</string>
 
 
     <!-- Zaehlabhaengige Hue-Texte.

@@ -36,7 +36,7 @@ internal const val ALARM_STATUS_PAUSIERT_TEXT: String =
  * Position.
  */
 internal const val ALARM_STATUS_PAUSIERT_AUSWEG: String =
-    "Zum Fortsetzen im Einstellungen-Tab den Schalter \"Hintergrunddienste pausieren\" ausschalten."
+    "Zum Fortsetzen in den Einstellungen den Schalter \"Hintergrunddienste pausieren\" ausschalten."
 
 /** Die Zweige des Status-Texts - siehe [alarmStatusZustand]. */
 internal enum class AlarmStatusZustand { PAUSIERT, AKTIVE_ALARME, LAEDT, KEINE_ALARME }

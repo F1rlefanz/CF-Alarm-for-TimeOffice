@@ -213,7 +213,7 @@ internal fun noShiftExplanation(
                 "System-Status unter \"Debug-Informationen\" auf \"Logs an Entwickler senden\" " +
                 "tippen. Die Konfiguration liegt gesichert vor und wird NICHT überschrieben."
         NoShiftReason.NO_SHIFT_TYPES ->
-            "Keine aktiven Schichttypen — lege sie im Wecker-Tab unter \"Schichttypen verwalten\" an."
+            "Keine aktiven Schichttypen — lege sie im Bereich „Wecker“ unter \"Schichttypen verwalten\" an."
         NoShiftReason.NO_PATTERN_MATCH -> buildString {
             append("Termine gefunden, aber kein Erkennungsmuster passt")
             if (sampleEventTitles.isNotEmpty()) {
@@ -221,7 +221,7 @@ internal fun noShiftExplanation(
                 append(sampleEventTitles.joinToString(", "))
                 append(")")
             }
-            append(". Erkennungsmuster im Wecker-Tab unter \"Schichttypen verwalten\" prüfen.")
+            append(". Erkennungsmuster im Bereich „Wecker“ unter \"Schichttypen verwalten\" prüfen.")
         }
         NoShiftReason.ONLY_PAST_SHIFTS ->
             "Alle erkannten Schichten liegen bereits in der Vergangenheit."

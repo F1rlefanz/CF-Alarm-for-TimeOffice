@@ -166,18 +166,17 @@ class HueViewModel @Inject constructor(
                         it.copy(
                             isLoading = false,
                             discoveredBridges = bridges,
-                            error = if (bridges.isEmpty()) "No bridges found. Please check your network connection." else null
+                            error = if (bridges.isEmpty()) "Keine Bridge gefunden. Ist dein Handy im selben WLAN wie die Bridge?" else null
                         )
                     }
                     Logger.i(LogTags.HUE_VIEWMODEL, "Bridge discovery completed: ${bridges.size} bridges found")
                 } else {
-                    val error = result.exceptionOrNull()?.message ?: "Discovery failed"
-                    _uiState.update { it.copy(isLoading = false, error = error) }
-                    Logger.w(LogTags.HUE_VIEWMODEL, "Bridge discovery failed: $error")
+                    val ursache = result.exceptionOrNull()?.message
+                    _uiState.update { it.copy(isLoading = false, error = SUCHE_FEHLGESCHLAGEN) }
+                    Logger.w(LogTags.HUE_VIEWMODEL, "Bridge discovery failed: $ursache")
                 }
             } catch (e: Exception) {
-                val error = "Discovery failed: ${e.message}"
-                _uiState.update { it.copy(isLoading = false, error = error) }
+                _uiState.update { it.copy(isLoading = false, error = SUCHE_FEHLGESCHLAGEN) }
                 Logger.e(LogTags.HUE_VIEWMODEL, "Bridge discovery exception", e)
             }
         }
@@ -211,13 +210,12 @@ class HueViewModel @Inject constructor(
                     // DON'T call refreshLightTargets immediately - let UI show success first
                     Logger.i(LogTags.HUE_VIEWMODEL, "Bridge setup completed successfully")
                 } else {
-                    val error = result.exceptionOrNull()?.message ?: "Bridge setup failed"
+                    val error = result.exceptionOrNull()?.message ?: EINRICHTUNG_FEHLGESCHLAGEN
                     _uiState.update { it.copy(isLoading = false, error = error) }
                     Logger.w(LogTags.HUE_VIEWMODEL, "Bridge setup failed: $error")
                 }
             } catch (e: Exception) {
-                val error = "Bridge setup failed: ${e.message}"
-                _uiState.update { it.copy(isLoading = false, error = error) }
+                _uiState.update { it.copy(isLoading = false, error = EINRICHTUNG_FEHLGESCHLAGEN) }
                 Logger.e(LogTags.HUE_VIEWMODEL, "Bridge setup exception", e)
             }
         }
@@ -292,8 +290,7 @@ class HueViewModel @Inject constructor(
                     Logger.w(LogTags.HUE_VIEWMODEL, "Failed to forget bridge: $error")
                 }
             } catch (e: Exception) {
-                val error = "Trennen fehlgeschlagen: ${e.message}"
-                _uiState.update { it.copy(isLoading = false, error = error) }
+                _uiState.update { it.copy(isLoading = false, error = "Trennen fehlgeschlagen. Bitte versuche es erneut.") }
                 Logger.e(LogTags.HUE_VIEWMODEL, "Forget bridge exception", e)
             }
         }
@@ -466,13 +463,12 @@ class HueViewModel @Inject constructor(
                     }
                     Logger.d(LogTags.HUE_VIEWMODEL, "Rule loaded for editing: ${rule?.name}")
                 } else {
-                    val error = result.exceptionOrNull()?.message ?: "Failed to load rule"
+                    val error = result.exceptionOrNull()?.message ?: REGEL_LADEN_FEHLGESCHLAGEN
                     _uiState.update { it.copy(isLoading = false, error = error) }
                     Logger.w(LogTags.HUE_VIEWMODEL, "Failed to load rule for editing: $error")
                 }
             } catch (e: Exception) {
-                val error = "Failed to load rule: ${e.message}"
-                _uiState.update { it.copy(isLoading = false, error = error) }
+                _uiState.update { it.copy(isLoading = false, error = REGEL_LADEN_FEHLGESCHLAGEN) }
                 Logger.e(LogTags.HUE_VIEWMODEL, "Load rule for editing exception", e)
             }
         }
@@ -485,7 +481,7 @@ class HueViewModel @Inject constructor(
     fun createRule(rule: HueSchedule) = regelAktion(
         eintrittsLog = "Creating new rule: ${rule.name}",
         erfolgsLog = "Rule created successfully: ${rule.name}",
-        standardFehler = "Failed to create rule",
+        standardFehler = "Die Regel konnte nicht angelegt werden.",
         fehlerLog = "Rule creation failed",
         ausnahmeLog = "Rule creation exception"
     ) { hueRuleUseCase.createRule(rule) }
@@ -493,7 +489,7 @@ class HueViewModel @Inject constructor(
     fun updateRule(rule: HueSchedule) = regelAktion(
         eintrittsLog = "Updating rule: ${rule.id}",
         erfolgsLog = "Rule updated successfully: ${rule.id}",
-        standardFehler = "Failed to update rule",
+        standardFehler = "Die Regel konnte nicht geändert werden.",
         fehlerLog = "Rule update failed",
         ausnahmeLog = "Rule update exception"
     ) { hueRuleUseCase.updateRule(rule) }
@@ -501,15 +497,15 @@ class HueViewModel @Inject constructor(
     fun deleteRule(ruleId: String) = regelAktion(
         eintrittsLog = "Deleting rule: $ruleId",
         erfolgsLog = "Rule deleted successfully: $ruleId",
-        standardFehler = "Failed to delete rule",
+        standardFehler = "Die Regel konnte nicht gelöscht werden.",
         fehlerLog = "Rule deletion failed",
         ausnahmeLog = "Rule deletion exception"
     ) { hueRuleUseCase.deleteRule(ruleId) }
 
     /**
      * Gemeinsamer Ablauf von Anlegen, Aendern und Loeschen einer Regel. Im Erfolg werden die
-     * Regelliste und die vorgeplanten Hue-Jobs sofort nachgezogen. [fehlerLog] dient zugleich
-     * als Praefix der Fehlermeldung im catch-Zweig.
+     * Regelliste und die vorgeplanten Hue-Jobs sofort nachgezogen. Eine Ausnahme zeigt nur
+     * [standardFehler]; ihre technische Meldung steht im Log, nicht in der Oberflaeche.
      */
     private fun regelAktion(
         eintrittsLog: String,
@@ -538,8 +534,7 @@ class HueViewModel @Inject constructor(
                     Logger.w(LogTags.HUE_VIEWMODEL, "$fehlerLog: $error")
                 }
             } catch (e: Exception) {
-                val error = "$fehlerLog: ${e.message}"
-                _uiState.update { it.copy(isLoading = false, error = error) }
+                _uiState.update { it.copy(isLoading = false, error = standardFehler) }
                 Logger.e(LogTags.HUE_VIEWMODEL, ausnahmeLog, e)
             }
         }
@@ -562,13 +557,12 @@ class HueViewModel @Inject constructor(
                     }
                     exec?.autoOffTestNote?.let { note -> emitUserMessage(note) }
                 } else {
-                    val error = result.exceptionOrNull()?.message ?: "Rule test failed"
+                    val error = result.exceptionOrNull()?.message ?: REGELTEST_FEHLGESCHLAGEN
                     _uiState.update { it.copy(error = error) }
                     Logger.w(LogTags.HUE_VIEWMODEL, "Rule test failed: $error")
                 }
             } catch (e: Exception) {
-                val error = "Rule test failed: ${e.message}"
-                _uiState.update { it.copy(error = error) }
+                _uiState.update { it.copy(error = REGELTEST_FEHLGESCHLAGEN) }
                 Logger.e(LogTags.HUE_VIEWMODEL, "Rule test exception", e)
             }
         }
@@ -586,6 +580,17 @@ class HueViewModel @Inject constructor(
         _uiState.update { it.copy(discoveredBridges = emptyList()) }
     }
 }
+
+/**
+ * Feste Texte fuer Fehlschlaege, deren Ursache nur technisch ist. Die Ursache (oft eine
+ * englische Exception-Meldung) steht nur im Log - in der Oberflaeche half sie niemandem.
+ */
+private const val EINRICHTUNG_FEHLGESCHLAGEN =
+    "Die Einrichtung der Bridge ist fehlgeschlagen. Bitte versuche es erneut."
+private const val REGEL_LADEN_FEHLGESCHLAGEN = "Die Regel konnte nicht geladen werden."
+private const val REGELTEST_FEHLGESCHLAGEN = "Der Regeltest ist fehlgeschlagen."
+private const val SUCHE_FEHLGESCHLAGEN =
+    "Die Suche nach der Bridge ist fehlgeschlagen. Prüfe die WLAN-Verbindung und versuche es erneut."
 
 /**
  * UI State for Hue Integration

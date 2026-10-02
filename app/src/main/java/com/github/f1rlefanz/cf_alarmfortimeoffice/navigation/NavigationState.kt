@@ -28,9 +28,9 @@ sealed class NavigationState {
     // Regel") vs. ueber HueSettingsScreen (Regel bearbeiten/anlegen aus der Liste). Zurueck UND
     // Speichern muessen zum jeweils richtigen Ausgangspunkt fuehren - sonst landet der
     // Direktpfad-Nutzer auf einer Liste, die er nie geoeffnet hat, oder der Listen-Pfad-Nutzer
-    // ueberspringt die Liste beim Zurueckgehen. Siehe MainScreen.kt BackHandler + die
-    // HueRuleConfig/HueSettings-Navigationsbloecke, die BEIDE diesen Flag konsistent auswerten
-    // muessen.
+    // ueberspringt die Liste beim Zurueckgehen. Ausgewertet wird der Flag an genau EINER Stelle,
+    // NavigationViewModel.navigateBackFrom() - System-Zurueck (MainScreen-BackHandler),
+    // Zurueck-Pfeil und Speichern laufen alle darueber.
     data class HueRuleConfig(
         val ruleId: String? = null,
         val returnToTab: MainTab = MainTab.HUE,

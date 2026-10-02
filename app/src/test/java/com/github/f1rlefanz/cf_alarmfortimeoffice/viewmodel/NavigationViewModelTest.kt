@@ -1,8 +1,12 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.GateEinstieg
+import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.GateLage
+import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.GateSchritt
 import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.MainTab
 import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.NavigationAction
 import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.NavigationState
+import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.naechsterGateSchritt
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.BatteryOptimizationHelper
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -10,17 +14,42 @@ import org.junit.Test
 
 /**
  * NavigationViewModel hat keine injizierten Dependencies (kein Context/DataStore) - reine,
- * direkt testbare State-Machine-Logik. Deckt zwei Bereiche ab:
+ * direkt testbare State-Machine-Logik. Deckt drei Bereiche ab:
  *  - handleNavigationAction(): jede NavigationAction erzeugt den erwarteten NavigationState,
  *    inkl. NavigateBackToMain, das den returnToTab aus dem jeweiligen Ausgangszustand liest.
- *  - handleAuthenticationSuccess(): die vier Gate-Zweige sind als if/else-if verkettet - nur
- *    EINER darf pro Aufruf feuern (Reihenfolge: CalendarSelection -> BatteryExemption ->
- *    UnusedAppRestrictions -> TimeOfficeHealthCheck), und nur solange der aktuelle Zustand
- *    MainContent ist (kein Wegnavigieren aus einem bereits offenen Screen).
+ *  - handleAuthenticationSuccess(): Ende-zu-Ende mit der reinen Gate-Entscheidung
+ *    (naechsterGateSchritt mit GateEinstieg.AUTO, siehe autoSchritt) - nur EIN Gate pro Aufruf
+ *    (Reihenfolge: CalendarSelection -> BatteryExemption -> UnusedAppRestrictions ->
+ *    TimeOfficeHealthCheck), und nur solange der aktuelle Zustand MainContent ist (kein
+ *    Wegnavigieren aus einem bereits offenen Screen). Die Entscheidung selbst fuer ALLE
+ *    Einstiege prueft OnboardingGatesTest.
+ *  - navigateBackFrom()/navigateBackToMain(): der Rueckweg aus den Regel-Editoren.
  */
 class NavigationViewModelTest {
 
     private fun newViewModel() = NavigationViewModel()
+
+    /**
+     * Die fuenf Groessen, die handleAuthenticationSuccess() frueher einzeln bekam - jetzt ueber
+     * dieselbe reine Entscheidung, die MainScreen auf dem automatischen Weg nimmt. Die Namen
+     * bleiben, damit die Regressionsfaelle unten wortgleich lesbar sind.
+     */
+    private fun autoSchritt(
+        hasSelectedCalendars: Boolean,
+        hasBatteryExemption: Boolean,
+        batteryPromptDismissed: Boolean,
+        needsUnusedAppRestrictionsPrompt: Boolean,
+        needsTimeOfficeHealthPrompt: Boolean
+    ): GateSchritt = naechsterGateSchritt(
+        GateLage(
+            kalenderGewaehlt = hasSelectedCalendars,
+            akkuAusnahme = hasBatteryExemption,
+            akkuAbgelehnt = batteryPromptDismissed,
+            unusedNoetig = needsUnusedAppRestrictionsPrompt,
+            timeOfficeNoetig = needsTimeOfficeHealthPrompt
+        ),
+        GateEinstieg.AUTO
+    )
 
     // ---- handleNavigationAction --------------------------------------------------------
 
@@ -102,39 +131,39 @@ class NavigationViewModelTest {
     @Test
     fun `keine Kalender ausgewaehlt fuehrt zu CalendarSelection`() {
         val vm = newViewModel()
-        vm.handleAuthenticationSuccess(
+        vm.handleAuthenticationSuccess(autoSchritt(
             hasSelectedCalendars = false,
             hasBatteryExemption = false,
             batteryPromptDismissed = false,
             needsUnusedAppRestrictionsPrompt = false,
             needsTimeOfficeHealthPrompt = false
-        )
+        ))
         assertEquals(NavigationState.CalendarSelection(MainTab.HOME), vm.navigationState.value)
     }
 
     @Test
     fun `Kalender vorhanden aber keine Akku-Ausnahme und nicht dismissed fuehrt zu BatteryExemption`() {
         val vm = newViewModel()
-        vm.handleAuthenticationSuccess(
+        vm.handleAuthenticationSuccess(autoSchritt(
             hasSelectedCalendars = true,
             hasBatteryExemption = false,
             batteryPromptDismissed = false,
             needsUnusedAppRestrictionsPrompt = false,
             needsTimeOfficeHealthPrompt = false
-        )
+        ))
         assertEquals(NavigationState.BatteryExemption(MainTab.HOME), vm.navigationState.value)
     }
 
     @Test
     fun `Akku-Prompt dismissed unterdrueckt BatteryExemption-Zweig`() {
         val vm = newViewModel()
-        vm.handleAuthenticationSuccess(
+        vm.handleAuthenticationSuccess(autoSchritt(
             hasSelectedCalendars = true,
             hasBatteryExemption = false,
             batteryPromptDismissed = true,
             needsUnusedAppRestrictionsPrompt = false,
             needsTimeOfficeHealthPrompt = false
-        )
+        ))
         // Kein Zweig trifft, weil hier auch die beiden nachfolgenden Gates nichts wollen ->
         // Zustand bleibt unveraendert MainContent(HOME).
         assertEquals(NavigationState.MainContent(MainTab.HOME), vm.navigationState.value)
@@ -143,13 +172,13 @@ class NavigationViewModelTest {
     @Test
     fun `Akku-Prompt dismissed OHNE Ausnahme laesst die nachfolgenden Gates trotzdem feuern`() {
         val vm = newViewModel()
-        vm.handleAuthenticationSuccess(
+        vm.handleAuthenticationSuccess(autoSchritt(
             hasSelectedCalendars = true,
             hasBatteryExemption = false,   // Ausnahme NICHT erteilt
             batteryPromptDismissed = true, // ...aber mit "Spaeter" erledigt
             needsUnusedAppRestrictionsPrompt = true,
             needsTimeOfficeHealthPrompt = false
-        )
+        ))
         // REGRESSION: Zweig 3 und 4 verlangten frueher beide hasBatteryExemption. Wer "Spaeter"
         // tippte, fiel damit aus JEDEM Zweig heraus (Zweig 2 durch das Dismissed-Flag, Zweig 3/4
         // durch die fehlende Ausnahme) - der Schritt "App bei Nichtnutzung pausieren" wurde ihm
@@ -163,26 +192,26 @@ class NavigationViewModelTest {
     @Test
     fun `Akku-Prompt dismissed OHNE Ausnahme laesst auch das TimeOffice-Gate feuern`() {
         val vm = newViewModel()
-        vm.handleAuthenticationSuccess(
+        vm.handleAuthenticationSuccess(autoSchritt(
             hasSelectedCalendars = true,
             hasBatteryExemption = false,
             batteryPromptDismissed = true,
             needsUnusedAppRestrictionsPrompt = false,
             needsTimeOfficeHealthPrompt = true
-        )
+        ))
         assertEquals(NavigationState.TimeOfficeHealthCheck(MainTab.HOME), vm.navigationState.value)
     }
 
     @Test
     fun `offenes Akku-Gate hat weiterhin Vorrang vor den nachfolgenden Gates`() {
         val vm = newViewModel()
-        vm.handleAuthenticationSuccess(
+        vm.handleAuthenticationSuccess(autoSchritt(
             hasSelectedCalendars = true,
             hasBatteryExemption = false,
             batteryPromptDismissed = false, // noch NICHT erledigt
             needsUnusedAppRestrictionsPrompt = true,
             needsTimeOfficeHealthPrompt = true
-        )
+        ))
         // Die Kette bleibt eine Kette: solange das Akku-Gate offen ist, kommt es zuerst.
         assertEquals(NavigationState.BatteryExemption(MainTab.HOME), vm.navigationState.value)
     }
@@ -190,13 +219,13 @@ class NavigationViewModelTest {
     @Test
     fun `Batterie ok aber Unused-App-Restrictions noetig fuehrt zu UnusedAppRestrictions`() {
         val vm = newViewModel()
-        vm.handleAuthenticationSuccess(
+        vm.handleAuthenticationSuccess(autoSchritt(
             hasSelectedCalendars = true,
             hasBatteryExemption = true,
             batteryPromptDismissed = false,
             needsUnusedAppRestrictionsPrompt = true,
             needsTimeOfficeHealthPrompt = true
-        )
+        ))
         // UnusedAppRestrictions-Zweig kommt VOR dem TimeOffice-Zweig - obwohl beide Flags true
         // sind, darf nur der erste feuern.
         assertEquals(NavigationState.UnusedAppRestrictions(MainTab.HOME), vm.navigationState.value)
@@ -205,13 +234,13 @@ class NavigationViewModelTest {
     @Test
     fun `alle frueheren Gates erledigt und TimeOffice-Check noetig fuehrt zu TimeOfficeHealthCheck`() {
         val vm = newViewModel()
-        vm.handleAuthenticationSuccess(
+        vm.handleAuthenticationSuccess(autoSchritt(
             hasSelectedCalendars = true,
             hasBatteryExemption = true,
             batteryPromptDismissed = false,
             needsUnusedAppRestrictionsPrompt = false,
             needsTimeOfficeHealthPrompt = true
-        )
+        ))
         assertEquals(NavigationState.TimeOfficeHealthCheck(MainTab.HOME), vm.navigationState.value)
     }
 
@@ -221,26 +250,26 @@ class NavigationViewModelTest {
         // schon lange erledigt hat, muss trotzdem ueber handleAuthenticationSuccess() (nicht nur
         // proceedPastGates()) den TimeOffice-Check erreichen.
         val vm = newViewModel()
-        vm.handleAuthenticationSuccess(
+        vm.handleAuthenticationSuccess(autoSchritt(
             hasSelectedCalendars = true,
             hasBatteryExemption = true,
             batteryPromptDismissed = true,
             needsUnusedAppRestrictionsPrompt = false,
             needsTimeOfficeHealthPrompt = true
-        )
+        ))
         assertEquals(NavigationState.TimeOfficeHealthCheck(MainTab.HOME), vm.navigationState.value)
     }
 
     @Test
     fun `alle Gates erledigt fuehrt zu keiner Auto-Navigation`() {
         val vm = newViewModel()
-        vm.handleAuthenticationSuccess(
+        vm.handleAuthenticationSuccess(autoSchritt(
             hasSelectedCalendars = true,
             hasBatteryExemption = true,
             batteryPromptDismissed = false,
             needsUnusedAppRestrictionsPrompt = false,
             needsTimeOfficeHealthPrompt = false
-        )
+        ))
         assertEquals(NavigationState.MainContent(MainTab.HOME), vm.navigationState.value)
     }
 
@@ -248,13 +277,13 @@ class NavigationViewModelTest {
     fun `Auto-Navigation greift nicht wenn bereits in einem Unterscreen`() {
         val vm = newViewModel()
         vm.handleNavigationAction(NavigationAction.NavigateToShiftConfig(MainTab.WECKER))
-        vm.handleAuthenticationSuccess(
+        vm.handleAuthenticationSuccess(autoSchritt(
             hasSelectedCalendars = true,
             hasBatteryExemption = true,
             batteryPromptDismissed = false,
             needsUnusedAppRestrictionsPrompt = false,
             needsTimeOfficeHealthPrompt = true
-        )
+        ))
         // isMainContent()-Guard in jedem Zweig verhindert das Wegnavigieren aus einem bereits
         // offenen Screen (z.B. waehrend der Nutzer manuell im ShiftConfig ist).
         assertEquals(NavigationState.ShiftConfig(MainTab.WECKER), vm.navigationState.value)
@@ -269,14 +298,102 @@ class NavigationViewModelTest {
         // nie mit einer Akku-Bedingung, lieferte genau diese Kombination also sehr wohl - und
         // dann fiel der Nutzer aus jedem Zweig heraus. Richtig ist die Kette: nur ein OFFENES
         // Akku-Gate hat Vorrang, ein mit "Spaeter" erledigtes nicht (siehe die Tests oben).
-        vm.handleAuthenticationSuccess(
+        vm.handleAuthenticationSuccess(autoSchritt(
             hasSelectedCalendars = true,
             hasBatteryExemption = false,
             batteryPromptDismissed = false,
             needsUnusedAppRestrictionsPrompt = false,
             needsTimeOfficeHealthPrompt = true
-        )
+        ))
         assertEquals(NavigationState.BatteryExemption(MainTab.HOME), vm.navigationState.value)
+    }
+
+    @Test
+    fun `handleAuthenticationSuccess ignoriert Oem, Fertig und Nichts`() {
+        // Der automatische Weg liefert diese drei nie; kaemen sie doch an, darf er weder den
+        // OEM-Screen zeigen (dessen "gezeigt"-Merker schreibt nur der aktive Weg) noch irgendwohin
+        // navigieren.
+        val vm = newViewModel()
+        vm.handleAuthenticationSuccess(GateSchritt.Oem(BatteryOptimizationHelper.OEMType.XIAOMI))
+        vm.handleAuthenticationSuccess(GateSchritt.Fertig)
+        vm.handleAuthenticationSuccess(GateSchritt.Nichts)
+        assertEquals(NavigationState.MainContent(MainTab.HOME), vm.navigationState.value)
+    }
+
+    // ---- Rueckweg aus den Regel-Editoren: navigateBackFrom / navigateBackToMain ---------
+
+    @Test
+    fun `Hue-Regel ueber die Liste geoeffnet fuehrt zurueck zur Liste`() {
+        val vm = newViewModel()
+        vm.navigateToHueRuleConfig(ruleId = "r1", fromTab = MainTab.HUE, cameFromSettingsList = true)
+        vm.navigateBackFrom(vm.navigationState.value)
+        assertEquals(NavigationState.HueSettings(MainTab.HUE), vm.navigationState.value)
+    }
+
+    @Test
+    fun `Hue-Regel direkt vom Tab geoeffnet fuehrt zurueck zum Tab`() {
+        val vm = newViewModel()
+        vm.navigateToHueRuleConfig(fromTab = MainTab.HUE, cameFromSettingsList = false)
+        vm.navigateBackFrom(vm.navigationState.value)
+        // NICHT auf die Regel-Liste, die der Nutzer nie geoeffnet hat (vor v1.22.0 passiert).
+        assertEquals(NavigationState.MainContent(MainTab.HUE), vm.navigationState.value)
+    }
+
+    @Test
+    fun `Dimmer-Regel ueber die Liste geoeffnet fuehrt zurueck zur Liste`() {
+        val vm = newViewModel()
+        vm.navigateToDimmerRuleConfig(ruleId = "d1", fromTab = MainTab.DIMMER, cameFromSettingsList = true)
+        vm.navigateBackFrom(vm.navigationState.value)
+        assertEquals(NavigationState.DimmerSettings(MainTab.DIMMER), vm.navigationState.value)
+    }
+
+    @Test
+    fun `Dimmer-Regel ohne Listen-Pfad fuehrt zurueck zum Tab`() {
+        val vm = newViewModel()
+        vm.navigateToDimmerRuleConfig(fromTab = MainTab.DIMMER, cameFromSettingsList = false)
+        vm.navigateBackFrom(vm.navigationState.value)
+        assertEquals(NavigationState.MainContent(MainTab.DIMMER), vm.navigationState.value)
+    }
+
+    @Test
+    fun `navigateBackToMain loest den Rueckweg der Regel-Editoren genauso auf wie navigateBackFrom`() {
+        // Eine Aufloesung, zwei Eingaenge: System-Zurueck und die Screen-Lambdas duerfen fuer
+        // denselben Einstiegspfad nie verschiedene Ziele kennen.
+        val faelle = listOf(
+            NavigationState.HueRuleConfig("r1", MainTab.HUE, cameFromSettingsList = true),
+            NavigationState.HueRuleConfig(null, MainTab.HUE, cameFromSettingsList = false),
+            NavigationState.DimmerRuleConfig("d1", MainTab.DIMMER, cameFromSettingsList = true),
+            NavigationState.DimmerRuleConfig(null, MainTab.DIMMER, cameFromSettingsList = false)
+        )
+        for (fall in faelle) {
+            val ueberUebergebenen = newViewModel()
+            ueberUebergebenen.navigateBackFrom(fall)
+            val erwartet = ueberUebergebenen.navigationState.value
+
+            val vm = newViewModel()
+            when (fall) {
+                is NavigationState.HueRuleConfig ->
+                    vm.navigateToHueRuleConfig(fall.ruleId, fall.returnToTab, fall.cameFromSettingsList)
+                is NavigationState.DimmerRuleConfig ->
+                    vm.navigateToDimmerRuleConfig(fall.ruleId, fall.returnToTab, fall.cameFromSettingsList)
+                else -> error("unerwarteter Fall $fall")
+            }
+            vm.navigateBackToMain()
+            assertEquals("Rueckweg aus $fall", erwartet, vm.navigationState.value)
+        }
+    }
+
+    @Test
+    fun `zweites Speichern nach bereits erfolgtem Rueckweg fuehrt wieder zum selben Ziel`() {
+        // Die Screen-Lambdas uebergeben den GERENDERTEN Zustand. Ein zweiter Tipp, nachdem der
+        // Zustand schon auf HueSettings gewechselt hat, darf nicht von dort aus weiter
+        // "zurueck" nach MainContent springen.
+        val vm = newViewModel()
+        vm.navigateToHueRuleConfig(ruleId = "r1", fromTab = MainTab.HUE, cameFromSettingsList = true)
+        val gerendert = vm.navigationState.value
+        vm.navigateBackFrom(gerendert)
+        vm.navigateBackFrom(gerendert)
+        assertEquals(NavigationState.HueSettings(MainTab.HUE), vm.navigationState.value)
     }
 
     @Test

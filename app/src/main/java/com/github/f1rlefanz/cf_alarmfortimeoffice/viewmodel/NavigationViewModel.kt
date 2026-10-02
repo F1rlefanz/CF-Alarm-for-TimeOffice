@@ -1,6 +1,7 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel
 
 import androidx.lifecycle.ViewModel
+import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.GateSchritt
 import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.MainTab
 import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.NavigationAction
 import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.NavigationState
@@ -96,46 +97,8 @@ class NavigationViewModel @Inject constructor() : ViewModel() {
                 NavigationState.DndSettings(action.fromTab)
             }
 
-            is NavigationAction.NavigateBackToMain -> {
-                // HueRuleConfig/DimmerRuleConfig haben zwei Einstiegspfade (siehe
-                // cameFromSettingsList) - ein "zurueck" waehrend dieser Zustaende darf NICHT
-                // blind zu MainContent aufloesen, sonst ueberspringt der Listen-Pfad
-                // HueSettings/DimmerSettings. MainScreen behandelt beide Zustaende zwar bereits
-                // ueber eigene BackHandler-Faelle statt hierueber, aber diese Aufloesung bleibt
-                // als Fail-Safe korrekt, falls je ein weiterer Aufrufer navigateBackToMain()
-                // aus einem dieser Zustaende heraus ruft.
-                if (currentState is NavigationState.HueRuleConfig && currentState.cameFromSettingsList) {
-                    Logger.d(LogTags.NAVIGATION, "-> Hue Settings (${currentState.returnToTab} tab, via settings list)")
-                    return handleNavigationAction(
-                        NavigationAction.NavigateToHueSettings(currentState.returnToTab)
-                    )
-                }
-                if (currentState is NavigationState.DimmerRuleConfig && currentState.cameFromSettingsList) {
-                    Logger.d(LogTags.NAVIGATION, "-> Dimmer Settings (${currentState.returnToTab} tab, via settings list)")
-                    return handleNavigationAction(
-                        NavigationAction.NavigateToDimmerSettings(currentState.returnToTab)
-                    )
-                }
-                val returnTab = when (currentState) {
-                    is NavigationState.CalendarSelection -> currentState.returnToTab
-                    is NavigationState.ShiftConfig -> currentState.returnToTab
-                    is NavigationState.EventList -> currentState.returnToTab
-                    is NavigationState.BatteryExemption -> currentState.returnToTab
-                    is NavigationState.UnusedAppRestrictions -> currentState.returnToTab
-                    is NavigationState.TimeOfficeHealthCheck -> currentState.returnToTab
-                    is NavigationState.OEMWarning -> currentState.returnToTab
-                    is NavigationState.HueRuleConfig -> currentState.returnToTab
-                    is NavigationState.HueSettings -> currentState.returnToTab
-                    is NavigationState.DimmerSettings -> currentState.returnToTab
-                    is NavigationState.DimmerRuleConfig -> currentState.returnToTab
-                    is NavigationState.DimmerPreview -> currentState.returnToTab
-                    is NavigationState.DndSettings -> currentState.returnToTab
-                    else -> MainTab.HOME
-                }
-                Logger.d(LogTags.NAVIGATION, "-> Main ($returnTab tab)")
-                NavigationState.MainContent(returnTab)
-            }
-            
+            is NavigationAction.NavigateBackToMain -> rueckwegZiel(currentState)
+
             is NavigationAction.NavigateToMainWithTab -> {
                 Logger.d(LogTags.NAVIGATION, "-> Main (${action.tab} tab)")
                 NavigationState.MainContent(action.tab)
@@ -207,6 +170,55 @@ class NavigationViewModel @Inject constructor() : ViewModel() {
 
     fun navigateBackToMain() =
         handleNavigationAction(NavigationAction.NavigateBackToMain)
+
+    /**
+     * Zurueck aus [state] - die EINZIGE Aufloesung des Rueckwegs. System-Zurueck (`BackHandler`
+     * in `MainScreen`), der Zurueck-Pfeil der Regel-Editoren und deren "Speichern" rufen alle
+     * hierher; [navigateBackToMain] delegiert mit dem aktuellen Zustand.
+     *
+     * Bis Issue #132 stand der Rueckweg aus `HueRuleConfig`/`DimmerRuleConfig` DREIMAL im Code
+     * (BackHandler, zwei Screen-Lambdas, hier) - mit genau der Gefahr, die v1.22.0 schon einmal
+     * eingeholt hat: zwei Stellen, die fuer denselben Einstiegspfad verschiedene Ziele kennen.
+     *
+     * Warum der Zustand uebergeben wird statt immer den aktuellen zu nehmen: ein zweiter Tipp auf
+     * "Speichern", nachdem der Zustand schon gewechselt hat, fuehrt so wieder zum selben Ziel
+     * (idempotent) - genau wie die frueheren Closures ueber den gerenderten Zustand.
+     */
+    fun navigateBackFrom(state: NavigationState) {
+        _navigationState.value = rueckwegZiel(state)
+    }
+
+    private fun rueckwegZiel(state: NavigationState): NavigationState {
+        // HueRuleConfig/DimmerRuleConfig haben zwei Einstiegspfade (siehe cameFromSettingsList) -
+        // ein Zurueck darf hier NICHT blind zu MainContent aufloesen, sonst ueberspringt der
+        // Listen-Pfad HueSettings/DimmerSettings.
+        if (state is NavigationState.HueRuleConfig && state.cameFromSettingsList) {
+            Logger.d(LogTags.NAVIGATION, "-> Hue Settings (${state.returnToTab} tab, via settings list)")
+            return NavigationState.HueSettings(state.returnToTab)
+        }
+        if (state is NavigationState.DimmerRuleConfig && state.cameFromSettingsList) {
+            Logger.d(LogTags.NAVIGATION, "-> Dimmer Settings (${state.returnToTab} tab, via settings list)")
+            return NavigationState.DimmerSettings(state.returnToTab)
+        }
+        val returnTab = when (state) {
+            is NavigationState.CalendarSelection -> state.returnToTab
+            is NavigationState.ShiftConfig -> state.returnToTab
+            is NavigationState.EventList -> state.returnToTab
+            is NavigationState.BatteryExemption -> state.returnToTab
+            is NavigationState.UnusedAppRestrictions -> state.returnToTab
+            is NavigationState.TimeOfficeHealthCheck -> state.returnToTab
+            is NavigationState.OEMWarning -> state.returnToTab
+            is NavigationState.HueRuleConfig -> state.returnToTab
+            is NavigationState.HueSettings -> state.returnToTab
+            is NavigationState.DimmerSettings -> state.returnToTab
+            is NavigationState.DimmerRuleConfig -> state.returnToTab
+            is NavigationState.DimmerPreview -> state.returnToTab
+            is NavigationState.DndSettings -> state.returnToTab
+            else -> MainTab.HOME
+        }
+        Logger.d(LogTags.NAVIGATION, "-> Main ($returnTab tab)")
+        return NavigationState.MainContent(returnTab)
+    }
     
     fun navigateToMainWithTab(tab: MainTab) = 
         handleNavigationAction(NavigationAction.NavigateToMainWithTab(tab))
@@ -215,52 +227,51 @@ class NavigationViewModel @Inject constructor() : ViewModel() {
         handleNavigationAction(NavigationAction.ChangeTab(tab))
     
     // Battery-Prompt: Der Nutzer kann den Akku-Ausnahme-Screen mit "Spaeter" ueberspringen.
-    // Das Dismiss-Flag ist DataStore-persistiert (BatteryOptimizationHelper.isDismissed/
-    // setDismissed) - Aufrufer (MainScreen) reichen den aktuellen Wert an
-    // handleAuthenticationSuccess durch, damit dieses ViewModel Android-frei bleibt (bestehende
-    // Konvention: kein ViewModel im Projekt injiziert Context/DataStore direkt).
+    // Das Dismiss-Flag ist DataStore-persistiert (BatteryOptimizationHelper.isBatteryPromptDismissed/
+    // setBatteryPromptDismissed) und wird in MainScreen gelesen (leseGateLage) - dieses ViewModel bleibt
+    // Android-frei (bestehende Konvention: kein ViewModel im Projekt injiziert Context/DataStore
+    // direkt).
     fun dismissBatteryPrompt() {
         Logger.business(LogTags.NAVIGATION, "Battery-Prompt vom Nutzer uebersprungen (Spaeter) -> Home")
         navigateToMainWithTab(MainTab.HOME)
     }
 
-    // Auto-navigation logic
-    fun handleAuthenticationSuccess(
-        hasSelectedCalendars: Boolean,
-        hasBatteryExemption: Boolean,
-        batteryPromptDismissed: Boolean,
-        needsUnusedAppRestrictionsPrompt: Boolean,
-        needsTimeOfficeHealthPrompt: Boolean
-    ) {
-        // Die Gates sind eine KETTE, und weitergehen darf sie, sobald das Akku-Gate ERLEDIGT ist -
-        // erledigt heisst: Ausnahme erteilt ODER vom Nutzer mit "Spaeter" abgelehnt.
-        //
-        // Vorher verlangten die Zweige 3 und 4 beide `hasBatteryExemption`. Wer "Spaeter" tippte
-        // (ein ausdruecklich vorgesehener, persistierter Weg), fiel damit aus JEDEM Zweig heraus:
-        // Zweig 2 war durch das Dismissed-Flag aus, Zweig 3 und 4 durch die fehlende Ausnahme -
-        // und `proceedPastGates()` erreicht diesen Nutzer nie wieder. Der Schritt "App bei
-        // Nichtnutzung pausieren" wurde ihm dadurch NIE angeboten, obwohl genau dieser
-        // Android-Schalter die App am 20.07.2026 nachweislich force-gestoppt und dabei alle
-        // AlarmManager-Alarme geloescht hat. Das Akku-Gate abzulehnen ist eine Aussage ueber die
-        // Akku-Ausnahme, keine ueber die beiden davon unabhaengigen Gates dahinter.
-        val batteryGateResolved = hasBatteryExemption || batteryPromptDismissed
-
-        if (!hasSelectedCalendars && _navigationState.value.isMainContent()) {
-            Logger.i(LogTags.NAVIGATION, "Auto-navigation: User authenticated but no calendars selected")
-            navigateToCalendarSelection()
-        } else if (hasSelectedCalendars && !batteryGateResolved && _navigationState.value.isMainContent()) {
-            Logger.i(LogTags.NAVIGATION, "Auto-navigation: Calendars selected but no battery exemption")
-            navigateToBatteryExemption()
-        } else if (hasSelectedCalendars && batteryGateResolved && needsUnusedAppRestrictionsPrompt && _navigationState.value.isMainContent()) {
-            Logger.i(LogTags.NAVIGATION, "Auto-navigation: Battery gate resolved but unused-app restrictions still active")
-            navigateToUnusedAppRestrictions()
-        } else if (hasSelectedCalendars && batteryGateResolved && !needsUnusedAppRestrictionsPrompt && needsTimeOfficeHealthPrompt && _navigationState.value.isMainContent()) {
-            // Vierter/letzter Gate-Zweig: dieselbe Pruefung, die proceedPastGates() (MainScreen)
-            // beim Zurueckkehren von den vorherigen Gates ohnehin anstellt - hier zusaetzlich
-            // fuer Nutzer noetig, die die drei vorherigen Gates schon VOR diesem Feature
-            // durchlaufen hatten und darum nie wieder durch proceedPastGates() liefen.
-            Logger.i(LogTags.NAVIGATION, "Auto-navigation: Battery/Unused-App gates cleared but TimeOffice health check still needed")
-            navigateToTimeOfficeHealthCheck()
+    /**
+     * Automatischer Gate-Schritt bei jedem App-Vordergrund. WELCHER Schritt dran ist, entscheidet
+     * `naechsterGateSchritt(lage, GateEinstieg.AUTO)` in `navigation/OnboardingGates.kt` (dort
+     * auch, warum "Spaeter" beim Akku-Gate ERLEDIGT heisst); hier wird nur noch navigiert.
+     *
+     * Der Waechter bleibt HIER: navigiert wird nur aus `MainContent` heraus - nie aus einem
+     * bereits offenen Screen weg (etwa waehrend der Nutzer gerade in der Schichtkonfiguration
+     * ist). Er prueft den Zustand zum Zeitpunkt der Navigation, nicht zum Zeitpunkt des Lesens.
+     *
+     * `GateEinstieg.AUTO` liefert nie [GateSchritt.Oem] oder [GateSchritt.Fertig]: den
+     * OEM-Hinweis gibt es nur auf den aktiven Wegen in `MainScreen`, und die Wartungskette stellt
+     * der Eintritt in `MainContent`. Beide bleiben hier ohne Wirkung.
+     */
+    fun handleAuthenticationSuccess(schritt: GateSchritt) {
+        if (!_navigationState.value.isMainContent()) return
+        when (schritt) {
+            GateSchritt.Kalender -> {
+                Logger.i(LogTags.NAVIGATION, "Auto-navigation: User authenticated but no calendars selected")
+                navigateToCalendarSelection()
+            }
+            GateSchritt.Akku -> {
+                Logger.i(LogTags.NAVIGATION, "Auto-navigation: Calendars selected but no battery exemption")
+                navigateToBatteryExemption()
+            }
+            GateSchritt.Unused -> {
+                Logger.i(LogTags.NAVIGATION, "Auto-navigation: Battery gate resolved but unused-app restrictions still active")
+                navigateToUnusedAppRestrictions()
+            }
+            GateSchritt.TimeOffice -> {
+                // Letzter automatischer Gate-Zweig - noetig fuer Nutzer, die die vorherigen Gates
+                // schon VOR diesem Feature durchlaufen hatten und darum nie wieder ueber den
+                // aktiven Weg (GateEinstieg.NACH_EINSTELLUNGEN) hierher kamen.
+                Logger.i(LogTags.NAVIGATION, "Auto-navigation: Battery/Unused-App gates cleared but TimeOffice health check still needed")
+                navigateToTimeOfficeHealthCheck()
+            }
+            is GateSchritt.Oem, GateSchritt.Fertig, GateSchritt.Nichts -> Unit
         }
     }
 }

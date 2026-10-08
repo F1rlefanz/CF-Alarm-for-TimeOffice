@@ -1,4 +1,6 @@
 /* CF-Alarm – Website. Farben wie in der App (ui/theme/Color.kt). */
+/* GitHub Pages laesst Browser diese Datei 10 min cachen: nach jeder Aenderung die Marke
+   `main.css?v=…` in ALLEN docs/*.html anheben, sonst sehen Besucher neues HTML mit alter CSS. */
 
 :root {
   --brand: #e2001a;

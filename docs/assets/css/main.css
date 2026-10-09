@@ -318,7 +318,8 @@ a:hover {
 
 .band-grund {
   background: var(--zone-a2);
-  padding: 28px 0;
+  /* Das um 1,5 Grad gedrehte Band steigt nach rechts um ~1,3 % der Breite an */
+  padding: max(28px, 1.6vw) 0;
   overflow: hidden;
 }
 
@@ -757,14 +758,19 @@ blockquote p {
 .dienstband-spur {
   display: flex;
   width: max-content;
-  animation: band-laeuft 44s linear infinite;
+  /* Vier Runden je Durchlauf: 176 s = 44 s pro Runde, also gemaechlich */
+  animation: band-laeuft 176s linear infinite;
+}
+
+.dienstband-gruppe {
+  display: flex;
 }
 
 .dienstband:hover .dienstband-spur {
   animation-play-state: paused;
 }
 
-.dienstband-spur span {
+.dienstband-gruppe > span {
   white-space: nowrap;
   padding-right: 48px;
 }
@@ -1221,9 +1227,8 @@ p.weckruf-zahl {
     animation: none;
   }
 
-  .dienstband-spur [aria-hidden="true"] {
-    display: none;
-  }
+  /* Die Wiederholungen bleiben sichtbar: Das stehende Band soll trotzdem
+     ueber die ganze Breite voller Dienste sein, statt mittendrin zu enden. */
 }
 
 /* ---------- Druck ---------- */

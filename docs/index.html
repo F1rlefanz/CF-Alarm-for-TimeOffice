@@ -6,6 +6,8 @@
     <meta name="description" content="CF-Alarm stellt Wecker für den Schichtdienst automatisch aus dem Dienstplan im Google Kalender – mit Schicht-Dimmer, „Nicht stören“-Automatik und Philips Hue.">
     <meta name="google-site-verification" content="_kGhd-xlvoFns825LYmcj9gd7SuiqzHc5F8urKdvr1I" />
     <title>CF-Alarm – Wecker aus dem Dienstplan</title>
+    <script src="assets/js/theme.js"></script>
+    <link rel="preload" href="assets/fonts/anton-latin.woff2" as="font" type="font/woff2" crossorigin>
     <link rel="stylesheet" href="assets/css/main.css">
     <link rel="icon" type="image/png" sizes="32x32" href="assets/img/favicon-32.png">
     <link rel="apple-touch-icon" href="assets/img/apple-touch-icon.png">
@@ -34,7 +36,7 @@
     }
     </script>
 </head>
-<body>
+<body class="start">
     <a href="#main-content" class="skip-link">Zum Inhalt springen</a>
 
     <header class="site-header">
@@ -47,122 +49,212 @@
                 <a href="changelog.html">Changelog</a>
                 <a href="privacy.html">Datenschutz</a>
             </nav>
+            <button type="button" class="ansicht-schalter" hidden>
+                <svg class="symbol-mond" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"/></svg>
+                <svg class="symbol-sonne" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true" hidden><circle cx="12" cy="12" r="4.5"/><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8"/></svg>
+                <span class="ansicht-name">Tag</span>
+            </button>
         </div>
     </header>
 
-    <main id="main-content" class="container">
-        <section class="hero">
-            <div>
-                <span class="badge">Im Test · Android 8.0 oder neuer</span>
-                <h1>Wecker aus deinem Dienstplan</h1>
-                <p>CF-Alarm liest den Dienstplan in deinem Google Kalender und stellt dir für jede Schicht den passenden Wecker. Ändert sich der Plan, zieht der Wecker nach – du musst nichts abtippen.</p>
-                <p>Gemacht für den Schichtdienst, zum Beispiel in der Pflege: Wer seinen Dienstplan über <strong>TimeOffice</strong> in den Google Kalender bekommt, ist hier richtig.</p>
-                <div class="button-row">
-                    <a class="button primary" href="advanced-setup.html">Zur Anleitung</a>
-                    <a class="button" href="#mitmachen">Am Test teilnehmen</a>
+    <main id="main-content">
+        <section class="zone zone-a">
+            <div class="container hero">
+                <div>
+                    <p class="badge">Im Test · Android 8.0 oder neuer</p>
+                    <h1>Dein Dienstplan weckt dich.</h1>
+                    <p class="hero-text">CF-Alarm liest den Dienstplan in deinem Google Kalender und stellt dir für jede Schicht den passenden Wecker. Ändert sich der Plan, zieht der Wecker nach – du musst nichts abtippen.</p>
+                    <p class="hero-text">Gemacht für den Schichtdienst, zum Beispiel in der Pflege: Wer seinen Dienstplan über <strong>TimeOffice</strong> in den Google Kalender bekommt, ist hier richtig.</p>
+                    <div class="button-row">
+                        <a class="button primary" href="#mitmachen">Am Test teilnehmen</a>
+                        <a class="button" href="advanced-setup.html">Zur Anleitung</a>
+                    </div>
                 </div>
-            </div>
-            <img class="hero-shot" src="assets/img/screen-uebersicht.webp" width="540" height="960" alt="Übersicht der App: nächste Schicht, Alarm-Status und Kalender-Abgleich">
-        </section>
-
-        <section class="content-card">
-            <h2>Im Video</h2>
-            <div class="video-grid">
-                <figure>
-                    <video controls playsinline preload="none" width="1920" height="1080" poster="assets/video/launch-poster.webp">
-                        <source src="assets/video/cf-alarm-launch.mp4" type="video/mp4">
-                        <a href="assets/video/cf-alarm-launch.mp4">Video herunterladen</a>
-                    </video>
-                    <figcaption>CF-Alarm in anderthalb Minuten</figcaption>
-                </figure>
-                <figure>
-                    <video class="video-portrait" controls playsinline preload="none" width="1080" height="1920" poster="assets/video/teaser-poster.webp">
-                        <source src="assets/video/cf-alarm-teaser.mp4" type="video/mp4">
-                        <a href="assets/video/cf-alarm-teaser.mp4">Video herunterladen</a>
-                    </video>
-                    <figcaption>Kurz: 15 Sekunden</figcaption>
-                </figure>
+                <img class="hero-shot" src="assets/img/screen-uebersicht.webp" width="540" height="960" alt="Übersicht der App: nächste Schicht, Alarm-Status und Kalender-Abgleich">
             </div>
         </section>
 
-        <section class="content-card">
-            <h2>So funktioniert es</h2>
-            <ol class="steps">
-                <li><strong>Dein Dienstplan steht im Google Kalender</strong> – zum Beispiel, weil TimeOffice ihn dort einträgt. Jeder Dienst ist ein Termin, im Titel steht sein Kürzel, etwa „F“ oder „Frühdienst“.</li>
-                <li><strong>CF-Alarm erkennt die Schichten an diesen Kürzeln.</strong> Jeder Schichttyp hat eine eigene Weckzeit. Kürzel, die die App noch nicht kennt, schlägt sie dir zum Zuordnen vor – geraten wird nichts.</li>
-                <li><strong>Die Wecker stellen sich selbst</strong> – für so viele Tage im Voraus, wie du einstellst (7 bis 90). Im Hintergrund gleicht die App regelmäßig ab und drei Stunden vor jedem Wecker noch einmal.</li>
-            </ol>
-            <p>CF-Alarm erkennt <strong>Schichten</strong>, keine beliebigen Termine. Für einen Kalender mit Arztterminen und Geburtstagen ist sie nicht gedacht.</p>
+        <div class="band-grund">
+            <div class="dienstband" role="img" aria-label="Beispiel-Dienstplan: Frühdienst mit Wecker um 5 Uhr, Spätdienst mit Wecker um 12:15 Uhr, Nachtdienst mit Wecker um 19:30 Uhr, freie Tage ohne Wecker">
+                <div class="dienstband-spur">
+                    <span>MO F 05:00</span><span>DI F 05:00</span><span>MI S 12:15</span><span>DO S 12:15</span><span class="frei">FR frei</span><span class="frei">SA frei</span><span>SO N 19:30</span><span>MO N 19:30</span><span class="frei">DI frei</span>
+                    <span aria-hidden="true">MO F 05:00</span><span aria-hidden="true">DI F 05:00</span><span aria-hidden="true">MI S 12:15</span><span aria-hidden="true">DO S 12:15</span><span class="frei" aria-hidden="true">FR frei</span><span class="frei" aria-hidden="true">SA frei</span><span aria-hidden="true">SO N 19:30</span><span aria-hidden="true">MO N 19:30</span><span class="frei" aria-hidden="true">DI frei</span>
+                </div>
+            </div>
+        </div>
+
+        <section class="zone zone-b abschnitt" id="so-gehts" aria-labelledby="titel-ablauf">
+            <div class="container">
+                <h2 class="zwischentitel" id="titel-ablauf">So funktioniert es</h2>
+                <ol class="ablauf">
+                    <li>
+                        <h3>Dein Dienstplan steht im Google Kalender</h3>
+                        <p>Zum Beispiel, weil TimeOffice ihn dort einträgt. Jeder Dienst ist ein Termin, im Titel steht sein Kürzel, etwa „F“ oder „Frühdienst“.</p>
+                    </li>
+                    <li>
+                        <h3>CF-Alarm erkennt die Schichten an diesen Kürzeln</h3>
+                        <p>Jeder Schichttyp hat eine eigene Weckzeit. Kürzel, die die App noch nicht kennt, schlägt sie dir zum Zuordnen vor – geraten wird nichts.</p>
+                    </li>
+                    <li>
+                        <h3>Die Wecker stellen sich selbst</h3>
+                        <p>Für so viele Tage im Voraus, wie du einstellst (7 bis 90). Im Hintergrund gleicht die App regelmäßig ab und drei Stunden vor jedem Wecker noch einmal.</p>
+                    </li>
+                </ol>
+                <p class="randnotiz">CF-Alarm erkennt <strong>Schichten</strong>, keine beliebigen Termine. Für einen Kalender mit Arztterminen und Geburtstagen ist sie nicht gedacht.</p>
+            </div>
         </section>
 
-        <section class="content-card">
-            <h2>Was die App kann</h2>
-            <div class="feature-grid">
-                <div>
-                    <h3>⏰ Wecken</h3>
-                    <ul>
-                        <li>Automatische Wecker je Schichttyp, mit Kürzel-Vorschlägen aus deinem echten Kalender</li>
-                        <li><strong>Überspringen</strong> lässt den nächsten Wecker einmal aus, <strong>Tag freigeben</strong> streicht einen ausgefallenen Dienst</li>
-                        <li><strong>Manueller Alarm</strong> für Tage, die nicht im Plan stehen</li>
-                        <li>Schlummer-Dauer wählbar, auf Wunsch <strong>sanft lauter werdender</strong> Weckton</li>
-                        <li><strong>Stille Schicht</strong>: kein Weckton, aber Dimmen und „Nicht stören“ richten sich trotzdem nach ihr</li>
-                        <li>Hinweis, wenn eine Schicht dazukommt, sich verschiebt oder wegfällt</li>
-                    </ul>
+        <section class="zone zone-c abschnitt" aria-labelledby="titel-nacht">
+            <div class="container">
+                <h2 class="zwischentitel" id="titel-nacht">Eine Nacht vor dem Frühdienst</h2>
+                <p>Ein Beispiel mit Dienstbeginn um 6 Uhr. Alle Uhrzeiten stellst du in der App selbst ein, je Schichttyp.</p>
+
+                <div class="nacht-zeile">
+                    <p class="uhrzeit z1">21:30</p>
+                    <div class="nacht-text">
+                        <div>
+                            <h3>Der Bildschirm wird dunkler.</h3>
+                            <p>Der <strong>Schicht-Dimmer</strong> dunkelt den Bildschirm zu deinen Schlafzeiten ab, über Regeln je Schicht – mit Vorlagen wie „Nacht-Dimmen“ und „Nachtdienst-Rhythmus“.</p>
+                        </div>
+                        <img src="assets/img/screen-schicht-dimmer.webp" width="540" height="960" loading="lazy" alt="Dimm-Regeln mit Vorlagen">
+                    </div>
                 </div>
-                <div>
-                    <h3>🌙 Ruhe</h3>
-                    <ul>
-                        <li><strong>Schicht-Dimmer</strong>: dunkelt den Bildschirm zu deinen Schlafzeiten ab, über Regeln je Schicht – mit Vorlagen wie „Nacht-Dimmen“ und „Nachtdienst-Rhythmus“</li>
-                        <li><strong>„Nicht stören“ automatisch</strong> (ab Android 11): während der Schlafzeit oder der Dienstzeit, was stumm bleibt, entscheidest du</li>
-                        <li><strong>Rufbereitschaft</strong>: an solchen Tagen endet „Nicht stören“ zu einer festen Uhrzeit, und die App schaut stündlich in den Kalender</li>
-                    </ul>
+
+                <div class="nacht-zeile">
+                    <p class="uhrzeit z2">22:00</p>
+                    <div class="nacht-text">
+                        <div>
+                            <h3>„Nicht stören“ geht an.</h3>
+                            <p>Automatisch ab Android 11: während der Schlafzeit oder der Dienstzeit. Was stumm bleibt, entscheidest du. Bei <strong>Rufbereitschaft</strong> endet „Nicht stören“ zu einer festen Uhrzeit, und die App schaut stündlich in den Kalender.</p>
+                        </div>
+                    </div>
                 </div>
-                <div>
-                    <h3>💡 Licht</h3>
-                    <ul>
-                        <li><strong>Philips Hue</strong>: eine Szene aus deiner Hue-App, eigene Farben oder ein langsamer Sonnenaufgang – je Schichttyp</li>
-                        <li>Das automatische Ausschalten liegt auf der Bridge und greift auch, wenn du schon aus dem Haus bist</li>
-                    </ul>
-                </div>
-                <div>
-                    <h3>✅ Verlässlichkeit</h3>
-                    <ul>
-                        <li>Der <strong>System-Status</strong> zeigt, was einen Wecker verhindern kann, und führt zur passenden Einstellung</li>
-                        <li>Nach Neustart und Update stellt die App ihre Wecker selbst wieder her</li>
-                        <li><strong>Hintergrunddienste pausieren</strong>: ein Schalter für längere Abwesenheit</li>
-                        <li>Einstellungen als Datei sichern und einspielen; auf einem neuen Handy meldet die App dich ab Android 9 selbst wieder an</li>
-                    </ul>
+
+                <div class="nacht-zeile">
+                    <p class="uhrzeit z3 voll">04:30</p>
+                    <div class="nacht-text">
+                        <div>
+                            <h3>Im Zimmer wird es hell.</h3>
+                            <p>Mit <strong>Philips Hue</strong>: eine Szene aus deiner Hue-App, eigene Farben oder ein langsamer Sonnenaufgang – je Schichttyp. Das Ausschalten liegt auf der Bridge und greift auch, wenn du schon aus dem Haus bist.</p>
+                        </div>
+                        <img class="links" src="assets/img/screen-philips-hue.webp" width="540" height="960" loading="lazy" alt="Philips-Hue-Bereich mit einer Sonnenaufgangs-Regel">
+                    </div>
                 </div>
             </div>
         </section>
 
-        <section class="content-card">
-            <h2>Einblicke</h2>
-            <ul class="gallery">
-                <li><figure><img src="assets/img/screen-wecker.webp" width="540" height="960" loading="lazy" alt="Wecker-Bereich mit Überspringen und Tag freigeben"><figcaption>Wecker</figcaption></figure></li>
-                <li><figure><img src="assets/img/screen-schichttypen.webp" width="540" height="960" loading="lazy" alt="Schichttypen mit Weckzeit und einer Zeile, was jede Schicht auslöst"><figcaption>Schichttypen</figcaption></figure></li>
-                <li><figure><img src="assets/img/screen-schicht-dimmer.webp" width="540" height="960" loading="lazy" alt="Dimm-Regeln mit Vorlagen"><figcaption>Schicht-Dimmer</figcaption></figure></li>
-                <li><figure><img src="assets/img/screen-philips-hue.webp" width="540" height="960" loading="lazy" alt="Philips-Hue-Bereich mit einer Sonnenaufgangs-Regel"><figcaption>Philips Hue</figcaption></figure></li>
-                <li><figure><img src="assets/img/screen-vollbild-wecker.webp" width="540" height="960" loading="lazy" alt="Weckbildschirm mit Alarm stoppen und Schlummern"><figcaption>Weckbildschirm</figcaption></figure></li>
-            </ul>
+        <section class="zone zone-d" aria-labelledby="titel-weckruf">
+            <div class="container weckruf">
+                <img class="weckruf-handy" src="assets/img/screen-vollbild-wecker.webp" width="540" height="960" loading="lazy" alt="Weckbildschirm mit Alarm stoppen und Schlummern">
+                <p class="weckruf-zahl" aria-hidden="true">05:00</p>
+                <div class="weckruf-text">
+                    <h2 id="titel-weckruf">Der Wecker klingelt.</h2>
+                    <p>Im Vollbild, auch bei gesperrtem Handy. Stand gestern Abend noch ein Spätdienst im Plan, hätte sich der Wecker von selbst verschoben – und an freien Tagen bleibt es still.</p>
+                </div>
+            </div>
         </section>
 
-        <section class="content-card">
-            <h2>Daten und Datenschutz</h2>
-            <ul>
-                <li>Die App <strong>liest</strong> deinen Kalender nur – sie ändert und löscht nichts darin.</li>
-                <li>Keine Werbung, keine Analyse-Dienste, keine eigenen Server.</li>
-                <li>Auf dem Gerät gespeichert werden die erkannten Schichten mit ihren Uhrzeiten, keine Termininhalte. Der Zugang zum Google-Konto liegt verschlüsselt auf dem Gerät.</li>
-            </ul>
-            <p>Alles Weitere steht in der <a href="privacy.html">Datenschutzerklärung</a>.</p>
-        </section>
+        <div class="zone zone-e" aria-hidden="true"></div>
 
-        <section class="content-card" id="mitmachen">
-            <h2>Am Test teilnehmen</h2>
-            <p>CF-Alarm wird von einer Einzelperson in der Freizeit entwickelt und ist noch nicht öffentlich im Play Store. Wer mittesten möchte, schreibt eine kurze Nachricht an <a href="mailto:cfischer@csj.de">cfischer@csj.de</a> und bekommt einen Link für den Testzugang bei Google Play.</p>
-            <p><strong>Das brauchst du:</strong> ein Android-Handy ab Version 8.0, ein Google-Konto mit einem Kalender, in dem deine Dienste stehen, und für die Lichtsteuerung eine Philips Hue Bridge im selben WLAN.</p>
-            <p>Probleme und Wünsche gehen am einfachsten direkt aus der App: <strong>System-Status</strong> → Karte „Debug-Informationen“ → <strong>„Logs an Entwickler senden“</strong>. Mehr dazu unter <a href="troubleshooting.html">Hilfe</a>.</p>
-        </section>
+        <div class="zone zone-f">
+            <section class="abschnitt container" id="funktionen" aria-labelledby="titel-kann">
+                <h2 class="grosstitel" id="titel-kann">Was die App kann</h2>
+                <div class="faehigkeiten">
+                    <div class="faehigkeit">
+                        <h3>Wecken</h3>
+                        <ul>
+                            <li>Automatische Wecker je Schichttyp, mit Kürzel-Vorschlägen aus deinem echten Kalender</li>
+                            <li><strong>Überspringen</strong> lässt den nächsten Wecker einmal aus, <strong>Tag freigeben</strong> streicht einen ausgefallenen Dienst</li>
+                            <li><strong>Manueller Alarm</strong> für Tage, die nicht im Plan stehen</li>
+                            <li>Schlummer-Dauer wählbar, auf Wunsch <strong>sanft lauter werdender</strong> Weckton</li>
+                            <li><strong>Stille Schicht</strong>: kein Weckton, aber Dimmen und „Nicht stören“ richten sich trotzdem nach ihr</li>
+                            <li>Hinweis, wenn eine Schicht dazukommt, sich verschiebt oder wegfällt</li>
+                        </ul>
+                    </div>
+                    <div class="faehigkeit">
+                        <h3>Ruhe</h3>
+                        <ul>
+                            <li><strong>Schicht-Dimmer</strong>: dunkelt den Bildschirm zu deinen Schlafzeiten ab, über Regeln je Schicht – mit Vorlagen wie „Nacht-Dimmen“ und „Nachtdienst-Rhythmus“</li>
+                            <li><strong>„Nicht stören“ automatisch</strong> (ab Android 11): während der Schlafzeit oder der Dienstzeit, was stumm bleibt, entscheidest du</li>
+                            <li><strong>Rufbereitschaft</strong>: an solchen Tagen endet „Nicht stören“ zu einer festen Uhrzeit, und die App schaut stündlich in den Kalender</li>
+                        </ul>
+                    </div>
+                    <div class="faehigkeit">
+                        <h3>Licht</h3>
+                        <ul>
+                            <li><strong>Philips Hue</strong>: eine Szene aus deiner Hue-App, eigene Farben oder ein langsamer Sonnenaufgang – je Schichttyp</li>
+                            <li>Das automatische Ausschalten liegt auf der Bridge und greift auch, wenn du schon aus dem Haus bist</li>
+                        </ul>
+                    </div>
+                    <div class="faehigkeit">
+                        <h3>Verlässlich</h3>
+                        <ul>
+                            <li>Der <strong>System-Status</strong> zeigt, was einen Wecker verhindern kann, und führt zur passenden Einstellung</li>
+                            <li>Nach Neustart und Update stellt die App ihre Wecker selbst wieder her</li>
+                            <li><strong>Hintergrunddienste pausieren</strong>: ein Schalter für längere Abwesenheit</li>
+                            <li>Einstellungen als Datei sichern und einspielen; auf einem neuen Handy meldet die App dich ab Android 9 selbst wieder an</li>
+                        </ul>
+                    </div>
+                </div>
+            </section>
+
+            <section class="abschnitt container" aria-labelledby="titel-video">
+                <h2 class="grosstitel" id="titel-video">Im Video</h2>
+                <div class="video-grid">
+                    <figure>
+                        <video controls playsinline preload="none" width="1920" height="1080" poster="assets/video/launch-poster.webp">
+                            <source src="assets/video/cf-alarm-launch.mp4" type="video/mp4">
+                            <a href="assets/video/cf-alarm-launch.mp4">Video herunterladen</a>
+                        </video>
+                        <figcaption>CF-Alarm in anderthalb Minuten</figcaption>
+                    </figure>
+                    <figure>
+                        <video class="video-portrait" controls playsinline preload="none" width="1080" height="1920" poster="assets/video/teaser-poster.webp">
+                            <source src="assets/video/cf-alarm-teaser.mp4" type="video/mp4">
+                            <a href="assets/video/cf-alarm-teaser.mp4">Video herunterladen</a>
+                        </video>
+                        <figcaption>Kurz: 15 Sekunden</figcaption>
+                    </figure>
+                </div>
+            </section>
+
+            <section class="abschnitt container" aria-labelledby="titel-einblicke">
+                <h2 class="grosstitel" id="titel-einblicke">Einblicke</h2>
+                <p class="wisch-hinweis">Seitlich wischen oder scrollen, um alle Bildschirme zu sehen.</p>
+                <div class="galerie-rahmen" tabindex="0" role="region" aria-label="Bildschirme der App">
+                    <ul class="gallery">
+                        <li><figure><img src="assets/img/screen-wecker.webp" width="540" height="960" loading="lazy" alt="Wecker-Bereich mit Überspringen und Tag freigeben"><figcaption>Wecker</figcaption></figure></li>
+                        <li><figure><img src="assets/img/screen-schichttypen.webp" width="540" height="960" loading="lazy" alt="Schichttypen mit Weckzeit und einer Zeile, was jede Schicht auslöst"><figcaption>Schichttypen</figcaption></figure></li>
+                        <li><figure><img src="assets/img/screen-schicht-dimmer.webp" width="540" height="960" loading="lazy" alt="Dimm-Regeln mit Vorlagen"><figcaption>Schicht-Dimmer</figcaption></figure></li>
+                        <li><figure><img src="assets/img/screen-philips-hue.webp" width="540" height="960" loading="lazy" alt="Philips-Hue-Bereich mit einer Sonnenaufgangs-Regel"><figcaption>Philips Hue</figcaption></figure></li>
+                        <li><figure><img src="assets/img/screen-vollbild-wecker.webp" width="540" height="960" loading="lazy" alt="Weckbildschirm mit Alarm stoppen und Schlummern"><figcaption>Weckbildschirm</figcaption></figure></li>
+                    </ul>
+                </div>
+            </section>
+
+            <section class="abschnitt container" aria-labelledby="titel-daten">
+                <h2 class="grosstitel" id="titel-daten">Daten und Datenschutz</h2>
+                <ul class="daten-saetze">
+                    <li><strong>Liest nur.</strong> Die App liest deinen Kalender – sie ändert und löscht nichts darin.</li>
+                    <li><strong>Keine Werbung, keine Analyse.</strong> Keine Analyse-Dienste und keine eigenen Server.</li>
+                    <li><strong>Nur Schichten und Uhrzeiten.</strong> Gespeichert werden die erkannten Schichten mit ihren Uhrzeiten, keine Termininhalte. Der Zugang zum Google-Konto liegt verschlüsselt auf dem Gerät.</li>
+                </ul>
+                <p>Alles Weitere steht in der <a href="privacy.html">Datenschutzerklärung</a>.</p>
+            </section>
+
+            <section class="container" id="mitmachen" aria-labelledby="titel-mitmachen">
+                <div class="mitmachen">
+                    <div>
+                        <h2 id="titel-mitmachen">Am Test teilnehmen</h2>
+                        <p>CF-Alarm wird von einer Einzelperson in der Freizeit entwickelt und ist noch nicht öffentlich im Play Store. Wer mittesten möchte, schreibt eine kurze Nachricht an <a href="mailto:cfischer@csj.de">cfischer@csj.de</a> und bekommt einen Link für den Testzugang bei Google Play.</p>
+                        <p><strong>Das brauchst du:</strong> ein Android-Handy ab Version 8.0, ein Google-Konto mit einem Kalender, in dem deine Dienste stehen, und für die Lichtsteuerung eine Philips Hue Bridge im selben WLAN.</p>
+                        <p>Probleme und Wünsche gehen am einfachsten direkt aus der App: <strong>System-Status</strong> → Karte „Debug-Informationen“ → <strong>„Logs an Entwickler senden“</strong>. Mehr dazu unter <a href="troubleshooting.html">Hilfe</a>.</p>
+                    </div>
+                    <a class="button primary" href="mailto:cfischer@csj.de?subject=Testzugang%20CF-Alarm">Testzugang anfragen</a>
+                </div>
+            </section>
+
+        </div>
     </main>
 
     <footer class="site-footer">

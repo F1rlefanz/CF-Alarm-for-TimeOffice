@@ -316,6 +316,34 @@ a:hover {
   display: none;
 }
 
+.band-steuerung {
+  background: var(--zone-a2);
+  text-align: right;
+}
+
+/* Bewusst unauffaellig: gedaempfter Text ohne Rahmen, Touch-Flaeche trotzdem 44 px */
+.band-knopf {
+  min-height: 44px;
+  padding: 8px 4px;
+  border: 0;
+  background: none;
+  color: var(--hell-text-2);
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.band-knopf:hover {
+  color: var(--hell-text);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+.band-knopf[hidden] {
+  display: none;
+}
+
 .band-grund {
   background: var(--zone-a2);
   /* Das um 1,5 Grad gedrehte Band steigt nach rechts um ~1,3 % der Breite an */
@@ -1408,14 +1436,18 @@ p.weckruf-zahl {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .dienstband-spur,
   .uhrzeit,
   .weckruf-zahl {
     animation: none;
   }
 
-  /* Die eingeflochtenen Wecker stehen still da, ganz und unversehrt */
-  .wecker svg * {
+  /* Band und eingeflochtene Wecker stehen still da, ganz und unversehrt -
+     ausser jemand startet sie selbst mit dem Knopf darunter (.spielt). */
+  .band-grund:not(.spielt) .dienstband-spur {
+    animation: none;
+  }
+
+  .band-grund:not(.spielt) .wecker svg * {
     animation: none !important;
   }
 

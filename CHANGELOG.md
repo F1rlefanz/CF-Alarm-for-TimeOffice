@@ -27,7 +27,20 @@ Schreibkonventionen (der Generator verlässt sich darauf):
 - `### 🐛 Behoben` — Rubrik, mit Emoji wie bisher.
 - `- **Kurzfassung:** Erklärung` — ein Eintrag.
 
-## 🆕 Version 1.46.2 (Aktuell – interne Alpha)
+## 🆕 Version 1.47.0 (Aktuell – interne Alpha)
+
+**Stand:** Oktober 2026
+
+_Hilfe direkt in der App: Wer nicht weiterweiß, kommt mit einem Tipp zur passenden Anleitung – und nach einem Update steht da, was neu ist._
+
+### ✨ Neu
+
+- **„?“ oben rechts:** In der Übersicht, im Wecker, im Schicht-Dimmer, bei Philips Hue, bei den Schichttypen, der Kalenderauswahl und „Nicht stören“ führt das Fragezeichen genau zu dem Abschnitt der Anleitung, der diesen Bereich erklärt.
+- **„Mehr dazu“ bei Warnungen:** Meldet der System-Status ein Problem – etwa bei Akku-Ausnahme, „Nicht verwendete Apps“, Benachrichtigungen oder TimeOffice –, erklärt „Mehr dazu“, was dahintersteckt und was du tun kannst.
+- **Was ist neu:** Nach einem Update zeigt die App einmal, was sich geändert hat. Die letzten Versionen findest du jederzeit unter Einstellungen → „Hilfe & Infos“.
+- **Hilfe & Infos:** Ein neuer Bereich in den Einstellungen mit Anleitung, Hilfe bei Problemen, den Neuigkeiten und der Datenschutzerklärung.
+
+## Version 1.46.2
 
 **Stand:** Oktober 2026
 

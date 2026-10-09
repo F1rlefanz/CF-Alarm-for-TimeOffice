@@ -1,7 +1,5 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens
 
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
@@ -15,6 +13,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
@@ -53,6 +53,8 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftCodeSuggester
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.AufklappHinweis
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.ShiftEditDialog
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.hilfe.HilfeKnopf
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.hilfe.HilfeThema
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.SchichtFolgen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.ShiftViewModel
@@ -173,6 +175,7 @@ fun ShiftConfigScreen(
                     }
                 },
                 actions = {
+                    HilfeKnopf(HilfeThema.ANLEITUNG_SCHICHTEN)
                     IconButton(onClick = { showAddDialog = true }) {
                         Icon(
                             Icons.Default.Add,

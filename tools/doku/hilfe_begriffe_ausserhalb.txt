@@ -1,0 +1,6 @@
+# Begriffe in „Anfuehrungszeichen" auf der Website, die NICHT aus der App stammen.
+# Gelesen von tools/doku/pruefe_hilfe.py. Eine Zeile je Begriff, exakt wie auf der Seite.
+
+# Android-Systemeinstellungen bzw. Hersteller-Oberflaechen
+Autostart
+Eingeschränkte Einstellungen zulassen

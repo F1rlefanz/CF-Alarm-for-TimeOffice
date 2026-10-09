@@ -258,3 +258,49 @@ dependencies {
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.ui.test.junit4)
 }
+
+/**
+ * "Was ist neu" in der App kommt aus `CHANGELOG.md` - beim Bauen herausgeschnitten, nie von Hand
+ * gepflegt. Die Datei ist ohnehin Pflicht (die Schleuse verlangt zu jedem Bump einen Eintrag), also
+ * reist der Text mit jeder Version automatisch mit. Nur die juengsten Versionen kommen in die APK:
+ * die ganze Datei ist ueber 150 KB, und die volle Liste steht auf der Website.
+ *
+ * Bewusst kein Markdown-Umbau hier: die Aufgabe schneidet nur ab. Gelesen wird der Ausschnitt von
+ * `Neuigkeiten.parse()` - dort ist es testbar.
+ */
+abstract class NeuigkeitenAusChangelog : DefaultTask() {
+    @get:InputFile
+    @get:PathSensitive(PathSensitivity.NONE)
+    abstract val changelog: RegularFileProperty
+
+    @get:Input
+    abstract val anzahlVersionen: Property<Int>
+
+    @get:OutputDirectory
+    abstract val ausgabe: DirectoryProperty
+
+    @TaskAction
+    fun schneiden() {
+        val zeilen = changelog.get().asFile.readLines(Charsets.UTF_8)
+        val anfaenge = zeilen.indices.filter { zeilen[it].startsWith("## ") }
+        if (anfaenge.isEmpty()) throw GradleException("CHANGELOG.md enthaelt keine '## '-Versionen")
+        val ende = anfaenge.getOrNull(anzahlVersionen.get()) ?: zeilen.size
+        val datei = ausgabe.get().file("neuigkeiten.md").asFile
+        datei.parentFile.mkdirs()
+        datei.writeText(zeilen.subList(anfaenge.first(), ende).joinToString("\n"), Charsets.UTF_8)
+    }
+}
+
+val neuigkeitenAusChangelog = tasks.register<NeuigkeitenAusChangelog>("neuigkeitenAusChangelog") {
+    changelog.set(rootProject.layout.projectDirectory.file("CHANGELOG.md"))
+    anzahlVersionen.set(10)
+}
+
+androidComponents {
+    onVariants { variante ->
+        variante.sources.assets?.addGeneratedSourceDirectory(
+            neuigkeitenAusChangelog,
+            NeuigkeitenAusChangelog::ausgabe
+        )
+    }
+}

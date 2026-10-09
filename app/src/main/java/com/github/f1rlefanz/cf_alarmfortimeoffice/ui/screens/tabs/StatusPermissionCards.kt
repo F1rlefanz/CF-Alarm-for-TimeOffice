@@ -47,16 +47,18 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.github.f1rlefanz.cf_alarmfortimeoffice.R
+import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.WeckbildschirmVerdraengungPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimAccessibilityService
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimDiagnostik
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmMaintenanceEntryPoint
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmMaintenanceService
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmManagerService
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.SettingsLinkButton
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.hilfe.HilfeThema
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.hilfe.MehrDazuKnopf
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.success
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.BatteryOptimizationHelper
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.DndPermissionHelper
-import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.WeckbildschirmVerdraengungPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.NotificationDeliverability
@@ -115,6 +117,7 @@ internal fun NotificationsEnabledCard() {
 
     StatusCard(
         title = "Benachrichtigungen",
+        hilfe = HilfeThema.PROBLEME_BENACHRICHTIGUNGEN,
         isOk = enabled,
         // Jeder Fall benennt AUSDRUECKLICH, was abgeschaltet ist - "blockiert" allein
         // schickt den Nutzer in die falschen Einstellungen, wenn nur der eine Kanal
@@ -186,6 +189,7 @@ internal fun FullScreenIntentCard() {
 
     StatusCard(
         title = "Vollbild-Wecker",
+        hilfe = HilfeThema.PROBLEME_BENACHRICHTIGUNGEN,
         isOk = canUseFsi,
         details = if (canUseFsi) {
             "Der Weck-Bildschirm darf angezeigt werden"
@@ -493,6 +497,7 @@ internal fun BatteryOptimizationCard() {
 
     StatusCard(
         title = "Akku-Ausnahme",
+        hilfe = HilfeThema.PROBLEME_AKKU,
         isOk = isExempt,
         details = if (isExempt) {
             "Der Wecker darf jederzeit im Hintergrund laufen"
@@ -535,6 +540,7 @@ internal fun UnusedAppRestrictionsCard() {
 
     StatusCard(
         title = "Nicht verwendete Apps",
+        hilfe = HilfeThema.PROBLEME_NICHTNUTZUNG,
         isOk = isOk,
         details = if (isOk) {
             "\"Bei Nichtnutzung pausieren\" ist aus - der Wecker bleibt aktiv"
@@ -664,6 +670,7 @@ internal fun TimeOfficeHealthCard() {
                 },
                 text = "TimeOffice-Einstellungen öffnen"
             )
+            MehrDazuKnopf(HilfeThema.PROBLEME_TIMEOFFICE)
         }
     }
 }
@@ -816,6 +823,7 @@ internal fun DimmerAccessibilityCard(
                         onClick = { showDisclosure = true },
                         text = oeffnenText
                     )
+                    MehrDazuKnopf(HilfeThema.PROBLEME_DIMMER)
                 }
             }
         }
@@ -875,7 +883,9 @@ internal fun StatusCard(
     details: String,
     actionLabel: String? = null,
     onAction: (() -> Unit)? = null,
-    actionEnabled: Boolean = true
+    actionEnabled: Boolean = true,
+    /** Problemhilfe auf der Website - erscheint nur, solange die Karte ein Problem meldet. */
+    hilfe: HilfeThema? = null
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -917,6 +927,9 @@ internal fun StatusCard(
                 if (!isOk && actionLabel != null && onAction != null) {
                     Spacer(Modifier.height(SpacingConstants.SPACING_SMALL))
                     SettingsLinkButton(onClick = onAction, text = actionLabel, enabled = actionEnabled)
+                }
+                if (!isOk && hilfe != null) {
+                    MehrDazuKnopf(hilfe)
                 }
             }
         }

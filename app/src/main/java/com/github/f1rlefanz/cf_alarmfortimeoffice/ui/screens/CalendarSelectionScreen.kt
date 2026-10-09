@@ -32,6 +32,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.hilfe.HilfeKnopf
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.hilfe.HilfeThema
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.CalendarViewModel
 
@@ -102,6 +104,7 @@ fun CalendarSelectionScreen(
                     }
                 },
                 actions = {
+                    HilfeKnopf(HilfeThema.ANLEITUNG_VORBEREITUNG)
                     // "Fertig", nicht "Speichern", und ohne `enabled`-Bedingung (Issue #50): der
                     // Knopf speichert nichts, das ist beim Antippen des Kalenders laengst passiert.
                     // Ausgegraut sah er nach dem Abwaehlen des letzten Kalenders aus, als sei nichts

@@ -65,6 +65,13 @@ das baut man dieselbe Falle in neuer Form nach.
   (`masterPausePaused` in `AlarmStatusHeader`, `WeckerTabContent`, `StatusTabContent`) — sonst
   fällt ein künftiger Aufrufer wortlos in den alten Fehler zurück. Reine Textfunktionen wie
   `noShiftExplanation()` dürfen einen Default haben; dort ist der Wert ein Zusatz, keine Zusage.
+- **Hilfe gibt es genau einmal: auf der Website (`docs/`).** Die App verweist nur, über
+  `ui/hilfe/HilfeThema` (das „?“ in den Kopfzeilen, „Mehr dazu“ unter Status-Warnungen). Keine
+  Anleitungstexte in die App kopieren. Jeder neue Anker braucht eine `id` auf der Seite;
+  `tools/doku/pruefe_hilfe.py` prüft das und zusätzlich, dass jeder „Begriff“ der Anleitung in der
+  App vorkommt. **Wer einen Knopf umbenennt, zieht die Website mit.** „Was ist neu“ ist die
+  Ausnahme: es wird beim Bauen aus `CHANGELOG.md` geschnitten (Gradle `neuigkeitenAusChangelog`),
+  weil es zur INSTALLIERTEN Version gehört, die Website aber `main` zeigt.
 - **Deutsche Nutzer-Texte in `UITextConstants` ohne Aufrufer löschen, nicht liegen lassen.**
 - **`Row(SpaceBetween) { Column { … }; Switch }` braucht `weight(1f)` am Column.**
 - **`ButtonDefaults.ContentPadding` = 24dp pro Seite** — für schmale, geteilte Buttons gibt es

@@ -14,11 +14,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.Card
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -39,6 +39,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.github.f1rlefanz.cf_alarmfortimeoffice.R
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.SimpleBackTopAppBar
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.SwitchRow
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.hilfe.HilfeThema
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.dimmer.fmtClock
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.dimmer.pickTime
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.DndPermissionHelper
@@ -79,7 +80,8 @@ fun DndSettingsScreen(
         topBar = {
             SimpleBackTopAppBar(
                 title = stringResource(R.string.dnd_header),
-                onNavigateBack = onNavigateBack
+                onNavigateBack = onNavigateBack,
+                hilfe = HilfeThema.ANLEITUNG_NICHT_STOEREN
             )
         }
     ) { padding ->

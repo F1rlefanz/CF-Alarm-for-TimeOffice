@@ -526,6 +526,12 @@ def main():
         argumente=("--ci",),
         hinweis="Inhalte in einen Skill verschieben - nicht die Schwelle anheben.",
     )
+    pruefe_hilfsskript(
+        probleme,
+        os.path.join("tools", "doku", "pruefe_hilfe.py"),
+        "Hilfe in der App und Website passen nicht zusammen",
+        hinweis="Ein gerissener Anker oeffnet stumm den Seitenanfang.",
+    )
     pruefe_changelog_seite(probleme)
     pruefe_hilfsskript(
         probleme,

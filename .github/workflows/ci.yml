@@ -65,6 +65,12 @@ jobs:
       - name: Doku-Budget pruefen (Kontext, der in JEDER Session geladen wird)
         run: python3 tools/doku/pruefe_budget.py --ci
 
+      # Seit 1.47.0 verweist die App auf Abschnitte der Website ("?" und "Mehr dazu"). Ein
+      # umbenannter Anker oeffnet stumm den Seitenanfang, ein umbenannter Knopf laesst die
+      # Anleitung etwas beschreiben, das es nicht mehr gibt. Beides prueft dieser Schritt.
+      - name: Hilfe-Verweise und Anleitungsbegriffe gegen die App pruefen
+        run: python3 tools/doku/pruefe_hilfe.py && python3 -m unittest discover -s tools/doku -p "test_*.py"
+
       # Fuenf Code-Invarianten, deren Bruch einen stummen oder verwaisten Wecker erzeugt und
       # die bisher NUR in CLAUDE.md bzw. einem Skill als Prosa standen. Alle halten beim
       # Anlegen (17.08.2026) - das ist Absicht, ein Rauchmelder wird auch nicht erst montiert,

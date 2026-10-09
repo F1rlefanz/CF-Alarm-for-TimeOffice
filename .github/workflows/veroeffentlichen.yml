@@ -173,6 +173,9 @@ jobs:
       - name: Doku-Budget pruefen
         run: python3 tools/doku/pruefe_budget.py --ci
 
+      - name: Hilfe-Verweise gegen die Website pruefen
+        run: python3 tools/doku/pruefe_hilfe.py
+
       - name: Code-Invarianten pruefen (Wecker-Killer)
         run: python3 tools/invarianten/pruefe_code.py
 

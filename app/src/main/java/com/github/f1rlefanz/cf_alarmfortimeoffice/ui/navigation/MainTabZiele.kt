@@ -9,6 +9,7 @@ import androidx.compose.material.icons.filled.Lightbulb
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.MainTab
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.hilfe.HilfeThema
 
 /**
  * Wie die sechs Hauptbereiche heissen und aussehen - an EINER Stelle.
@@ -27,7 +28,9 @@ data class MainTabZiel(
     val tab: MainTab,
     /** Ein Text fuer beides: Eintrag in der Schublade UND Titel in der Kopfzeile. */
     val titel: String,
-    val icon: ImageVector
+    val icon: ImageVector,
+    /** Wohin das "?" in der Kopfzeile fuehrt - der Abschnitt, der diesen Bereich erklaert. */
+    val hilfe: HilfeThema
 )
 
 /**
@@ -39,12 +42,12 @@ data class MainTabZiel(
  * als `returnToTab` gehalten und geht die Darstellung nichts an.
  */
 val MAIN_TAB_ZIELE: List<MainTabZiel> = listOf(
-    MainTabZiel(MainTab.HOME, "Übersicht", Icons.Filled.Home),
-    MainTabZiel(MainTab.WECKER, "Wecker", Icons.Filled.AccessAlarm),
-    MainTabZiel(MainTab.DIMMER, "Schicht-Dimmer", Icons.Filled.DarkMode),
-    MainTabZiel(MainTab.HUE, "Philips Hue", Icons.Filled.Lightbulb),
-    MainTabZiel(MainTab.STATUS, "System-Status", Icons.Filled.Info),
-    MainTabZiel(MainTab.SETTINGS, "Einstellungen", Icons.Filled.Settings)
+    MainTabZiel(MainTab.HOME, "Übersicht", Icons.Filled.Home, HilfeThema.ANLEITUNG),
+    MainTabZiel(MainTab.WECKER, "Wecker", Icons.Filled.AccessAlarm, HilfeThema.ANLEITUNG_WECKER),
+    MainTabZiel(MainTab.DIMMER, "Schicht-Dimmer", Icons.Filled.DarkMode, HilfeThema.ANLEITUNG_DIMMER),
+    MainTabZiel(MainTab.HUE, "Philips Hue", Icons.Filled.Lightbulb, HilfeThema.ANLEITUNG_HUE),
+    MainTabZiel(MainTab.STATUS, "System-Status", Icons.Filled.Info, HilfeThema.PROBLEME),
+    MainTabZiel(MainTab.SETTINGS, "Einstellungen", Icons.Filled.Settings, HilfeThema.ANLEITUNG)
 )
 
 /**

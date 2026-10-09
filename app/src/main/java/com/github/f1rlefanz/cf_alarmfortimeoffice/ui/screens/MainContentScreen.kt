@@ -53,6 +53,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.MainTab
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.ManualAlarmCard
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.navigation.MAIN_TAB_ZIELE
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.hilfe.HilfeKnopf
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.hilfe.NeuigkeitenNachUpdate
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.navigation.mainTabZiel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.DimmerTabContent
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.HomeTabContent
@@ -276,6 +278,7 @@ fun MainContentScreen(
                         Icon(Icons.Filled.Menu, contentDescription = "Navigation öffnen")
                     }
                 },
+                actions = { HilfeKnopf(ziel.hilfe) },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.background,
                     titleContentColor = MaterialTheme.colorScheme.onBackground
@@ -392,6 +395,10 @@ fun MainContentScreen(
         }
     }
     }
+
+    // Nach einem Update einmal "Was ist neu". Hier und nicht in MainScreen: erst hinter den
+    // Onboarding-Gates, damit es die Einrichtung nicht unterbricht.
+    NeuigkeitenNachUpdate()
 
     // Bottom-Sheet fuer den manuellen Alarm (per FAB im Home-Tab geoeffnet).
     if (showManualAlarmSheet) {

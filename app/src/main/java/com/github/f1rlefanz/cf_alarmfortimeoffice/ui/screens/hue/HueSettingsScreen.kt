@@ -1,7 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue
 
 import android.widget.Toast
-import com.github.f1rlefanz.cf_alarmfortimeoffice.R
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -21,8 +20,8 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.FlashOn
 import androidx.compose.material.icons.filled.Group
-import androidx.compose.material.icons.filled.LinkOff
 import androidx.compose.material.icons.filled.Lightbulb
+import androidx.compose.material.icons.filled.LinkOff
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Schedule
@@ -42,22 +41,25 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.stringResource
-import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.success
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.cards.HueRuleCard
+import com.github.f1rlefanz.cf_alarmfortimeoffice.R
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.CompactOutlinedButton
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.ErrorMessage
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.hue.rememberLocalNetworkPermissionGate
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.hilfe.HilfeKnopf
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.hilfe.HilfeThema
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.cards.HueRuleCard
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.success
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.HueViewModel
 
 /**
@@ -132,6 +134,7 @@ fun HueSettingsScreen(
                     }
                 },
                 actions = {
+                    HilfeKnopf(HilfeThema.ANLEITUNG_HUE)
                     IconButton(onClick = onCreateNewRule) {
                         Icon(Icons.Default.Add, stringResource(R.string.hue_settings_new_rule))
                     }

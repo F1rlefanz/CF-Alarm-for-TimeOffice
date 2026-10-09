@@ -50,6 +50,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimOverlayPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimRule
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimWindow
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.SimpleBackTopAppBar
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.hilfe.HilfeThema
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.DimmerRulesViewModel
 
 @Composable
@@ -74,7 +75,8 @@ fun DimmerRuleConfigScreen(
         topBar = {
             SimpleBackTopAppBar(
                 title = stringResource(R.string.dimmer_rule_editor_title),
-                onNavigateBack = onNavigateBack
+                onNavigateBack = onNavigateBack,
+                hilfe = HilfeThema.ANLEITUNG_DIMMER
             )
         }
     ) { padding ->

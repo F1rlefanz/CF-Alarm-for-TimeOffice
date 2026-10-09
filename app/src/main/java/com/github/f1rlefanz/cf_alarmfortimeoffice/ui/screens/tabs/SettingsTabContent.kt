@@ -50,6 +50,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.CompactButton
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.CompactOutlinedButton
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.ErrorMessage
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.settings.KalenderVorausschauKarte
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.hilfe.HilfeUndInfosKarte
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.warning
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.BatteryOptimizationHelper
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
@@ -376,6 +377,16 @@ fun SettingsTabContent(
         )
 
         ConfigBackupCard()
+
+        HorizontalDivider(modifier = Modifier.padding(vertical = SpacingConstants.SPACING_SMALL))
+
+        Text(
+            "Hilfe & Infos",
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold
+        )
+
+        HilfeUndInfosKarte()
 
         HorizontalDivider(modifier = Modifier.padding(vertical = SpacingConstants.SPACING_SMALL))
 

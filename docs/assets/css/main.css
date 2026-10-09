@@ -208,12 +208,6 @@ a:hover {
   padding: 0 clamp(16px, 4vw, 32px);
 }
 
-.anton {
-  font-family: "Anton", "Arial Narrow", sans-serif;
-  font-weight: 400;
-  letter-spacing: 0;
-}
-
 .skip-link {
   position: absolute;
   left: 8px;
@@ -228,15 +222,6 @@ a:hover {
 
 .skip-link:focus {
   top: 8px;
-}
-
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  white-space: nowrap;
 }
 
 /* ---------- Kopf ---------- */
@@ -259,6 +244,10 @@ a:hover {
   font-family: "Anton", "Arial Narrow", sans-serif;
   font-size: 1.6rem;
   line-height: 1;
+}
+
+.brand {
+  min-height: 44px;
 }
 
 .brand img {
@@ -333,7 +322,9 @@ a:hover {
   overflow: hidden;
 }
 
-@media (max-width: 760px) {
+/* Bis 860 px passen Marke, Navigation und Schalter nicht in eine Zeile:
+   dann Marke und Schalter oben, die Navigation darunter. */
+@media (max-width: 860px) {
   .site-nav {
     order: 3;
     margin-left: 0;
@@ -363,6 +354,9 @@ a:hover {
   font-size: clamp(3.4rem, 11vw, 7.5rem);
   line-height: 0.92;
   color: var(--hell-text);
+  /* Lange Titel tragen eine weiche Trennstelle (&shy;) im HTML und brechen dort,
+     z. B. „Datenschutz-erklärung“. overflow-wrap ist nur Notbremse (Zoom, Ersatzschrift). */
+  hyphens: manual;
   overflow-wrap: anywhere;
 }
 
@@ -661,7 +655,8 @@ blockquote p {
 }
 
 .abschnitt {
-  padding: clamp(64px, 10vw, 128px) 0;
+  /* Nur oben und unten: die Seitenabstaende kommen von .container. */
+  padding-block: clamp(64px, 10vw, 128px);
 }
 
 .zone-f .abschnitt + .abschnitt {
@@ -686,7 +681,7 @@ blockquote p {
   grid-template-columns: minmax(0, 1fr) auto;
   gap: clamp(32px, 6vw, 80px);
   align-items: center;
-  padding: clamp(32px, 6vw, 72px) 0 clamp(64px, 9vw, 112px);
+  padding-block: clamp(32px, 6vw, 72px) clamp(64px, 9vw, 112px);
 }
 
 .badge {
@@ -910,7 +905,7 @@ p.uhrzeit.voll {
 /* 05:00 */
 .weckruf {
   position: relative;
-  padding: clamp(64px, 10vw, 120px) 0 clamp(72px, 10vw, 128px);
+  padding-block: clamp(64px, 10vw, 120px) clamp(72px, 10vw, 128px);
 }
 
 p.weckruf-zahl {

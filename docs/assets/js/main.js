@@ -20,8 +20,9 @@ document.addEventListener('DOMContentLoaded', () => {
         schalter.setAttribute('aria-label', nacht
             ? 'Ansicht: Nacht. Zur Tagansicht wechseln'
             : 'Ansicht: Tag. Zur Nachtansicht wechseln');
-        schalter.querySelector('.symbol-mond').hidden = !nacht;
-        schalter.querySelector('.symbol-sonne').hidden = nacht;
+        // SVG-Elemente kennen die Eigenschaft .hidden nicht, nur das Attribut.
+        schalter.querySelector('.symbol-mond').toggleAttribute('hidden', !nacht);
+        schalter.querySelector('.symbol-sonne').toggleAttribute('hidden', nacht);
         if (themeFarbe) themeFarbe.setAttribute('content', nacht ? '#0b1426' : '#bfd8f0');
     };
 

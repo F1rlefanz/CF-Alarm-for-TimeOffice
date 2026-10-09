@@ -917,6 +917,55 @@ blockquote p {
   100% { transform: none; opacity: 1; }
 }
 
+/* Hebt ab: Zeiger drehen durch, er vibriert, qualmt und schiesst nach oben davon */
+.wecker-hebtab .ganz {
+  animation: wecker-abheben 8.5s infinite;
+}
+
+.wecker-hebtab .zeiger {
+  /* Drehpunkt ist die Uhrmitte, nicht die Mitte der Zeiger */
+  transform-box: view-box;
+  transform-origin: 24px 27px;
+  animation: wecker-durchdrehen 8.5s infinite;
+}
+
+.wecker-hebtab .rauch circle {
+  fill: currentColor;
+  stroke: none;
+  opacity: 0;
+  animation: wecker-rauch 8.5s infinite;
+  animation-delay: var(--d);
+}
+
+@keyframes wecker-abheben {
+  0%, 34% { transform: none; opacity: 1; }
+  36% { transform: translate(-1px, 0); }
+  38% { transform: translate(1px, -1px); }
+  40% { transform: translate(-1px, 0); }
+  42% { transform: translate(1px, -1px); }
+  44% { transform: translate(-1px, -2px); }
+  46% { transform: translate(1px, -2px); }
+  50% { transform: translateY(-6px) rotate(-4deg); opacity: 1; }
+  60% { transform: translateY(-70px) rotate(-10deg); opacity: 1; }
+  61%, 86% { transform: translateY(-70px); opacity: 0; }
+  87% { transform: translateY(-40px); opacity: 0; }
+  96% { transform: translateY(3px); opacity: 1; }
+  100% { transform: none; opacity: 1; }
+}
+
+@keyframes wecker-durchdrehen {
+  0%, 34% { transform: none; }
+  60% { transform: rotate(1440deg); }
+  100% { transform: rotate(1440deg); }
+}
+
+@keyframes wecker-rauch {
+  0%, 44% { transform: scale(0.2); opacity: 0; }
+  50% { transform: scale(1); opacity: 0.9; }
+  64% { transform: translate(var(--x), 10px) scale(1.8); opacity: 0; }
+  100% { transform: scale(0.2); opacity: 0; }
+}
+
 @keyframes band-laeuft {
   to {
     transform: translateX(-50%);

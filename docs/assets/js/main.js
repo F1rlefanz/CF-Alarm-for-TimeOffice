@@ -7,6 +7,26 @@ document.addEventListener('DOMContentLoaded', () => {
         link.setAttribute('target', '_blank');
     });
 
+    // Dienstplan-Band: Bei „Bewegung reduzieren“ steht es still. Ein unauffaelliger Knopf
+    // laesst es auf Wunsch trotzdem laufen - selbst gestartete Bewegung ist unbedenklich.
+    const bandGrund = document.querySelector('.band-grund');
+    const bandKnopf = document.querySelector('.band-knopf');
+    if (bandGrund && bandKnopf) {
+        const reduziert = matchMedia('(prefers-reduced-motion: reduce)');
+        const setzeSpielen = an => {
+            bandGrund.classList.toggle('spielt', an);
+            bandKnopf.setAttribute('aria-pressed', String(an));
+            bandKnopf.textContent = an ? 'Animation anhalten' : 'Animation abspielen';
+        };
+        const pruefe = () => {
+            bandKnopf.hidden = !reduziert.matches;
+            if (!reduziert.matches) setzeSpielen(false);
+        };
+        bandKnopf.addEventListener('click', () => setzeSpielen(!bandGrund.classList.contains('spielt')));
+        reduziert.addEventListener('change', pruefe);
+        pruefe();
+    }
+
     // Schalter Nacht/Tag. Ohne JavaScript bleibt er versteckt, dann gilt die Systemeinstellung.
     const wurzel = document.documentElement;
     const schalter = document.querySelector('.ansicht-schalter');

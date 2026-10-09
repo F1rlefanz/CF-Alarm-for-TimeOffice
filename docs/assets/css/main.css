@@ -779,6 +779,144 @@ blockquote p {
   opacity: 0.6;
 }
 
+/* Eingeflochtene Wecker: einer explodiert, einer schmilzt, einer zerfaellt.
+   Alle Teile sind SVG-Pfade; jeder Teil bewegt sich um die eigene Mitte. */
+.wecker {
+  display: inline-flex;
+  align-items: center;
+}
+
+.wecker svg {
+  width: 1.4em;
+  height: 1.4em;
+  overflow: visible;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 3.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.wecker svg * {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+/* Explodiert: klingelt immer wilder, dann fliegen die Teile auseinander */
+.wecker-explodiert .ganz {
+  animation: wecker-wackeln 7s infinite;
+}
+
+.wecker-explodiert .teil {
+  animation: wecker-wegfliegen 7s infinite;
+}
+
+.wecker-explodiert .blitz {
+  stroke: #ffd3a0;
+  opacity: 0;
+  animation: wecker-blitz 7s infinite;
+}
+
+@keyframes wecker-wackeln {
+  0%, 36%, 56%, 100% { transform: none; }
+  38% { transform: rotate(-10deg); }
+  40% { transform: rotate(10deg); }
+  42% { transform: rotate(-12deg) translateY(-1px); }
+  44% { transform: rotate(12deg); }
+  46% { transform: rotate(-14deg) translateY(-2px); }
+  48% { transform: rotate(14deg); }
+  50% { transform: rotate(-16deg) scale(1.08); }
+  52% { transform: rotate(16deg) scale(1.12); }
+  54% { transform: scale(1.18); }
+}
+
+@keyframes wecker-wegfliegen {
+  0%, 54% { transform: none; opacity: 1; }
+  63% { transform: translate(var(--x), var(--y)) rotate(var(--r)) scale(var(--s)); opacity: 1; }
+  72% { transform: translate(calc(var(--x) * 1.6), calc(var(--y) * 1.6 + 6px)) rotate(calc(var(--r) * 1.5)) scale(var(--s)); opacity: 0; }
+  88% { transform: scale(0.2); opacity: 0; }
+  100% { transform: none; opacity: 1; }
+}
+
+@keyframes wecker-blitz {
+  0%, 53% { opacity: 0; transform: scale(0.3); }
+  57% { opacity: 1; transform: scale(1); }
+  66%, 100% { opacity: 0; transform: scale(1.6); }
+}
+
+/* Schmilzt: sackt zusammen, tropft, wird zur Pfuetze */
+.wecker-schmilzt .ganz {
+  transform-origin: 50% 100%;
+  animation: wecker-schmelzen 8s infinite;
+}
+
+.wecker-schmilzt .tropfen path {
+  transform-origin: 50% 0;
+  transform: scaleY(0);
+  animation: wecker-tropfen 8s infinite;
+  animation-delay: var(--d);
+}
+
+.wecker-schmilzt .pfuetze {
+  fill: currentColor;
+  stroke: none;
+  opacity: 0;
+  transform: scaleX(0);
+  animation: wecker-pfuetze 8s infinite;
+}
+
+@keyframes wecker-schmelzen {
+  0%, 30% { transform: none; opacity: 1; }
+  45% { transform: scaleY(0.85) skewX(-5deg); }
+  58% { transform: scale(1.12, 0.55) skewX(6deg); }
+  70% { transform: scale(1.35, 0.22) skewX(-3deg); opacity: 1; }
+  80% { transform: scale(1.4, 0.1); opacity: 0; }
+  90% { transform: scale(0.6); opacity: 0; }
+  100% { transform: none; opacity: 1; }
+}
+
+@keyframes wecker-tropfen {
+  0%, 40% { transform: scaleY(0); opacity: 1; }
+  60% { transform: scaleY(1); opacity: 1; }
+  74% { transform: translateY(4px) scaleY(0.6); opacity: 0; }
+  100% { transform: scaleY(0); opacity: 0; }
+}
+
+@keyframes wecker-pfuetze {
+  0%, 55% { transform: scaleX(0); opacity: 0; }
+  72% { transform: scaleX(1); opacity: 1; }
+  84% { transform: scaleX(1.1); opacity: 0; }
+  100% { transform: scaleX(0); opacity: 0; }
+}
+
+/* Zerfaellt: zittert, dann bricht das Gehaeuse in Scherben, die herunterfallen */
+.wecker-zerfaellt .ganz {
+  animation: wecker-zittern 9s infinite;
+}
+
+.wecker-zerfaellt .brocken {
+  animation: wecker-broeckeln 9s infinite;
+  animation-delay: var(--d);
+}
+
+@keyframes wecker-zittern {
+  0%, 38%, 50%, 100% { transform: none; }
+  40% { transform: translate(-1px, 0); }
+  42% { transform: translate(1px, -1px); }
+  44% { transform: translate(-1px, 1px); }
+  46% { transform: translate(1px, 0); }
+  48% { transform: translate(0, 1px); }
+}
+
+@keyframes wecker-broeckeln {
+  0%, 48% { transform: none; opacity: 1; }
+  52% { transform: translateY(2px) rotate(calc(var(--r) / 8)); opacity: 1; }
+  66% { transform: translate(calc(var(--x) * 0.7), calc(var(--y) * 0.6)) rotate(calc(var(--r) * 0.7)); opacity: 1; }
+  76% { transform: translate(var(--x), var(--y)) rotate(var(--r)); opacity: 0; }
+  90% { transform: translateY(-8px); opacity: 0; }
+  100% { transform: none; opacity: 1; }
+}
+
 @keyframes band-laeuft {
   to {
     transform: translateX(-50%);
@@ -1225,6 +1363,11 @@ p.weckruf-zahl {
   .uhrzeit,
   .weckruf-zahl {
     animation: none;
+  }
+
+  /* Die eingeflochtenen Wecker stehen still da, ganz und unversehrt */
+  .wecker svg * {
+    animation: none !important;
   }
 
   /* Die Wiederholungen bleiben sichtbar: Das stehende Band soll trotzdem

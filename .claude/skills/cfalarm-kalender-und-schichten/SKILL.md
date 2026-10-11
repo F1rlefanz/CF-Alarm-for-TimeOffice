@@ -168,3 +168,7 @@ das baut man dieselbe Falle in neuer Form nach.
 - **Das Onboarding-Gate hängt am automatischen Weg (`naechsterGateSchritt(…, GateEinstieg.AUTO)` →
   `handleAuthenticationSuccess()`), nicht nur am aktiven (`setzeGateKetteFort`, früher `proceedPastGates()`)** —
   sonst sehen Bestandsnutzer den Prompt nie automatisch.
+- **Es gibt KEINEN offiziellen Weg am Kalender vorbei** (kein ICS-/webcal-Abo, kein CalDAV, kein
+  persönlicher Export; die REST-API von TIMEOFFICE Core ist ein Werkzeug der Klinik-IT, nicht der
+  Mitarbeitenden). Recherchiert am 11.10.2026 über die vollständige Hersteller-Doku — nicht noch
+  einmal suchen; Quellen und Einordnung in `reference/timeoffice.md`.

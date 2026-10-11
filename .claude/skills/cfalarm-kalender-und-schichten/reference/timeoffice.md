@@ -47,3 +47,32 @@
   `else if`-Zweig in `handleAuthenticationSuccess()`, gleiche Gate-Reihenfolge wie
   `setzeGateKetteFort()` (bis 1.45: `proceedPastGates()`).
 
+- **Eine offizielle Schnittstelle zum EIGENEN Dienstplan gibt es nicht — der Kalender-Export der
+  App ist der einzige Weg nach außen.** Recherchiert am 11.10.2026 (lokale Sitzung mit Browser;
+  aus der Cloud-Umgebung sind pradtke.de, help.pradtke.de, gracehelp.pradtke.de und die Stores
+  per Proxy-Richtlinie gesperrt): help.pradtke.de vollständig (253 Seiten des Inhaltsverzeichnisses),
+  gracehelp.pradtke.de (130 verlinkte Seiten, davon 27 aus der Web-Hilfe 3.1.0), die Produktseiten
+  auf pradtke.de, Play Store und App Store. Gesucht nach iCal, ICS, CalDAV, webcal, Abo, Outlook,
+  Kalender, Export, Selfservice, Mitarbeiterportal — **kein Treffer** für einen Kalender-Feed.
+  - **TIMEOFFICE Core** stellt laut Doku eine REST-API „für andere Softwaremodule innerhalb der
+    Kundeninfrastruktur" bereit (`TechDok_IT-Admins/bes_TechnDokuUebersicht.htm`) — ein Werkzeug
+    der Klinik-IT für eigene Drittsystem-Anbindungen, Endpunkte nicht öffentlich. **Verworfen als
+    Datenquelle für CFAlarm**: Zugriff einer öffentlichen Play-Store-App auf Kliniksysteme hieße
+    Zugangsdaten auf dem Handy, Fremddaten (Kollegen, Krankschreibungen = Art. 9 DSGVO),
+    Mitbestimmung und je Klinik ein eigenes Genehmigungsprojekt.
+  - **Selfservice/Mitarbeiterportal** (Intranet): Stundennachweis und Zeitnachtrag; die
+    Konfiguration kennt keine Kalender-/Feed-Einstellung (`anl_TOPersKonfigurieren.htm`). Pradtke
+    lenkt seit 10.1.1 vom Portal zur App.
+  - **CSG.Schnittstelle / Autoexporte**: Lohn-Stammdaten und eAU, serverseitig, nur in Abstimmung
+    mit Pradtke änderbar.
+  - **TIMEOFFICE Mobile**: Daten fließen Klinik → Pradtke-Cloud (Azure) → App, Anmeldung per
+    QR-Code + PIN (`Datenschutz/bes_DatenschutzSicherheit.htm`). Das Mobile Center hat keinen
+    dokumentierten Kalender-Schalter. Play Store (2.7.2, 30.10.2025): Berechtigung Kalender
+    lesen/schreiben — das ist der „Timeoffice Dienstplanfeed"-Mechanismus, den CFAlarm nutzt. iOS
+    nennt ihn in Release 1.4.1 (Nov. 2022: Dienstplan „im Kalender speichern"); **öffentlich
+    dokumentiert ist er nirgends** — eine Nebenfunktion, keine zugesicherte Schnittstelle. Ein
+    weiterer Grund für die Health-Karte: ändert Pradtke sie, kündigt das niemand an.
+  - **Einziger offener Hebel**: die Klinik-IT nach einem persönlichen ICS-Abo-Link fragen. Er
+    müsste nicht das Kliniknetz öffnen (die Pradtke-Cloud existiert schon), ist aber nicht
+    Standard. Lücke der Recherche: gracehelp steht auf dem Stand Ende 2024, nur ein Teil der
+    Web-Hilfe ist frei verlinkt — endgültig verneinen kann es nur Klinik-IT oder Pradtke-Support.

@@ -176,6 +176,14 @@
             android:enabled="true"
             android:exported="false" />
 
+        <!-- Zwei einmalige Kalender-Abgleiche nach "TimeOffice öffnen" (eigene Request-Codes,
+             kein zweiter Planer der 6h-Kette; startet nur den regulaeren Wartungslauf mit
+             forceSync). -->
+        <receiver
+            android:name=".service.TimeOfficeNachfassReceiver"
+            android:enabled="true"
+            android:exported="false" />
+
         <!-- Schicht-Dimmer: Bedienungshilfen-Dienst, der die Dimm-Schicht traegt.
              Liest keine Bildschirminhalte (siehe dim_accessibility_service_config).
              Bis zur manuellen Aktivierung durch den Nutzer inaktiv. -->

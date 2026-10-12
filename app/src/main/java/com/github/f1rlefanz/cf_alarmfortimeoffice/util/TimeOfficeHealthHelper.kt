@@ -89,6 +89,23 @@ object TimeOfficeHealthHelper {
             data = "package:$TIMEOFFICE_PACKAGE".toUri()
         }
 
+    /**
+     * Startet TimeOffice selbst - der einzige Weg, auf dem TimeOffice einen geaenderten Dienstplan
+     * in den Kalender eintraegt (Befund 12.10.2026: seine Meldung "Dienstplanänderung" allein
+     * schreibt nichts, erst das Oeffnen). `null`, wenn es keine Startseite gibt (deaktiviert,
+     * nicht installiert) oder die Abfrage scheitert - dann zeigt die Karte den Knopf nicht.
+     *
+     * Wie [isInstalled] haengt das an der `<queries>`-Deklaration im Manifest. Der zurueckgegebene
+     * Intent traegt laut Android bereits `FLAG_ACTIVITY_NEW_TASK`: TimeOffice kommt in seiner
+     * eigenen Aufgabe nach vorn, nicht obendrauf auf CF-Alarm.
+     */
+    fun createLaunchIntent(context: Context): Intent? = try {
+        context.packageManager.getLaunchIntentForPackage(TIMEOFFICE_PACKAGE)
+    } catch (e: Exception) {
+        Logger.e(LogTags.TIMEOFFICE_HEALTH, "Failed to resolve TimeOffice launch intent", e)
+        null
+    }
+
     /** Hat der Nutzer diesen Onboarding-Schritt bereits uebersprungen? Persistiert. */
     suspend fun isPromptDismissed(context: Context): Boolean =
         mainDataStore(context).readOrEmpty(LogTags.TIMEOFFICE_HEALTH, "TimeOffice-Prompt-Merker")[KEY_PROMPT_DISMISSED] ?: false

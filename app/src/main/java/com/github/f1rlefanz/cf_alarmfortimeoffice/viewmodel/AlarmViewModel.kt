@@ -13,6 +13,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.model.MANUELLER_ALARM_SUFFIX
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.state.AppErrorState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IAlarmRepository
+import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.AlarmSkipUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.SkipRolledBackException
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmSkipUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
@@ -53,20 +54,31 @@ data class AlarmUiState(
      * Dann bleibt die App zu diesem Zeitpunkt per Konstruktion stumm (AlarmReceiver steigt bei
      * `isSilent` vor Ton, Vibration, Vollbild und Hue aus) - die Karte darf ihn also nicht wie
      * einen klingelnden Wecker anzeigen. Bewusst KEIN Herausfiltern: der Zeitpunkt ist der Anker
-     * fuer Dimmer und DND, der Nutzer muss ihn weiterhin sehen koennen. Und der Knopf
-     * "Ueberspringen" haengt ueber `enabled = nextAlarmTime != null` an genau diesem Eintrag
-     * (`AlarmSkipUseCase.findNextAlarm()` waehlt ebenfalls nur nach Zeit) - wer hier filterte,
-     * zeigte etwas anderes an, als der Knopf ueberspringt. Also: kennzeichnen, nicht verstecken.
+     * fuer Dimmer und DND, der Nutzer muss ihn weiterhin sehen koennen, und "Tag freigeben"
+     * schlaegt den Tag dieses Eintrags vor ([nextAlarmDate]) - am Rufdienst-Tag ist der stille
+     * Eintrag genau der richtige Tag. Also: kennzeichnen, nicht verstecken.
+     *
+     * Das Ueberspringen haengt seit 1.48.0 NICHT mehr an diesem Eintrag, sondern an
+     * [nextRingingAlarmTime] - ein stiller Eintrag klingelt ohnehin nicht.
      */
     val nextAlarmIsSilent: Boolean = false,
     /**
      * Der naechste Eintrag, der wirklich klingelt - `null`, wenn keiner ansteht.
      *
-     * Nur dann interessant, wenn [nextAlarmIsSilent] gilt: sonst verdeckt der stille Eintrag den
-     * echten Wecker, und der Nutzer kann aus der Oberflaeche nicht ablesen, wann er das naechste
-     * Mal geweckt wird.
+     * Zwei Aufgaben. Ist [nextAlarmIsSilent], verdeckt der stille Eintrag sonst den echten
+     * Wecker, und der Nutzer kann nicht ablesen, wann er das naechste Mal geweckt wird. Und es
+     * ist das ZIEL von "Überspringen": `AlarmSkipUseCase.skipNextAlarm()` waehlt nach derselben
+     * Regel (`AlarmSkipUseCase.naechsterKlingelnderWecker`), der Knopf ist nur bei einem Wert
+     * hier bedienbar und nennt dessen Datum und Uhrzeit ([nextRingingAlarmTriggerTime]).
      */
     val nextRingingAlarmTime: String? = null,
+    /**
+     * Weckzeitpunkt (Epoch-Millis) desselben Weckers wie [nextRingingAlarmTime] - `null`, wenn
+     * keiner ansteht. Quelle fuer die Knopfzeile "Wecker 13.10. 05:30 einmalig überspringen":
+     * aus dem Zeitpunkt formatiert statt aus dem Anzeigetext herausgeschnitten, damit die Zeile
+     * nicht an der Form von `AlarmInfo.formattedTime` haengt.
+     */
+    val nextRingingAlarmTriggerTime: Long? = null,
     /** Wie viele der [activeAlarms] stumm sind - damit "N aktive Alarme" nicht laut behauptet. */
     val silentAlarmCount: Int = 0,
     /**
@@ -324,6 +336,7 @@ class AlarmViewModel @Inject constructor(
             nextAlarmTime = anzeige.naechsterEintrag,
             nextAlarmIsSilent = anzeige.naechsterEintragIstStumm,
             nextRingingAlarmTime = anzeige.naechsterKlingelnder,
+            nextRingingAlarmTriggerTime = anzeige.naechsterKlingelnderZeitpunkt,
             silentAlarmCount = anzeige.stummeAlarme,
             nextAlarmDate = anzeige.naechsterEintragTag
         )
@@ -1666,7 +1679,9 @@ internal data class WeckerAnzeige(
     val naechsterKlingelnder: String?,
     val stummeAlarme: Int,
     /** Kalendertag von [naechsterEintrag] - Vorlage fuer "Tag freigeben". */
-    val naechsterEintragTag: LocalDate? = null
+    val naechsterEintragTag: LocalDate? = null,
+    /** Weckzeitpunkt von [naechsterKlingelnder] - Quelle fuer die Knopfzeile "Überspringen". */
+    val naechsterKlingelnderZeitpunkt: Long? = null
 )
 
 /**
@@ -1685,12 +1700,16 @@ internal data class WeckerAnzeige(
  * nicht in der Karte, die den naechsten Wecker behauptet.
  *
  * WARUM KENNZEICHNEN UND NICHT FILTERN: der stille Eintrag ist der Zeitanker fuer Dimmer und DND,
- * der Nutzer muss ihn weiterhin sehen. Und der Knopf "Ueberspringen" haengt an genau derselben
- * Auswahl (`AlarmSkipUseCase.findNextAlarm()` filtert ebenfalls nur nach `triggerTime`) - ein
- * gefilterter [naechsterEintrag] waere eine NEUE Anzeigeluege: die Karte zeigte den lauten Wecker,
- * waehrend der Knopf den stillen loescht. Deshalb bleibt [naechsterEintrag] die unveraenderte
- * Auswahl, sie wird nur als stumm ausgewiesen, und [naechsterKlingelnder] nennt zusaetzlich den
- * naechsten echten Wecker.
+ * der Nutzer muss ihn weiterhin sehen. Und "Tag freigeben" schlaegt den Tag des naechsten EINTRAGS
+ * vor ([WeckerAnzeige.naechsterEintragTag]) - am Rufdienst-Tag ist der stille Eintrag der richtige
+ * Tag. Deshalb bleibt [naechsterEintrag] die unveraenderte Auswahl, sie wird nur als stumm
+ * ausgewiesen, und [naechsterKlingelnder] nennt zusaetzlich den naechsten echten Wecker.
+ *
+ * [naechsterKlingelnder] ist zugleich das ZIEL von "Überspringen" und wird deshalb NICHT hier
+ * nachgebaut, sondern ueber `AlarmSkipUseCase.naechsterKlingelnderWecker` gerechnet - dieselbe
+ * Funktion, mit der `skipNextAlarm()` waehlt. Bis 1.47.1 nahm das Ueberspringen den naechsten
+ * EINTRAG, auch einen stillen: die Karte nannte den 05:30-Wecker, der Knopf haette den stillen
+ * 05:00-Eintrag geloescht (Hergang an der Funktion).
  *
  * @param jetzt Vergleichszeitpunkt (Epoch-Millis) - als Parameter, damit der Test ihn setzen kann.
  */
@@ -1701,13 +1720,12 @@ internal fun berechneWeckerAnzeige(
 ): WeckerAnzeige {
     val anstehend = alarms.filter { it.triggerTime > jetzt && it.id != skippedAlarmId }
     val naechster = anstehend.minByOrNull { it.triggerTime }
+    val klingelnder = AlarmSkipUseCase.naechsterKlingelnderWecker(anstehend, jetzt)
     return WeckerAnzeige(
         naechsterEintrag = naechster?.formattedTime,
         naechsterEintragIstStumm = naechster?.isSilent == true,
-        naechsterKlingelnder = anstehend
-            .filterNot { it.isSilent }
-            .minByOrNull { it.triggerTime }
-            ?.formattedTime,
+        naechsterKlingelnder = klingelnder?.formattedTime,
+        naechsterKlingelnderZeitpunkt = klingelnder?.triggerTime,
         // Bezugsgroesse ist bewusst die GANZE Liste: die Karte zaehlt daneben `activeAlarms.size`,
         // und zwei Zahlen aus verschiedenen Grundmengen waeren wieder eine Anzeige, die nicht
         // stimmt.

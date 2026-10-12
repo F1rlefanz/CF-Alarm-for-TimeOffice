@@ -55,7 +55,9 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.AlarmSkipUiState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.AlarmUiState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.ShiftUiState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.TagFreigabeUiState
+import java.time.Instant
 import java.time.LocalDate
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
@@ -110,6 +112,27 @@ internal const val AUTO_ALARM_BESCHREIBUNG_PAUSIERT: String =
 internal const val FREIGEBEN_HINWEIS_KURZ: String =
     "„Überspringen“ betrifft nur den Wecker, „Tag freigeben“ den ganzen Dienst."
 
+/**
+ * Die Nebenwirkungen einer Freigabe, die man sonst nur am Geraet sieht - Teil von
+ * [FREIGEBEN_HINWEIS_DETAIL], als eigene Konstante, damit ein Test genau diesen Satz festhalten
+ * kann.
+ *
+ * JEDE Aussage ist am Code belegt, nicht nur gemeint (Stand 1.48.0):
+ *  - "stuendliche Rufdienst-Abfrage entfaellt": `RufbereitschaftAbfrage.reschedule()` filtert die
+ *    Schichtspannen ueber `FreieTageStore.filtereSpannen`, und `TagFreigabeUseCase` plant sie
+ *    gleich beim Freigeben neu (`ZeitkettenArmierer.armiere("FREIGABE")`).
+ *  - "spaetere Aenderungen im Dienstplan stellen an diesem Tag keinen Wecker mehr": Gate in
+ *    `AlarmUseCase.syncAlarms()` und Backstop in `scheduleSystemAlarm()`, beide ueber
+ *    `AlarmUseCase.istTagFreigegeben` - die Freigabe haengt am Datum, nicht an Termin oder
+ *    Kennung, und greift deshalb auch fuer einen spaeter eingetragenen Dienst.
+ *  - "Deine eigenen Wecker bleiben": `istTagFreigegeben` und `TagFreigabeUseCase.gehoertZuTag`
+ *    nehmen manuelle Wecker (`eventId.isEmpty()`) aus.
+ * Wer eine dieser Stellen aendert, prueft diesen Satz mit.
+ */
+internal const val FREIGEBEN_NEBENWIRKUNGEN: String =
+    "Auch die stündliche Rufdienst-Abfrage entfällt, und spätere Änderungen im Dienstplan " +
+        "stellen an diesem Tag keinen Wecker mehr. Deine eigenen Wecker bleiben."
+
 /** Der ausfuehrliche Teil - nach der Hausform: was faellt weg, was kommt wieder, was bleibt. */
 internal const val FREIGEBEN_HINWEIS_DETAIL: String =
     "Überspringen lässt genau einen Weckruf aus. Der Dienst bleibt bestehen: „Nicht stören“ und " +
@@ -118,8 +141,8 @@ internal const val FREIGEBEN_HINWEIS_DETAIL: String =
         "Tag freigeben streicht den Dienst selbst. Für diesen Kalendertag wird kein Wecker " +
         "gestellt, und weder „Nicht stören“ noch das Dimmen richten sich noch nach der " +
         "Schicht — der Tag zählt ab dann als freier Tag, mit allem, was für dich an freien Tagen " +
-        "gilt (deine Regel für freie Tage). Gedacht für den Tag, an dem du nicht arbeitest, " +
-        "obwohl er im Dienstplan steht.\n\n" +
+        "gilt (deine Regel für freie Tage). " + FREIGEBEN_NEBENWIRKUNGEN + " Gedacht für den Tag, " +
+        "an dem du nicht arbeitest, obwohl er im Dienstplan steht.\n\n" +
         "Der Termin im Kalender bleibt in beiden Fällen unangetastet. Nimmst du eine Freigabe " +
         "zurück, legt die App den Wecker aus dem Dienstplan neu an."
 
@@ -138,6 +161,32 @@ internal fun freigabeAbschnittSichtbar(
     naechsterAlarmTag: LocalDate?,
     freieTage: List<LocalDate>
 ): Boolean = naechsterAlarmTag != null || freieTage.isNotEmpty()
+
+/** Steht kein klingelnder Wecker an (nur stille Eintraege), gibt es nichts zu ueberspringen. */
+internal const val UEBERSPRINGEN_KEIN_ZIEL: String = "Kein klingelnder Wecker zum Überspringen"
+
+/**
+ * PURE, TESTBAR: die Zeile neben dem Knopf "Überspringen" - sie nennt den Wecker, den der Knopf
+ * abschaltet, mit Datum und Uhrzeit ("Wecker 13.10. 05:30 einmalig überspringen").
+ *
+ * Bis 1.47.1 stand dort "Nächsten Alarm einmalig überspringen:", und der Knopf traf den naechsten
+ * EINTRAG - am Rufdienst-Tag einen stillen, waehrend die Karte darueber den klingelnden Wecker
+ * nannte. Seit das Ueberspringen den naechsten KLINGELNDEN Wecker waehlt
+ * (`AlarmSkipUseCase.naechsterKlingelnderWecker`), kommt der Zeitpunkt hier aus derselben
+ * Auswahl ([AlarmUiState.nextRingingAlarmTriggerTime]) - der Text kann also nur den Wecker nennen,
+ * den der Knopf auch trifft. `null` heisst: es steht keiner an, der Knopf ist gesperrt, und die
+ * Zeile sagt das, statt einen Wecker zu versprechen.
+ */
+internal fun ueberspringenZeile(
+    naechsterKlingelnderZeitpunkt: Long?,
+    zone: ZoneId = ZoneId.systemDefault()
+): String {
+    if (naechsterKlingelnderZeitpunkt == null) return UEBERSPRINGEN_KEIN_ZIEL
+    val wann = Instant.ofEpochMilli(naechsterKlingelnderZeitpunkt)
+        .atZone(zone)
+        .format(DateTimeFormatter.ofPattern("dd.MM. HH:mm", Locale.GERMAN))
+    return "Wecker $wann einmalig überspringen"
+}
 
 /** Anzeigeform eines freigegebenen Tages, z. B. "Mo, 24.08.2026". */
 internal fun formatiereFreienTag(datum: LocalDate): String =
@@ -364,8 +413,13 @@ private fun EnhancedAlarmStatusCard(
                             }
                         }
                     } else {
+                        // Zeile und Freischaltung haengen am naechsten KLINGELNDEN Wecker, nicht
+                        // am naechsten Eintrag (nextAlarmTime) - dasselbe Ziel, das
+                        // skipNextAlarm() waehlt. Mit nextAlarmTime waere der Knopf an einem Tag
+                        // mit nur stillen Eintraegen bedienbar, ohne dass es etwas zu
+                        // ueberspringen gibt. Siehe ueberspringenZeile().
                         Text(
-                            "Nächsten Alarm einmalig überspringen:",
+                            ueberspringenZeile(alarmState.nextRingingAlarmTriggerTime),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.weight(1f)
@@ -373,7 +427,7 @@ private fun EnhancedAlarmStatusCard(
 
                         Button(
                             onClick = onSkipNextAlarm,
-                            enabled = alarmState.nextAlarmTime != null && !skipState.isLoading
+                            enabled = alarmState.nextRingingAlarmTime != null && !skipState.isLoading
                         ) {
                             if (skipState.isLoading) {
                                 CircularProgressIndicator(

@@ -176,6 +176,10 @@ internal const val UEBERSPRINGEN_KEIN_ZIEL: String = "Kein klingelnder Wecker zu
  * Auswahl ([AlarmUiState.nextRingingAlarmTriggerTime]) - der Text kann also nur den Wecker nennen,
  * den der Knopf auch trifft. `null` heisst: es steht keiner an, der Knopf ist gesperrt, und die
  * Zeile sagt das, statt einen Wecker zu versprechen.
+ *
+ * Die Zeile rechnet nur nach, wenn sich Bestand oder Skip-Zustand aendern - ein genannter Wecker
+ * kann also schon vorbei sein. Dann lehnt `AlarmViewModel.skipNextAlarm()` ab, erneuert die Zeile
+ * und sagt, dass nichts uebersprungen wurde (Review 1.48.0), statt still den naechsten zu treffen.
  */
 internal fun ueberspringenZeile(
     naechsterKlingelnderZeitpunkt: Long?,

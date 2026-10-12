@@ -658,6 +658,27 @@ class AlarmViewModel @Inject constructor(
             )
             return
         }
+        // DAS ZIEL MUSS NOCH DER ANGEZEIGTE WECKER SEIN (Review 1.48.0): Die Zeile am Knopf nennt
+        // Datum und Uhrzeit ([AlarmUiState.nextRingingAlarmTriggerTime]), berechnet aber nur, wenn
+        // Bestand oder Skip-Zustand sich aendern - einen Zeit-Ticker gibt es nicht. Klingelt der
+        // genannte Wecker und wird beendet, steht er bis zum naechsten Sync im Bestand und in der
+        // Zeile, waehrend skipNextAlarm() im UseCase zum Tippzeitpunkt neu waehlt: es traefe den
+        // Wecker von MORGEN, den die Zeile nie genannt hat. Deshalb hier mit der Uhr von jetzt
+        // nachrechnen; weicht das Ziel ab, wird die Anzeige erneuert und NICHTS uebersprungen.
+        val angezeigt = _uiState.value
+        val frisch = uebernehmeAlarmAnzeige(angezeigt, angezeigt.activeAlarms)
+        if (frisch.nextRingingAlarmTriggerTime != angezeigt.nextRingingAlarmTriggerTime) {
+            Logger.w(
+                LogTags.ALARM_SKIP,
+                "⏭️ Ueberspringen abgelehnt - der angezeigte Wecker (${angezeigt.nextRingingAlarmTime}) " +
+                    "ist nicht mehr der naechste klingelnde; Anzeige erneuert"
+            )
+            _uiState.value = frisch
+            _skipState.update {
+                it.copy(restoreNotice = ueberspringenZielVerstrichenHinweis(frisch.nextRingingAlarmTriggerTime != null))
+            }
+            return
+        }
         skipVorgangLaeuft = true
         viewModelScope.launch {
             try {
@@ -1736,6 +1757,21 @@ internal fun berechneWeckerAnzeige(
             ?.let { Instant.ofEpochMilli(it.triggerTime).atZone(ZoneId.systemDefault()).toLocalDate() }
     )
 }
+
+/**
+ * Hinweis, wenn "Überspringen" abgelehnt wurde, weil der in der Zeile genannte Wecker schon vorbei
+ * ist (siehe `AlarmViewModel.skipNextAlarm`). Er sagt zuerst, dass NICHTS uebersprungen wurde -
+ * der Nutzer muss nicht raten, ob sein Wecker morgen klingelt.
+ *
+ * @param weitererWecker steht nach dem Erneuern noch ein klingelnder Wecker an?
+ */
+internal fun ueberspringenZielVerstrichenHinweis(weitererWecker: Boolean): String =
+    "Der angezeigte Wecker ist schon vorbei – übersprungen wurde nichts. " +
+        if (weitererWecker) {
+            "Die Zeile nennt jetzt den nächsten Wecker; tippe noch einmal, wenn du ihn überspringen willst."
+        } else {
+            "Es steht kein weiterer klingelnder Wecker an."
+        }
 
 /**
  * Die kompensierende Ruecknahme eines Alarms, der gespeichert, aber nicht armiert werden konnte —

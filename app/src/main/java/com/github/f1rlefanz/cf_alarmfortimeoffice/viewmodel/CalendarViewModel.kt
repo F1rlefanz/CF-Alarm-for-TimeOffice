@@ -276,9 +276,10 @@ class CalendarViewModel @Inject constructor(
      *
      * loadAvailableCalendars() wehrt sich mit einem simplen In-Flight-Flag gegen
      * Überlappung - das passt dort, weil ein zweiter Aufruf während des ersten schlicht
-     * verworfen wird. Bei loadEventsForSelectedCalendars() geht das nicht: observeCalendarSelection()
-     * UND refreshData(forceRefresh = true) (z.B. "Aktualisieren"-Button)
-     * dürfen beide legitim feuern, und ein simples Boolean-Gate würde den zweiten Aufruf einfach
+     * verworfen wird. Bei loadEventsForSelectedCalendars() geht das nicht: observeCalendarSelection(),
+     * refreshData(forceRefresh = true) ("Mit Google Kalender abgleichen"), die Umstellung der
+     * Vorausschau und die Rueckkehr in die App (aktualisiereBeiRueckkehr)
+     * dürfen alle legitim feuern, und ein simples Boolean-Gate würde den zweiten Aufruf einfach
      * schlucken statt seine - eigentlich aktuelleren - Ergebnisse durchzulassen.
      *
      * Stattdessen zieht jeder Aufruf beim Start eine eigene Generation-Nummer. Bevor er

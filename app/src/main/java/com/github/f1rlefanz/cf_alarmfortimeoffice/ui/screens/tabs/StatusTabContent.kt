@@ -855,20 +855,27 @@ private fun CacheStatusCard() {
  * Ausgelagert, weil dieselbe Formulierung jetzt fuer ZWEI Werte gilt (Wartungslauf und
  * Terminabruf) - zwei Kopien derselben `when`-Kette waeren die naechste Stelle, an der zwei
  * Wahrheiten auseinanderlaufen.
+ *
+ * Unter einer Minute "Gerade eben", sonst mit Einzahl ("Vor 1 Stunde") - bis 1.48.0 stand dort
+ * nach jedem Abgleich "Vor 0 Minuten" und an den Stufengrenzen "Vor 1 Stunden".
  */
 internal fun zeitAbstandInWorten(zeitpunkt: Long, jetzt: Long = System.currentTimeMillis()): String {
     if (zeitpunkt <= 0L) return "Noch nie"
     val abstand = jetzt - zeitpunkt
     return when {
         abstand < 0 -> "Unbekannt"
+        abstand < TimeUnit.MINUTES.toMillis(1) -> "Gerade eben"
         abstand < TimeUnit.HOURS.toMillis(1) ->
-            "Vor ${TimeUnit.MILLISECONDS.toMinutes(abstand)} Minuten"
+            vorAnzahl(TimeUnit.MILLISECONDS.toMinutes(abstand), "Minute", "Minuten")
         abstand < TimeUnit.DAYS.toMillis(1) ->
-            "Vor ${TimeUnit.MILLISECONDS.toHours(abstand)} Stunden"
+            vorAnzahl(TimeUnit.MILLISECONDS.toHours(abstand), "Stunde", "Stunden")
         else ->
-            "Vor ${TimeUnit.MILLISECONDS.toDays(abstand)} Tagen"
+            vorAnzahl(TimeUnit.MILLISECONDS.toDays(abstand), "Tag", "Tagen")
     }
 }
+
+private fun vorAnzahl(anzahl: Long, einzahl: String, mehrzahl: String): String =
+    "Vor $anzahl ${if (anzahl == 1L) einzahl else mehrzahl}"
 
 /**
  * "um 14:00" fuer heute, sonst mit Datum - der Zeitpunkt liegt in der Zukunft, nie "vor X".
@@ -881,8 +888,10 @@ internal fun rufbereitschaftsAbfrageInWorten(
     heute: java.time.LocalDate = java.time.LocalDate.now(zone)
 ): String {
     val z = java.time.Instant.ofEpochMilli(zeitpunkt).atZone(zone)
+    // Geschuetztes Leerzeichen vor der Uhrzeit: bei grosser Schrift brach "um" sonst ans Zeilenende
+    // und "06:53" stand allein in der naechsten Zeile.
     val uhr = z.format(DateTimeFormatter.ofPattern("HH:mm", Locale.GERMANY))
-    return if (z.toLocalDate() == heute) "um $uhr" else "am ${z.format(DateTimeFormatter.ofPattern("dd.MM.", Locale.GERMANY))} um $uhr"
+    return if (z.toLocalDate() == heute) "um\u00A0$uhr" else "am ${z.format(DateTimeFormatter.ofPattern("dd.MM.", Locale.GERMANY))} um\u00A0$uhr"
 }
 
 /** Beschriftung des 6h-Termins in der Karte "Hintergrunddienst" - die Website nennt sie gleich. */

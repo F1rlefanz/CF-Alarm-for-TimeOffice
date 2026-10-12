@@ -108,7 +108,7 @@ class UeberspringenKlingelnderWeckerTest {
     @Test
     fun `Die Knopfzeile nennt Datum und Uhrzeit des klingelnden Weckers`() {
         assertEquals(
-            "Wecker 13.10. 05:30 einmalig überspringen",
+            "Wecker 13.10.\u00A005:30 einmalig überspringen",
             ueberspringenZeile(millis(2026, 10, 13, 5, 30), zone)
         )
     }
@@ -116,7 +116,7 @@ class UeberspringenKlingelnderWeckerTest {
     @Test
     fun `Die Knopfzeile schreibt Tag, Monat und Stunde zweistellig`() {
         assertEquals(
-            "Wecker 03.11. 07:05 einmalig überspringen",
+            "Wecker 03.11.\u00A007:05 einmalig überspringen",
             ueberspringenZeile(millis(2026, 11, 3, 7, 5), zone)
         )
     }
@@ -127,7 +127,7 @@ class UeberspringenKlingelnderWeckerTest {
         // denn dort klingelt der Wecker. 05:30 in Berlin (MESZ, UTC+2) ist 03:30 UTC.
         val zeitpunkt = millis(2026, 10, 13, 5, 30)
         assertEquals(
-            "Wecker 13.10. 03:30 einmalig überspringen",
+            "Wecker 13.10.\u00A003:30 einmalig überspringen",
             ueberspringenZeile(zeitpunkt, ZoneId.of("UTC"))
         )
     }
@@ -149,7 +149,7 @@ class UeberspringenKlingelnderWeckerTest {
         val anzeige = berechneWeckerAnzeige(alarme, skippedAlarmId = null, jetzt = jetzt)
 
         assertEquals(
-            "Wecker 13.10. 05:30 einmalig überspringen",
+            "Wecker 13.10.\u00A005:30 einmalig überspringen",
             ueberspringenZeile(anzeige.naechsterKlingelnderZeitpunkt, zone)
         )
     }

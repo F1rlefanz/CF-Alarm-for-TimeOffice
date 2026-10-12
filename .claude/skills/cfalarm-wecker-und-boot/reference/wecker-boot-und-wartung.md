@@ -33,6 +33,7 @@
 - Schlummer-Dauer (`AlarmPrefs`, seit v1.22.0) ist konfigurierbar, aber EINE Quelle für beide
 - `AlarmMaintenanceService`: `stopSelf(startId)`, niemals blankes `stopSelf()`
 - Die 6h-Wartungskette hat GENAU einen Planer: `scheduleNext()`, auf genau einem Request-Code
+- Ein Eintritt in den Hauptbereich behält den gemerkten Termin der Kette
 - Dieser `finally`-Block läuft in `withContext(NonCancellable)` und fängt den
 - Die 6h-Wartung MUSS Änderungen und Streichungen sehen können — die Sync-Entscheidung
 - `BootReceiver` liest die Kalenderauswahl über den DataStore und entscheidet nicht auf einem
@@ -45,6 +46,7 @@
 - „Deine Schicht beginnt um" (Notification + Vollbild) muss `AlarmInfo.shiftStartTime` zeigen,
 - `ShiftConfig.autoAlarmEnabled = false` ist eine ECHTE, sofortige Pause
 - `AlarmMaintenanceService.start()` fängt den abgelehnten Vordergrund-Start selbst — nicht die
+- Die zwei Abgleiche nach „TimeOffice öffnen" (Slots 8804/8805) sind EINMALIG und kein zweiter
 
 ---
 
@@ -279,6 +281,39 @@
   `onStartCommand` ohnehin immer `scheduleNext()` ruft, liefen dauerhaft zwei Wartungszyklen alle
   6h im Millisekunden-Abstand. Wer einen Lauf „sicherheitshalber" selbst nachplant, baut das
   wieder ein — der `finally`-Block deckt jeden Pfad ab.
+- **Ein Eintritt in den Hauptbereich behält den gemerkten Termin der Kette
+  (`scheduleNext(context, frueherenTerminBehalten = true)`, seit 1.48.0).** `MainScreen` stellt die
+  Kette an drei Stellen (LaunchedEffect beim Eintritt in den Hauptbereich, `finishOnboarding`,
+  `GateSchritt.Fertig`), damit eine von Android gelöschte Kette repariert wird. Der Kommentar dort
+  nannte das „idempotent" — das stimmte nur für die ANZAHL (ein Request-Code, ein PendingIntent,
+  ein zweiter Aufruf ersetzt den ersten), nicht für den ZEITPUNKT: bis 1.47.1 stellte jeder Aufruf
+  auf jetzt + 6 h, und wer oft nachsah, schob den fälligen Lauf vor sich her. **Am Fairphone belegt
+  (12.10.2026):** der 20:17-Lauf kam nie, die nächste Wartung stand auf 01:29:36.811 =
+  Wiedereintritt 19:29:36 + 6 h. Seither merkt sich `scheduleNext()` den gestellten Termin
+  (`WartungsKettenTermin`), und NUR diese drei Aufrufer stellen einen gemerkten Termin in
+  (jetzt + `BEHALTEN_MINDESTVORLAUF_MS`, jetzt + 6 h] neu, ohne ihn zu verschieben
+  (`WartungsKettenPlanung.zielTermin`). Außerhalb des Fensters gilt jetzt + 6 h: ein vergangener
+  Termin heißt, der Lauf läuft gerade (sein `finally` plant ohnehin neu) oder die Kette ist tot;
+  einer weiter als 6 h voraus entsteht nur nach dem Zurückstellen der Uhr. Der Mindestvorlauf ist
+  bewusst EINE SEKUNDE, nicht die Minute aus `RufbereitschaftAbfrage.MINDEST_ABSTAND_MS`: jeder
+  Termin, der durchfällt, rückt auf jetzt + 6 h — also genau der alte Fehler; die Sekunde trennt
+  nur den Termin ab, der gerade feuert. Der Wachhund rechnet vom ZIEL, nicht von jetzt, sonst läge
+  er bis zu 6 h hinter dem Lauf, den er absichern soll. Alle übrigen Aufrufer (Wartungs-`finally`,
+  `BootReceiver`, Master-Pause `resume()`, Wachhund) planen unverändert ab jetzt + 6 h. Es bleibt
+  EIN Planer auf EINEM Slot — das Behalten ändert den Zeitpunkt, nicht die Zahl der Alarme.
+  **Der Merker liegt in DEVICE-PROTECTED SharedPreferences (`wartung_kette.xml`)**, weil
+  `scheduleNext()` auch aus dem `BootReceiver` vor der ersten Entsperrung läuft — ein CE-DataStore
+  lieferte dort still „leer" und hielte das für den ganzen Prozess fest (Skill
+  `cfalarm-persistenz-und-auth`); synchron, weil `scheduleNext()` synchron ist; eigene Datei, und
+  kein Zugriff in einem Property-Initializer. Gemerkt wird ERST NACH dem Stellen (ein Merker ohne
+  gestellten Alarm verwiese auf einen Lauf, den es nicht gibt), vergessen in `cancelNext()` (sonst
+  stünde während der Master-Pause ein „Nächster Abgleich im Hintergrund" in der Status-Karte, der
+  nie kommt). Jeder Zugriff wirft nie: Lesefehler = kein Termin = jetzt + 6 h, und die JVM-Tests
+  fahren `scheduleNext()`/`cancelNext()` mit einem gemockten Context, dessen
+  `createDeviceProtectedStorageContext()` null liefert. Die Datei liegt außerhalb der Backup-Domain
+  `sharedpref` (wie `direct_boot_alarms.xml`) und reist nicht auf ein neues Gerät — ein fremder
+  Termin wäre dort falsch. Festgehalten von `WartungsKettenZielterminTest` und
+  `WartungsKettenTerminTest`.
 - **Dieser `finally`-Block läuft in `withContext(NonCancellable)` und fängt den
   Master-Pause-Read.** Vorher stand der suspendierende `pausedNow()`-Read als erste Anweisung darin:
   in einer gecancelten Coroutine (`onDestroy()` → `serviceScope.cancel()`) warf er sofort, wodurch
@@ -421,6 +456,34 @@
   aus dem Hintergrund immer erlaubt — und prüft davor den Master-Pause-Spiegel, damit ein im selben
   Moment abgeschickter Wachhund eine frische Pause nicht aushebelt. Den sofortigen Wiederanlauf im
   Vordergrund leistet die Exact-Alarm-Statuskarte, nicht der Wachhund.
+- **Die zwei Abgleiche nach „TimeOffice öffnen" (Slots 8804/8805) sind EINMALIG und kein zweiter
+  Planer der Kette** (`service/TimeOfficeNachfassAbgleich`, seit 1.48.0). Anlass (12.10.2026, am
+  Fairphone belegt): TimeOffice trägt einen geänderten Dienstplan erst in den Google-Kalender ein,
+  wenn man die App ÖFFNET — Meldung 09:24, TimeOffice geöffnet 15:50:28, Hochladen 15:51:06, bei
+  Google 15:52. Wer TimeOffice über den Knopf in der Karte „TimeOffice-Zuverlässigkeit" öffnet,
+  bekommt deshalb zwei Abgleiche hinterher: nach 3 min (der gemessene Fall plus
+  Fingerabdruck-Abfrage) und nach 10 min (langsames Hochladen). Ihr Empfänger
+  `TimeOfficeNachfassReceiver` startet NUR `AlarmMaintenanceService.start(forceSync = true)` —
+  keine zweite Wartungsimplementierung, dieselbe Haltung wie Rufbereitschafts-Abfrage,
+  Netz-Nachholung und `TimezoneChangeReceiver`. Eigene Slots aus demselben Grund wie beim
+  Nachhol-Alarm (8801): auf Code 0 ersetzten sie den geplanten nächsten regulären Lauf. Sie planen
+  sich nicht selbst nach; dass jeder dieser Läufe in seinem `finally` die Kette auf jetzt + 6 h
+  stellt, ist der gewohnte Gang nach jedem Lauf. Ein zweiter Druck stellt dieselben zwei Slots neu
+  (`FLAG_UPDATE_CURRENT` auf festem Code) — die Abgleiche rücken nach hinten, sie stapeln sich
+  nicht. **Master-Pause:** `plane()` fragt den Device-Protected-Spiegel (synchron, aus einem
+  Knopf-Handler ohne Coroutine) und stellt während der Pause nichts; dieselbe Funktion
+  (`pausiert()`) entscheidet, ob die Karte „Danach gleicht CF-Alarm … ab" verspricht.
+  `MasterPauseUseCase.pause()` räumt beide über `abbrechen()` ab (Zwilling von #131/G11-14 bei der
+  Rufbereitschafts-Abfrage: sonst startete bis zu 10 min nach dem Pausieren ein Wartungslauf samt
+  Vordergrund-Benachrichtigung); `resume()` stellt sie bewusst NICHT neu — sie hängen an einem
+  Knopfdruck, es gibt keinen Ist-Zustand, aus dem sie sich neu rechnen ließen. `abbrechen()` baut
+  denselben PendingIntent wie `plane()` (gemeinsamer Bau, Rückgabetyp bewusst nicht
+  ausgeschrieben — mit `: PendingIntent` liefe es im Unit-Test-Modus still ins catch). **Was es
+  nicht leistet:** ohne Exact-Alarm-Berechtigung (API 31/32 entziehbar) wird ungenau gestellt, und
+  ein ungenauer Alarm darf beim Feuern keinen Vordergrunddienst starten — die beiden Abgleiche
+  entfallen dann faktisch. Kein WorkManager aus demselben Grund (Vordergrund-Start aus einem Worker
+  wird ab Android 12 abgelehnt). Festgehalten von `TimeOfficeNachfassAbgleichTest` (Abstände,
+  Slots, Kollision mit 0/8801/8802/8803) und `MasterPauseUseCaseTest` (Abräumen in `pause()`).
 
 
 - **Full-Screen-Intent bei ENTSPERRTEM Gerät ist KEIN Bug.** Die Doku sagt: „While the user is

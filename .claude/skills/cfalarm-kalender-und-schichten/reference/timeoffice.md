@@ -4,6 +4,17 @@
 > Regel erzwungen hat, welche Messung sie belegt, welche Alternative verworfen wurde.
 > Jede Zeile hier hat einmal echten Schaden verhindert — im Zweifel gilt sie, nicht die Intuition.
 
+## Inhalt
+
+- CFAlarms Funktion hängt an einer Kette außerhalb dieser App
+- Die Health-Karte: nur die Akku-Ausnahme ist für ein fremdes Paket prüfbar
+- Kein Akku-Dialog für TimeOffice, `<queries>` ist Pflicht, kein Unit-Test für den Helper
+- Das Onboarding-Gate hängt am automatischen Weg
+- TimeOffice trägt erst beim Öffnen ein (12.10.2026) — und „TimeOffice öffnen"
+- Keine offizielle Schnittstelle zum eigenen Dienstplan (11.10.2026)
+
+---
+
 - **CFAlarms gesamte Funktion hängt an einer Kette außerhalb dieser App**: TimeOffice
   (`de.pradtke.timeoffice`) schreibt den Dienstplan (inkl. Krankschreibungen) lokal in einen
   eigenen Google-Kalender ("Timeoffice Dienstplanfeed", ein besessener Sekundärkalender im
@@ -46,6 +57,28 @@
   Status-Tab-Karte). Genau der Fall, für den das Feature gebaut wurde. Fix seit v1.22.0: vierter
   `else if`-Zweig in `handleAuthenticationSuccess()`, gleiche Gate-Reihenfolge wie
   `setzeGateKetteFort()` (bis 1.45: `proceedPastGates()`).
+
+- **TimeOffice trägt eine Änderung erst in den Kalender ein, wenn man es ÖFFNET — auch mit allen
+  Einstellungen in Ordnung** (Befund 12.10.2026, Fairphone, CF-Alarm-Debug-Log plus Kalender-Sync
+  des Geräts). Meldung „Dienstplanänderung" um 09:24; der Nutzer öffnete TimeOffice um 15:50:28,
+  Android lud 15:51:06 hoch, Google hatte den Termin 15:52. Bis zum Öffnen stand nichts im
+  Kalender — Akku-Ausnahme und „App bei Nichtnutzung pausieren" waren korrekt gesetzt. Damit gilt:
+  so oft CF-Alarm auch nachsieht, vor dem Öffnen von TimeOffice gibt es nichts zu sehen.
+  - **Warum das so ist (Einordnung, nicht vom Hersteller bestätigt):** TimeOffice 2.7.2 ist eine
+    Capacitor-Web-App; das Schreiben in den Kalender läuft offenbar im Web-Teil, also nur bei
+    geöffneter App. Die Meldung kommt per Push aus der Pradtke-Cloud, ohne die App zu starten.
+  - **Von außen anstoßen geht nicht:** exportiert ist nur die Startseite (`MainActivity`, dazu
+    `https://timeoffice.app`-Links), kein Dienst, kein Receiver. Eine fremde App aus dem
+    Hintergrund zu öffnen verbietet Android ab 10. Beim Öffnen fragt TimeOffice die Biometrie ab —
+    ein unbemerktes Öffnen gäbe es also auch dann nicht.
+  - **Was CF-Alarm tut (1.48.0):** Die Karte „TimeOffice-Zuverlässigkeit" sagt es dem Nutzer und
+    bietet „TimeOffice öffnen" an (`TimeOfficeHealthHelper.createLaunchIntent`,
+    `getLaunchIntentForPackage`); danach zwei Abgleiche nach 3 und 10 Minuten
+    (`TimeOfficeNachfassAbgleich`, Regeln im Wecker-Skill). Die Problemhilfe der Website
+    (`troubleshooting.html#timeoffice`) sagt dasselbe. `EinstiegIntentTest` lässt den
+    Start-Intent zu genau diesem fremden Paket zu — sein Zweck sind Intents an die EIGENE App.
+  - **Der eigentliche Hebel läge beim Hersteller** (Kalender im Hintergrund schreiben, wenn die
+    Push-Meldung kommt). Ein Funktionswunsch an Pradtke ist bisher nicht gestellt.
 
 - **Eine offizielle Schnittstelle zum EIGENEN Dienstplan gibt es nicht — der Kalender-Export der
   App ist der einzige Weg nach außen.** Recherchiert am 11.10.2026 (lokale Sitzung mit Browser;

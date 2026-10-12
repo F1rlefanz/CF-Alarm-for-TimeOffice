@@ -75,7 +75,18 @@ das baut man dieselbe Falle in neuer Form nach.
   (`isFirstSync`), `notifyUpdated()` hat eine eigene Schwelle (≥10 min oder Name geändert).
 - **Pre-Alarm-Refresh**: pro Alarm ein WorkManager-Job 3 h vorher (max. 14 Tage, max. 10 Jobs).
   Schließt die Lücke NICHT — echtes Push ist auf einem Android-Gerät nicht möglich, und der Job
-  gilt nur für Wecker, die es schon GIBT.
+  gilt nur für Wecker, die es schon GIBT. Neu geplant nach Boot und Wartung UND seit 1.48.0 nach
+  jedem gelungenen Sync im Vordergrund (`ZeitkettenArmierer.planeNachVordergrundSync()`, aus
+  `CalendarViewModel` und `ShiftViewModel`) — sonst wartete ein beim Öffnen der App angelegter
+  Wecker bis zur nächsten Wartung auf seinen Vorab-Abgleich.
+- **Die Rückkehr in die App gleicht ab** (1.48.0, Befund 12.10.2026): `MainActivity` prüft ab
+  STARTED (nicht `onResume`) UND bei jedem neuen `last_event_load_time`, solange sie offen ist;
+  entschieden wird NUR in `CalendarViewModel.sollBeiRueckkehrLaden` (älter als
+  `RUECKKEHR_FRISCH_MS` = 5 min, oder der Hintergrund ist neuer; noch nie geladen = der Startpfad
+  lädt, nicht die Rückkehr), geladen über DEN Ladeweg mit verworfenem Zwischenspeicher. Eine
+  WIEDERHERGESTELLTE Activity zählt mit (Konfigurationswechsel im Hintergrund). Der ERSTE Abruf
+  jedes ViewModels verwirft den Zwischenspeicher ebenfalls — sonst nennt „Abgeglichen um" einen
+  Abruf, der nie bei Google war. Hergang in `reference/kalender-datenfluss.md`.
 - **Rufbereitschaft ist ein Flag am Schichttyp (`ShiftDefinition.isOnCall`), EINE Quelle für zwei
   Leser**: die stündliche Kalender-Abfrage an solchen Tagen (`RufbereitschaftAbfrage`, Regeln im
   Wecker-Skill) und den DND-Cutoff. Welches Kürzel eine Rufbereitschaft ist, weiß nur der Nutzer
@@ -168,6 +179,11 @@ das baut man dieselbe Falle in neuer Form nach.
 - **Das Onboarding-Gate hängt am automatischen Weg (`naechsterGateSchritt(…, GateEinstieg.AUTO)` →
   `handleAuthenticationSuccess()`), nicht nur am aktiven (`setzeGateKetteFort`, früher `proceedPastGates()`)** —
   sonst sehen Bestandsnutzer den Prompt nie automatisch.
+- **TimeOffice trägt eine Änderung erst in den Kalender ein, wenn man es ÖFFNET** (am Fairphone
+  belegt, 12.10.2026) — seine Meldung „Dienstplanänderung" allein schreibt nichts. Dagegen hilft
+  keine Einstellung; die Karte sagt es und bietet „TimeOffice öffnen" an (danach zwei Abgleiche,
+  Regeln im Wecker-Skill). Ein stilles Anstoßen von außen gibt es nicht (nur die Startseite ist
+  exportiert, Hintergrund-Start fremder Apps verboten). Hergang in `reference/timeoffice.md`.
 - **Es gibt KEINEN offiziellen Weg am Kalender vorbei** (kein ICS-/webcal-Abo, kein CalDAV, kein
   persönlicher Export; die REST-API von TIMEOFFICE Core ist ein Werkzeug der Klinik-IT, nicht der
   Mitarbeitenden). Recherchiert am 11.10.2026 über die vollständige Hersteller-Doku — nicht noch

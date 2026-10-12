@@ -133,7 +133,10 @@ das baut man dieselbe Falle in neuer Form nach.
   true)`. Neu geplant wird sie im `finally` der Wartung (nach dem Sync, denn sie liest die frisch
   geschriebenen Spannen), im `BootReceiver` und in `ZeitkettenArmierer` zusammen mit DND (Boot und
   Wartung über `ZeitkettenArmierer.armiereNebenketten()`, die EINE Stelle für alle vier
-  Nebenketten samt Pause-Abräumen; die Master-Pause räumt/plant sie in `pause()`/`resume()`). Ein
+  Nebenketten samt Pause-Abräumen; die Master-Pause räumt/plant sie in `pause()`/`resume()`) und
+  seit 1.48.0 nach jedem gelungenen Sync im Vordergrund
+  (`ZeitkettenArmierer.planeNachVordergrundSync()`: NUR sie und der Pre-Alarm-Refresh — Dimmer und
+  DND schalten in `enable()` sofort am Gerät, ein Blick in die App soll nichts umschalten). Ein
   Termin liegt mindestens eine Minute in der Zukunft (`MINDEST_ABSTAND_MS`), sonst plant der Tick
   sich bei Uhren-Schlupf selbst noch einmal. Exakte Alarme mit inexaktem Fallback wie
   `scheduleNext()`; kein WorkManager-Periodic, weil Doze den um Stunden schiebt. Hergang im

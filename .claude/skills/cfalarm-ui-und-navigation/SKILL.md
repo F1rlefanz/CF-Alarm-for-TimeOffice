@@ -97,6 +97,11 @@ das baut man dieselbe Falle in neuer Form nach.
   "Überspringen"): Anzeigen rechnen nur bei einer Emission, nicht mit der Uhr. Ist das genannte
   Ziel inzwischen vorbei, lehnt der Knopf ab und sagt, dass NICHTS geschah - er trifft nie still
   ein anderes Ziel als das genannte.
+- **Text links, Bedienelement rechts: unter 270 dp (Zeilenbreite ÷ Schriftskalierung)
+  untereinander** - `TextUndBedienung`/`AuswahlRow` mit `UNTEREINANDER_UNTER` in
+  `WeckerTabContent`, Messwerte dort (Emulator 13.10.2026: 320 dp + Schrift 1,3 brach sonst
+  mitten im Wort, "überspri|ngen"). Ein geschuetztes Leerzeichen hilft nur, wo die Zeile breit
+  genug ist - in einer zu schmalen Spalte macht es aus "17.10. 05:30" ein Wort, das erst recht bricht.
 - **Ein Hinweis zu einem Knopf steht direkt unter DIESEM Knopf und nennt ihn beim Namen** - nicht
   unter einer ganzen Knopfreihe, die bei 320 dp umbricht. Und er verspricht nur, was in JEDEM
   Zustand eintritt, den die Karte kennen kann (Pause, fehlende Berechtigung).

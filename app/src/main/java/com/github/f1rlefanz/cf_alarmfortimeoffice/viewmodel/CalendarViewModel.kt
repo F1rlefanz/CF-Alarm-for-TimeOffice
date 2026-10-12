@@ -13,6 +13,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.calendar.fehlschlagArt
 import com.github.f1rlefanz.cf_alarmfortimeoffice.calendar.istNetzbedingterFehlschlag
 import com.github.f1rlefanz.cf_alarmfortimeoffice.di.state.CalendarStateHolder
 import com.github.f1rlefanz.cf_alarmfortimeoffice.error.ErrorHandler
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.ZeitkettenArmierer
 import com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPausePrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AndroidCalendar
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.CalendarEvent
@@ -213,11 +214,12 @@ data class CalendarUiState(
      * Nach einem Teil- oder Totalausfall bleibt deshalb der Zeitpunkt des letzten vollstaendigen
      * Abgleichs stehen. Die Abwahl des letzten Kalenders leert ihn: er gehoerte zur alten Auswahl.
      *
-     * GRENZE (bewusst offen): Der Startpfad ([CalendarViewModel.loadEventsForSelectedCalendars]
-     * ohne vorheriges Verwerfen) darf den Zwischenspeicher der Termine nutzen (15 min,
-     * `CalendarEventCache.TTL_MINUTES`). Lief kurz vorher die Wartung im selben Prozess, kann der
-     * Abruf bei Google dann bis zu 15 min vor diesem Zeitpunkt liegen. Das Neuladen bei Rueckkehr
-     * und "Mit Google Kalender abgleichen" verwerfen den Zwischenspeicher vorher.
+     * DER ZWISCHENSPEICHER (15 min, `CalendarEventCache.TTL_MINUTES`) wird vor jedem Anlass
+     * verworfen, der "Abgeglichen um" setzen soll: beim ersten Abruf eines ViewModels (Start),
+     * beim Neuladen bei Rueckkehr und bei "Mit Google Kalender abgleichen". GRENZE (bewusst
+     * offen): Wechselt der Nutzer die Kalenderauswahl oder die Vorausschau, laedt der Ladeweg ohne
+     * Verwerfen - fuer unveraendert gewaehlte Kalender kann der Abruf bei Google dann bis zu 15 min
+     * vor diesem Zeitpunkt liegen.
      */
     val letzterAbgleich: Long? = null
 )
@@ -243,7 +245,10 @@ class CalendarViewModel @Inject constructor(
     private val feedNeueinlesenStore: FeedNeueinlesenStore,
     // Die Kalender-Vorausschau (#51): beobachtet fuer die Anzeige und um nach einer Umstellung neu
     // zu laden. Gelesen wird sie im Abruf selbst (CalendarUseCase), nicht hier.
-    private val kalenderVorausschauPrefs: KalenderVorausschauPrefs
+    private val kalenderVorausschauPrefs: KalenderVorausschauPrefs,
+    // Nach einem Sync im Vordergrund die Ketten nachplanen, die aus dem neuen Bestand rechnen
+    // (Pre-Alarm-Refresh, Rufbereitschafts-Abfrage) - siehe planeNachVordergrundSync().
+    private val zeitkettenArmierer: ZeitkettenArmierer
 ) : ViewModel() {
 
     private val _localUiState = MutableStateFlow(CalendarUiState())
@@ -355,6 +360,25 @@ class CalendarViewModel @Inject constructor(
      */
     @Volatile
     private var letzterLadebeginn: Long? = null
+
+    /**
+     * Hat [loadEventsForSelectedCalendars] den Termin-Zwischenspeicher fuer dieses ViewModel schon
+     * einmal verworfen? Der ERSTE Abruf mit Kalenderauswahl tut das immer.
+     *
+     * WARUM (Review 1.48.0): Der Zwischenspeicher lebt im Prozess (Singleton, 15 min), ein
+     * ViewModel nicht - nach "Zurueck" auf der Uebersicht (Android 8-11 beendet dort die
+     * Activity) oder wenn ein Hintergrundlauf den Prozess gestartet hat, findet der Startpfad eines
+     * NEUEN ViewModels die Liste eines frueheren Abrufs vor. Er zeigte sie mit "Abgeglichen um
+     * <jetzt>" an, ohne bei Google gewesen zu sein - genau dann, wenn der Nutzer nach einem Wechsel
+     * zu TimeOffice nachsehen will, ob der neue Dienst schon da ist. Und weil der Ladebeginn damit
+     * frisch war, lud auch eine Rueckkehr in den naechsten 5 min nicht nach.
+     *
+     * Ein eigener Merker statt `letzterLadebeginn == null`: der wird auch bei leerer Auswahl
+     * gestempelt, und dann bekaeme der erste ECHTE Abruf nach der Kalenderwahl den alten Stand.
+     * MUSS VOR dem init{}-Block stehen (siehe [letzterLadebeginn]).
+     */
+    @Volatile
+    private var zwischenspeicherBeimStartVerworfen = false
 
     init {
         checkTokenValidity()
@@ -978,6 +1002,22 @@ class CalendarViewModel @Inject constructor(
                 return@launch
             }
 
+            // DER ERSTE ABRUF DIESES VIEWMODELS GEHT ZU GOOGLE, nicht in den Zwischenspeicher (siehe
+            // [zwischenspeicherBeimStartVerworfen]). Hier, VOR der Generationspruefung: zwischen ihr
+            // und den beiden Schreibvorgaengen darunter darf kein suspend-Punkt liegen.
+            if (!zwischenspeicherBeimStartVerworfen) {
+                zwischenspeicherBeimStartVerworfen = true
+                try {
+                    calendarUseCase.invalidateCalendarCache(selectedIds)
+                } catch (e: java.util.concurrent.CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    // Dann zeigt "Abgeglichen um" im schlimmsten Fall einen bis zu 15 min alten
+                    // Abruf als frisch - kein Grund, das Laden selbst zu verweigern.
+                    Logger.w(LogTags.CALENDAR, "Start: Termin-Zwischenspeicher nicht verworfen", e)
+                }
+            }
+
             // RACE-GUARD: Erneut pruefen, BEVOR irgendein UI-sichtbarer State geschrieben wird -
             // waehrend getCurrentSelectedCalendarIds() suspendierte, koennte ein neuerer Aufruf
             // bereits gestartet UND fertig sein. Ohne diesen Check wuerden die naechsten beiden
@@ -1418,8 +1458,10 @@ class CalendarViewModel @Inject constructor(
     }
 
     /**
-     * Die App kommt wieder in den Vordergrund (`MainActivity.onStart`): Termine neu abgleichen, wenn
-     * der letzte Blick in den Kalender zu lange her ist - Entscheidung in [sollBeiRueckkehrLaden].
+     * Die App kommt wieder in den Vordergrund - oder ein Hintergrundlauf hat neue Termine geholt,
+     * waehrend sie offen ist (beides `MainActivity.beobachteRueckkehrUndHintergrundAbruf`): Termine
+     * neu abgleichen, wenn der letzte Blick in den Kalender zu lange her ist oder der Hintergrund
+     * neuer ist - Entscheidung in [sollBeiRueckkehrLaden].
      *
      * WARUM (Befund 12.10.2026, Fairphone): Geladen wurde nur, wenn dieses ViewModel NEU entstand.
      * Drei Rueckkehrten (16:47, 18:18, 18:54) luden nichts, obwohl Google den neuen Dienst seit
@@ -1688,6 +1730,11 @@ class CalendarViewModel @Inject constructor(
                             // Liste) - deshalb fallen erst hier Raeumauftrag und Hinweis.
                             resolveDeselectionCleanupFailure()
                             pendingDeselectionCleanupStore.clearIfPending()
+                            // Pre-Alarm-Refresh und Rufbereitschafts-Abfrage fuer den neuen Bestand -
+                            // VOR dem Zeitstempel, der im Unit-Test (kein Hilt-Graph) wirft. Seit
+                            // die Rueckkehr in die App neu laedt, entstehen Wecker oft hier und
+                            // warteten sonst bis zur naechsten Wartung (Review 1.48.0).
+                            zeitkettenArmierer.planeNachVordergrundSync()
                             // "Letzter Sync"-Zeitstempel auch im Vordergrund setzen, damit die
                             // Status-Anzeige den tatsaechlich letzten Sync widerspiegelt (nicht nur die 6h-Wartung).
                             AlarmMaintenanceService.recordSyncTime(appContext)

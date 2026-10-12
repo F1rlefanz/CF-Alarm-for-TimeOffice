@@ -44,7 +44,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.IOException
@@ -699,6 +704,24 @@ class AlarmMaintenanceService : Service() {
                 .mainDataStore()
             return dataStore.data.first()[KEY_LAST_EVENT_LOAD] ?: 0L
         }
+
+        /**
+         * Derselbe Zeitstempel wie [getLastEventLoadTime] als Flow - fuer `MainActivity`, die
+         * damit merkt, dass ein Hintergrundlauf (Nachfass nach "TimeOffice öffnen",
+         * Rufbereitschafts-Abfrage, 6h-Lauf) WAEHREND die App offen ist neue Termine geholt hat.
+         * Der erste Wert ist der aktuelle Stand. Nur Lesen; geschrieben wird allein hier im Dienst.
+         * Der Store wird erst beim Sammeln aufgeloest: so landet auch ein Fehler dabei beim
+         * `catch` des Sammlers, statt schon beim Bauen des Flows zu werfen.
+         */
+        fun beobachteLetztenTerminabruf(context: Context): Flow<Long> = flow {
+            emitAll(
+                EntryPointAccessors
+                    .fromApplication(context.applicationContext, AlarmMaintenanceEntryPoint::class.java)
+                    .mainDataStore()
+                    .data
+                    .map { it[KEY_LAST_EVENT_LOAD] ?: 0L }
+            )
+        }.distinctUntilChanged()
 
         /**
          * Stamps "now" as the last sync time.

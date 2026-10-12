@@ -182,4 +182,36 @@ class ZeitkettenArmiererTest {
         verify(f.preAlarm).reschedule()
         verify(f.abfrage).reschedule()
     }
+
+    // --- planeNachVordergrundSync (Review 1.48.0) ---------------------------------------------
+
+    /**
+     * Nach einem Sync im Vordergrund: nur die beiden Ketten, die aus dem Bestand rechnen. Dimmer
+     * und DND wenden ihren Zustand in enable() sofort am Geraet an - ein Blick in die App soll
+     * nichts umschalten.
+     */
+    @Test
+    fun `planeNachVordergrundSync plant Pre-Alarm-Refresh und Rufbereitschaft, fasst Dimmer und DND nicht an`() =
+        runTest {
+            val f = fixture()
+
+            f.armierer.planeNachVordergrundSync()
+
+            verify(f.preAlarm).reschedule()
+            verify(f.abfrage).reschedule()
+            verify(f.dim, never()).enable()
+            verify(f.dnd, never()).enable()
+            verify(f.dim, never()).disable()
+            verify(f.dnd, never()).disable()
+        }
+
+    @Test
+    fun `planeNachVordergrundSync - ein Fehlschlag reisst die andere Kette nicht mit und wirft nicht`() = runTest {
+        val f = fixture()
+        f.preAlarm.stub { onBlocking { reschedule() } doAnswer { throw RuntimeException("WorkManager weg") } }
+
+        f.armierer.planeNachVordergrundSync()
+
+        verify(f.abfrage).reschedule()
+    }
 }

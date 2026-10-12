@@ -5,6 +5,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FakeFeedNeueinlesenStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FakeKalenderVorausschauPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.calendar.PendingDeselectionCleanupStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.di.state.CalendarStateHolder
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.ZeitkettenArmierer
 import com.github.f1rlefanz.cf_alarmfortimeoffice.error.ErrorHandler
 import com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPausePrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.CalendarEvent
@@ -61,6 +62,9 @@ import java.time.LocalDateTime
 @OptIn(ExperimentalCoroutinesApi::class)
 class CalendarViewModelRueckkehrTest {
 
+    /** Nebenketten nach dem Sync im Vordergrund (Pre-Alarm-Refresh, Rufbereitschaft) - hier nur ein Mock. */
+    private val armierer = mock<ZeitkettenArmierer>()
+
     private val dispatcher = StandardTestDispatcher()
     private val selectedIds = MutableStateFlow<Set<String>>(emptySet())
     private val minute = 60_000L
@@ -73,6 +77,9 @@ class CalendarViewModelRueckkehrTest {
 
     /** Kalender, deren Abruf scheitert. */
     private val kaputt = mutableSetOf<String>()
+
+    /** Ueberschreibt die gespeicherte Auswahl, die `getCurrentSelectedCalendarIds()` liefert. */
+    private var auswahlImSpeicher: Set<String>? = null
 
     @Before
     fun setUp() {
@@ -124,7 +131,9 @@ class CalendarViewModelRueckkehrTest {
         val selectionRepository = mock<ICalendarSelectionRepository>()
         whenever(selectionRepository.selectedCalendarIds).thenReturn(selectedIds)
         selectionRepository.stub {
-            on { getCurrentSelectedCalendarIds() } doReturn Result.success(gespeicherteAuswahl)
+            on { getCurrentSelectedCalendarIds() } doSuspendableAnswer {
+                Result.success(auswahlImSpeicher ?: gespeicherteAuswahl)
+            }
         }
 
         val shiftUseCase = mock<IShiftUseCase>()
@@ -155,7 +164,8 @@ class CalendarViewModelRueckkehrTest {
             masterPausePrefs = masterPausePrefs,
             pendingDeselectionCleanupStore = pendingCleanupStore,
             feedNeueinlesenStore = FakeFeedNeueinlesenStore(),
-            kalenderVorausschauPrefs = FakeKalenderVorausschauPrefs()
+            kalenderVorausschauPrefs = FakeKalenderVorausschauPrefs(),
+            zeitkettenArmierer = armierer
         )
     }
 
@@ -206,8 +216,9 @@ class CalendarViewModelRueckkehrTest {
 
             advanceUntilIdle()
 
-            // Zwischenspeicher verworfen (sonst laese der Lazy-Pfad 15 min lang die alte Liste)...
-            verifyBlocking(calendarUseCase) { invalidateCalendarCache(eq(setOf("cal-a"))) }
+            // Zwischenspeicher verworfen (sonst laese der Lazy-Pfad 15 min lang die alte Liste) -
+            // einmal beim Start (erster Abruf des ViewModels), einmal bei der Rueckkehr...
+            verifyBlocking(calendarUseCase, times(2)) { invalidateCalendarCache(eq(setOf("cal-a"))) }
             // ...und ueber den Ladeweg neu geholt.
             verifyBlocking(calendarUseCase, times(2)) { getCalendarEventsLazy(any(), any(), any()) }
             assertEquals(listOf("cal-a-alt", "cal-a-neu"), ids(vm))
@@ -228,7 +239,8 @@ class CalendarViewModelRueckkehrTest {
         advanceUntilIdle()
 
         verifyBlocking(calendarUseCase, times(1)) { getCalendarEventsLazy(any(), any(), any()) }
-        verifyBlocking(calendarUseCase, never()) { invalidateCalendarCache(any()) }
+        // Nur der Start hat verworfen, die Rueckkehr nicht.
+        verifyBlocking(calendarUseCase, times(1)) { invalidateCalendarCache(any()) }
         assertEquals(listOf("cal-a-alt"), ids(vm))
     }
 
@@ -265,7 +277,50 @@ class CalendarViewModelRueckkehrTest {
         advanceUntilIdle()
 
         verifyBlocking(calendarUseCase, times(1)) { getCalendarEventsLazy(any(), any(), any()) }
+        // Einmal - vom Startpfad selbst, nicht von der Rueckkehr-Pruefung.
+        verifyBlocking(calendarUseCase, times(1)) { invalidateCalendarCache(any()) }
+    }
+
+    @Test
+    fun `der erste Abruf eines neuen ViewModels geht zu Google, nicht in den Zwischenspeicher`() =
+        runTest(dispatcher) {
+            // Review 1.48.0: Der Zwischenspeicher lebt im Prozess, das ViewModel nicht. Nach
+            // "Zurueck" auf der Uebersicht oder einem Prozessstart durch die Wartung fand der
+            // Startpfad eines NEUEN ViewModels die bis zu 15 min alte Liste vor und zeigte sie
+            // als "Abgeglichen um <jetzt>".
+            val calendarUseCase = mock<ICalendarUseCase>()
+            gestartet(calendarUseCase)
+
+            verifyBlocking(calendarUseCase, times(1)) { invalidateCalendarCache(eq(setOf("cal-a"))) }
+        }
+
+    @Test
+    fun `nur der ERSTE Abruf verwirft - eine geaenderte Auswahl danach nicht`() = runTest(dispatcher) {
+        val calendarUseCase = mock<ICalendarUseCase>()
+        gestartet(calendarUseCase, auswahl = setOf("cal-a"))
+
+        selectedIds.value = setOf("cal-a", "cal-b")
+        advanceUntilIdle()
+
+        verifyBlocking(calendarUseCase, times(1)) { invalidateCalendarCache(any()) }
+    }
+
+    @Test
+    fun `leere Auswahl beim Start verbraucht das Verwerfen nicht`() = runTest(dispatcher) {
+        // Ohne Auswahl steigt der Ladeweg aus, bevor er etwas abruft - der erste ECHTE Abruf nach
+        // der Kalenderwahl muss trotzdem zu Google gehen.
+        val calendarUseCase = mock<ICalendarUseCase>()
+        auswahlImSpeicher = emptySet()
+        val vm = buildViewModel(calendarUseCase)
+        backgroundScope.launch { vm.uiState.collect { } }
+        vm.loadEventsForSelectedCalendars()
+        advanceUntilIdle()
         verifyBlocking(calendarUseCase, never()) { invalidateCalendarCache(any()) }
+
+        auswahlImSpeicher = setOf("cal-a")
+        selectedIds.value = setOf("cal-a")
+        advanceUntilIdle()
+        verifyBlocking(calendarUseCase, times(1)) { invalidateCalendarCache(eq(setOf("cal-a"))) }
     }
 
     @Test

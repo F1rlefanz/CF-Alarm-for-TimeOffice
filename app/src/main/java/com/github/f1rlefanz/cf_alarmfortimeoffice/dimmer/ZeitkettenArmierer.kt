@@ -105,4 +105,39 @@ class ZeitkettenArmierer @Inject constructor(
             }
         }
     }
+
+    /**
+     * Nach einem gelungenen Wecker-Sync im VORDERGRUND (`CalendarViewModel`: App-Start, Rueckkehr,
+     * "Mit Google Kalender abgleichen"): die beiden Ketten neu planen, die aus dem frisch
+     * geschriebenen Bestand rechnen - Pre-Alarm-Refresh (3 h vor jedem Wecker) und
+     * Rufbereitschafts-Abfrage (aus den Schichtspannen).
+     *
+     * WARUM (Review 1.48.0): Seit die Rueckkehr in die App neu laedt, entstehen Wecker oft im
+     * Vordergrund. Bis dahin plante NUR der Wartungslauf diese Ketten - ein um 23:30 beim
+     * Zurueckkehren angelegter Wecker fuer 04:30 bekam keinen Vorab-Abgleich, wenn die naechste
+     * Wartung erst um 05:00 kam, obwohl Status-Karte und Website "3 Stunden vor jedem Wecker"
+     * zusagen. Genauso startete eine kurzfristig eingetragene Rufbereitschaft ihre stuendliche
+     * Abfrage erst mit der naechsten Wartung.
+     *
+     * DIMMER UND DND BLEIBEN BEWUSST DRAUSSEN: deren `enable()` wendet den Zustand sofort am
+     * Geraet an (`applyCurrentState`) - ein Blick in die App soll nichts umschalten. Ihre Fenster
+     * zieht weiterhin die naechste Wartung nach.
+     *
+     * Beide Ketten sind gefahrlos haeufig aufrufbar: `reschedule()` rechnet jeweils vom Ist-Zustand
+     * und ersetzt die bisherige Planung, die Rufbereitschafts-Abfrage fragt die Master-Pause selbst,
+     * und waehrend der Pause gibt es keinen Wecker, den der Pre-Alarm-Refresh einplanen koennte.
+     * Jeder Schritt einzeln gefangen - der Sync ist zu diesem Zeitpunkt laengst durch.
+     */
+    suspend fun planeNachVordergrundSync() {
+        withContext(NonCancellable) {
+            runCatching { preAlarmRefresh.get().reschedule() }
+                .onFailure {
+                    Logger.w(LogTags.BACKGROUND_WORKER, "VORDERGRUND: Pre-Alarm-Refresh nicht neu geplant", it)
+                }
+            runCatching { rufbereitschaftAbfrage.get().reschedule() }
+                .onFailure {
+                    Logger.w(LogTags.MAINTENANCE, "VORDERGRUND: Rufbereitschafts-Abfrage nicht neu geplant", it)
+                }
+        }
+    }
 }

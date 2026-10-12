@@ -1,9 +1,23 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.service
 
+import android.app.AlarmManager
+import android.app.PendingIntent
+import android.content.Context
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.mockito.ArgumentMatchers.anyInt
+import org.mockito.Mockito
+import org.mockito.kotlin.any
+import org.mockito.kotlin.anyOrNull
+import org.mockito.kotlin.argumentCaptor
+import org.mockito.kotlin.eq
+import org.mockito.kotlin.mock
+import org.mockito.kotlin.never
+import org.mockito.kotlin.times
+import org.mockito.kotlin.verify
+import org.mockito.kotlin.whenever
 import java.util.concurrent.TimeUnit
 
 /**
@@ -65,5 +79,68 @@ class TimeOfficeNachfassAbgleichTest {
 
         assertEquals(setOf(8804, 8805), eigene)
         assertTrue("Slot doppelt belegt: ${eigene intersect belegt}", (eigene intersect belegt).isEmpty())
+    }
+
+    // ---- Abraeumen fuer die Master-Pause (Zwilling von G11-14) ----
+    //
+    // Bis dahin kannte pause() die beiden Alarme nicht: pausierte der Nutzer innerhalb von zehn
+    // Minuten nach "TimeOffice öffnen", startete jeder noch den Wartungs-Vordergrunddienst samt
+    // Benachrichtigung - mitten in der Pause. abbrechen() hilft nur, wenn es GENAU die PendingIntents
+    // trifft, die plane() gestellt hat; ein anders gebauter liefe ins Leere, und der Alarm bliebe.
+
+    @Test
+    fun `abbrechen trifft genau die beiden Slots, die plane gestellt hat`() {
+        val alarmManager = mock<AlarmManager>()
+        val context = mock<Context>()
+        whenever(context.getSystemService(Context.ALARM_SERVICE)).thenReturn(alarmManager)
+        // Ein PendingIntent je (Request-Code, Flags) - so wie Android ihn wiederfindet. Im
+        // Unit-Test-Modus liefert getBroadcast() sonst null, und gestellt/abgeraeumt waeren nicht
+        // unterscheidbar.
+        val gebaut = mutableMapOf<Pair<Int, Int>, PendingIntent>()
+
+        Mockito.mockStatic(PendingIntent::class.java).use { statisch ->
+            statisch.`when`<PendingIntent> {
+                PendingIntent.getBroadcast(anyOrNull(), anyInt(), anyOrNull(), anyInt())
+            }.thenAnswer { aufruf ->
+                gebaut.getOrPut(aufruf.getArgument<Int>(1) to aufruf.getArgument<Int>(3)) { mock() }
+            }
+
+            TimeOfficeNachfassAbgleich.plane(context)
+            val gestellt = argumentCaptor<PendingIntent>()
+            verify(alarmManager, times(2)).setExactAndAllowWhileIdle(eq(AlarmManager.RTC_WAKEUP), any(), gestellt.capture())
+
+            TimeOfficeNachfassAbgleich.abbrechen(context)
+            val abgeraeumt = argumentCaptor<PendingIntent>()
+            verify(alarmManager, times(2)).cancel(abgeraeumt.capture())
+
+            assertEquals(2, gestellt.allValues.toSet().size)
+            assertEquals(gestellt.allValues.toSet(), abgeraeumt.allValues.toSet())
+            // Nur die eigenen Slots - kein Cancel auf 0/8801/8802/8803 (6h-Kette, Rufbereitschaft).
+            assertEquals(setOf(8804, 8805), gebaut.keys.map { it.first }.toSet())
+        }
+    }
+
+    @Test
+    fun `abbrechen wirft nie - die Pause darf an diesem Schritt nicht zerreissen`() {
+        val context = mock<Context>()
+        whenever(context.getSystemService(Context.ALARM_SERVICE)).thenThrow(RuntimeException("boom"))
+
+        TimeOfficeNachfassAbgleich.abbrechen(context)
+
+        verify(context, times(1)).getSystemService(Context.ALARM_SERVICE)
+    }
+
+    @Test
+    fun `abbrechen ist ungegatet - kein Blick auf den Pausen-Spiegel`() {
+        // Wie disable() bei Dimmer und DND: ein Abraeumen fragt nicht, ob es darf. Haengte es am
+        // Pausen-Spiegel, liefe es genau in der Pause - seinem einzigen Anlass - ins Leere.
+        val alarmManager = mock<AlarmManager>()
+        val context = mock<Context>()
+        whenever(context.getSystemService(Context.ALARM_SERVICE)).thenReturn(alarmManager)
+
+        TimeOfficeNachfassAbgleich.abbrechen(context)
+
+        verify(context, never()).applicationContext
+        verify(alarmManager, times(2)).cancel(anyOrNull<PendingIntent>())
     }
 }

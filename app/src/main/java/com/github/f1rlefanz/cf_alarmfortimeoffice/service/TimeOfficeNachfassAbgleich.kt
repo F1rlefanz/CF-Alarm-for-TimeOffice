@@ -44,9 +44,14 @@ import java.util.concurrent.TimeUnit
  *
  * MASTER-PAUSE: waehrend der Pause wird nichts geplant ([plane] fragt den Device-Protected-
  * Spiegel, synchron wie `BootReceiver` und der Wachhund im `AlarmMaintenanceBroadcastReceiver`).
- * Beginnt die Pause erst NACH dem Druck, feuern die beiden Alarme trotzdem - `pause()` kennt sie
- * nicht. Das ist harmlos: der Wartungslauf prueft die Master-Pause als erste inhaltliche Pruefung
- * und steigt aus, sein `finally` kappt die Kette wie bei jedem Lauf in der Pause.
+ * Beginnt die Pause erst NACH dem Druck, raeumt `MasterPauseUseCase.pause()` beide Slots ueber
+ * [abbrechen] ab - Zwilling der Rufbereitschafts-Abfrage (#131, G11-14): ein Alarm, den `pause()`
+ * nicht kennt, startete mitten in der Pause den Wartungs-Vordergrunddienst samt Benachrichtigung,
+ * obwohl die App "pausiert" zeigt, und erst der Lauf selbst stieg am Pausen-Gate aus. Dieses Gate
+ * (erste inhaltliche Pruefung des Wartungslaufs) bleibt das zweite Netz, falls das Abraeumen
+ * scheitert. `resume()` stellt die beiden NICHT neu: sie sind einmalig und gehoeren zu einem
+ * Knopfdruck, nicht zu einer Kette - anders als die Rufbereitschafts-Abfrage hat hier nichts
+ * einen Ist-Zustand, aus dem sie sich neu rechnen liessen.
  *
  * WAS ES NICHT LEISTET: Ohne die Berechtigung fuer exakte Alarme (nur API 31/32 entziehbar) wird
  * ungenau gestellt, und ein ungenauer Alarm traegt beim Feuern keine Freigabe fuer den
@@ -121,6 +126,25 @@ object TimeOfficeNachfassAbgleich {
     }
 
     /**
+     * Raeumt beide Slots ab - fuer `MasterPauseUseCase.pause()`. Ungegatet wie `disable()` bei
+     * Dimmer und DND: ein Abraeumen muss immer durchkommen. Derselbe PendingIntent wie in [plane]
+     * (gemeinsamer [pendingIntent]-Bau: gleiche Komponente, gleicher Code, gleiche Flags) - Pflicht,
+     * sonst traefe `cancel()` einen zweiten, unabhaengigen PendingIntent statt des gestellten
+     * Alarms. Wirft nie: der Aufrufer ist ein Schritt der Pause, und die darf nicht zerreissen.
+     */
+    fun abbrechen(context: Context) {
+        try {
+            val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+            for (requestCode in listOf(REQUEST_CODE_ERSTER, REQUEST_CODE_ZWEITER)) {
+                alarmManager.cancel(pendingIntent(context, requestCode))
+            }
+            Logger.business(LogTags.MAINTENANCE, "⏸️ TimeOffice-Nachfass: beide Abgleiche abgeraeumt")
+        } catch (e: Exception) {
+            Logger.w(LogTags.MAINTENANCE, "TimeOffice-Nachfass konnte nicht abgeraeumt werden", e)
+        }
+    }
+
+    /**
      * Unterbleibt die Planung wegen der Master-Pause? Der Device-Protected-Spiegel - synchron
      * lesbar, also aus einem Knopf-Handler heraus ohne Coroutine. Bei einem Lesefehler "nicht
      * pausiert": ein ueberfluessiger Abgleich ist harmlos (der Wartungslauf hat seinen eigenen
@@ -139,7 +163,15 @@ object TimeOfficeNachfassAbgleich {
         false
     }
 
-    private fun pendingIntent(context: Context, requestCode: Int): PendingIntent =
+    /**
+     * Der gemeinsame Bau fuer [plane] und [abbrechen]. Rueckgabetyp bewusst NICHT ausgeschrieben
+     * (wie `RufbereitschaftAbfrage` und `AlarmMaintenanceService.wartungsPendingIntent`): mit
+     * `: PendingIntent` setzte Kotlin eine Null-Pruefung dahinter, und im Unit-Test-Modus
+     * (`getBroadcast()` liefert null) liefe [abbrechen] still ins catch - `MasterPauseUseCaseTest`
+     * zaehlte dann die Nachfass-Cancels nicht mehr. Am Geraet ist das Ergebnis ohne
+     * `FLAG_NO_CREATE` nie null.
+     */
+    private fun pendingIntent(context: Context, requestCode: Int) =
         PendingIntent.getBroadcast(
             context,
             requestCode,

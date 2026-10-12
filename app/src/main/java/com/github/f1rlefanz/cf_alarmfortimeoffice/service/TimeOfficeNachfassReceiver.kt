@@ -14,8 +14,9 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
  * Kein `directBootAware`: der Wartungslauf braucht den CE-Store (Kalenderauswahl, Token), und
  * gestellt wird nur aus der laufenden App heraus, also nach der Entsperrung; ein Neustart loescht
  * beide Alarme ohnehin. `AlarmMaintenanceService.start()` faengt den abgelehnten
- * Vordergrund-Start selbst - eine Exception aus `onReceive()` risse den Prozess mit. Die
- * Master-Pause prueft der Wartungslauf selbst (siehe [TimeOfficeNachfassAbgleich]).
+ * Vordergrund-Start selbst - eine Exception aus `onReceive()` risse den Prozess mit. Waehrend der
+ * Master-Pause feuert er regulaer nicht: `pause()` raeumt beide Alarme ab; der Pausen-Backstop
+ * des Wartungslaufs ist nur das zweite Netz (siehe [TimeOfficeNachfassAbgleich]).
  */
 class TimeOfficeNachfassReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {

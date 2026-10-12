@@ -163,7 +163,8 @@
   3h-Vorab-Worker kannte den Wecker nicht, weil es ihn noch nicht gab. Um 13:26 öffnete der
   Nutzer die App: „Skipping alarm in the past: Spätschicht". Kein Fehler in der Weckerkette —
   es fehlte eine Abfrage im Fenster 08:51–12:30, und zwar an dem Tag, an dem die App WUSSTE, dass
-  ein Abruf wahrscheinlich ist. Das Lade-Gate zu ändern hätte nichts genützt (08:10 lag vor dem
+  ein Abruf wahrscheinlich ist. Das damalige Lade-Gate (bis 1.47) zu ändern hätte nichts
+  genützt, und auch das Laden bei jedem Lauf seit 1.48.0 hilft hier nicht (08:10 lag vor dem
   Eintrag, 14:10 nach der Weckzeit); es fehlten die Läufe dazwischen. Deshalb
   `service/RufbereitschaftAbfrage`: solange eine Spanne mit `ShiftDefinition.isOnCall` läuft, jede
   volle Stunde ab Spannenbeginn ein exakter Alarm, der den regulären Wartungslauf mit
@@ -330,8 +331,9 @@ sichtbar sein".
 - **Zurückgenommen wird, sobald keiner der GEMELDETEN Kalender mehr scheitert** – auf drei Wegen:
   ein Abruf ohne sie (`onFetchOutcome`), ein Abgleich gegen die AUSWAHL (`gleicheAuswahlAb`, in der
   Wartung VOR jedem Ausstieg, auch vor dem Token-Schritt) und die Master-Pause (`ruhen`, beginnt
-  die Entprellung neu). Der Abgleich war nötig, weil die Wartung nach einer Abwahl nie bis zum
-  Abruf kommt – ohne Auswahl ohnehin, und meist endet sie schon am Lade-Gate. Die Warnung „die
+  die Entprellung neu). Der Abgleich war nötig, weil die Wartung nach einer Abwahl oft nicht bis
+  zum Abruf kommt – ohne Auswahl nie, und am Token-Schritt kann sie schon vorher aussteigen (bis
+  1.47 endete sie außerdem meist am inzwischen entfallenen Lade-Gate). Die Warnung „die
   bereits gestellten bleiben" stand dann auf Dauer neben geräumten Weckern. Bewusst KEIN
   `onFetchOutcome(emptySet())` dafür: das hieße „abgerufen und erholt". Bleibt eine Lücke von bis
   zu 6 h, wenn der Nutzer über das Launcher-Symbol öffnet und abwählt (der Tipp auf die Meldung

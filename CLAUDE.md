@@ -148,7 +148,7 @@ Alle injizierten `Service`/`BroadcastReceiver` sind
 `DataStoreTokenRepository` per `EncryptedDataStoreFactory` **selbst** baut.
 
 **Alarm** (`service/`, `alarm/`): `AlarmMaintenanceService` (kurzlebiger Foreground-Service,
-`specialUse`, alle 6 h per Exact-Alarm: Token-Refresh → Health-Check → Kalender-Events →
+`specialUse`, alle 6 h per Exact-Alarm: Token-Refresh → Kalender-Events (bei jedem Lauf) →
 Alarm-Erzeugung), `AlarmSoundService` (`mediaPlayback`), `AlarmReceiver`, `BootReceiver`,
 `BackgroundServiceManager`.
 

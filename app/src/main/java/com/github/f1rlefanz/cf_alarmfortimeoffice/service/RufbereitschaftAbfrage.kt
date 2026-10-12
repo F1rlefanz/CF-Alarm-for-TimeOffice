@@ -34,9 +34,10 @@ import javax.inject.Singleton
  *
  * WAS DAS HIER TUT: Solange eine Schichtspanne mit `ShiftDefinition.isOnCall` laeuft, feuert
  * jede volle Stunde ein exakter Alarm auf [RufbereitschaftAbfrageReceiver], und der startet den
- * ganz normalen Wartungslauf mit `forceSync = true` (Kalender laden + Delta-Sync, am Lade-Gate
- * vorbei). Kein zweiter Sync-Pfad, keine zweite Wartungsimplementierung - dieselbe Haltung wie
- * `WartungNetzNachholer` und `TimezoneChangeReceiver`.
+ * ganz normalen Wartungslauf mit `forceSync = true` (Kalender direkt bei Google laden, am
+ * 15-min-Zwischenspeicher vorbei, + Delta-Sync). Kein zweiter Sync-Pfad, keine zweite
+ * Wartungsimplementierung - dieselbe Haltung wie `WartungNetzNachholer` und
+ * `TimezoneChangeReceiver`.
  *
  * KEIN ZWEITER PLANER DER 6h-KETTE (Invariante aus CLAUDE.md): eigener Request-Code
  * ([REQUEST_CODE]), eigener Receiver, eigener Slot. Die 6h-Kette weiss von dieser hier nichts;
@@ -44,7 +45,10 @@ import javax.inject.Singleton
  * [reschedule] ist der EINZIGE Planer dieser Kette und rechnet immer vom Ist-Zustand aus
  * (selbstkorrigierend wie der DND-Tick): es gibt nichts zu "nachstellen".
  *
- * WARUM NICHT DAS LADE-GATE DER 6h-WARTUNG AENDERN: es fehlte nicht die Entscheidung zu laden, sondern die Laeufe dazwischen.
+ * WARUM EINE AENDERUNG AN DER 6h-WARTUNG NICHT GENUEGT: es fehlte nicht die Entscheidung zu
+ * laden, sondern die Laeufe dazwischen. Das damalige Lade-Gate (bis 1.47) zu oeffnen haette am
+ * 16.09. nichts genuetzt, und auch seit 1.48.0, da jeder Wartungslauf laedt, liegen zwischen
+ * zwei Laeufen bis zu 6 h - genau diese Luecke schliesst die stuendliche Abfrage.
  *
  * WARUM EXAKTE ALARME UND KEIN WORKMANAGER-PERIODIC: Ein PeriodicWorkRequest darf im Doze um
  * Stunden verschoben werden, und genau die Stunde ist hier der Punkt. Die Vorlage ist die

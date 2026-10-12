@@ -93,9 +93,12 @@ class WartungNetzNachholer @Inject constructor(
  * nachzubauen. Genau darum geht dieser Weg auch ueber den Service und nicht direkt auf
  * `syncAlarms` - es soll EINE Wartungsimplementierung geben.
  *
- * `forceSync = true`, weil sonst das Lade-Gate greifen koennte: der ausgefallene Lauf hat den
- * Frische-Stempel nicht gesetzt, aber der Puffer der bestehenden Wecker reicht meist noch weit -
- * ohne Zwang wuerde ausgerechnet der Nachholversuch die Kalender-Abfrage ueberspringen.
+ * `forceSync = true` holt die Termine direkt bei Google, am 15-min-Zwischenspeicher vorbei - wie
+ * bei den anderen Anlass-Laeufen (Boot, Zeitzone, Rufbereitschaft). Geladen und synchronisiert
+ * wird seit 1.48.0 bei jedem Lauf, auch ohne das Flag. (Bis 1.47 war es hier Pflicht: der
+ * ausgefallene Lauf hatte den Frische-Stempel nicht gesetzt, der Puffer der bestehenden Wecker
+ * reichte meist noch weit, und ohne Zwang haette das damalige Lade-Gate ausgerechnet den
+ * Nachholversuch an der Kalender-Abfrage vorbeigefuehrt.)
  *
  * WIRD DER VORDERGRUND-START ABGELEHNT (Android 12+ laesst ihn aus einem WorkManager-Auftrag
  * heraus nicht zu, anders als beim Feuern eines exakten Alarms), faengt

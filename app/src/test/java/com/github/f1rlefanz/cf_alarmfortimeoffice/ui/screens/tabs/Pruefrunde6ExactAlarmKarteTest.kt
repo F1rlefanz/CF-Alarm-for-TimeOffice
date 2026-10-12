@@ -81,13 +81,17 @@ class Pruefrunde6ExactAlarmKarteTest {
     /**
      * DIE REGRESSION DES ERSTEN FIXES: Der Uebergang loeste `AlarmMaintenanceService.start(context)`
      * aus - mit dem Default `forceSync = false`. Der Entzug loescht aber nur die
-     * AlarmManager-Eintraege, NICHT den Repository-Bestand: das Lade-Gate
-     * (`MaintenanceLoadDecision.shouldLoadEvents`) sah also Zukunftsalarme, frische Daten und
+     * AlarmManager-Eintraege, NICHT den Repository-Bestand: das damalige Lade-Gate (bis 1.47,
+     * `MaintenanceLoadDecision.shouldLoadEvents`) sah also Zukunftsalarme, frische Daten und
      * ausreichenden Puffer, der Lauf endete mit "buffer sufficient" - und `syncAlarms()`, der
      * einzige Ort, der Bestandsalarme wieder armiert, wurde nie erreicht. Der schwebende
      * Schlummer kam ueberhaupt nur durch einen Geraeteneustart zurueck (einziger Aufrufer von
      * `restorePendingSnoozes()` war der BootReceiver). Die Karte sprang trotzdem auf gruen und
      * sagte zu, die Wecker seien neu gestellt: ein stummer Wecker MIT Anzeige.
+     *
+     * Seit 1.48.0 erreicht jeder Wartungslauf `syncAlarms()`; `forceSync = true` holt die Termine
+     * hier nur noch frisch bei Google, am 15-min-Zwischenspeicher vorbei - wie an den
+     * Schwesterstellen BootReceiver und TimezoneChangeReceiver.
      *
      * Geprueft an der Quelle, weil die Ausloesung in einem `DisposableEffect` einer Composable
      * steckt.
@@ -97,8 +101,9 @@ class Pruefrunde6ExactAlarmKarteTest {
         val karte = kartenQuelltext()
 
         assertTrue(
-            "Ohne forceSync=true ueberspringt das Lade-Gate den Lauf, und syncAlarms() - der " +
-                "einzige Re-Armierer - wird nie erreicht",
+            "Der Wiederanlauf muss den Wartungslauf starten - syncAlarms() ist der einzige " +
+                "Re-Armierer - und zwar mit forceSync=true (Termine frisch, am Zwischenspeicher " +
+                "vorbei, wie BootReceiver und TimezoneChangeReceiver)",
             karte.contains("AlarmMaintenanceService.start(context, forceSync = true)")
         )
         assertTrue(

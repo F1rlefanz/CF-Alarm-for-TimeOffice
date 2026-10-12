@@ -97,9 +97,10 @@ das baut man dieselbe Falle in neuer Form nach.
 - **`AlarmMaintenanceService`: `stopSelf(startId)`**, niemals blankes `stopSelf()`.
 - **`AlarmMaintenanceService.start()` fängt den abgelehnten Vordergrund-Start selbst** (nicht die
   Aufrufer) und setzt einen einmaligen Nachhol-Alarm auf **eigenem** Request-Code.
-- **Die 6h-Wartung MUSS Änderungen und Streichungen sehen können** — Laden bei Puffer < 7 Tage ODER
-  letzter Abfrage ≥ 12 h ODER nächstem Alarm ≤ 48 h, und danach **immer** synchronisieren. Eigener
-  Frische-Stempel `last_event_load_time`. Die Leerlisten-Sperre bleibt.
+- **Die 6h-Wartung MUSS Änderungen und Streichungen sehen können** — sie lädt seit 1.48.0 bei
+  **jedem** Lauf (kein Lade-Gate mehr) und synchronisiert danach **immer**. `forceSync` heißt nur
+  noch „am 15-min-Zwischenspeicher vorbei". Eigener Frische-Stempel `last_event_load_time`. Die
+  Leerlisten-Sperre bleibt.
 - **`BootReceiver` liest die Kalenderauswahl über den DataStore**, nicht über den noch nicht
   hydrierten `StateFlow`, und setzt **vor** der langen Recovery einen Wartungs-Anker.
 - **Ein fehlgeschlagener Token-Abruf ist NICHT pauschal ein Anmeldeproblem.** `WartungTokenFehler`

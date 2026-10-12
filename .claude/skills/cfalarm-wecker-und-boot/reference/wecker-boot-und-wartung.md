@@ -34,7 +34,7 @@
 - `AlarmMaintenanceService`: `stopSelf(startId)`, niemals blankes `stopSelf()`
 - Die 6h-Wartungskette hat GENAU einen Planer: `scheduleNext()`, auf genau einem Request-Code
 - Dieser `finally`-Block läuft in `withContext(NonCancellable)` und fängt den
-- Die 6h-Wartung MUSS Änderungen und Streichungen sehen können — die Lade-/Sync-Entscheidung
+- Die 6h-Wartung MUSS Änderungen und Streichungen sehen können — die Sync-Entscheidung
 - `BootReceiver` liest die Kalenderauswahl über den DataStore und entscheidet nicht auf einem
 - `TimezoneChangeReceiver` startet die Wartung mit `forceSync=true`
 - Schlummern, Runde 8: der aufgegebene Armierungsversuch, der unterscheidbare Fehlschlag und der
@@ -286,17 +286,23 @@
   rollierende Kette war damit bis zum nächsten Boot tot. Ebenfalls im `finally`: Dimmer-, DND- und
   Pre-Alarm-Refresh-Reschedule. Sie standen im tiefsten Erfolgszweig hinter fünf Returns, also
   gerade bei den häufigsten Läufen unerreichbar; bei Master-Pause wird abgeschaltet statt geplant.
-- **Die 6h-Wartung MUSS Änderungen und Streichungen sehen können — die Lade-/Sync-Entscheidung
+- **Die 6h-Wartung MUSS Änderungen und Streichungen sehen können — die Sync-Entscheidung
   liegt als reines `MaintenanceLoadDecision` daneben.** Zwei Gates standen vor dem Delta-Sync, der
   Update/Delete als einziger Ort beherrscht: Events wurden nur geladen, wenn der letzte Alarm < 7
   Tage entfernt lag (bei einem 14 Tage gepflegten Dienstplan praktisch nie), und danach brach die
   Wartung ab, sobald es keine Schicht OHNE bestehenden Alarm gab — ein verschobenes Event behält
   seine Event-ID, ein gestrichenes erzeugt gar keinen Match. Folge real am 30.07.2026 (~4 Tage
-  unbemerkt): Wecker zur alten Zeit bzw. für eine Schicht, die es nicht mehr gab. Jetzt lädt es bei
-  Puffer < 7 Tage ODER letzter echter Kalender-Abfrage ≥ 12 h ODER nächster Alarm ≤ 48 h, und
-  synchronisiert **immer**, sobald Events vorliegen (die Schichterkennung davor meldet nur noch einen Konfigurationsdefekt und loggt die Zahl). Eigener
-  Frische-Stempel `last_event_load_time` — `last_maintenance_time` wird auch im Skip-Zweig gesetzt
-  und ließe die Daten dauerhaft frisch aussehen. Die Leerlisten-Sperre bleibt.
+  unbemerkt): Wecker zur alten Zeit bzw. für eine Schicht, die es nicht mehr gab. Danach lud sie
+  bis 1.47 bei Puffer < 7 Tage ODER letzter echter Kalender-Abfrage ≥ 12 h ODER nächster Alarm
+  ≤ 48 h (`shouldLoadEvents`). **Seit 1.48.0 lädt sie bei JEDEM Lauf**: das Gate sparte nur den
+  events.list-Aufruf (das Netz war für das Token ohnehin schon da), ließ die App in freien Wochen
+  aber bis zu 12 h nicht in den Kalender sehen. Sie synchronisiert **immer**, sobald Events
+  vorliegen (die Schichterkennung davor meldet nur noch einen Konfigurationsdefekt und loggt die
+  Zahl). `forceSync` heißt seither nur noch „direkt bei Google, am 15-min-Zwischenspeicher
+  vorbei". Eigener Frische-Stempel `last_event_load_time` (Anzeige „Termine zuletzt abgerufen") —
+  `last_maintenance_time` wird auch aus dem Vordergrund und nach einem Räumauftrag gestempelt (bis
+  1.47 auch im Skip-Zweig des Gates). Die Leerlisten-Sperre bleibt. Festgehalten von
+  `WartungLaedtBeiJedemLaufTest`.
 - **`BootReceiver` liest die Kalenderauswahl über den DataStore und entscheidet nicht auf einem
   veralteten Snapshot.** Beim Boot ist der `StateFlow` noch nicht hydriert; und die
   Validierungs-/Löschschleife konnte einen vom parallel laufenden Wartungslauf gerade korrigierten
@@ -310,8 +316,10 @@
   kann ihn nicht zustellen (bräuchte `<data scheme="package"/>`, was die drei URI-losen Actions
   aussperren würde) — `MY_PACKAGE_REPLACED` deckt den echten Update-Fall ab.
 - **`TimezoneChangeReceiver` startet die Wartung mit `forceSync=true`.** Ohne das Flag kehrte der
-  angestoßene Lauf im Normalbetrieb zurück, ohne den Kalender anzufassen — der Receiver war
-  wirkungslos. Ein bloßes Re-Arming wäre kein Ersatz: es rechnet die gespeicherten Millis mit
+  angestoßene Lauf bis 1.47 im Normalbetrieb am Lade-Gate zurück, ohne den Kalender anzufassen —
+  der Receiver war wirkungslos. Seit 1.48.0 lädt jeder Lauf; das Flag bleibt trotzdem Pflicht,
+  weil ein Treffer im 15-min-Zwischenspeicher die Wanduhrzeiten der alten Zone hielte. Ein bloßes
+  Re-Arming wäre kein Ersatz: es rechnet die gespeicherten Millis mit
   derselben Zone hin und zurück. **Am Gerät belegt (14.08.2026):** der Emulator zog eine
   stehengebliebene Uhr nach (GMT → Europe/Berlin), der Receiver feuerte („Zeitzonen-Wechsel erkannt
   - erzwinge Wartungslauf"), und alle Weckzeiten wurden NEU BERECHNET — `triggerTime` −2 h bei
@@ -391,8 +399,10 @@
   ein Nachhol-Alarm auf **eigenem** Request-Code (`WartungsKettenPlanung.NACHHOL_REQUEST_CODE`,
   +10 s). Eigener Code, weil Code 0 der einzige Slot der rollierenden 6h-Kette ist; der
   Nachhol-Alarm plant sich nicht selbst nach, ist also kein zweiter Planer. Dazu reicht
-  `AlarmMaintenanceBroadcastReceiver` das `forceSync`-Extra weiter — ohne das liefe der nachgeholte
-  Lauf ohne Erzwingen zurück, also wirkungslos.
+  `AlarmMaintenanceBroadcastReceiver` das `forceSync`-Extra weiter — ohne das nähme der
+  nachgeholte Lauf womöglich einen Treffer aus dem 15-min-Zwischenspeicher (nach einem
+  Zeitzonenwechsel mit den Zeiten der alten Zone); bis 1.47 lief er ohne Erzwingen sogar am
+  Lade-Gate wirkungslos zurück.
 - **Nur ein EXAKTER Alarm ist ein erlaubter Anlass — der Nachholversuch ist deshalb gedeckelt.**
   Hier stand bis Prüfrunde 6 „das Feuern eines Alarms IST ein erlaubter Anlass"; das ist zu
   weit. Androids Ausnahme gilt für exakte Alarme (dieselbe Grenze, die den Weck-Notausgang im
@@ -580,8 +590,9 @@ zurück.
 Netz-Nachholung unten können zwei Fehlschläge in Folge auch wenige Minuten auseinanderliegen.
 
 **Das Zurücksetzen hängt am TOKEN, nicht am Gesamterfolg des Laufs.** Der Zähler zählt
-Token-Fehlschläge, und die Wartung steigt danach noch an mehreren Stellen regulär aus (Lade-Gate,
-keine Kalender ausgewählt). Am Ende des Laufs aufgehängt bliebe die Entprellung nach einem
+Token-Fehlschläge, und die Wartung steigt danach noch an mehreren Stellen regulär aus (keine
+Kalender ausgewählt, Abruf gescheitert, unvollständig oder leer; bis 1.47 auch das Lade-Gate). Am
+Ende des Laufs aufgehängt bliebe die Entprellung nach einem
 übersprungenen Lauf fälschlich scharf.
 
 **Der Merker gehört nicht in den Konfigurations-Export** (`ConfigBackupFilter.RUNTIME_KEYS`). Die
@@ -612,9 +623,11 @@ Wecker-App ist zwischen zwei Wartungsläufen regelmäßig gar nicht da. Dasselbe
 **Das ist kein zweiter Planer der 6h-Kette** (die Invariante gilt weiter): ein einmaliger Auftrag,
 der sich nicht selbst nachstellt und keinen AlarmManager-Slot belegt. Er startet denselben
 Wartungslauf, den auch `TimezoneChangeReceiver` anstößt; dessen `finally` zieht die Kette
-anschließend regulär weiter. `forceSync = true`, weil der ausgefallene Lauf den Frische-Stempel
-nicht gesetzt hat, der Puffer der bestehenden Wecker aber meist noch weit reicht — ohne Zwang
-übersprünge ausgerechnet der Nachholversuch die Kalender-Abfrage.
+anschließend regulär weiter. `forceSync = true` holt die Termine direkt bei Google, am
+15-min-Zwischenspeicher vorbei, wie die anderen Anlass-Läufe. Bis 1.47 war es Pflicht: der
+ausgefallene Lauf hatte den Frische-Stempel nicht gesetzt, der Puffer der bestehenden Wecker
+reichte meist noch weit, und ohne Zwang hätte das damalige Lade-Gate ausgerechnet den
+Nachholversuch an der Kalender-Abfrage vorbeigeführt. Seit 1.48.0 lädt jeder Lauf.
 
 **Der Vordergrund-Start aus einem Worker heraus wird abgelehnt** (Android 12+; nur das Feuern
 eines *exakten* Alarms steht auf der Ausnahmeliste, ein WorkManager-Auftrag nicht).

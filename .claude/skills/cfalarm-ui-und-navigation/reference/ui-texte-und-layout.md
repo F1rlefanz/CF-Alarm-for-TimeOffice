@@ -191,8 +191,9 @@ falschen Zustand, am falschen Ort, in der falschen Richtung oder gar nicht geren
   Kalender-Karte, nicht in der Kopfzeile.
 
 - **Ein Zeitstempel braucht dazu, WORAUF er sich bezieht - sonst ist er eine falsche Zusicherung.**
-  "Letzter Sync" zeigte `KEY_LAST_MAINTENANCE`. Der wird aber auch gestempelt, wenn die 6h-Wartung
-  den Lauf UEBERSPRINGT (Puffer reichte) und zusaetzlich aus dem Vordergrund. "Vor 15 Minuten"
+  "Letzter Sync" zeigte `KEY_LAST_MAINTENANCE`. Der wurde aber auch gestempelt, wenn die 6h-Wartung
+  den Lauf UEBERSPRANG (Puffer reichte; dieses Lade-Gate gibt es seit 1.48.0 nicht mehr), und wird
+  zusaetzlich aus dem Vordergrund gestempelt. "Vor 15 Minuten"
   konnte also heissen "vor 15 Minuten wurde entschieden, nichts zu tun" - in einem Tab, dessen
   Zweck die Frage "warum kam kein Wecker" ist, genau die falsche Auskunft. Der Code wusste es
   besser als die Oberflaeche: `KEY_LAST_EVENT_LOAD` fuehrt seit jeher den letzten ECHTEN

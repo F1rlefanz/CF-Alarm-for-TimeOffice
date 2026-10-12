@@ -221,10 +221,11 @@ open class CalendarUnavailableNotifier @Inject constructor(
     /**
      * Nicht mehr ausgewaehlte Kalender koennen nicht mehr scheitern: sie fallen aus beiden
      * Merkern, und stand eine Meldung, deren Kalender nun ALLE abgewaehlt sind, wird sie
-     * eingesammelt. Aus der Wartung VOR allem, was aussteigen kann (Review 30.09.2026): nach einer
-     * Abwahl kommt sie sonst nie bis zum Abruf - ohne Auswahl ohnehin, und meist endet sie schon
-     * am Lade-Gate. Die Meldung "... die bereits gestellten bleiben" stuende dann auf Dauer neben
-     * geraeumten Weckern.
+     * eingesammelt. Aus der Wartung VOR allem, was aussteigen kann (Review 30.09.2026): ist nach
+     * der Abwahl gar kein Kalender mehr ausgewaehlt, kommt sie nie bis zum Abruf, und am
+     * Token-Schritt kann sie schon vorher aussteigen. (Bis 1.47 endete sie nach einer Abwahl
+     * ausserdem meist am inzwischen entfallenen Lade-Gate.) Die Meldung "... die bereits
+     * gestellten bleiben" stuende dann auf Dauer neben geraeumten Weckern.
      *
      * Bewusst KEIN [onFetchOutcome] mit leerer Menge: das hiesse "abgerufen und erholt", und fuer
      * einen noch ausgewaehlten, weiter fehlenden Kalender waere das gelogen.

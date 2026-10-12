@@ -360,8 +360,11 @@ class BootReceiver : BroadcastReceiver() {
      * Recovery. Die read-modify-write-Sequenz von [performAlarmRecovery] ist deshalb gegen
      * gleichzeitige Aenderungen abgesichert (siehe [BootAlarmValidation.snapshotStillCurrent]).
      *
-     * `forceSync = true`: nach einem Boot/Update sind die Daten grundsaetzlich verdaechtig - das
-     * regulaere Lade-Gate (Puffer/Datenalter) wuerde hier oft ueberspringen.
+     * `forceSync = true`: nach einem Boot/Update sind die Daten grundsaetzlich verdaechtig - der
+     * Abruf geht deshalb direkt an Google, nie an den 15-min-Zwischenspeicher der Termine.
+     * Geladen und synchronisiert wird seit 1.48.0 bei jedem Lauf, auch ohne das Flag. (Bis 1.47
+     * war es hier vor allem noetig, weil das damalige Lade-Gate (Puffer/Datenalter) den Lauf
+     * sonst oft uebersprang.)
      *
      * BEWUSST `directBootAlarmStore.isPausedNow()` statt `masterPausePrefs.pausedNow()`: der
      * Aufruf muss SYNCHRON in `onReceive()` passieren (nur dort ist der Start eines

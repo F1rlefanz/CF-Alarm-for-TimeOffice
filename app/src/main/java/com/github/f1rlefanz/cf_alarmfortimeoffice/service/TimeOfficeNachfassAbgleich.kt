@@ -91,9 +91,16 @@ object TimeOfficeNachfassAbgleich {
      * ist ein Knopf-Handler, und ein Fehler hier darf weder ihn noch das Oeffnen von TimeOffice
      * stoeren.
      */
-    fun plane(context: Context) {
+    fun plane(context: Context) = plane(context, istPausiert = { pausiert(context) })
+
+    /**
+     * Wie [plane], mit eingespeister Pausen-Abfrage - der echte Spiegel geht ueber einen
+     * Hilt-EntryPoint, den ein Unit-Test nicht hat. Auch die Abfrage liegt im try: wirft sie,
+     * wird nichts geplant und nichts geworfen.
+     */
+    internal fun plane(context: Context, istPausiert: () -> Boolean) {
         try {
-            if (pausiert(context)) {
+            if (istPausiert()) {
                 Logger.business(
                     LogTags.MAINTENANCE,
                     "⏸️ TimeOffice-Nachfass: Master-Pause aktiv - kein Abgleich geplant"
@@ -150,8 +157,10 @@ object TimeOfficeNachfassAbgleich {
      * pausiert": ein ueberfluessiger Abgleich ist harmlos (der Wartungslauf hat seinen eigenen
      * Pausen-Backstop).
      *
-     * Auch die Karte fragt GENAU DIESE Funktion, bevor sie "Danach gleicht CF-Alarm … ab"
-     * verspricht - so koennen Text und Planung nicht auseinanderlaufen.
+     * Auch die Karte fragt GENAU DIESE Funktion, bevor sie "Nach „TimeOffice öffnen“ gleicht
+     * CF-Alarm … ab" verspricht (`timeOfficeNachfassSatz`) - so koennen Text und Planung nicht
+     * auseinanderlaufen. Ebenso fragt sie die Berechtigung fuer exakte Alarme (siehe
+     * Klassenkommentar, WAS ES NICHT LEISTET).
      */
     internal fun pausiert(context: Context): Boolean = try {
         EntryPointAccessors

@@ -68,6 +68,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.AuthViewModel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.CalendarUiState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.CalendarViewModel
+import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.CalendarViewModel.Companion.RUECKKEHR_FRISCH_MS
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.ShiftUiState
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeoutOrNull
@@ -884,15 +885,24 @@ internal fun rufbereitschaftsAbfrageInWorten(
     return if (z.toLocalDate() == heute) "um $uhr" else "am ${z.format(DateTimeFormatter.ofPattern("dd.MM.", Locale.GERMANY))} um $uhr"
 }
 
+/** Beschriftung des 6h-Termins in der Karte "Hintergrunddienst" - die Website nennt sie gleich. */
+internal const val NAECHSTER_REGELMAESSIGER_ABGLEICH = "Nächster regelmäßiger Abgleich"
+
 /**
  * Wann CF-Alarm in den Kalender sieht - ein Satz in der Karte "Hintergrunddienst", ausfuehrlich auf
  * der Website ([HilfeThema.PROBLEME_ABGLEICH]). Die Zahlen haengen an Konstanten im Code; ein Test
- * (`WartungLaedtBeiJedemLaufTest`) gleicht die beiden pruefbaren ab, damit der Satz nicht still
- * veraltet. "Alle 6 Stunden" stimmt erst, seit jeder Wartungslauf die Termine holt (1.48.0).
+ * (`WartungLaedtBeiJedemLaufTest`) gleicht sie ab, damit der Satz nicht still veraltet. "Alle 6
+ * Stunden" stimmt erst, seit jeder Wartungslauf die Termine holt (1.48.0).
+ *
+ * "wenn du die App öffnest" NUR MIT DER SCHWELLE (Review 1.48.0): Eine Rueckkehr laedt erst, wenn
+ * der letzte Blick laenger als [RUECKKEHR_FRISCH_MS] her ist - "jedes Mal" versprach einen Abgleich
+ * auch nach zwei Minuten in TimeOffice, und die Website sagte es schon richtig. "Etwa 3 Stunden",
+ * weil der Vorab-Abgleich ein WorkManager-Auftrag mit Netz-Bedingung ist, kein exakter Alarm.
  */
-internal const val ABGLEICH_RHYTHMUS_TEXT =
+internal val ABGLEICH_RHYTHMUS_TEXT: String =
     "CF-Alarm sieht alle 6 Stunden im Hintergrund nach, an Rufbereitschafts-Tagen stündlich, " +
-        "3 Stunden vor jedem Wecker und jedes Mal, wenn du die App öffnest."
+        "etwa 3 Stunden vor jedem Wecker und wenn du die App öffnest und der letzte Blick in den " +
+        "Kalender länger als ${RUECKKEHR_FRISCH_MS / 60_000} Minuten her ist."
 
 /**
  * @param masterPausePaused KEIN Default (Anzeigepfad, Skill cfalarm-ui-und-navigation): waehrend
@@ -982,8 +992,10 @@ private fun LastSyncCard(calendarViewModel: CalendarViewModel, masterPausePaused
                     style = MaterialTheme.typography.titleMedium
                 )
 
-                // Zwei Werte: KEY_LAST_MAINTENANCE stempelt auch uebersprungene Laeufe
-                // (Hergang: cfalarm-ui-und-navigation/reference/ui-texte-und-layout.md).
+                // Zwei Werte: KEY_LAST_MAINTENANCE stempelt auch Laeufe, die vor dem Abruf
+                // aussteigen (keine Auswahl, kein Netz, Token), und den Sync im Vordergrund; bis
+                // 1.47 auch die, die das Lade-Gate uebersprang (Hergang:
+                // cfalarm-ui-und-navigation/reference/ui-texte-und-layout.md).
                 Text(
                     "Zuletzt nachgesehen: $lastMaintenanceText",
                     style = MaterialTheme.typography.bodyMedium,
@@ -1008,10 +1020,15 @@ private fun LastSyncCard(calendarViewModel: CalendarViewModel, masterPausePaused
                 // Seit das Oeffnen der App den Termin nicht mehr verschiebt, steht hier ein Wert,
                 // auf den man sich verlassen kann. Formulierung wie die Rufbereitschafts-Zeile
                 // darunter ("um 20:17", morgen mit Datum).
+                //
+                // "REGELMAESSIGER", nicht bloss "naechster" (Review 1.48.0): die Zeile kennt nur den
+                // 6h-Lauf. An einem Rufbereitschafts-Tag stand sonst "Nächster Abgleich um 02:00"
+                // direkt ueber "nächste Kalender-Abfrage um 21:00", und nach "TimeOffice öffnen"
+                // kommen zwei Abgleiche, die diese Zeile ebenfalls nicht nennt.
                 if (naechsterAbgleich != null) {
                     Spacer(Modifier.height(SpacingConstants.SPACING_SMALL))
                     Text(
-                        "Nächster Abgleich im Hintergrund " +
+                        "$NAECHSTER_REGELMAESSIGER_ABGLEICH " +
                             rufbereitschaftsAbfrageInWorten(naechsterAbgleich),
                         style = MaterialTheme.typography.bodyMedium
                     )
@@ -1036,8 +1053,9 @@ private fun LastSyncCard(calendarViewModel: CalendarViewModel, masterPausePaused
                 // sonst nur aus vier verstreuten Mechanismen zu erschliessen ist. Jede Angabe hat
                 // ihre Quelle: 6 h = WartungsKettenPlanung.INTERVALL_STUNDEN (geladen wird seit
                 // 1.48.0 bei jedem Lauf), stuendlich = RufbereitschaftAbfrage.INTERVALL_MS, 3 h =
-                // CalendarPreAlarmRefreshScheduler (die naechsten Wecker, Netz vorausgesetzt), Oeffnen
-                // = CalendarViewModel beim Zurueckkehren (ab 5 min seit dem letzten Abruf). Waehrend
+                // CalendarPreAlarmRefreshScheduler (die naechsten Wecker, Netz vorausgesetzt; nach
+                // jedem Sync neu geplant, auch im Vordergrund), Oeffnen = CalendarViewModel beim
+                // Zurueckkehren (RUECKKEHR_FRISCH_MS seit dem letzten Abruf). Waehrend
                 // der Master-Pause gilt davon nichts - dann entfaellt der Satz; die Karte "Alles
                 // pausiert" oben sagt es.
                 if (!masterPausePaused) {

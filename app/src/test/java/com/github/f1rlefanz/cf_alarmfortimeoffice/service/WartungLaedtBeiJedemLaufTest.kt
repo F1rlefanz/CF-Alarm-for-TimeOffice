@@ -4,6 +4,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.preferencesOf
+import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.CalendarPreAlarmRefreshScheduler
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.CalendarUnavailableNotifier
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.data.TokenData
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.manager.OAuth2TokenManager
@@ -15,9 +16,11 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmInfo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.CalendarFetchOutcome
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.ICalendarUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.CalendarViewModel
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.mockito.kotlin.any
@@ -117,8 +120,8 @@ class WartungLaedtBeiJedemLaufTest {
     /**
      * Der Satz in der Karte "Hintergrunddienst" nennt Zahlen, die im Code stehen. Aendert jemand
      * das Intervall, muss der Satz mitwandern - sonst behauptet die App einen Rhythmus, den sie
-     * nicht hat. (Die "3 Stunden vor jedem Wecker" stehen privat in
-     * `CalendarPreAlarmRefreshScheduler` und sind von hier nicht erreichbar.)
+     * nicht hat - auch die "3 Stunden vor jedem Wecker" und die Schwelle beim Oeffnen der App
+     * (Review 1.48.0: der Satz versprach "jedes Mal", der Code laedt erst nach 5 Minuten).
      */
     @Test
     fun `der Satz zum Abgleich-Rhythmus passt zu den Intervallen im Code`() {
@@ -131,6 +134,18 @@ class WartungLaedtBeiJedemLaufTest {
             RufbereitschaftAbfrage.INTERVALL_MS
         )
         assertTrue(satz, satz.contains("stündlich"))
+        assertTrue(
+            satz,
+            satz.contains(
+                "etwa ${TimeUnit.MILLISECONDS.toHours(CalendarPreAlarmRefreshScheduler.PRE_ALARM_LEAD_MILLIS)} " +
+                    "Stunden vor jedem Wecker"
+            )
+        )
+        assertTrue(
+            satz,
+            satz.contains("länger als ${CalendarViewModel.RUECKKEHR_FRISCH_MS / 60_000} Minuten her ist")
+        )
+        assertFalse("\"jedes Mal\" verspricht mehr, als die Rueckkehr-Schwelle haelt", satz.contains("jedes Mal"))
     }
 
     private companion object {

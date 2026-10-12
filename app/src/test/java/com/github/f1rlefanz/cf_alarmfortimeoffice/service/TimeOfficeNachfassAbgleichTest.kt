@@ -143,4 +143,59 @@ class TimeOfficeNachfassAbgleichTest {
         verify(context, never()).applicationContext
         verify(alarmManager, times(2)).cancel(anyOrNull<PendingIntent>())
     }
+
+    // --- plane(): die Zusagen der Karte (Review 1.48.0) ----------------------------------------
+    // Die Karte sagt "Solange alles pausiert ist, gleicht CF-Alarm nach „TimeOffice öffnen“ nicht
+    // von selbst ab" - das stimmt nur, wenn plane() in der Pause wirklich nichts stellt. Und plane()
+    // haengt an einem Knopf-Handler: ein Wurf dort risse die App mit.
+
+    @Test
+    fun `waehrend der Master-Pause stellt plane nichts`() {
+        val alarmManager = mock<AlarmManager>()
+        val context = mock<Context>()
+        whenever(context.getSystemService(Context.ALARM_SERVICE)).thenReturn(alarmManager)
+
+        TimeOfficeNachfassAbgleich.plane(context, istPausiert = { true })
+
+        verify(context, never()).getSystemService(Context.ALARM_SERVICE)
+        verify(alarmManager, never()).setExactAndAllowWhileIdle(any(), any(), anyOrNull())
+        verify(alarmManager, never()).setAndAllowWhileIdle(any(), any(), anyOrNull())
+    }
+
+    @Test
+    fun `ohne Pause stellt plane genau die beiden Slots`() {
+        val alarmManager = mock<AlarmManager>()
+        val context = mock<Context>()
+        whenever(context.getSystemService(Context.ALARM_SERVICE)).thenReturn(alarmManager)
+
+        Mockito.mockStatic(PendingIntent::class.java).use { statisch ->
+            val codes = mutableListOf<Int>()
+            statisch.`when`<PendingIntent> {
+                PendingIntent.getBroadcast(anyOrNull(), anyInt(), anyOrNull(), anyInt())
+            }.thenAnswer { aufruf ->
+                codes += aufruf.getArgument<Int>(1)
+                mock<PendingIntent>()
+            }
+
+            TimeOfficeNachfassAbgleich.plane(context, istPausiert = { false })
+
+            verify(alarmManager, times(2)).setExactAndAllowWhileIdle(eq(AlarmManager.RTC_WAKEUP), any(), any())
+            assertEquals(listOf(8804, 8805), codes)
+        }
+    }
+
+    @Test
+    fun `plane wirft nie - weder am AlarmManager noch an der Pausen-Abfrage`() {
+        val context = mock<Context>()
+        whenever(context.getSystemService(Context.ALARM_SERVICE)).thenThrow(RuntimeException("boom"))
+        TimeOfficeNachfassAbgleich.plane(context, istPausiert = { false })
+
+        val alarmManager = mock<AlarmManager>()
+        val zweiter = mock<Context>()
+        whenever(zweiter.getSystemService(Context.ALARM_SERVICE)).thenReturn(alarmManager)
+        TimeOfficeNachfassAbgleich.plane(zweiter, istPausiert = { throw IllegalStateException("Spiegel kaputt") })
+        // Unlesbare Pause im eingespeisten Leser: lieber nichts stellen als werfen. (Der echte
+        // Leser `pausiert()` faengt selbst und meldet "nicht pausiert".)
+        verify(alarmManager, never()).setExactAndAllowWhileIdle(any(), any(), anyOrNull())
+    }
 }

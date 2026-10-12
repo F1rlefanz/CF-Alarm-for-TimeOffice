@@ -280,6 +280,31 @@ internal fun offlineStandHinweis(
     }
 }
 
+/**
+ * PURE, TESTBAR: Die Zeile "Abgeglichen um HH:MM" in der Karte "Kalender-Events".
+ *
+ * Heute nur die Uhrzeit, an einem frueheren Tag mit Datum - eine blosse Uhrzeit von gestern
+ * saehe aus wie ein Abgleich von heute, und genau darauf kommt es beim Nachsehen an: steht der
+ * neue Dienst schon drin? Quelle ist [CalendarUiState.letzterAbgleich] (nur VOLLSTAENDIGE
+ * Abgleiche, siehe dort); fehlt er, zeigt die Karte keine Zeile statt einer erfundenen.
+ *
+ * Der Satz sagt bewusst nicht, WER abgeglichen hat (Start, Rueckkehr, Knopf): das weiss der
+ * Zeitpunkt nicht.
+ */
+internal fun abgleichZeitText(
+    zeitpunkt: Long,
+    zone: ZoneId = ZoneId.systemDefault(),
+    heute: LocalDate = LocalDate.now(zone)
+): String {
+    val wann = Instant.ofEpochMilli(zeitpunkt).atZone(zone)
+    val uhrzeit = DateTimeFormatter.ofPattern(DateTimeFormats.TIME_ONLY).format(wann)
+    return if (wann.toLocalDate() == heute) {
+        "Abgeglichen um $uhrzeit"
+    } else {
+        "Abgeglichen am ${DateTimeFormatter.ofPattern(DateTimeFormats.DATE_SHORT).format(wann)}. um $uhrzeit"
+    }
+}
+
 @Composable
 fun HomeTabContent(
     calendarState: CalendarUiState,
@@ -618,11 +643,25 @@ fun HomeTabContent(
                     HorizontalDivider(
                         modifier = Modifier.padding(vertical = SpacingConstants.SPACING_SMALL)
                     )
+                    // Wie alt der Stand ist, steht direkt ueber dem Knopf, der ihn erneuert. Bleibt
+                    // waehrend eines Neuladens stehen (die alte Anzeige bleibt ja auch) und springt
+                    // erst mit dem fertigen, vollstaendigen Abgleich weiter.
+                    calendarState.letzterAbgleich?.let { zeitpunkt ->
+                        Text(
+                            abgleichZeitText(zeitpunkt),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                     KalenderAbgleichKnopf(enabled = !calendarState.isLoading, onClick = onJetztAbgleichen)
+                    // Der letzte Satz ist der Befund vom 12.10.2026: TimeOffice schrieb einen
+                    // gemeldeten Dienst erst sechseinhalb Stunden spaeter in den Kalender - beim
+                    // Oeffnen. Ohne ihn sucht man den Fehler hier statt dort.
                     Text(
                         "Holt die Termine aus deinem Google Kalender und stellt die Wecker " +
                             "danach neu. CF-Alarm liest nur den Kalender — was TimeOffice dort " +
-                            "noch nicht eingetragen hat, kann auch hier nicht auftauchen.",
+                            "noch nicht eingetragen hat, kann auch hier nicht auftauchen. " +
+                            "TimeOffice trägt eine Änderung erst ein, wenn du TimeOffice öffnest.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -632,6 +671,16 @@ fun HomeTabContent(
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                    // Auch ein LEERER Kalender kann vollstaendig abgeglichen sein - dann sagt die
+                    // Zeile, dass nachgesehen wurde. Vor dem ersten Abgleich und nach der Abwahl
+                    // ist der Zeitpunkt null, dann steht hier nichts.
+                    calendarState.letzterAbgleich?.let { zeitpunkt ->
+                        Text(
+                            abgleichZeitText(zeitpunkt),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
         }

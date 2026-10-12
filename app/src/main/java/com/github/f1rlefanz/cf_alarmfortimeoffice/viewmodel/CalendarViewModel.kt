@@ -194,7 +194,32 @@ data class CalendarUiState(
      * nennen ("Keine Termine in den nächsten N Tagen"). Vorher stand dort fest "14": nach einer
      * Umstellung haette die Oberflaeche ein Fenster behauptet, das nicht mehr gilt.
      */
-    val vorausschauTage: Int = KalenderVorausschauPrefs.STANDARD_TAGE
+    val vorausschauTage: Int = KalenderVorausschauPrefs.STANDARD_TAGE,
+
+    /**
+     * Wann die Termine zuletzt VOLLSTAENDIG mit dem Google Kalender abgeglichen wurden (Beginn
+     * dieses Ladevorgangs, Epoch-Millis) - angezeigt als "Abgeglichen um HH:MM" in der Karte
+     * "Kalender-Events" der Uebersicht. `null`: in diesem ViewModel noch keiner, dann steht keine
+     * Zeile da (nichts erfinden).
+     *
+     * WARUM ES DAS GIBT (Befund 12.10.2026): Ein Dienst stand seit 15:52 bei Google, die App zeigte
+     * ihn erst um 19:25 - drei Rueckkehrten dazwischen luden nichts, und nichts auf dem Bildschirm
+     * verriet, wie alt der Stand ist. Seit dem Neuladen bei Rueckkehr
+     * ([CalendarViewModel.aktualisiereBeiRueckkehr]) laesst sich das hier ablesen.
+     *
+     * NUR BEI VOLLSTAENDIGEM ERFOLG gesetzt - jeder ausgewaehlte Kalender hat geantwortet. Ein
+     * Teilerfolg hat seine eigene Warnung ([unavailableCalendarIds]); "abgeglichen" schloesse dort
+     * den Kalender ein, der gar nicht geantwortet hat, und das ist meist gerade der Dienstplan.
+     * Nach einem Teil- oder Totalausfall bleibt deshalb der Zeitpunkt des letzten vollstaendigen
+     * Abgleichs stehen. Die Abwahl des letzten Kalenders leert ihn: er gehoerte zur alten Auswahl.
+     *
+     * GRENZE (bewusst offen): Der Startpfad ([CalendarViewModel.loadEventsForSelectedCalendars]
+     * ohne vorheriges Verwerfen) darf den Zwischenspeicher der Termine nutzen (15 min,
+     * `CalendarEventCache.TTL_MINUTES`). Lief kurz vorher die Wartung im selben Prozess, kann der
+     * Abruf bei Google dann bis zu 15 min vor diesem Zeitpunkt liegen. Das Neuladen bei Rueckkehr
+     * und "Mit Google Kalender abgleichen" verwerfen den Zwischenspeicher vorher.
+     */
+    val letzterAbgleich: Long? = null
 )
 
 /**
@@ -313,6 +338,22 @@ class CalendarViewModel @Inject constructor(
      */
     @Volatile
     private var hasSeenNonEmptySelection = false
+
+    /**
+     * Beginn des letzten Ladevorgangs von [loadEventsForSelectedCalendars] (Epoch-Millis) - eine
+     * Eingabe von [sollBeiRueckkehrLaden]. `null`: dieses ViewModel hat noch nie geladen.
+     *
+     * VOM LADEWEG SELBST GESTEMPELT, gleich nach dem Ziehen der Generation und vor dem ersten
+     * suspend-Punkt - nicht vom Rueckkehr-Pfad. Jeder Anlass (Start, Auswahl, Vorausschau,
+     * "Mit Google Kalender abgleichen", Rueckkehr) zaehlt damit gleich, und der Startpfad steht
+     * schon fest, bevor eine Rueckkehr-Pruefung ihn sehen koennte: sonst luede der App-Start
+     * doppelt.
+     *
+     * MUSS - wie die Felder darueber - TEXTUELL VOR dem init{}-Block stehen: der Collector aus
+     * init{} erreicht den Ladeweg noch waehrend der Konstruktion (siehe eventLoadGeneration).
+     */
+    @Volatile
+    private var letzterLadebeginn: Long? = null
 
     init {
         checkTokenValidity()
@@ -455,14 +496,17 @@ class CalendarViewModel @Inject constructor(
                         // korrekt "kein Kalender ausgewaehlt" zeigte.
                         val deselectGeneration = eventLoadGeneration.incrementAndGet()
 
-                        // Clear events und reset pagination wenn keine Kalender ausgewählt
+                        // Clear events und reset pagination wenn keine Kalender ausgewählt.
+                        // Der Abgleich-Zeitpunkt gehoerte zur alten Auswahl - ohne Kalender gibt es
+                        // nichts, das "abgeglichen" waere.
                         updateLocalStateImmediate {
                             it.copy(
                                 events = emptyList(),
                                 eventOffset = 0,
                                 totalEvents = 0,
                                 hasMoreEvents = false,
-                                auswahlAbgewaehlt = wasDeselection || it.auswahlAbgewaehlt
+                                auswahlAbgewaehlt = wasDeselection || it.auswahlAbgewaehlt,
+                                letzterAbgleich = null
                             )
                         }
                         // CRITICAL: Update CalendarStateHolder when clearing events
@@ -917,6 +961,10 @@ class CalendarViewModel @Inject constructor(
             // RACE-GUARD: Nummer für diesen Aufruf ziehen, bevor irgendein suspend-Call
             // stattfindet - siehe eventLoadGeneration weiter oben.
             val myGeneration = eventLoadGeneration.incrementAndGet()
+            // Ladebeginn stempeln, ebenfalls vor dem ersten suspend-Punkt (siehe
+            // letzterLadebeginn). Derselbe Wert wird am Ende zum angezeigten Abgleich-Zeitpunkt.
+            val ladebeginn = System.currentTimeMillis()
+            letzterLadebeginn = ladebeginn
 
             val selectedIds = calendarSelectionRepository.getCurrentSelectedCalendarIds()
                 .getOrElse {
@@ -1136,7 +1184,10 @@ class CalendarViewModel @Inject constructor(
                         // Der TEILERFOLG - und der Totalausfall, bei dem alle Kalender FEHLEN.
                         // Anmeldung und Funkloch haben ihre eigene Anzeige (oben) - siehe
                         // Feld-Kommentar.
-                        unavailableCalendarIds = if (nichtAbrufbareZeigen) failedCalendarIds else emptySet()
+                        unavailableCalendarIds = if (nichtAbrufbareZeigen) failedCalendarIds else emptySet(),
+                        // Nur ein VOLLSTAENDIGER Abgleich erneuert den Zeitpunkt - siehe
+                        // Feld-Kommentar; sonst bleibt der letzte vollstaendige stehen.
+                        letzterAbgleich = if (failedCalendarIds.isEmpty()) ladebeginn else state.letzterAbgleich
                     )
                 }
                 
@@ -1364,7 +1415,110 @@ class CalendarViewModel @Inject constructor(
             checkTokenValidity()
         }
     }
-    
+
+    /**
+     * Die App kommt wieder in den Vordergrund (`MainActivity.onStart`): Termine neu abgleichen, wenn
+     * der letzte Blick in den Kalender zu lange her ist - Entscheidung in [sollBeiRueckkehrLaden].
+     *
+     * WARUM (Befund 12.10.2026, Fairphone): Geladen wurde nur, wenn dieses ViewModel NEU entstand.
+     * Drei Rueckkehrten (16:47, 18:18, 18:54) luden nichts, obwohl Google den neuen Dienst seit
+     * 15:52 hatte - die App zeigte bis 19:25 den alten Stand.
+     *
+     * DERSELBE LADEWEG wie der Start ([loadEventsForSelectedCalendars], Praefix von 10), mit
+     * Vollstaendigkeits-Sperre, Generation-Counter und Alarm-Sync - kein zweiter Ladepfad (Skill
+     * cfalarm-kalender-und-schichten). Bewusst NICHT [refreshData]: das setzt die Paginierung zurueck
+     * und startet `startBackgroundSync()`, das ALLE verfuegbaren Kalender vorlaedt - beides gehoert
+     * zum Knopf, nicht zu jedem Zurueckkehren. `forceRefresh = true` ueberspringt den Lazy-Reset:
+     * die alte Anzeige bleibt stehen, bis die neue Liste da ist.
+     *
+     * DAS VERWERFEN DES ZWISCHENSPEICHERS VORHER IST PFLICHT: der Lazy-Pfad fragt
+     * `getCalendarEventsLazy()`, und das liest den Termin-Zwischenspeicher unabhaengig von
+     * `forceRefresh` (Gueltigkeit 15 min). Ohne Verwerfen haette eine Rueckkehr 5 bis 15 min nach
+     * dem letzten Laden nur die alte Liste noch einmal gelesen - und "Abgeglichen um" haette einen
+     * Abgleich behauptet, der nie bei Google war.
+     */
+    fun aktualisiereBeiRueckkehr() {
+        aktualisiereBeiRueckkehr(
+            jetzt = System.currentTimeMillis(),
+            leseHintergrundAbruf = { AlarmMaintenanceService.getLastEventLoadTime(appContext) }
+        )
+    }
+
+    /**
+     * Wie [aktualisiereBeiRueckkehr], mit eingespeister Uhr und eingespeistem Leser fuer den letzten
+     * Hintergrund-Abruf - der echte geht ueber einen Hilt-EntryPoint, den ein Unit-Test nicht hat.
+     *
+     * @param leseHintergrundAbruf Zeitpunkt der letzten Termin-Abfrage der Wartung
+     *   (`AlarmMaintenanceService.getLastEventLoadTime`, `0` = nie). Scheitert er, wird nur nach der
+     *   Zeit entschieden - ein unlesbarer Merker darf das Neuladen weder erzwingen noch verhindern.
+     */
+    internal fun aktualisiereBeiRueckkehr(jetzt: Long, leseHintergrundAbruf: suspend () -> Long) {
+        viewModelScope.launch {
+            // Ein Zurueckkehren darf die App nie mitreissen: viewModelScope hat keinen
+            // Exception-Handler, ein Wurf hier beendete den Prozess.
+            try {
+                val hintergrundAbruf = try {
+                    leseHintergrundAbruf().takeIf { it > 0L }
+                } catch (e: java.util.concurrent.CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Logger.w(
+                        LogTags.CALENDAR,
+                        "Rueckkehr: letzter Hintergrund-Abruf nicht lesbar - entschieden wird nur nach der Zeit",
+                        e
+                    )
+                    null
+                }
+
+                val ladebeginn = letzterLadebeginn
+                val laden = sollBeiRueckkehrLaden(
+                    jetzt = jetzt,
+                    // Der StateFlow, nicht uiState: der ist entprellt und ohne Sammler (stateIn
+                    // Lazily) womoeglich noch auf dem Startwert. Der Ladeweg liest die Auswahl
+                    // ohnehin noch einmal aus dem Speicher.
+                    hatAuswahl = calendarSelectionRepository.selectedCalendarIds.value.isNotEmpty(),
+                    laedtGerade = _localUiState.value.isLoading,
+                    letzterLadebeginn = ladebeginn,
+                    letzterHintergrundAbruf = hintergrundAbruf
+                )
+                if (!laden) {
+                    Logger.d(
+                        LogTags.CALENDAR,
+                        "Rueckkehr: kein Neuladen (Ladebeginn=$ladebeginn, Hintergrund=$hintergrundAbruf, " +
+                            "laedt=${_localUiState.value.isLoading})"
+                    )
+                    return@launch
+                }
+
+                val selectedIds = calendarSelectionRepository.getCurrentSelectedCalendarIds()
+                    .getOrElse { emptySet() }
+                if (selectedIds.isEmpty()) {
+                    Logger.d(LogTags.CALENDAR, "Rueckkehr: Auswahl im Speicher leer - nichts neu zu laden")
+                    return@launch
+                }
+
+                val seitLadebeginn = ladebeginn?.let { jetzt - it }
+                val grund = when {
+                    seitLadebeginn != null && seitLadebeginn < 0 -> "Uhr seit dem letzten Laden zurueckgestellt"
+                    seitLadebeginn != null && seitLadebeginn > RUECKKEHR_FRISCH_MS ->
+                        "letzter Ladebeginn vor ${seitLadebeginn / 60_000} min"
+                    else -> "Hintergrund hat seit dem letzten Laden neu abgerufen"
+                }
+                Logger.business(LogTags.CALENDAR, "🔄 Rueckkehr in die App - Termine werden neu abgeglichen ($grund)")
+                calendarUseCase.invalidateCalendarCache(selectedIds)
+                loadEventsForSelectedCalendars(
+                    forceRefresh = true,
+                    loadAll = false,
+                    initialPageSize = 10
+                )
+            } catch (e: java.util.concurrent.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Logger.e(LogTags.CALENDAR, "❌ Rueckkehr: Neuladen konnte nicht angestossen werden", e)
+            }
+        }
+    }
+
     /**
      * Laedt weitere Events nach: immer ein PRAEFIX der Vereinigung aller ausgewaehlten Kalender
      * (offset = 0, maxEvents = bereits geladen + limit), NICHT eine Seite ab [offset]; danach
@@ -1620,6 +1774,49 @@ class CalendarViewModel @Inject constructor(
          * beschrifteten Knopf verweist, schickt den Nutzer ins Leere.
          */
         internal const val DESELECTION_CLEANUP_RETRY_ACTION: String = "Erneut versuchen"
+
+        /**
+         * So lange gilt der letzte Blick in den Kalender beim Zurueckkehren als frisch genug.
+         *
+         * Die Website verspricht genau diese Zahl ("sofern der letzte Blick in den Kalender laenger
+         * als 5 Minuten her ist", `docs/troubleshooting.html#abgleich`) - wer sie aendert, zieht
+         * den Text dort mit (`RueckkehrAbgleichTest` haelt sie fest). Kuerzer wuerde jedes kurze
+         * Wechseln in eine andere App (Dialog, Kamera, TimeOffice) zu einem Abruf bei Google.
+         */
+        internal const val RUECKKEHR_FRISCH_MS: Long = 5 * 60 * 1000L
+
+        /**
+         * PURE, TESTBAR: Soll eine Rueckkehr in die App die Termine neu laden?
+         *
+         * Reihenfolge, und jede Stufe ist eine Zusage:
+         * 1. Ohne Kalenderauswahl gibt es nichts zu laden.
+         * 2. Laeuft schon ein Ladevorgang, bringt ein zweiter nichts Neueres.
+         * 3. Hat dieses ViewModel noch NIE geladen ([letzterLadebeginn] `null`), laedt gerade der
+         *    Startpfad (der Collector der Kalenderauswahl) - auch wenn der Hintergrund einen
+         *    Zeitstempel hat. Sonst luede der App-Start doppelt.
+         * 4. Laden, wenn der letzte Ladebeginn mehr als [RUECKKEHR_FRISCH_MS] zurueckliegt - oder
+         *    in der ZUKUNFT liegt (die Uhr wurde zurueckgestellt; im Zweifel nachsehen, ein Abruf
+         *    kostet wenig).
+         * 5. ODER der Hintergrund (jeder Lauf von `AlarmMaintenanceService`, also auch die
+         *    Rufbereitschafts-Abfrage) hat seit dem letzten Ladebeginn neue Termine geholt - dann
+         *    zeigt die App einen aelteren Stand als den, nach dem die Wecker schon gestellt sind,
+         *    auch innerhalb der fuenf Minuten.
+         *
+         * @param letzterHintergrundAbruf `null`, wenn unbekannt oder nie (der Merker liefert `0`).
+         */
+        internal fun sollBeiRueckkehrLaden(
+            jetzt: Long,
+            hatAuswahl: Boolean,
+            laedtGerade: Boolean,
+            letzterLadebeginn: Long?,
+            letzterHintergrundAbruf: Long?
+        ): Boolean {
+            if (!hatAuswahl || laedtGerade) return false
+            val ladebeginn = letzterLadebeginn ?: return false
+            val seitLadebeginn = jetzt - ladebeginn
+            if (seitLadebeginn < 0 || seitLadebeginn > RUECKKEHR_FRISCH_MS) return true
+            return letzterHintergrundAbruf != null && letzterHintergrundAbruf > ladebeginn
+        }
 
         /**
          * PURE, TESTBAR: Entscheidet anhand der Kalender-Ladeergebnisse, ob die

@@ -130,7 +130,10 @@ class MainActivity : ComponentActivity() {
     @Inject lateinit var rufbereitschaftAbfrage: RufbereitschaftAbfrage
 
     private val authViewModel: AuthViewModel by viewModels()
-    private val calendarViewModel: CalendarViewModel by viewModels()
+    // Der Lazy selbst als eigenes Feld: onStart() fragt, ob das ViewModel schon existiert, ohne
+    // es dabei anzulegen (siehe dort).
+    private val calendarViewModelLazy: Lazy<CalendarViewModel> = viewModels()
+    private val calendarViewModel: CalendarViewModel by calendarViewModelLazy
     private val shiftViewModel: ShiftViewModel by viewModels()
     private val alarmViewModel: AlarmViewModel by viewModels()
     private val mainViewModel: MainViewModel by viewModels()
@@ -386,6 +389,30 @@ class MainActivity : ComponentActivity() {
         }
     }
     
+    /**
+     * Rueckkehr in die App: Termine neu abgleichen, wenn der letzte Blick in den Kalender zu lange
+     * her ist - die Entscheidung trifft `CalendarViewModel.sollBeiRueckkehrLaden`, geladen wird
+     * ueber dessen einen Ladeweg. Befund 12.10.2026: drei Rueckkehrten luden nichts, der neue
+     * Dienst stand 3,5 h bei Google, ohne dass die App ihn zeigte.
+     *
+     * onStart, NICHT onResume: onResume feuert auch nach jeder System-Berechtigungsabfrage und
+     * jedem anderen Fenster, das die App nur halb verdeckt - ohne dass sie je verlassen wurde.
+     *
+     * NUR, WENN DIESE ACTIVITY DAS ViewModel SCHON BENUTZT: ohne die Pruefung legte der Zugriff es
+     * hier an - auf dem Anmelde- oder Ladebildschirm, bevor ueberhaupt jemand angemeldet ist (es
+     * entsteht sonst erst mit dem Hauptbereich oder dem Einstieg aus der Kalender-Warnung), samt
+     * Token-Pruefung im init. Beim allerersten onStart nach onCreate existiert es deshalb meist
+     * noch nicht; den ersten Abruf macht ohnehin der Startpfad des ViewModels. Nach einer Drehung
+     * ebenso (neue Activity, noch unberuehrter Lazy) - das ist auch keine Rueckkehr. Abgemeldet
+     * gibt es nichts abzugleichen.
+     */
+    override fun onStart() {
+        super.onStart()
+        if (calendarViewModelLazy.isInitialized() && authViewModel.uiState.value.isSignedIn) {
+            calendarViewModel.aktualisiereBeiRueckkehr()
+        }
+    }
+
     override fun onResume() {
         super.onResume()
         // Der EINZIGE Aufruf: onResume folgt immer auf onCreate. Bis v1.45 stand er zusaetzlich am

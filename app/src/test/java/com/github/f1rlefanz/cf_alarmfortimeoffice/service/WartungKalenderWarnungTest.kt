@@ -84,8 +84,8 @@ class WartungKalenderWarnungTest {
     // ------------------------------------------------------ gegenstandslose Meldung (Review 2)
     //
     // Zurueckgenommen wurde nur nach einem Kalenderabruf. Nach einer Abwahl steigt die Wartung
-    // aber VOR dem Abruf aus - ohne Auswahl ohnehin, und meist schon am Lade-Gate (die verwaisten
-    // Wecker reichen 14 Tage weit). Deshalb gleicht sie die Auswahl ab, BEVOR etwas aussteigen
+    // aber VOR dem Abruf aus - ohne Auswahl ohnehin (bis 1.47 meist sogar schon am inzwischen
+    // entfallenen Lade-Gate). Deshalb gleicht sie die Auswahl ab, BEVOR etwas aussteigen
     // kann - auch vor dem Token-Schritt, denn dafuer braucht es kein Netz.
 
     @Test

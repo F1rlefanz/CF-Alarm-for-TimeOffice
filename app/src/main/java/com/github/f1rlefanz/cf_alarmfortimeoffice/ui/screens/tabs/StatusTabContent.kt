@@ -61,6 +61,8 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.LetzterSchichtStand
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.DateTimeFormats
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.CompactButton
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.SettingsLinkButton
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.hilfe.HilfeThema
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.hilfe.MehrDazuKnopf
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.success
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.AuthViewModel
@@ -883,6 +885,16 @@ internal fun rufbereitschaftsAbfrageInWorten(
 }
 
 /**
+ * Wann CF-Alarm in den Kalender sieht - ein Satz in der Karte "Hintergrunddienst", ausfuehrlich auf
+ * der Website ([HilfeThema.PROBLEME_ABGLEICH]). Die Zahlen haengen an Konstanten im Code; ein Test
+ * (`WartungLaedtBeiJedemLaufTest`) gleicht die beiden pruefbaren ab, damit der Satz nicht still
+ * veraltet. "Alle 6 Stunden" stimmt erst, seit jeder Wartungslauf die Termine holt (1.48.0).
+ */
+internal const val ABGLEICH_RHYTHMUS_TEXT =
+    "CF-Alarm sieht alle 6 Stunden im Hintergrund nach, an Rufbereitschafts-Tagen stündlich, " +
+        "3 Stunden vor jedem Wecker und jedes Mal, wenn du die App öffnest."
+
+/**
  * @param masterPausePaused KEIN Default (Anzeigepfad, Skill cfalarm-ui-und-navigation): waehrend
  *   der Pause gibt es keinen Abgleich im Hintergrund, und die Karte darf keinen ankuendigen.
  */
@@ -1019,6 +1031,23 @@ private fun LastSyncCard(calendarViewModel: CalendarViewModel, masterPausePaused
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                }
+                // Der Rhythmus in EINEM Satz, weil die Frage "wann sieht die App eigentlich nach?"
+                // sonst nur aus vier verstreuten Mechanismen zu erschliessen ist. Jede Angabe hat
+                // ihre Quelle: 6 h = WartungsKettenPlanung.INTERVALL_STUNDEN (geladen wird seit
+                // 1.48.0 bei jedem Lauf), stuendlich = RufbereitschaftAbfrage.INTERVALL_MS, 3 h =
+                // CalendarPreAlarmRefreshScheduler (die naechsten Wecker, Netz vorausgesetzt), Oeffnen
+                // = CalendarViewModel beim Zurueckkehren (ab 5 min seit dem letzten Abruf). Waehrend
+                // der Master-Pause gilt davon nichts - dann entfaellt der Satz; die Karte "Alles
+                // pausiert" oben sagt es.
+                if (!masterPausePaused) {
+                    Spacer(Modifier.height(SpacingConstants.SPACING_SMALL))
+                    Text(
+                        ABGLEICH_RHYTHMUS_TEXT,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    MehrDazuKnopf(HilfeThema.PROBLEME_ABGLEICH)
                 }
                 if (timeSinceLastMaintenance > TimeUnit.HOURS.toMillis(24)) {
                     Text(

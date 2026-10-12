@@ -1,6 +1,7 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice
 
 
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
@@ -81,9 +82,38 @@ class EinstiegIntentTest {
      * Ziel. Bis v1.45 bauten sieben Stellen (Wecker-Notausgang, Wecker-Anzeige des Systems,
      * Pausen-Hinweis, zwei Meldungen) ihren Intent selbst: explizit ohne MAIN/LAUNCHER oder ueber
      * `getLaunchIntentForPackage` ohne SINGLE_TOP. Ausser MainActivity selbst darf deshalb niemand
-     * `Intent(..., MainActivity::class.java)` oder `getLaunchIntentForPackage` schreiben.
+     * `Intent(..., MainActivity::class.java)` schreiben oder per `getLaunchIntentForPackage` die
+     * EIGENE App starten.
+     *
+     * Eine FREMDE App zu starten ist etwas anderes: sie kommt in ihrer eigenen Aufgabe nach vorn und
+     * kann keine zweite MainActivity anlegen (1.48.0: Knopf "TimeOffice öffnen"). Ausgenommen ist
+     * aber nur ein ausdruecklich als fremd benanntes Paket ([fremdePakete]) - jedes andere Argument,
+     * auch eine Variable, gilt weiter als Verstoss. Wer eine weitere fremde App startet, traegt ihre
+     * Konstante hier bewusst ein.
      */
     private val selbstGebauterIntent = Regex("""Intent\(\s*[\w.]+\s*,\s*MainActivity::class\.java""")
+    private val startUeberPaket = Regex("""getLaunchIntentForPackage\(\s*([^)]*?)\s*\)""")
+    private val fremdePakete = setOf("TIMEOFFICE_PACKAGE", "TimeOfficeHealthHelper.TIMEOFFICE_PACKAGE")
+
+    private fun startetEigeneAppUeberPaket(text: String): Boolean =
+        startUeberPaket.findAll(text).any { it.groupValues[1] !in fremdePakete } ||
+            // Ein Aufruf, den die Regex nicht als vollstaendigen Aufruf erkennt, bleibt verdaechtig.
+            text.split("getLaunchIntentForPackage").size - 1 != startUeberPaket.findAll(text).count()
+
+    @Test
+    fun `die Ausnahme fuer fremde Apps laesst den Start der eigenen App nicht durch`() {
+        assertTrue(startetEigeneAppUeberPaket("pm.getLaunchIntentForPackage(context.packageName)"))
+        assertTrue(startetEigeneAppUeberPaket("pm.getLaunchIntentForPackage(packageName)"))
+        assertTrue(startetEigeneAppUeberPaket("pm.getLaunchIntentForPackage(BuildConfig.APPLICATION_ID)"))
+        assertTrue(startetEigeneAppUeberPaket("pm.getLaunchIntentForPackage(paket)"))
+        assertTrue(
+            startetEigeneAppUeberPaket(
+                "pm.getLaunchIntentForPackage(TIMEOFFICE_PACKAGE)\npm.getLaunchIntentForPackage(packageName)"
+            )
+        )
+        assertFalse(startetEigeneAppUeberPaket("pm.getLaunchIntentForPackage(TIMEOFFICE_PACKAGE)"))
+        assertFalse(startetEigeneAppUeberPaket("pm.getLaunchIntentForPackage( TIMEOFFICE_PACKAGE )"))
+    }
 
     @Test
     fun `niemand ausser MainActivity baut den Intent zur App selbst`() {
@@ -93,8 +123,9 @@ class EinstiegIntentTest {
             .filter { datei ->
                 val text = ohneKommentare(datei.relativeTo(wurzel).invariantSeparatorsPath)
                 // `ComponentName(context, MainActivity::class.java)` (Konfigurations-Activity der
-                // DND-Regel) ist kein Intent zum Oeffnen und bleibt erlaubt.
-                selbstGebauterIntent.containsMatchIn(text) || text.contains("getLaunchIntentForPackage")
+                // DND-Regel) ist kein Intent zum Oeffnen und bleibt erlaubt; ebenso der Start einer
+                // ausdruecklich fremden App (TimeOffice), siehe [fremdePakete].
+                selbstGebauterIntent.containsMatchIn(text) || startetEigeneAppUeberPaket(text)
             }
             .map { it.relativeTo(wurzel).invariantSeparatorsPath }
             .toList()

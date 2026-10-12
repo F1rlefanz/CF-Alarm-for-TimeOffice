@@ -314,13 +314,64 @@ internal object WartungsKettenPlanung {
      */
     data class Zeitpunkte(val regulaer: Long, val wiederanlauf: Long)
 
-    fun zeitpunkte(jetzt: Long): Zeitpunkte {
+    /**
+     * Wie weit ein gemerkter Termin mindestens in der Zukunft liegen muss, um behalten zu werden.
+     *
+     * BEWUSST WINZIG, und das ist die Entscheidung: Jeder Termin, der hier durchfaellt, wird durch
+     * jetzt + 6 h ERSETZT - innerhalb dieses Fensters vor dem faelligen Lauf schiebt das Oeffnen
+     * der App ihn also doch wieder weg, genau der Fehler, gegen den [zielTermin] existiert. Die
+     * Minute aus `RufbereitschaftAbfrage.MINDEST_ABSTAND_MS` passt hier NICHT: dort plant ein
+     * Tick seinen eigenen Nachfolger, hier plant der Lauf im `finally` ohnehin jetzt + 6 h.
+     * Die eine Sekunde trennt nur den Termin ab, der in diesem Augenblick feuert; ihn noch einmal
+     * zu stellen, liesse ihn ein zweites Mal starten (harmlos dank [ServiceRunTracker], aber
+     * unnoetig).
+     */
+    const val BEHALTEN_MINDESTVORLAUF_MS = 1_000L
+
+    /**
+     * REIN UND TESTBAR: der Termin, auf den der regulaere Lauf gestellt wird.
+     *
+     * Ohne [frueherenTerminBehalten] (alle Aufrufer ausser den drei Eintritten in `MainScreen`)
+     * immer jetzt + [INTERVALL_STUNDEN] - unveraendert. Mit: der [gemerkterTermin], solange er in
+     * (jetzt + [BEHALTEN_MINDESTVORLAUF_MS], jetzt + 6 h] liegt. Dann wird er zwar NEU gestellt,
+     * aber nicht verschoben - das repariert eine Kette, die Android unter der Hand geloescht hat,
+     * ohne den naechsten Lauf wegzuschieben.
+     *
+     * Ausserhalb des Fensters gilt wieder jetzt + 6 h: ein VERGANGENER Termin heisst, der Lauf
+     * laeuft gerade (sein `finally` plant ohnehin neu) oder die Kette ist tot; ein Termin weiter
+     * als 6 h voraus kann nur nach einem Zurueckstellen der Uhr entstehen.
+     */
+    fun zielTermin(jetzt: Long, gemerkterTermin: Long?, frueherenTerminBehalten: Boolean): Long {
         val regulaer = jetzt + TimeUnit.HOURS.toMillis(INTERVALL_STUNDEN)
+        if (!frueherenTerminBehalten || gemerkterTermin == null) return regulaer
+        val imFenster = gemerkterTermin > jetzt + BEHALTEN_MINDESTVORLAUF_MS && gemerkterTermin <= regulaer
+        return if (imFenster) gemerkterTermin else regulaer
+    }
+
+    /**
+     * Regulaerer Lauf und Wachhund EINER Runde. Der Wachhund rechnet vom ZIEL, nicht von jetzt:
+     * bleibt der Termin stehen, muss er ihm folgen - sonst laege er bis zu 6 h hinter dem Lauf, den
+     * er absichern soll.
+     */
+    fun zeitpunkte(
+        jetzt: Long,
+        gemerkterTermin: Long? = null,
+        frueherenTerminBehalten: Boolean = false
+    ): Zeitpunkte {
+        val regulaer = zielTermin(jetzt, gemerkterTermin, frueherenTerminBehalten)
         return Zeitpunkte(
             regulaer = regulaer,
             wiederanlauf = regulaer + TimeUnit.MINUTES.toMillis(WACHHUND_KARENZ_MINUTEN)
         )
     }
+
+    /**
+     * Fuer die Status-Karte: der gemerkte Termin, wenn er noch bevorsteht - sonst `null`, und die
+     * Zeile entfaellt. Ein vergangener Termin ist kein "naechster" Abgleich mehr; ob die Kette
+     * dann laeuft, sagt "Zuletzt nachgesehen" darueber, nichts wird erfunden.
+     */
+    fun anzeigeTermin(gemerkterTermin: Long?, jetzt: Long): Long? =
+        gemerkterTermin?.takeIf { it > jetzt }
 
     /** Obergrenze fuer die Nachholversuche aus [AlarmMaintenanceService.start]. */
     const val MAX_NACHHOLVERSUCHE = 2
@@ -781,16 +832,29 @@ class AlarmMaintenanceService : Service() {
         }
 
         /**
-         * Stellt den naechsten Wartungslauf (+6h) — der EINZIGE Planer der Kette (ein zweiter auf
+         * Stellt den naechsten Wartungslauf — der EINZIGE Planer der Kette (ein zweiter auf
          * Request-Code 9999 lief frueher parallel; Hergang: Skill cfalarm-wecker-und-boot).
          * canScheduleExactAlarms() wird geprueft, weil setExactAndAllowWhileIdle() ohne die
          * Berechtigung wirft (API 31/32). Stellt auch den Wachhund [armiereWiederanlauf] - bleibt
          * EIN Planer, siehe [WartungsKettenPlanung.WACHHUND_REQUEST_CODE].
+         *
+         * @param frueherenTerminBehalten `true` NUR fuer die Eintritte in den Hauptbereich
+         *   (`MainScreen`): ein gemerkter Termin in den naechsten 6 h bleibt stehen und wird nur
+         *   neu gestellt, statt auf jetzt + 6 h zu ruecken - sonst schob jedes Oeffnen der App den
+         *   faelligen Lauf weg. Alle anderen Aufrufer (Wartungs-`finally`, Boot, Master-Pause
+         *   `resume()`, Wachhund) planen bewusst ab jetzt. Regel: [WartungsKettenPlanung.zielTermin].
          */
-        fun scheduleNext(context: Context) {
+        fun scheduleNext(context: Context, frueherenTerminBehalten: Boolean = false) {
             val alarmManager = context.getSystemService(ALARM_SERVICE) as AlarmManager
 
-            val zeitpunkte = WartungsKettenPlanung.zeitpunkte(System.currentTimeMillis())
+            // Gelesen wird nur, wer behalten will - der Default-Weg braucht den Merker nicht.
+            val gemerkt = if (frueherenTerminBehalten) WartungsKettenTermin.lies(context) else null
+            val zeitpunkte = WartungsKettenPlanung.zeitpunkte(
+                jetzt = System.currentTimeMillis(),
+                gemerkterTermin = gemerkt,
+                frueherenTerminBehalten = frueherenTerminBehalten
+            )
+            val behalten = gemerkt != null && zeitpunkte.regulaer == gemerkt
             val pendingIntent = wartungsPendingIntent(context, WartungsKettenPlanung.REGULAER_REQUEST_CODE)
 
             // Hier bewusst nur die Frage ueber ExakteAlarme, das Stellen direkt: `wartungsPendingIntent`
@@ -808,12 +872,25 @@ class AlarmMaintenanceService : Service() {
 
             armiereWiederanlauf(context, alarmManager, zeitpunkte.wiederanlauf)
 
+            // ERST NACH dem Stellen: ein Merker ohne gestellten Alarm verwiese auf einen Lauf, den
+            // es nicht gibt. Wirft nie (siehe WartungsKettenTermin).
+            WartungsKettenTermin.merke(context, zeitpunkte.regulaer)
+
             Logger.business(
                 LogTags.MAINTENANCE,
                 "⏰ Next maintenance scheduled for ${Date(zeitpunkte.regulaer)} " +
-                    "(Wiederanlauf-Wachhund ${Date(zeitpunkte.wiederanlauf)})"
+                    "(${if (behalten) "Termin behalten" else "ab jetzt geplant"}, " +
+                    "Wiederanlauf-Wachhund ${Date(zeitpunkte.wiederanlauf)})"
             )
         }
+
+        /**
+         * Fuer die Status-Karte: der gemerkte Termin des naechsten regulaeren Laufs, 0 = keiner
+         * (noch nie gestellt, Master-Pause, nicht lesbar). Synchrone SharedPreferences, deshalb
+         * vom Main-Thread weg gelesen.
+         */
+        suspend fun naechsterRegulaererLauf(context: Context): Long =
+            withContext(Dispatchers.IO) { WartungsKettenTermin.lies(context) ?: 0L }
 
         /**
          * EINE Stelle fuer den PendingIntent der Kette. Setzen und Abbrechen MUESSEN denselben
@@ -909,6 +986,11 @@ class AlarmMaintenanceService : Service() {
                     istWachhund = true
                 )
             )
+
+            // Und der gemerkte Termin mit: sonst stuende im Status-Tab waehrend der Pause ein
+            // "Naechster Abgleich im Hintergrund", der nie kommt. Nach den beiden cancel(), damit
+            // ein Fehler hier das Kappen nicht verhindert (wirft ohnehin nie).
+            WartungsKettenTermin.vergiss(context)
 
             Logger.business(
                 LogTags.MAINTENANCE,

@@ -56,6 +56,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimBedienungshilfenWuns
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AuthState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmMaintenanceService
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.RufbereitschaftAbfrage
+import com.github.f1rlefanz.cf_alarmfortimeoffice.service.WartungsKettenPlanung
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.LetzterSchichtStand
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.DateTimeFormats
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.CompactButton
@@ -394,7 +395,7 @@ fun StatusTabContent(
         DndPermissionCard()
 
         // Letzter Hintergrund-Sync (6h-Wartung: Token -> Kalender -> Wecker)
-        LastSyncCard(calendarViewModel = calendarViewModel)
+        LastSyncCard(calendarViewModel = calendarViewModel, masterPausePaused = masterPausePaused)
 
         // Direkt darunter, weil es dieselbe Frage beantwortet ("was hat die App zuletzt im
         // Hintergrund getan?") - und ausdruecklich als ruhige Zeile ohne Karte, Farbe oder Icon.
@@ -866,7 +867,11 @@ internal fun zeitAbstandInWorten(zeitpunkt: Long, jetzt: Long = System.currentTi
     }
 }
 
-/** "um 14:00" fuer heute, sonst mit Datum - der Zeitpunkt liegt in der Zukunft, nie "vor X". */
+/**
+ * "um 14:00" fuer heute, sonst mit Datum - der Zeitpunkt liegt in der Zukunft, nie "vor X".
+ * Gilt fuer BEIDE Termine der Karte "Hintergrunddienst" (Rufbereitschaft und naechster Abgleich),
+ * damit sie gleich lauten.
+ */
 internal fun rufbereitschaftsAbfrageInWorten(
     zeitpunkt: Long,
     zone: java.time.ZoneId = java.time.ZoneId.systemDefault(),
@@ -877,37 +882,58 @@ internal fun rufbereitschaftsAbfrageInWorten(
     return if (z.toLocalDate() == heute) "um $uhr" else "am ${z.format(DateTimeFormatter.ofPattern("dd.MM.", Locale.GERMANY))} um $uhr"
 }
 
+/**
+ * @param masterPausePaused KEIN Default (Anzeigepfad, Skill cfalarm-ui-und-navigation): waehrend
+ *   der Pause gibt es keinen Abgleich im Hintergrund, und die Karte darf keinen ankuendigen.
+ */
 @Composable
-private fun LastSyncCard(calendarViewModel: CalendarViewModel) {
+private fun LastSyncCard(calendarViewModel: CalendarViewModel, masterPausePaused: Boolean) {
     val context = LocalContext.current
     var lastMaintenanceTime by remember { mutableLongStateOf(0L) }
     var letzterTerminabruf by remember { mutableStateOf(0L) }
     var naechsteRufbereitschaftsAbfrage by remember { mutableLongStateOf(0L) }
+    var naechsterRegulaererLauf by remember { mutableLongStateOf(0L) }
+    // Als ZUSTAND und nicht bei jeder Komposition neu gelesen: aendert sich keiner der Werte oben,
+    // setzt sich die Karte sonst nie neu zusammen - "vor 5 Minuten" bliebe stehen, und ein
+    // verstrichener "naechster" Termin verschwaende nicht.
+    var jetzt by remember { mutableLongStateOf(System.currentTimeMillis()) }
 
     LaunchedEffect(Unit) {
-        lastMaintenanceTime = AlarmMaintenanceService.getLastMaintenanceTime(context)
-        letzterTerminabruf = AlarmMaintenanceService.getLastEventLoadTime(context)
-        naechsteRufbereitschaftsAbfrage = RufbereitschaftAbfrage.naechsteAbfrageZeit(context)
         while (true) {
-            kotlinx.coroutines.delay(30_000)
             lastMaintenanceTime = AlarmMaintenanceService.getLastMaintenanceTime(context)
             letzterTerminabruf = AlarmMaintenanceService.getLastEventLoadTime(context)
             naechsteRufbereitschaftsAbfrage = RufbereitschaftAbfrage.naechsteAbfrageZeit(context)
+            naechsterRegulaererLauf = AlarmMaintenanceService.naechsterRegulaererLauf(context)
+            jetzt = System.currentTimeMillis()
+            kotlinx.coroutines.delay(30_000)
         }
     }
 
+    // Nur ein BEVORSTEHENDER Termin wird genannt - fehlt er oder ist er vorbei, entfaellt die
+    // Zeile (WartungsKettenPlanung.anzeigeTermin). Waehrend der Master-Pause ebenso: cancelNext()
+    // vergisst den Termin zwar, aber das Oeffnen der App stellt die Kette auch dann (der Lauf
+    // steigt sofort aus und kappt sie wieder) - angekuendigt wird er trotzdem nicht.
+    val naechsterAbgleich = if (masterPausePaused) {
+        null
+    } else {
+        WartungsKettenPlanung.anzeigeTermin(
+            gemerkterTermin = naechsterRegulaererLauf.takeIf { it > 0L },
+            jetzt = jetzt
+        )
+    }
+
     val timeSinceLastMaintenance = if (lastMaintenanceTime > 0) {
-        System.currentTimeMillis() - lastMaintenanceTime
+        jetzt - lastMaintenanceTime
     } else {
         -1L
     }
 
-    val terminabrufText = zeitAbstandInWorten(letzterTerminabruf)
+    val terminabrufText = zeitAbstandInWorten(letzterTerminabruf, jetzt)
 
     // Dieselbe Formulierung wie beim Terminabruf (#132, G1-05) - nur "noch nie" heisst hier
     // ausfuehrlicher, weil es um einen Lauf geht, nicht um einen Abruf.
     val lastMaintenanceText =
-        if (lastMaintenanceTime == 0L) "Noch nie ausgeführt" else zeitAbstandInWorten(lastMaintenanceTime)
+        if (lastMaintenanceTime == 0L) "Noch nie ausgeführt" else zeitAbstandInWorten(lastMaintenanceTime, jetzt)
 
     val statusColor = when {
         lastMaintenanceTime == 0L -> MaterialTheme.colorScheme.tertiary
@@ -966,6 +992,18 @@ private fun LastSyncCard(calendarViewModel: CalendarViewModel) {
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                // Die 6h-Kette bekommt hier ihre Oberflaeche: WANN sie das naechste Mal laeuft.
+                // Seit das Oeffnen der App den Termin nicht mehr verschiebt, steht hier ein Wert,
+                // auf den man sich verlassen kann. Formulierung wie die Rufbereitschafts-Zeile
+                // darunter ("um 20:17", morgen mit Datum).
+                if (naechsterAbgleich != null) {
+                    Spacer(Modifier.height(SpacingConstants.SPACING_SMALL))
+                    Text(
+                        "Nächster Abgleich im Hintergrund " +
+                            rufbereitschaftsAbfrageInWorten(naechsterAbgleich),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
                 // Die stuendliche Rufbereitschafts-Abfrage braucht eine Oberflaeche: hier steht,
                 // DASS sie laeuft und wann sie das naechste Mal nachsieht. Ohne diese Zeile waere
                 // "Rufbereitschaft" am Schichttyp ein Schalter, dessen Wirkung niemand ablesen kann.

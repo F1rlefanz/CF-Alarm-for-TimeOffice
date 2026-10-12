@@ -181,7 +181,8 @@ private suspend fun setzeGateKetteFort(
 
         GateSchritt.Fertig -> {
             Logger.business(LogTags.NAVIGATION, "Gate-Kette ($einstieg) -> Onboarding complete -> Main")
-            AlarmMaintenanceService.scheduleNext(context)
+            // Termin behalten statt verschieben - Begruendung am Eintritt in MainContent unten.
+            AlarmMaintenanceService.scheduleNext(context, frueherenTerminBehalten = true)
             navigationViewModel.navigateToMainWithTab(MainTab.HOME)
         }
 
@@ -310,13 +311,12 @@ fun MainScreen(
     // Onboarding-Abschluss an genau einer Stelle: Wartungskette anstossen, dann Home. Sowohl
     // "Verstanden" als auch der Zurueck-Weg muessen das tun - wer hier nur navigiert, laesst
     // einen Nutzer ohne 6h-Wartung zurueck und damit ohne neu angelegte Wecker.
-    // scheduleNext() ist idempotent (ein Request-Code, ein PendingIntent), ein zweiter Aufruf
-    // ersetzt den bestehenden Alarm also nur.
+    // Ein zweiter Aufruf erzeugt keinen zweiten Alarm (ein Request-Code, ein PendingIntent), er
+    // ERSETZT den bestehenden - mit frueherenTerminBehalten auf denselben Termin, statt ihn auf
+    // jetzt + 6 h zu schieben (Begruendung am Eintritt in MainContent unten).
     val finishOnboarding: () -> Unit = {
         Logger.business(LogTags.NAVIGATION, "OEM Warning acknowledged -> Main")
-        com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmMaintenanceService.scheduleNext(
-            context
-        )
+        AlarmMaintenanceService.scheduleNext(context, frueherenTerminBehalten = true)
         navigationViewModel.navigateToMainWithTab(MainTab.HOME)
     }
 
@@ -634,13 +634,20 @@ fun MainScreen(
                 // reparierte den Zustand. Genau der Betriebsfall, den diese App nicht verlangt.
                 //
                 // An den Ausgaengen einzeln nachzuziehen waere die fragile Loesung gewesen: der
-                // naechste neue Ausgang vergisst es wieder. Hier kommt JEDER Weg vorbei, und
-                // scheduleNext() ist idempotent (ein Request-Code, ein PendingIntent) - ein
-                // zweiter Aufruf ersetzt den bestehenden Alarm nur. Der Schluessel `Unit` laesst
-                // es genau einmal je Eintritt in den Hauptbereich laufen, nicht bei jeder
-                // Rekomposition.
+                // naechste neue Ausgang vergisst es wieder. Hier kommt JEDER Weg vorbei. Der
+                // Schluessel `Unit` laesst es genau einmal je Eintritt in den Hauptbereich laufen,
+                // nicht bei jeder Rekomposition.
+                //
+                // "IDEMPOTENT" STIMMTE NUR FUER DIE ANZAHL, NICHT FUER DEN ZEITPUNKT. Ein zweiter
+                // Aufruf ersetzt zwar nur den bestehenden Alarm (ein Request-Code, ein
+                // PendingIntent) - aber bis 1.47.1 auf jetzt + 6 h. Jeder Eintritt schob den
+                // faelligen Lauf also weg, und wer oft nachsah, bekam keinen: am 12.10.2026 kam
+                // der 20:17-Lauf nie, der naechste stand auf Wiedereintritt 19:29:36 + 6 h. Deshalb
+                // frueherenTerminBehalten: ein gemerkter Termin in den naechsten 6 h bleibt stehen
+                // und wird nur neu gestellt - das repariert eine von Android geloeschte Kette,
+                // ohne sie zu verschieben. Nur ohne gueltigen Termin gilt jetzt + 6 h.
                 LaunchedEffect(Unit) {
-                    AlarmMaintenanceService.scheduleNext(context)
+                    AlarmMaintenanceService.scheduleNext(context, frueherenTerminBehalten = true)
                     Logger.d(LogTags.NAVIGATION, "6h-Wartungskette beim Eintritt in den Hauptbereich gestellt")
                 }
 

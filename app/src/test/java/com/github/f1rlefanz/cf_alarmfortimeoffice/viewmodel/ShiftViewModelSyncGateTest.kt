@@ -28,6 +28,7 @@ import org.mockito.kotlin.mock
 import org.mockito.kotlin.never
 import org.mockito.kotlin.stub
 import org.mockito.kotlin.verify
+import org.mockito.kotlin.verifyBlocking
 import org.mockito.kotlin.whenever
 import java.time.LocalDateTime
 
@@ -70,7 +71,8 @@ class ShiftViewModelSyncGateTest {
 
     private fun buildViewModel(
         holder: CalendarStateHolder,
-        alarmUseCase: IAlarmUseCase
+        alarmUseCase: IAlarmUseCase,
+        armierer: ZeitkettenArmierer = mock()
     ): ShiftViewModel {
         val shiftUseCase = mock<IShiftUseCase>()
         whenever(shiftUseCase.shiftConfig).thenReturn(flowOf(ShiftConfig()))
@@ -89,7 +91,7 @@ class ShiftViewModelSyncGateTest {
             // Schichtnamen, es wird also nichts nachgezogen.
             dimRuleUseCase = dagger.Lazy { mock<DimRuleUseCase>() },
             hueRuleUseCase = dagger.Lazy { mock<HueRuleUseCase>() },
-            armierer = mock<ZeitkettenArmierer>(),
+            armierer = armierer,
             dndPrefs = dagger.Lazy { mock<com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndPrefs>() },
             shiftSpanStore = dagger.Lazy { mock<com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpanStore>() },
             // Nur fuer die Statuszeile je Schicht (#70) - die liest erst beim Abo, dieser Test abonniert sie nicht.
@@ -173,5 +175,42 @@ class ShiftViewModelSyncGateTest {
         advanceUntilIdle()
 
         verify(alarmUseCase).syncAlarms(eq(events), any(), eq(123_456L))
+    }
+
+    /**
+     * Review 1.48.0: Ein neues Kuerzel oder eine geaenderte Weckzeit legt hier Wecker an - deren
+     * Vorab-Abgleich (3 h vorher) darf nicht bis zur naechsten Wartung warten.
+     */
+    @Test
+    fun `ein gelungener Sync nach einer Konfigurationsaenderung plant die Nebenketten nach`() =
+        runTest(dispatcher) {
+            val holder = CalendarStateHolder()
+            holder.updateEvents(listOf(event("A")), complete = true)
+            val alarmUseCase = mock<IAlarmUseCase>()
+            alarmUseCase.stub {
+                on { syncAlarms(any(), any(), anyOrNull()) } doReturn Result.success(emptyList())
+            }
+            val armierer = mock<ZeitkettenArmierer>()
+            val vm = buildViewModel(holder, alarmUseCase, armierer)
+            advanceUntilIdle()
+
+            vm.updateShiftConfig(ShiftConfig(autoAlarmEnabled = true))
+            advanceUntilIdle()
+
+            verifyBlocking(armierer) { planeNachVordergrundSync() }
+        }
+
+    @Test
+    fun `ohne Sync (Ausschnitt) wird nichts nachgeplant`() = runTest(dispatcher) {
+        val holder = CalendarStateHolder()
+        holder.updateEvents(listOf(event("A")), complete = false)
+        val armierer = mock<ZeitkettenArmierer>()
+        val vm = buildViewModel(holder, mock(), armierer)
+        advanceUntilIdle()
+
+        vm.updateShiftConfig(ShiftConfig(autoAlarmEnabled = true))
+        advanceUntilIdle()
+
+        verifyBlocking(armierer, never()) { planeNachVordergrundSync() }
     }
 }

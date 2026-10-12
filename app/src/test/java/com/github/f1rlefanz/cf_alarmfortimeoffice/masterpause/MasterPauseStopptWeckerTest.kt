@@ -86,9 +86,11 @@ class MasterPauseStopptWeckerTest {
 
         f.useCase.pause()
 
-        // Stellvertretend fuer AlarmMaintenanceService.cancelNext(context): zwei Cancel auf dem
-        // AlarmManager (regulaerer 6h-Slot UND Wiederanlauf-Wachhund).
-        verify(f.alarmManager, times(2)).cancel(anyOrNull<android.app.PendingIntent>())
+        // Stellvertretend fuer die nachfolgenden Schritte: vier Cancel auf dem AlarmManager -
+        // AlarmMaintenanceService.cancelNext(context) (regulaerer 6h-Slot UND Wiederanlauf-Wachhund)
+        // und seit 1.48.0 TimeOfficeNachfassAbgleich.abbrechen(context) (die beiden Abgleiche nach
+        // "TimeOffice öffnen", Slots 8804/8805).
+        verify(f.alarmManager, times(4)).cancel(anyOrNull<android.app.PendingIntent>())
     }
 
     @Test

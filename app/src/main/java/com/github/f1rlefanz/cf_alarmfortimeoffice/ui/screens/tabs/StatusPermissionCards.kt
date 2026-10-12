@@ -9,6 +9,7 @@ import android.os.Build
 import android.provider.Settings
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -20,6 +21,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -53,6 +55,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimDiagnostik
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmMaintenanceEntryPoint
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmMaintenanceService
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmManagerService
+import com.github.f1rlefanz.cf_alarmfortimeoffice.service.TimeOfficeNachfassAbgleich
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.SettingsLinkButton
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.hilfe.HilfeThema
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.hilfe.MehrDazuKnopf
@@ -66,6 +69,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.TimeOfficeHealthHelper
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.UnusedAppRestrictionsHelper
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
 import dagger.hilt.android.EntryPointAccessors
+import java.util.concurrent.TimeUnit
 
 // Die Berechtigungs- und Zustandskarten des Status-Tabs: jede liest EINE Geraeteeinstellung bei
 // jedem ON_RESUME neu, zeigt gruen/rot und fuehrt in die zustaendige Systemeinstellung. Jede deckt
@@ -369,14 +373,13 @@ internal fun ExactAlarmPermissionCard() {
                             "schwebende Schlummer werden wiederhergestellt (der Entzug hatte " +
                             "beide geloescht)"
                     )
-                    // forceSync = true ist hier PFLICHT, nicht Geschmack: der Entzug loescht nur
-                    // die AlarmManager-Eintraege, der Repository-Bestand bleibt stehen. Das
-                    // regulaere Lade-Gate (MaintenanceLoadDecision.shouldLoadEvents) saehe also
-                    // Zukunftsalarme, frische Daten und einen ausreichenden Puffer - es
-                    // uebersprang das Laden, der Lauf endete VOR syncAlarms(), und genau
-                    // syncAlarms() ist der einzige Ort, der Bestandsalarme wieder armiert. Die
-                    // beiden Schwesterstellen mit demselben Zweck (BootReceiver,
-                    // TimezoneChangeReceiver) uebergeben aus demselben Grund true.
+                    // Der Entzug loescht nur die AlarmManager-Eintraege, der Repository-Bestand
+                    // bleibt stehen - wieder armiert wird er ausschliesslich in syncAlarms(). Den
+                    // erreicht seit 1.48.0 jeder Wartungslauf (bis 1.47 uebersprang ihn hier das
+                    // inzwischen entfallene Lade-Gate, deshalb war forceSync damals Pflicht).
+                    // forceSync = true holt die Termine jetzt nur noch am Zwischenspeicher vorbei
+                    // frisch, wie bei den Schwesterstellen mit demselben Zweck (BootReceiver,
+                    // TimezoneChangeReceiver).
                     AlarmMaintenanceService.start(context, forceSync = true)
 
                     // Der schwebende Schlummer haengt an einem EIGENEN Merker und an keinem
@@ -580,6 +583,21 @@ internal fun UnusedAppRestrictionsCard() {
  *
  * Rendert nichts, wenn TimeOffice nicht installiert ist (einmaliger Check per `remember` — der
  * Installationsstatus aendert sich nicht waehrend die App laeuft).
+ *
+ * DER KNOPF "TimeOffice öffnen" (Befund 12.10.2026): TimeOffice traegt einen geaenderten
+ * Dienstplan erst in den Kalender ein, wenn man es OEFFNET - auch mit allen Einstellungen in
+ * Ordnung. Die Karte sagt das und bietet den Handgriff gleich an; danach stellt
+ * [TimeOfficeNachfassAbgleich] zwei Abgleiche nach 3 und nach 10 Minuten. Der Satz darunter
+ * ([timeOfficeNachfassSatz]) verspricht diese Abgleiche nur, wenn sie auch stattfinden koennen.
+ * Ohne Startseite von TimeOffice (deaktiviert) fehlen Knopf und Satz.
+ *
+ * KNOPF UND SATZ STEHEN FUER SICH, vor den uebrigen Knoepfen (Review 1.48.0): Bis dahin stand
+ * "Danach gleicht CF-Alarm …" unter der ganzen Knopfreihe - bei 320 dp direkt unter
+ * "TimeOffice-Einstellungen öffnen", das nichts plant. Der Satz nennt den Knopf jetzt auch beim
+ * Namen (Hinweistexte nennen Beschriftungen, nie eine Position).
+ *
+ * Die uebrigen zwei Knoepfe sind ein [FlowRow]: bei 320 dp passen sie nicht nebeneinander und
+ * duerfen dort umbrechen statt abgeschnitten zu werden.
  */
 @Composable
 internal fun TimeOfficeHealthCard() {
@@ -589,8 +607,19 @@ internal fun TimeOfficeHealthCard() {
     if (!isInstalled) return
 
     var isBatteryExempt by remember { mutableStateOf(TimeOfficeHealthHelper.isBatteryExempted(context)) }
+    // Einmal wie isInstalled: ob TimeOffice eine Startseite hat, aendert sich nicht, waehrend
+    // diese Karte steht.
+    val startIntent = remember { TimeOfficeHealthHelper.createLaunchIntent(context) }
+    // Bei jedem ON_RESUME neu: Pause und "Alarme & Erinnerungen" werden in den Einstellungen
+    // umgelegt, und der Satz unter dem Knopf muss danach stimmen.
+    var abgleichPausiert by remember { mutableStateOf(TimeOfficeNachfassAbgleich.pausiert(context)) }
+    var abgleichExakt by remember { mutableStateOf(darfExakteAlarme(context)) }
 
-    BeiJedemResume { isBatteryExempt = TimeOfficeHealthHelper.isBatteryExempted(context) }
+    BeiJedemResume {
+        isBatteryExempt = TimeOfficeHealthHelper.isBatteryExempted(context)
+        abgleichPausiert = TimeOfficeNachfassAbgleich.pausiert(context)
+        abgleichExakt = darfExakteAlarme(context)
+    }
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -656,23 +685,88 @@ internal fun TimeOfficeHealthCard() {
             }
 
             Spacer(Modifier.height(SpacingConstants.SPACING_SMALL))
-            SettingsLinkButton(
-                onClick = {
-                    try {
-                        context.startActivity(TimeOfficeHealthHelper.createAppInfoIntent())
-                    } catch (e: Exception) {
-                        Logger.e(
-                            LogTags.TIMEOFFICE_HEALTH,
-                            "Failed to open TimeOffice app-info settings",
-                            e
-                        )
-                    }
-                },
-                text = "TimeOffice-Einstellungen öffnen"
+            Text(
+                "Neue Dienste trägt TimeOffice erst in den Kalender ein, wenn du TimeOffice " +
+                    "öffnest. Am einfachsten: auf seine Meldung „Dienstplanänderung“ tippen.",
+                style = MaterialTheme.typography.bodyMedium
             )
-            MehrDazuKnopf(HilfeThema.PROBLEME_TIMEOFFICE)
+
+            if (startIntent != null) {
+                Spacer(Modifier.height(SpacingConstants.SPACING_SMALL))
+                Button(
+                    onClick = {
+                        // Erst oeffnen, dann planen: ging TimeOffice nicht auf, gibt es
+                        // nichts nachzufassen.
+                        val geoeffnet = try {
+                            context.startActivity(startIntent)
+                            true
+                        } catch (e: Exception) {
+                            Logger.e(LogTags.TIMEOFFICE_HEALTH, "Failed to launch TimeOffice", e)
+                            false
+                        }
+                        if (geoeffnet) TimeOfficeNachfassAbgleich.plane(context)
+                    }
+                ) {
+                    Text(TIMEOFFICE_OEFFNEN)
+                }
+                Text(
+                    timeOfficeNachfassSatz(pausiert = abgleichPausiert, exakt = abgleichExakt),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            Spacer(Modifier.height(SpacingConstants.SPACING_SMALL))
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_LARGE),
+                verticalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_SMALL),
+                itemVerticalAlignment = Alignment.CenterVertically
+            ) {
+                SettingsLinkButton(
+                    onClick = {
+                        try {
+                            context.startActivity(TimeOfficeHealthHelper.createAppInfoIntent())
+                        } catch (e: Exception) {
+                            Logger.e(
+                                LogTags.TIMEOFFICE_HEALTH,
+                                "Failed to open TimeOffice app-info settings",
+                                e
+                            )
+                        }
+                    },
+                    text = "TimeOffice-Einstellungen öffnen"
+                )
+                MehrDazuKnopf(HilfeThema.PROBLEME_TIMEOFFICE)
+            }
         }
     }
+}
+
+/** Beschriftung des Knopfs - der Satz darunter nennt ihn wortgleich. */
+internal const val TIMEOFFICE_OEFFNEN = "TimeOffice öffnen"
+
+/**
+ * PURE, TESTBAR: der Satz unter "TimeOffice öffnen" - er verspricht die beiden Abgleiche nur, wenn
+ * [TimeOfficeNachfassAbgleich.plane] sie auch so stellt, dass sie laufen koennen.
+ *
+ * - [pausiert]: waehrend der Master-Pause plant `plane()` nichts (dieselbe Abfrage,
+ *   `TimeOfficeNachfassAbgleich.pausiert`).
+ * - nicht [exakt] (Review 1.48.0, nur Android 12 kann die Berechtigung entziehen): dann stellt
+ *   `plane()` ungenau, und ein ungenauer Alarm darf den Wartungslauf beim Feuern nicht im
+ *   Vordergrund starten - die Abgleiche entfallen. Der Satz nennt die Karte "Alarme &
+ *   Erinnerungen", die in dem Fall ohnehin rot steht.
+ *
+ * Die Minuten aus denselben Konstanten, mit denen geplant wird - der Satz darf keine andere Zeit
+ * versprechen, als die Abgleiche kommen.
+ */
+internal fun timeOfficeNachfassSatz(pausiert: Boolean, exakt: Boolean): String = when {
+    pausiert -> "Solange alles pausiert ist, gleicht CF-Alarm nach „$TIMEOFFICE_OEFFNEN“ nicht von selbst ab."
+    !exakt -> "Ohne „Alarme & Erinnerungen“ gleicht CF-Alarm nach „$TIMEOFFICE_OEFFNEN“ nicht " +
+        "zuverlässig von selbst ab."
+    else -> "Nach „$TIMEOFFICE_OEFFNEN“ gleicht CF-Alarm nach " +
+        "${TimeUnit.MILLISECONDS.toMinutes(TimeOfficeNachfassAbgleich.ERSTER_ABSTAND_MS)} und nach " +
+        "${TimeUnit.MILLISECONDS.toMinutes(TimeOfficeNachfassAbgleich.ZWEITER_ABSTAND_MS)} " +
+        "Minuten von selbst ab."
 }
 
 /**

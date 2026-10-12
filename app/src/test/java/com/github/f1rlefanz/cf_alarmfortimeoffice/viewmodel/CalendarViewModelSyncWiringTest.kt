@@ -5,6 +5,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FakeKalenderVorausschauP
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FakeFeedNeueinlesenStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.calendar.PendingDeselectionCleanupStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.di.state.CalendarStateHolder
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.ZeitkettenArmierer
 import com.github.f1rlefanz.cf_alarmfortimeoffice.error.ErrorHandler
 import com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPausePrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.CalendarEvent
@@ -58,6 +59,9 @@ import java.time.LocalDateTime
  */
 @OptIn(ExperimentalCoroutinesApi::class) // Dispatchers.setMain/resetMain, advanceUntilIdle
 class CalendarViewModelSyncWiringTest {
+
+    /** Nebenketten nach dem Sync im Vordergrund (Pre-Alarm-Refresh, Rufbereitschaft) - hier nur ein Mock. */
+    private val armierer = mock<ZeitkettenArmierer>()
 
     private val dispatcher = StandardTestDispatcher()
     private val selectedIds = MutableStateFlow<Set<String>>(emptySet())
@@ -152,7 +156,8 @@ class CalendarViewModelSyncWiringTest {
             pendingDeselectionCleanupStore = pendingCleanupStore,
             // Nur fuer die stille Statuszeile - fuer diesen Test ohne Belang.
             feedNeueinlesenStore = FakeFeedNeueinlesenStore(),
-            kalenderVorausschauPrefs = vorausschauPrefs
+            kalenderVorausschauPrefs = vorausschauPrefs,
+            zeitkettenArmierer = armierer
         )
     }
 
@@ -404,5 +409,37 @@ class CalendarViewModelSyncWiringTest {
         org.mockito.kotlin.verifyBlocking(calendarUseCase, org.mockito.kotlin.times(2)) {
             getCalendarEventsLazy(any(), any(), any())
         }
+    }
+
+    // --- Nebenketten nach dem Sync im Vordergrund (Review 1.48.0) ------------------------------
+    // Seit die Rueckkehr in die App neu laedt, entstehen Wecker oft hier. Plante nur die Wartung den
+    // Pre-Alarm-Refresh, bekam ein um 23:30 angelegter Wecker fuer 04:30 keinen Vorab-Abgleich, wenn
+    // die naechste Wartung erst um 05:00 kam.
+
+    @Test
+    fun `ein gelungener Sync plant Pre-Alarm-Refresh und Rufbereitschafts-Abfrage nach`() = runTest(dispatcher) {
+        val alarmUseCase = mock<IAlarmUseCase>()
+        alarmUseCase.stub {
+            onBlocking { syncAlarms(any(), any(), anyOrNull()) } doReturn Result.success(emptyList())
+        }
+        val all = (0 until 4).map { event("A$it", it) }
+        buildViewModel(pageEvents = all, totalEvents = 4, alarmUseCase = alarmUseCase)
+
+        selectedIds.value = setOf("cal-a")
+        advanceUntilIdle()
+
+        org.mockito.kotlin.verifyBlocking(armierer) { planeNachVordergrundSync() }
+    }
+
+    @Test
+    fun `ohne Sync wird nichts nachgeplant`() = runTest(dispatcher) {
+        // Praefix ohne nachforderbare Liste: kein Sync - also auch kein neuer Bestand, aus dem sich
+        // etwas planen liesse.
+        buildViewModel(pageEvents = (0 until 10).map { event("A$it", it) }, totalEvents = 13)
+
+        selectedIds.value = setOf("cal-a")
+        advanceUntilIdle()
+
+        org.mockito.kotlin.verifyBlocking(armierer, never()) { planeNachVordergrundSync() }
     }
 }

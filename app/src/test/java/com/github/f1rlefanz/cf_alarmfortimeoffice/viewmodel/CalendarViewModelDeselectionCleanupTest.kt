@@ -5,6 +5,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FakeKalenderVorausschauP
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FakeFeedNeueinlesenStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.calendar.PendingDeselectionCleanupStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.di.state.CalendarStateHolder
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.ZeitkettenArmierer
 import com.github.f1rlefanz.cf_alarmfortimeoffice.error.ErrorHandler
 import com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPausePrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.CalendarEvent
@@ -61,6 +62,9 @@ import java.time.LocalDateTime
  */
 @OptIn(ExperimentalCoroutinesApi::class) // Dispatchers.setMain/resetMain, advanceUntilIdle
 class CalendarViewModelDeselectionCleanupTest {
+
+    /** Nebenketten nach dem Sync im Vordergrund (Pre-Alarm-Refresh, Rufbereitschaft) - hier nur ein Mock. */
+    private val armierer = mock<ZeitkettenArmierer>()
 
     private val dispatcher = StandardTestDispatcher()
     private val selectedIds = MutableStateFlow<Set<String>>(emptySet())
@@ -171,7 +175,8 @@ class CalendarViewModelDeselectionCleanupTest {
             pendingDeselectionCleanupStore = pendingCleanupStore,
             // Nur fuer die stille Statuszeile - fuer diesen Test ohne Belang.
             feedNeueinlesenStore = FakeFeedNeueinlesenStore(),
-            kalenderVorausschauPrefs = FakeKalenderVorausschauPrefs()
+            kalenderVorausschauPrefs = FakeKalenderVorausschauPrefs(),
+            zeitkettenArmierer = armierer
         )
     }
 

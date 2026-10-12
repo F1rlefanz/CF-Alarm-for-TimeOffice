@@ -24,6 +24,7 @@ dass der Satz drumherum noch stimmt.
     python tools/doku/pruefe_hilfe.py      Exit 1 bei einem Befund.
 """
 import glob
+import html
 import io
 import os
 import re
@@ -73,13 +74,20 @@ def app_texte():
     return "\n".join(teile).replace("\'", "'")
 
 
+def begriffe(html_text):
+    """Die Begriffe einer Seite, mit aufgeloesten HTML-Entitaeten: auf der Seite steht
+    „Alarme &amp; Erinnerungen“, in der App „Alarme & Erinnerungen“ - ohne das Aufloesen meldete
+    die Pruefung einen Knopf als fehlend, den es gibt."""
+    return {html.unescape(b) for b in BEGRIFF.findall(html_text)}
+
+
 def pruefe_begriffe(befunde):
     ausnahmen = {
         z.strip() for z in lies(AUSNAHMEN).splitlines() if z.strip() and not z.startswith("#")
     }
     texte = app_texte()
     for seite in GEPRUEFTE_SEITEN:
-        for begriff in sorted(set(BEGRIFF.findall(lies(os.path.join(DOCS, seite))))):
+        for begriff in sorted(begriffe(lies(os.path.join(DOCS, seite)))):
             if begriff not in ausnahmen and begriff not in texte:
                 befunde.append(f"docs/{seite}: „{begriff}“ kommt in der App nicht vor")
 

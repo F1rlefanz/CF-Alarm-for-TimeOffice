@@ -6,6 +6,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IAlarmRe
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IAlarmSkipRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmManagerService
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.SkipProcessResult
+import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.berechneWeckerAnzeige
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
@@ -29,8 +30,9 @@ import org.mockito.kotlin.whenever
  * uebersprungen (bewusst per Knopf oder beim Ausloesen erkannt), MUSS der System-Alarm im
  * Android AlarmManager gecancelt werden - sonst klingelt er trotz "uebersprungen". Diese
  * Tests fixieren:
- * - skipNextAlarm  -> frueheste ZUKUNFT wird gewaehlt, Skip gesetzt, System-Alarm gecancelt, Repo bereinigt
- * - skipNextAlarm  -> ohne zukuenftigen Alarm: Fehler, nichts wird angefasst
+ * - skipNextAlarm  -> fruehester KLINGELNDER Zukunfts-Alarm wird gewaehlt, Skip gesetzt, System-Alarm gecancelt, Repo bereinigt
+ * - skipNextAlarm  -> ein stiller Eintrag davor bleibt unberuehrt (seit 1.48.0, siehe AlarmSkipUseCase.naechsterKlingelnderWecker)
+ * - skipNextAlarm  -> ohne zukuenftigen klingelnden Alarm (keiner, oder nur stille): Fehler, nichts wird angefasst
  * - checkAndProcessSkip(skipped)  -> System-Alarm gecancelt + Repo bereinigt + Skip-Status geleert
  * - checkAndProcessSkip(nicht skipped) -> ALARM_EXECUTED, kein Cancel, kein Loeschen, kein Clear
  *
@@ -40,12 +42,13 @@ class AlarmSkipUseCaseTest {
 
     private val now = System.currentTimeMillis()
 
-    private fun futureAlarm(id: Int, offsetMs: Long) = AlarmInfo(
+    private fun futureAlarm(id: Int, offsetMs: Long, isSilent: Boolean = false) = AlarmInfo(
         id = id,
         shiftId = "shift$id",
         shiftName = "Frueh$id",
         triggerTime = now + offsetMs,
-        formattedTime = "t$id"
+        formattedTime = "t$id",
+        isSilent = isSilent
     )
 
     private class FakeAlarmRepository(initial: List<AlarmInfo>) : IAlarmRepository {
@@ -158,6 +161,108 @@ class AlarmSkipUseCaseTest {
         assertNull("Es darf kein Skip gesetzt werden", skipRepo.setSkippedFor)
         verify(manager, never()).cancelSystemAlarm(any())
         assertNotNull("Der vergangene Alarm bleibt unangetastet", repo.current.find { it.id == 9 })
+    }
+
+    @Test
+    fun `skipNextAlarm - ein stiller Eintrag davor wird uebergangen, der klingelnde Wecker wird uebersprungen`() = runTest {
+        // Der Fall vom 12.10.2026 (Rufdienst-Tag): stiller Eintrag 05:00, eigener Wecker 05:30.
+        // OHNE DEN FIX traf "Ueberspringen" den stillen Eintrag - hoerbar aenderte sich nichts,
+        // und der Wecker, den die Karte als "Nächster klingelnder Wecker" nannte, klingelte.
+        val still = futureAlarm(id = 1, offsetMs = 60 * 60 * 1000L, isSilent = true)       // +1h, stumm
+        val klingelnd = futureAlarm(id = 2, offsetMs = 90 * 60 * 1000L)                     // +1,5h
+        val spaeter = futureAlarm(id = 3, offsetMs = 5 * 60 * 60 * 1000L)                   // +5h
+        val repo = FakeAlarmRepository(listOf(spaeter, still, klingelnd))
+        val skipRepo = FakeSkipRepository()
+        val manager = mockManager()
+
+        val result = AlarmSkipUseCase(skipRepo, repo, manager).skipNextAlarm()
+
+        assertTrue(result.isSuccess)
+        assertEquals("Ziel ist der naechste KLINGELNDE Wecker", 2, result.getOrNull()?.alarmId)
+        assertEquals(2, skipRepo.setSkippedFor)
+        assertEquals(
+            "Der Weckzeitpunkt des klingelnden Weckers ist der Anker fuer Gate und Backstop",
+            klingelnd.triggerTime,
+            skipRepo.setSkippedTriggerTime
+        )
+        verify(manager).cancelSystemAlarm(2)
+        verify(manager, never()).cancelSystemAlarm(1)
+        assertNull("Der uebersprungene Wecker muss weg sein", repo.current.find { it.id == 2 })
+        assertNotNull(
+            "Der stille Eintrag bleibt - er ist der Anker fuer Dimmer und 'Nicht stören'",
+            repo.current.find { it.id == 1 }
+        )
+        assertNotNull("Der spaetere Wecker bleibt unberuehrt", repo.current.find { it.id == 3 })
+    }
+
+    @Test
+    fun `skipNextAlarm - stehen nur stille Eintraege an, gibt es kein Ziel und nichts wird angefasst`() = runTest {
+        val still1 = futureAlarm(id = 4, offsetMs = 60 * 60 * 1000L, isSilent = true)
+        val still2 = futureAlarm(id = 5, offsetMs = 3 * 60 * 60 * 1000L, isSilent = true)
+        val vergangen = futureAlarm(id = 6, offsetMs = -60 * 60 * 1000L)                   // klingelnd, aber vorbei
+        val repo = FakeAlarmRepository(listOf(still1, still2, vergangen))
+        val skipRepo = FakeSkipRepository()
+        val manager = mockManager()
+
+        val result = AlarmSkipUseCase(skipRepo, repo, manager).skipNextAlarm()
+
+        assertTrue("Ohne klingelnden Wecker muss der Skip fehlschlagen", result.isFailure)
+        assertTrue(
+            "Die Meldung muss den Grund nennen, nicht 'kein Alarm' - es stehen ja Eintraege an",
+            result.exceptionOrNull()?.let { fehler ->
+                generateSequence(fehler) { it.cause }.any { it.message?.contains("klingelnde") == true }
+            } == true
+        )
+        assertNull("Es darf kein Skip gesetzt werden", skipRepo.setSkippedFor)
+        verify(manager, never()).cancelSystemAlarm(any())
+        assertEquals("Der Bestand bleibt vollstaendig", 3, repo.current.size)
+    }
+
+    @Test
+    fun `skipNextAlarm - trifft genau den Wecker, den die Karte als naechsten klingelnden nennt`() = runTest {
+        // Die eigentliche Zusicherung von C: Anzeige und Knopf duerfen nicht auseinanderlaufen.
+        // Gerechnet wird beides aus demselben Bestand - einmal ueber die Anzeige-Funktion des
+        // AlarmViewModel, einmal ueber den echten Skip-Vorgang.
+        val alarme = listOf(
+            futureAlarm(id = 11, offsetMs = 4 * 60 * 60 * 1000L),
+            futureAlarm(id = 12, offsetMs = 1 * 60 * 60 * 1000L, isSilent = true),
+            futureAlarm(id = 13, offsetMs = 3 * 60 * 60 * 1000L),
+            futureAlarm(id = 14, offsetMs = 2 * 60 * 60 * 1000L, isSilent = true)
+        )
+        val anzeige = berechneWeckerAnzeige(alarme, skippedAlarmId = null, jetzt = System.currentTimeMillis())
+        val repo = FakeAlarmRepository(alarme)
+        val skipRepo = FakeSkipRepository()
+
+        val result = AlarmSkipUseCase(skipRepo, repo, mockManager()).skipNextAlarm()
+
+        assertTrue(result.isSuccess)
+        assertEquals("t13", anzeige.naechsterKlingelnder)
+        assertEquals(
+            "Der Knopf muss den Wecker treffen, den die Karte nennt",
+            anzeige.naechsterKlingelnderZeitpunkt,
+            skipRepo.setSkippedTriggerTime
+        )
+        assertEquals(anzeige.naechsterKlingelnder, result.getOrNull()?.formattedTime)
+        assertEquals(
+            "Der naechste EINTRAG bleibt der stille - 'Tag freigeben' schlaegt weiter dessen Tag vor",
+            "t12",
+            anzeige.naechsterEintrag
+        )
+    }
+
+    @Test
+    fun `naechsterKlingelnderWecker - ueberspringt stille und verstrichene Eintraege`() {
+        val vergangen = futureAlarm(id = 1, offsetMs = -1_000L)
+        val still = futureAlarm(id = 2, offsetMs = 1_000L, isSilent = true)
+        val laut = futureAlarm(id = 3, offsetMs = 2_000L)
+        val lauterSpaeter = futureAlarm(id = 4, offsetMs = 3_000L)
+
+        assertEquals(
+            3,
+            AlarmSkipUseCase.naechsterKlingelnderWecker(listOf(lauterSpaeter, still, vergangen, laut), now)?.id
+        )
+        assertNull(AlarmSkipUseCase.naechsterKlingelnderWecker(listOf(vergangen, still), now))
+        assertNull(AlarmSkipUseCase.naechsterKlingelnderWecker(emptyList(), now))
     }
 
     @Test

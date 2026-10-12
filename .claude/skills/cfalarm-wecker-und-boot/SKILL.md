@@ -92,14 +92,27 @@ das baut man dieselbe Falle in neuer Form nach.
   jeden Schichtmorgen „Schicht entfernt" für den Dienst, den der Nutzer gerade antritt.
 - **Die 6h-Wartungskette hat GENAU einen Planer: `scheduleNext()`, auf genau einem Request-Code.**
   Wer „sicherheitshalber" nachplant, erzeugt zwei parallele Zyklen.
-- **Deren `finally`-Block läuft in `withContext(NonCancellable)`** und fängt den Master-Pause-Read;
-  dort liegen auch Dimmer-, DND- und Pre-Alarm-Reschedule.
+- **`scheduleNext(context, frueherenTerminBehalten = true)` NUR an den drei Eintritten in
+  `MainScreen`** (LaunchedEffect beim Eintritt in den Hauptbereich, `finishOnboarding`,
+  `GateSchritt.Fertig`): ein gemerkter Termin in (jetzt + 1 s, jetzt + 6 h] wird neu gestellt,
+  aber nicht verschoben (`WartungsKettenPlanung.zielTermin`); der Wachhund rechnet vom ZIEL, nicht
+  von jetzt. Alle anderen Aufrufer (Wartungs-`finally`, `BootReceiver`, `resume()`, Wachhund)
+  planen ab jetzt + 6 h. „Idempotent" galt nur für die Anzahl: bis 1.47.1 schob jedes Öffnen der
+  App den fälligen Lauf weg. Kein zweiter Planer — derselbe Slot 0.
+- **Der Termin-Merker `WartungsKettenTermin` liegt in DEVICE-PROTECTED SharedPreferences
+  (`wartung_kette.xml`)**, weil `scheduleNext()` auch aus dem `BootReceiver` vor der Entsperrung
+  läuft. `merke()` erst NACH dem Stellen, `vergiss()` in `cancelNext()` (Master-Pause); jeder
+  Zugriff wirft nie (Lesefehler = kein Termin = jetzt + 6 h). Reist nicht im Backup mit (außerhalb
+  der Domain `sharedpref`). Zweiter Leser: „Nächster Abgleich im Hintergrund" in der Status-Karte.
+- **Der `finally`-Block der Wartung läuft in `withContext(NonCancellable)`** und fängt den
+  Master-Pause-Read; dort liegen auch Dimmer-, DND- und Pre-Alarm-Reschedule.
 - **`AlarmMaintenanceService`: `stopSelf(startId)`**, niemals blankes `stopSelf()`.
 - **`AlarmMaintenanceService.start()` fängt den abgelehnten Vordergrund-Start selbst** (nicht die
   Aufrufer) und setzt einen einmaligen Nachhol-Alarm auf **eigenem** Request-Code.
-- **Die 6h-Wartung MUSS Änderungen und Streichungen sehen können** — Laden bei Puffer < 7 Tage ODER
-  letzter Abfrage ≥ 12 h ODER nächstem Alarm ≤ 48 h, und danach **immer** synchronisieren. Eigener
-  Frische-Stempel `last_event_load_time`. Die Leerlisten-Sperre bleibt.
+- **Die 6h-Wartung MUSS Änderungen und Streichungen sehen können** — sie lädt seit 1.48.0 bei
+  **jedem** Lauf (kein Lade-Gate mehr) und synchronisiert danach **immer**. `forceSync` heißt nur
+  noch „am 15-min-Zwischenspeicher vorbei". Eigener Frische-Stempel `last_event_load_time`. Die
+  Leerlisten-Sperre bleibt.
 - **`BootReceiver` liest die Kalenderauswahl über den DataStore**, nicht über den noch nicht
   hydrierten `StateFlow`, und setzt **vor** der langen Recovery einen Wartungs-Anker.
 - **Ein fehlgeschlagener Token-Abruf ist NICHT pauschal ein Anmeldeproblem.** `WartungTokenFehler`
@@ -120,7 +133,10 @@ das baut man dieselbe Falle in neuer Form nach.
   true)`. Neu geplant wird sie im `finally` der Wartung (nach dem Sync, denn sie liest die frisch
   geschriebenen Spannen), im `BootReceiver` und in `ZeitkettenArmierer` zusammen mit DND (Boot und
   Wartung über `ZeitkettenArmierer.armiereNebenketten()`, die EINE Stelle für alle vier
-  Nebenketten samt Pause-Abräumen; die Master-Pause räumt/plant sie in `pause()`/`resume()`). Ein
+  Nebenketten samt Pause-Abräumen; die Master-Pause räumt/plant sie in `pause()`/`resume()`) und
+  seit 1.48.0 nach jedem gelungenen Sync im Vordergrund
+  (`ZeitkettenArmierer.planeNachVordergrundSync()`: NUR sie und der Pre-Alarm-Refresh — Dimmer und
+  DND schalten in `enable()` sofort am Gerät, ein Blick in die App soll nichts umschalten). Ein
   Termin liegt mindestens eine Minute in der Zukunft (`MINDEST_ABSTAND_MS`), sonst plant der Tick
   sich bei Uhren-Schlupf selbst noch einmal. Exakte Alarme mit inexaktem Fallback wie
   `scheduleNext()`; kein WorkManager-Periodic, weil Doze den um Stunden schiebt. Hergang im
@@ -130,6 +146,19 @@ das baut man dieselbe Falle in neuer Form nach.
   zweiter Planer der Kette und kein Timer. Nur bei nachgewiesener Netzursache und gedeckelt
   (`MAX_NETZ_NACHHOLVERSUCHE`) — ein Captive Portal erfuellt „Netz verfuegbar" dauerhaft. Sie geht
   bewusst ueber `AlarmMaintenanceService.start()`, damit es EINE Wartungsimplementierung gibt.
+- **Die zwei Abgleiche nach „TimeOffice öffnen" (`service/TimeOfficeNachfassAbgleich`, +3 und
+  +10 min) sind EINMALIG und kein zweiter Planer der Kette**: eigene Slots 8804/8805 (auf Code 0
+  ersetzten sie den nächsten regulären Lauf), kein Selbst-Nachplanen, Empfänger
+  `TimeOfficeNachfassReceiver` startet NUR `AlarmMaintenanceService.start(forceSync = true)`. Ein
+  zweiter Druck ersetzt dieselben Slots, statt zu stapeln. `plane()` fragt den Pausen-Spiegel (DE,
+  synchron), `MasterPauseUseCase.pause()` räumt beide über `abbrechen()` ab, `resume()` stellt sie
+  bewusst NICHT neu (sie hängen an einem Knopfdruck, nicht an einem Ist-Zustand). Exakt mit
+  inexaktem Fallback; ohne Exact-Alarm-Berechtigung entfallen sie faktisch (ein ungenauer Alarm
+  darf keinen Vordergrunddienst starten). Kein WorkManager. Hergang in der Hergang-Datei.
+- **Belegte feste Request-Codes der Hintergrundketten** (die Wecker selbst nicht mitgezählt): 0
+  (6h-Kette), 8801 (Nachhol-Alarm), 8802 (Wachhund), 8803 (Rufbereitschafts-Abfrage), 8804/8805
+  (TimeOffice-Nachfass), 7710/7712 (Dimmer-/DND-Tick). Ein neuer Slot wird vorher gegen diese
+  Liste geprüft und hier nachgetragen.
 - **`TimezoneChangeReceiver` startet die Wartung mit `forceSync=true`** — ein bloßes Re-Arming wäre
   kein Ersatz (es rechnet dieselben Millis hin und zurück).
 - **NICHTS am Application-Graphen darf WorkManager oder CE-Storage beim BAUEN anfassen.** Der Graph

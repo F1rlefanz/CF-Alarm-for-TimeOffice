@@ -2,8 +2,10 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -39,6 +41,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.WecktonAnstieg
@@ -55,7 +58,9 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.AlarmSkipUiState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.AlarmUiState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.ShiftUiState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.TagFreigabeUiState
+import java.time.Instant
 import java.time.LocalDate
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
@@ -110,6 +115,27 @@ internal const val AUTO_ALARM_BESCHREIBUNG_PAUSIERT: String =
 internal const val FREIGEBEN_HINWEIS_KURZ: String =
     "„Überspringen“ betrifft nur den Wecker, „Tag freigeben“ den ganzen Dienst."
 
+/**
+ * Die Nebenwirkungen einer Freigabe, die man sonst nur am Geraet sieht - Teil von
+ * [FREIGEBEN_HINWEIS_DETAIL], als eigene Konstante, damit ein Test genau diesen Satz festhalten
+ * kann.
+ *
+ * JEDE Aussage ist am Code belegt, nicht nur gemeint (Stand 1.48.0):
+ *  - "stuendliche Rufdienst-Abfrage entfaellt": `RufbereitschaftAbfrage.reschedule()` filtert die
+ *    Schichtspannen ueber `FreieTageStore.filtereSpannen`, und `TagFreigabeUseCase` plant sie
+ *    gleich beim Freigeben neu (`ZeitkettenArmierer.armiere("FREIGABE")`).
+ *  - "spaetere Aenderungen im Dienstplan stellen an diesem Tag keinen Wecker mehr": Gate in
+ *    `AlarmUseCase.syncAlarms()` und Backstop in `scheduleSystemAlarm()`, beide ueber
+ *    `AlarmUseCase.istTagFreigegeben` - die Freigabe haengt am Datum, nicht an Termin oder
+ *    Kennung, und greift deshalb auch fuer einen spaeter eingetragenen Dienst.
+ *  - "Deine eigenen Wecker bleiben": `istTagFreigegeben` und `TagFreigabeUseCase.gehoertZuTag`
+ *    nehmen manuelle Wecker (`eventId.isEmpty()`) aus.
+ * Wer eine dieser Stellen aendert, prueft diesen Satz mit.
+ */
+internal const val FREIGEBEN_NEBENWIRKUNGEN: String =
+    "Auch die stündliche Rufdienst-Abfrage entfällt, und spätere Änderungen im Dienstplan " +
+        "stellen an diesem Tag keinen Wecker mehr. Deine eigenen Wecker bleiben."
+
 /** Der ausfuehrliche Teil - nach der Hausform: was faellt weg, was kommt wieder, was bleibt. */
 internal const val FREIGEBEN_HINWEIS_DETAIL: String =
     "Überspringen lässt genau einen Weckruf aus. Der Dienst bleibt bestehen: „Nicht stören“ und " +
@@ -118,8 +144,8 @@ internal const val FREIGEBEN_HINWEIS_DETAIL: String =
         "Tag freigeben streicht den Dienst selbst. Für diesen Kalendertag wird kein Wecker " +
         "gestellt, und weder „Nicht stören“ noch das Dimmen richten sich noch nach der " +
         "Schicht — der Tag zählt ab dann als freier Tag, mit allem, was für dich an freien Tagen " +
-        "gilt (deine Regel für freie Tage). Gedacht für den Tag, an dem du nicht arbeitest, " +
-        "obwohl er im Dienstplan steht.\n\n" +
+        "gilt (deine Regel für freie Tage). " + FREIGEBEN_NEBENWIRKUNGEN + " Gedacht für den Tag, " +
+        "an dem du nicht arbeitest, obwohl er im Dienstplan steht.\n\n" +
         "Der Termin im Kalender bleibt in beiden Fällen unangetastet. Nimmst du eine Freigabe " +
         "zurück, legt die App den Wecker aus dem Dienstplan neu an."
 
@@ -138,6 +164,96 @@ internal fun freigabeAbschnittSichtbar(
     naechsterAlarmTag: LocalDate?,
     freieTage: List<LocalDate>
 ): Boolean = naechsterAlarmTag != null || freieTage.isNotEmpty()
+
+/** Steht kein klingelnder Wecker an (nur stille Eintraege), gibt es nichts zu ueberspringen. */
+internal const val UEBERSPRINGEN_KEIN_ZIEL: String = "Kein klingelnder Wecker zum Überspringen"
+
+/**
+ * PURE, TESTBAR: die Zeile neben dem Knopf "Überspringen" - sie nennt den Wecker, den der Knopf
+ * abschaltet, mit Datum und Uhrzeit ("Wecker 13.10. 05:30 einmalig überspringen").
+ *
+ * Bis 1.47.1 stand dort "Nächsten Alarm einmalig überspringen:", und der Knopf traf den naechsten
+ * EINTRAG - am Rufdienst-Tag einen stillen, waehrend die Karte darueber den klingelnden Wecker
+ * nannte. Seit das Ueberspringen den naechsten KLINGELNDEN Wecker waehlt
+ * (`AlarmSkipUseCase.naechsterKlingelnderWecker`), kommt der Zeitpunkt hier aus derselben
+ * Auswahl ([AlarmUiState.nextRingingAlarmTriggerTime]) - der Text kann also nur den Wecker nennen,
+ * den der Knopf auch trifft. `null` heisst: es steht keiner an, der Knopf ist gesperrt, und die
+ * Zeile sagt das, statt einen Wecker zu versprechen.
+ *
+ * Die Zeile rechnet nur nach, wenn sich Bestand oder Skip-Zustand aendern - ein genannter Wecker
+ * kann also schon vorbei sein. Dann lehnt `AlarmViewModel.skipNextAlarm()` ab, erneuert die Zeile
+ * und sagt, dass nichts uebersprungen wurde (Review 1.48.0), statt still den naechsten zu treffen.
+ */
+internal fun ueberspringenZeile(
+    naechsterKlingelnderZeitpunkt: Long?,
+    zone: ZoneId = ZoneId.systemDefault()
+): String {
+    if (naechsterKlingelnderZeitpunkt == null) return UEBERSPRINGEN_KEIN_ZIEL
+    val wann = Instant.ofEpochMilli(naechsterKlingelnderZeitpunkt)
+        .atZone(zone)
+        // Geschuetztes Leerzeichen: Datum und Uhrzeit bleiben bei schmaler Anzeige zusammen.
+        .format(DateTimeFormatter.ofPattern("dd.MM.'\u00A0'HH:mm", Locale.GERMAN))
+    return "Wecker $wann einmalig überspringen"
+}
+
+/**
+ * Unterhalb dieser Breite - gemessen in "Schrift-dp", also durch die Schriftskalierung geteilt -
+ * stehen Text und Bedienelemente einer Zeile untereinander statt nebeneinander.
+ *
+ * GEMESSEN (Emulator, 13.10.2026): Die Kartenzeile ist bei 411 dp Anzeigebreite 347 dp breit, bei
+ * 320 dp (Fairphone-Einstellung) 256 dp. Bei 320 dp UND Schrift 1,3 (= 197) blieb neben dem Knopf
+ * "Überspringen" so wenig Platz, dass Compose mitten im Wort brach ("überspri|ngen",
+ * "17.10. 0|5:30"). Bei 320 dp mit normaler Schrift (= 256) und bei 411 dp mit Schrift 1,3 (= 267)
+ * brach zwar nur zwischen Woertern, aber in vier schmale Zeilen neben einem breiten Knopf - deshalb
+ * die Schwelle darueber. 360-dp-Geraete mit normaler Schrift (= 296) bleiben nebeneinander.
+ */
+private val UNTEREINANDER_UNTER = 270.dp
+
+/**
+ * Text links, Bedienelemente rechts - und UNTEREINANDER (Bedienelemente rechtsbuendig darunter),
+ * wenn daneben keine ganzen Woerter mehr Platz haetten (siehe [UNTEREINANDER_UNTER]).
+ */
+@Composable
+private fun TextUndBedienung(
+    text: String,
+    bedienung: @Composable RowScope.() -> Unit
+) {
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        val untereinander = maxWidth / LocalDensity.current.fontScale < UNTEREINANDER_UNTER
+        if (untereinander) {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_SMALL)
+            ) {
+                Text(
+                    text,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Row(
+                    modifier = Modifier.align(Alignment.End),
+                    horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_SMALL),
+                    verticalAlignment = Alignment.CenterVertically,
+                    content = bedienung
+                )
+            }
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_SMALL),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f)
+                )
+                bedienung()
+            }
+        }
+    }
+}
 
 /** Anzeigeform eines freigegebenen Tages, z. B. "Mo, 24.08.2026". */
 internal fun formatiereFreienTag(datum: LocalDate): String =
@@ -320,12 +436,12 @@ private fun EnhancedAlarmStatusCard(
             if (alarmState.hasActiveAlarms || skipState.isNextAlarmSkipped) {
                 HorizontalDivider()
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    if (skipState.isNextAlarmSkipped) {
+                if (skipState.isNextAlarmSkipped) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         Row(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalAlignment = Alignment.CenterVertically,
@@ -363,17 +479,17 @@ private fun EnhancedAlarmStatusCard(
                                 Text("Aufheben")
                             }
                         }
-                    } else {
-                        Text(
-                            "Nächsten Alarm einmalig überspringen:",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.weight(1f)
-                        )
-
+                    }
+                } else {
+                    // Zeile und Freischaltung haengen am naechsten KLINGELNDEN Wecker, nicht
+                    // am naechsten Eintrag (nextAlarmTime) - dasselbe Ziel, das
+                    // skipNextAlarm() waehlt. Mit nextAlarmTime waere der Knopf an einem Tag
+                    // mit nur stillen Eintraegen bedienbar, ohne dass es etwas zu
+                    // ueberspringen gibt. Siehe ueberspringenZeile().
+                    TextUndBedienung(ueberspringenZeile(alarmState.nextRingingAlarmTriggerTime)) {
                         Button(
                             onClick = onSkipNextAlarm,
-                            enabled = alarmState.nextAlarmTime != null && !skipState.isLoading
+                            enabled = alarmState.nextRingingAlarmTime != null && !skipState.isLoading
                         ) {
                             if (skipState.isLoading) {
                                 CircularProgressIndicator(
@@ -439,18 +555,7 @@ private fun TagFreigabeAbschnitt(
     HorizontalDivider()
 
     Column(verticalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_SMALL)) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_SMALL),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                "Dienst fällt aus? Tag freigeben:",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.weight(1f)
-            )
-
+        TextUndBedienung("Dienst fällt aus? Tag freigeben:") {
             // Zwei Bedienelemente teilen sich hier eine Zeile mit dem Text - deshalb der
             // CompactButton: ein normaler Button braeuchte mehr Innenabstand, als auf 360dp
             // uebrig ist, und Compose braeche die Beschriftung mitten im Wort.
@@ -643,6 +748,9 @@ private fun WecktonAnstiegAbschnitt(
  * @param aktuellerWert wird auch dann angezeigt, wenn er nicht in [optionen] steht - der Wert kann
  *   aus einem Import oder einer aelteren Version stammen. Ihn stillschweigend als eine der
  *   Optionen darzustellen, waere eine Anzeige, die luegt.
+ *
+ * Bei sehr schmaler Zeile ([UNTEREINANDER_UNTER]) steht der Auswahlknopf UNTER dem Text - bei
+ * 320 dp mit Schrift 1,3 brach die Beschreibung sonst mitten im Wort ("Benachrichtigu|ng").
  */
 @Composable
 private fun AuswahlRow(
@@ -656,12 +764,8 @@ private fun AuswahlRow(
 ) {
     var expanded by remember { mutableStateOf(false) }
 
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
+    val texte: @Composable (Modifier) -> Unit = { modifier ->
+        Column(modifier = modifier) {
             Text(titel, style = MaterialTheme.typography.titleMedium)
             Text(
                 beschreibung,
@@ -669,8 +773,9 @@ private fun AuswahlRow(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-
-        Box {
+    }
+    val auswahl: @Composable (Modifier) -> Unit = { modifier ->
+        Box(modifier = modifier) {
             OutlinedButton(onClick = { expanded = true }) {
                 Text(beschriftung(aktuellerWert))
                 // Nicht dekorativ: die Beschriftung des Knopfes ist nur der Wert - die
@@ -689,6 +794,27 @@ private fun AuswahlRow(
                         }
                     )
                 }
+            }
+        }
+    }
+
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        if (maxWidth / LocalDensity.current.fontScale < UNTEREINANDER_UNTER) {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_SMALL)
+            ) {
+                texte(Modifier.fillMaxWidth())
+                auswahl(Modifier.align(Alignment.End))
+            }
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                texte(Modifier.weight(1f))
+                auswahl(Modifier)
             }
         }
     }

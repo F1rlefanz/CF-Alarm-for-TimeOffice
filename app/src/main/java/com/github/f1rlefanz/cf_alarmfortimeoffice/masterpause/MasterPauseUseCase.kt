@@ -10,6 +10,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.scheduling.HueSmartSchedul
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmMaintenanceService
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmSoundService
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.RufbereitschaftAbfrage
+import com.github.f1rlefanz.cf_alarmfortimeoffice.service.TimeOfficeNachfassAbgleich
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
@@ -24,7 +25,10 @@ import javax.inject.Singleton
  * Master-Pause: EIN Schalter, der ALLE autonomen Hintergrunddienste gemeinsam an-/abschaltet -
  * die 6h-Wartungskette ([AlarmMaintenanceService]), alle gestellten Alarme ([IAlarmUseCase]),
  * Schicht-Dimmer ([DimScheduleUseCase]), DND-Steuerung ([DndScheduleUseCase]), Hue-SmartScheduler
- * ([HueSmartScheduler]) und den Pre-Alarm-Refresh ([CalendarPreAlarmRefreshScheduler]).
+ * ([HueSmartScheduler]), den Pre-Alarm-Refresh ([CalendarPreAlarmRefreshScheduler]), die
+ * Rufbereitschafts-Abfrage ([RufbereitschaftAbfrage]) und die einmaligen Abgleiche nach
+ * "TimeOffice öffnen" ([TimeOfficeNachfassAbgleich] - nur abgeraeumt, beim Fortsetzen nicht neu
+ * gestellt, weil sie an einem Knopfdruck haengen).
  *
  * [pause] raeumt aktiv auf (Alarme loeschen, Ketten stoppen, einen gerade klingelnden Wecker
  * beenden), statt nur den Schalter umzulegen - sonst liefe alles bis zum naechsten natuerlichen
@@ -100,6 +104,10 @@ class MasterPauseUseCase @Inject constructor(
         // Jeder Schritt einzeln gekapselt (siehe [schritt]): UI und Flag sagen bereits "pausiert",
         // ein spaeterer Schritt (z.B. Hue-Cleanup) darf nicht unbemerkt weiterlaufen.
         schritt("6h-Wartung canceln") { AlarmMaintenanceService.cancelNext(context) }
+        // Zwilling von G11-14 (unten): die beiden einmaligen Abgleiche nach "TimeOffice öffnen"
+        // stiessen sonst noch bis zu 10 Minuten nach dem Pausieren je einen Wartungslauf samt
+        // Vordergrund-Benachrichtigung an. Direkt hinter der 6h-Kette - beide kappen Wartungslaeufe.
+        schritt("TimeOffice-Nachfass-Cancel") { TimeOfficeNachfassAbgleich.abbrechen(context) }
         schritt("Dimmer-Disable") { dimSchedule.disable() }
         schritt("DND-Disable") { dndSchedule.disable() }
         schritt("Hue-Cleanup") { hueSmartScheduler.cleanup() }

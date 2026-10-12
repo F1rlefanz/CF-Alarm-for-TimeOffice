@@ -43,6 +43,7 @@ enum class HilfeThema(val seite: HilfeSeite, val anker: String?) {
     PROBLEME_AKKU(HilfeSeite.PROBLEME, "akku"),
     PROBLEME_NICHTNUTZUNG(HilfeSeite.PROBLEME, "nichtnutzung"),
     PROBLEME_TIMEOFFICE(HilfeSeite.PROBLEME, "timeoffice"),
+    PROBLEME_ABGLEICH(HilfeSeite.PROBLEME, "abgleich"),
     PROBLEME_BENACHRICHTIGUNGEN(HilfeSeite.PROBLEME, "ausserdem"),
     PROBLEME_DIMMER(HilfeSeite.PROBLEME, "dimmer"),
 

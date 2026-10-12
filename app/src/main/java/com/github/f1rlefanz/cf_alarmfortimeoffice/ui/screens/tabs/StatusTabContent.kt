@@ -56,15 +56,19 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimBedienungshilfenWuns
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AuthState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmMaintenanceService
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.RufbereitschaftAbfrage
+import com.github.f1rlefanz.cf_alarmfortimeoffice.service.WartungsKettenPlanung
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.LetzterSchichtStand
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.DateTimeFormats
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.CompactButton
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.SettingsLinkButton
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.hilfe.HilfeThema
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.hilfe.MehrDazuKnopf
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.success
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.AuthViewModel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.CalendarUiState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.CalendarViewModel
+import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.CalendarViewModel.Companion.RUECKKEHR_FRISCH_MS
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.ShiftUiState
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeoutOrNull
@@ -394,7 +398,7 @@ fun StatusTabContent(
         DndPermissionCard()
 
         // Letzter Hintergrund-Sync (6h-Wartung: Token -> Kalender -> Wecker)
-        LastSyncCard(calendarViewModel = calendarViewModel)
+        LastSyncCard(calendarViewModel = calendarViewModel, masterPausePaused = masterPausePaused)
 
         // Direkt darunter, weil es dieselbe Frage beantwortet ("was hat die App zuletzt im
         // Hintergrund getan?") - und ausdruecklich als ruhige Zeile ohne Karte, Farbe oder Icon.
@@ -851,63 +855,116 @@ private fun CacheStatusCard() {
  * Ausgelagert, weil dieselbe Formulierung jetzt fuer ZWEI Werte gilt (Wartungslauf und
  * Terminabruf) - zwei Kopien derselben `when`-Kette waeren die naechste Stelle, an der zwei
  * Wahrheiten auseinanderlaufen.
+ *
+ * Unter einer Minute "Gerade eben", sonst mit Einzahl ("Vor 1 Stunde") - bis 1.48.0 stand dort
+ * nach jedem Abgleich "Vor 0 Minuten" und an den Stufengrenzen "Vor 1 Stunden".
  */
 internal fun zeitAbstandInWorten(zeitpunkt: Long, jetzt: Long = System.currentTimeMillis()): String {
     if (zeitpunkt <= 0L) return "Noch nie"
     val abstand = jetzt - zeitpunkt
     return when {
         abstand < 0 -> "Unbekannt"
+        abstand < TimeUnit.MINUTES.toMillis(1) -> "Gerade eben"
         abstand < TimeUnit.HOURS.toMillis(1) ->
-            "Vor ${TimeUnit.MILLISECONDS.toMinutes(abstand)} Minuten"
+            vorAnzahl(TimeUnit.MILLISECONDS.toMinutes(abstand), "Minute", "Minuten")
         abstand < TimeUnit.DAYS.toMillis(1) ->
-            "Vor ${TimeUnit.MILLISECONDS.toHours(abstand)} Stunden"
+            vorAnzahl(TimeUnit.MILLISECONDS.toHours(abstand), "Stunde", "Stunden")
         else ->
-            "Vor ${TimeUnit.MILLISECONDS.toDays(abstand)} Tagen"
+            vorAnzahl(TimeUnit.MILLISECONDS.toDays(abstand), "Tag", "Tagen")
     }
 }
 
-/** "um 14:00" fuer heute, sonst mit Datum - der Zeitpunkt liegt in der Zukunft, nie "vor X". */
+private fun vorAnzahl(anzahl: Long, einzahl: String, mehrzahl: String): String =
+    "Vor $anzahl ${if (anzahl == 1L) einzahl else mehrzahl}"
+
+/**
+ * "um 14:00" fuer heute, sonst mit Datum - der Zeitpunkt liegt in der Zukunft, nie "vor X".
+ * Gilt fuer BEIDE Termine der Karte "Hintergrunddienst" (Rufbereitschaft und naechster Abgleich),
+ * damit sie gleich lauten.
+ */
 internal fun rufbereitschaftsAbfrageInWorten(
     zeitpunkt: Long,
     zone: java.time.ZoneId = java.time.ZoneId.systemDefault(),
     heute: java.time.LocalDate = java.time.LocalDate.now(zone)
 ): String {
     val z = java.time.Instant.ofEpochMilli(zeitpunkt).atZone(zone)
+    // Geschuetztes Leerzeichen vor der Uhrzeit: bei grosser Schrift brach "um" sonst ans Zeilenende
+    // und "06:53" stand allein in der naechsten Zeile.
     val uhr = z.format(DateTimeFormatter.ofPattern("HH:mm", Locale.GERMANY))
-    return if (z.toLocalDate() == heute) "um $uhr" else "am ${z.format(DateTimeFormatter.ofPattern("dd.MM.", Locale.GERMANY))} um $uhr"
+    return if (z.toLocalDate() == heute) "um\u00A0$uhr" else "am ${z.format(DateTimeFormatter.ofPattern("dd.MM.", Locale.GERMANY))} um\u00A0$uhr"
 }
 
+/** Beschriftung des 6h-Termins in der Karte "Hintergrunddienst" - die Website nennt sie gleich. */
+internal const val NAECHSTER_REGELMAESSIGER_ABGLEICH = "Nächster regelmäßiger Abgleich"
+
+/**
+ * Wann CF-Alarm in den Kalender sieht - ein Satz in der Karte "Hintergrunddienst", ausfuehrlich auf
+ * der Website ([HilfeThema.PROBLEME_ABGLEICH]). Die Zahlen haengen an Konstanten im Code; ein Test
+ * (`WartungLaedtBeiJedemLaufTest`) gleicht sie ab, damit der Satz nicht still veraltet. "Alle 6
+ * Stunden" stimmt erst, seit jeder Wartungslauf die Termine holt (1.48.0).
+ *
+ * "wenn du die App öffnest" NUR MIT DER SCHWELLE (Review 1.48.0): Eine Rueckkehr laedt erst, wenn
+ * der letzte Blick laenger als [RUECKKEHR_FRISCH_MS] her ist - "jedes Mal" versprach einen Abgleich
+ * auch nach zwei Minuten in TimeOffice, und die Website sagte es schon richtig. "Etwa 3 Stunden",
+ * weil der Vorab-Abgleich ein WorkManager-Auftrag mit Netz-Bedingung ist, kein exakter Alarm.
+ */
+internal val ABGLEICH_RHYTHMUS_TEXT: String =
+    "CF-Alarm sieht alle 6 Stunden im Hintergrund nach, an Rufbereitschafts-Tagen stündlich, " +
+        "etwa 3 Stunden vor jedem Wecker und wenn du die App öffnest und der letzte Blick in den " +
+        "Kalender länger als ${RUECKKEHR_FRISCH_MS / 60_000} Minuten her ist."
+
+/**
+ * @param masterPausePaused KEIN Default (Anzeigepfad, Skill cfalarm-ui-und-navigation): waehrend
+ *   der Pause gibt es keinen Abgleich im Hintergrund, und die Karte darf keinen ankuendigen.
+ */
 @Composable
-private fun LastSyncCard(calendarViewModel: CalendarViewModel) {
+private fun LastSyncCard(calendarViewModel: CalendarViewModel, masterPausePaused: Boolean) {
     val context = LocalContext.current
     var lastMaintenanceTime by remember { mutableLongStateOf(0L) }
     var letzterTerminabruf by remember { mutableStateOf(0L) }
     var naechsteRufbereitschaftsAbfrage by remember { mutableLongStateOf(0L) }
+    var naechsterRegulaererLauf by remember { mutableLongStateOf(0L) }
+    // Als ZUSTAND und nicht bei jeder Komposition neu gelesen: aendert sich keiner der Werte oben,
+    // setzt sich die Karte sonst nie neu zusammen - "vor 5 Minuten" bliebe stehen, und ein
+    // verstrichener "naechster" Termin verschwaende nicht.
+    var jetzt by remember { mutableLongStateOf(System.currentTimeMillis()) }
 
     LaunchedEffect(Unit) {
-        lastMaintenanceTime = AlarmMaintenanceService.getLastMaintenanceTime(context)
-        letzterTerminabruf = AlarmMaintenanceService.getLastEventLoadTime(context)
-        naechsteRufbereitschaftsAbfrage = RufbereitschaftAbfrage.naechsteAbfrageZeit(context)
         while (true) {
-            kotlinx.coroutines.delay(30_000)
             lastMaintenanceTime = AlarmMaintenanceService.getLastMaintenanceTime(context)
             letzterTerminabruf = AlarmMaintenanceService.getLastEventLoadTime(context)
             naechsteRufbereitschaftsAbfrage = RufbereitschaftAbfrage.naechsteAbfrageZeit(context)
+            naechsterRegulaererLauf = AlarmMaintenanceService.naechsterRegulaererLauf(context)
+            jetzt = System.currentTimeMillis()
+            kotlinx.coroutines.delay(30_000)
         }
     }
 
+    // Nur ein BEVORSTEHENDER Termin wird genannt - fehlt er oder ist er vorbei, entfaellt die
+    // Zeile (WartungsKettenPlanung.anzeigeTermin). Waehrend der Master-Pause ebenso: cancelNext()
+    // vergisst den Termin zwar, aber das Oeffnen der App stellt die Kette auch dann (der Lauf
+    // steigt sofort aus und kappt sie wieder) - angekuendigt wird er trotzdem nicht.
+    val naechsterAbgleich = if (masterPausePaused) {
+        null
+    } else {
+        WartungsKettenPlanung.anzeigeTermin(
+            gemerkterTermin = naechsterRegulaererLauf.takeIf { it > 0L },
+            jetzt = jetzt
+        )
+    }
+
     val timeSinceLastMaintenance = if (lastMaintenanceTime > 0) {
-        System.currentTimeMillis() - lastMaintenanceTime
+        jetzt - lastMaintenanceTime
     } else {
         -1L
     }
 
-    val terminabrufText = zeitAbstandInWorten(letzterTerminabruf)
+    val terminabrufText = zeitAbstandInWorten(letzterTerminabruf, jetzt)
 
     // Dieselbe Formulierung wie beim Terminabruf (#132, G1-05) - nur "noch nie" heisst hier
     // ausfuehrlicher, weil es um einen Lauf geht, nicht um einen Abruf.
     val lastMaintenanceText =
-        if (lastMaintenanceTime == 0L) "Noch nie ausgeführt" else zeitAbstandInWorten(lastMaintenanceTime)
+        if (lastMaintenanceTime == 0L) "Noch nie ausgeführt" else zeitAbstandInWorten(lastMaintenanceTime, jetzt)
 
     val statusColor = when {
         lastMaintenanceTime == 0L -> MaterialTheme.colorScheme.tertiary
@@ -944,8 +1001,10 @@ private fun LastSyncCard(calendarViewModel: CalendarViewModel) {
                     style = MaterialTheme.typography.titleMedium
                 )
 
-                // Zwei Werte: KEY_LAST_MAINTENANCE stempelt auch uebersprungene Laeufe
-                // (Hergang: cfalarm-ui-und-navigation/reference/ui-texte-und-layout.md).
+                // Zwei Werte: KEY_LAST_MAINTENANCE stempelt auch Laeufe, die vor dem Abruf
+                // aussteigen (keine Auswahl, kein Netz, Token), und den Sync im Vordergrund; bis
+                // 1.47 auch die, die das Lade-Gate uebersprang (Hergang:
+                // cfalarm-ui-und-navigation/reference/ui-texte-und-layout.md).
                 Text(
                     "Zuletzt nachgesehen: $lastMaintenanceText",
                     style = MaterialTheme.typography.bodyMedium,
@@ -966,6 +1025,23 @@ private fun LastSyncCard(calendarViewModel: CalendarViewModel) {
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                // Die 6h-Kette bekommt hier ihre Oberflaeche: WANN sie das naechste Mal laeuft.
+                // Seit das Oeffnen der App den Termin nicht mehr verschiebt, steht hier ein Wert,
+                // auf den man sich verlassen kann. Formulierung wie die Rufbereitschafts-Zeile
+                // darunter ("um 20:17", morgen mit Datum).
+                //
+                // "REGELMAESSIGER", nicht bloss "naechster" (Review 1.48.0): die Zeile kennt nur den
+                // 6h-Lauf. An einem Rufbereitschafts-Tag stand sonst "Nächster Abgleich um 02:00"
+                // direkt ueber "nächste Kalender-Abfrage um 21:00", und nach "TimeOffice öffnen"
+                // kommen zwei Abgleiche, die diese Zeile ebenfalls nicht nennt.
+                if (naechsterAbgleich != null) {
+                    Spacer(Modifier.height(SpacingConstants.SPACING_SMALL))
+                    Text(
+                        "$NAECHSTER_REGELMAESSIGER_ABGLEICH " +
+                            rufbereitschaftsAbfrageInWorten(naechsterAbgleich),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
                 // Die stuendliche Rufbereitschafts-Abfrage braucht eine Oberflaeche: hier steht,
                 // DASS sie laeuft und wann sie das naechste Mal nachsieht. Ohne diese Zeile waere
                 // "Rufbereitschaft" am Schichttyp ein Schalter, dessen Wirkung niemand ablesen kann.
@@ -981,6 +1057,24 @@ private fun LastSyncCard(calendarViewModel: CalendarViewModel) {
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                }
+                // Der Rhythmus in EINEM Satz, weil die Frage "wann sieht die App eigentlich nach?"
+                // sonst nur aus vier verstreuten Mechanismen zu erschliessen ist. Jede Angabe hat
+                // ihre Quelle: 6 h = WartungsKettenPlanung.INTERVALL_STUNDEN (geladen wird seit
+                // 1.48.0 bei jedem Lauf), stuendlich = RufbereitschaftAbfrage.INTERVALL_MS, 3 h =
+                // CalendarPreAlarmRefreshScheduler (die naechsten Wecker, Netz vorausgesetzt; nach
+                // jedem Sync neu geplant, auch im Vordergrund), Oeffnen = CalendarViewModel beim
+                // Zurueckkehren (RUECKKEHR_FRISCH_MS seit dem letzten Abruf). Waehrend
+                // der Master-Pause gilt davon nichts - dann entfaellt der Satz; die Karte "Alles
+                // pausiert" oben sagt es.
+                if (!masterPausePaused) {
+                    Spacer(Modifier.height(SpacingConstants.SPACING_SMALL))
+                    Text(
+                        ABGLEICH_RHYTHMUS_TEXT,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    MehrDazuKnopf(HilfeThema.PROBLEME_ABGLEICH)
                 }
                 if (timeSinceLastMaintenance > TimeUnit.HOURS.toMillis(24)) {
                     Text(

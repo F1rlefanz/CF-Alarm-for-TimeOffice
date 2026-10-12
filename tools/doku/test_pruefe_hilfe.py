@@ -64,6 +64,13 @@ class PruefeHilfeTest(unittest.TestCase):
     def test_begriffe_in_anfuehrungszeichen_werden_erkannt(self):
         self.assertEqual(["Neue Regel"], pruefe_hilfe.BEGRIFF.findall("Tippe auf „Neue Regel“."))
 
+    def test_html_entitaeten_werden_aufgeloest(self):
+        # Auf der Seite muss "&" als "&amp;" stehen, in der App steht es roh.
+        self.assertEqual(
+            {"Alarme & Erinnerungen"},
+            pruefe_hilfe.begriffe("solange „Alarme &amp; Erinnerungen“ erlaubt ist"),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

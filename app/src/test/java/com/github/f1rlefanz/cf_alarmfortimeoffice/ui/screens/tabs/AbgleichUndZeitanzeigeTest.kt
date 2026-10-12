@@ -61,10 +61,21 @@ class AbgleichUndZeitanzeigeTest {
     @Test
     fun `die Grenzen zwischen den Stufen liegen richtig`() {
         val jetzt = TimeUnit.DAYS.toMillis(100)
-        // exakt eine Stunde ist bereits "Stunden", exakt ein Tag bereits "Tage"
-        assertEquals("Vor 1 Stunden", zeitAbstandInWorten(jetzt - TimeUnit.HOURS.toMillis(1), jetzt))
-        assertEquals("Vor 1 Tagen", zeitAbstandInWorten(jetzt - TimeUnit.DAYS.toMillis(1), jetzt))
+        // exakt eine Stunde ist bereits die Stunden-Stufe, exakt ein Tag bereits die Tage-Stufe -
+        // dort in der Einzahl
+        assertEquals("Vor 1 Stunde", zeitAbstandInWorten(jetzt - TimeUnit.HOURS.toMillis(1), jetzt))
+        assertEquals("Vor 1 Tag", zeitAbstandInWorten(jetzt - TimeUnit.DAYS.toMillis(1), jetzt))
         assertEquals("Vor 59 Minuten", zeitAbstandInWorten(jetzt - TimeUnit.MINUTES.toMillis(59), jetzt))
+        assertEquals("Vor 1 Minute", zeitAbstandInWorten(jetzt - TimeUnit.MINUTES.toMillis(1), jetzt))
+    }
+
+    @Test
+    fun `unter einer Minute heisst es Gerade eben, nicht Vor 0 Minuten`() {
+        // Bis 1.48.0 stand nach jedem Abgleich "Zuletzt nachgesehen: Vor 0 Minuten".
+        val jetzt = TimeUnit.DAYS.toMillis(100)
+        assertEquals("Gerade eben", zeitAbstandInWorten(jetzt, jetzt))
+        assertEquals("Gerade eben", zeitAbstandInWorten(jetzt - 59_999L, jetzt))
+        assertEquals("Vor 1 Minute", zeitAbstandInWorten(jetzt - 60_000L, jetzt))
     }
 
     // ------------------------------------------------- Keine Dubletten mehr im Status-Tab

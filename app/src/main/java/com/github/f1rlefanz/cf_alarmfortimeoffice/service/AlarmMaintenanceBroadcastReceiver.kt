@@ -16,10 +16,12 @@ class AlarmMaintenanceBroadcastReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         // forceSync WEITERREICHEN, nicht verschlucken: der Nachhol-Alarm aus
         // AlarmMaintenanceService.start() (wenn ein Vordergrund-Start aus dem Hintergrund abgelehnt
-        // wurde) traegt das Flag im Intent. Ohne dieses Durchreichen liefe der nachgeholte Lauf
-        // OHNE Erzwingen zurueck, ohne den Kalender anzufassen - genau der wirkungslose Lauf, den
-        // TimezoneChangeReceiver vermeiden will. Die regulaere 6h-Kette setzt kein Extra und
-        // bekommt weiterhin false.
+        // wurde) traegt das Flag im Intent. Ohne dieses Durchreichen naehme der nachgeholte Lauf
+        // womoeglich einen Treffer aus dem 15-min-Zwischenspeicher der Termine - nach einem
+        // Zeitzonenwechsel mit den Wanduhrzeiten der alten Zone, genau das, was
+        // TimezoneChangeReceiver mit dem Flag vermeidet. (Bis 1.47 kehrte er ohne Erzwingen sogar
+        // am damaligen Lade-Gate zurueck, ohne den Kalender anzufassen.) Die regulaere 6h-Kette
+        // setzt kein Extra und bekommt weiterhin false.
         val forceSync = intent.getBooleanExtra(AlarmMaintenanceService.EXTRA_FORCE_SYNC, false)
         val nachholVersuche = intent.getIntExtra(AlarmMaintenanceService.EXTRA_NACHHOLVERSUCHE, 0)
         val istWachhund = intent.getBooleanExtra(AlarmMaintenanceService.EXTRA_WACHHUND, false)

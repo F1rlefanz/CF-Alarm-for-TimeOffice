@@ -44,7 +44,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.IOException
@@ -151,61 +156,16 @@ internal object AbwahlRaeumauftrag {
  * Reine, Android-freie Entscheidungslogik der 6h-Wartung — bewusst als eigenes Top-Level-Objekt
  * (nicht im Companion von [AlarmMaintenanceService]), damit Unit-Tests sie ohne das Laden einer
  * `android.app.Service`-Ableitung pruefen koennen.
+ *
+ * GELADEN WIRD BEI JEDEM LAUF (seit 1.48.0). Bis dahin stand hier `shouldLoadEvents`: die
+ * Kalender-Abfrage nur bei Puffer < 7 Tage, letzter Abfrage >= 12 h oder naechstem Wecker <= 48 h.
+ * Gespart hat das nur den events.list-Aufruf selbst, ein paar Kilobyte - der Token-Schritt davor
+ * geht ohnehin bei fast jedem Lauf uebers Netz, das Geraet ist dann schon wach und online. Dafuer
+ * sah die App in freien Wochen bis zu 12 h nicht in den Kalender, und "alle 6 Stunden" liess sich
+ * dem Nutzer nicht ehrlich sagen. Die Leerlisten-Sperre unten und alle Vollstaendigkeits-Sperren
+ * in [AlarmMaintenanceService.performMaintenance] bleiben unveraendert.
  */
 internal object MaintenanceLoadDecision {
-
-    /** Puffer-Kriterium wie bisher: liegt der letzte geplante Alarm naeher, muss nachgeladen werden. */
-    const val MIN_BUFFER_DAYS = 7L
-
-    /**
-     * Liegt der NAECHSTE Alarm innerhalb dieses Fensters, wird immer geladen.
-     *
-     * Warum 48h: eine Dienstplan-Aenderung schlaegt umso teurer zu, je naeher der betroffene
-     * Wecker ist (falsche Weckzeit / Wecker fuer eine gestrichene Schicht). 48h deckt bei
-     * 6h-Takt die letzten ~8 Wartungslaeufe vor dem Wecker ab und ueberlappt sicher mit dem
-     * 3h-Vorab-Worker (CalendarPreAlarmRefreshWorker), der ohne Netz ausfallen kann.
-     */
-    const val NEAR_ALARM_HOURS = 48L
-
-    /**
-     * Maximales Alter der letzten ECHTEN Kalender-Abfrage, danach wird unabhaengig vom Puffer geladen.
-     *
-     * Warum 12h: die Kette laeuft alle 6h, also laedt hoechstens jeder ZWEITE Lauf (2 statt 4
-     * Google-Kalender-Abfragen pro Tag) — der Sparzweck des alten Puffer-Gates bleibt damit
-     * erhalten. Gleichzeitig ist eine Streichung/Verschiebung, die weiter als 48h in der Zukunft
-     * liegt, nach spaetestens 12h erkannt statt (wie vorher) erst wenn der Puffer unter 7 Tage
-     * faellt oder der Nutzer die App oeffnet. Ohne dieses Kriterium war die 6h-Wartung im
-     * eingeschwungenen Zustand (Dienstplan 14 Tage gepflegt) dauerhaft blind.
-     */
-    const val MAX_DATA_AGE_HOURS = 12L
-
-    /**
-     * Entscheidet, ob Kalender-Events geladen werden muessen.
-     *
-     * @param futureAlarmTriggerTimes Trigger-Zeitpunkte aller noch zukuenftigen Alarme (Epoch-Millis)
-     * @param now aktuelle Zeit (Epoch-Millis)
-     * @param lastEventLoad Zeitpunkt der letzten erfolgreichen, nicht-leeren Kalender-Abfrage
-     *                      (0 = noch nie geladen)
-     * @param forceSync erzwungener Lauf (z.B. Zeitzonen-Wechsel, Boot) — laedt immer
-     */
-    fun shouldLoadEvents(
-        futureAlarmTriggerTimes: List<Long>,
-        now: Long,
-        lastEventLoad: Long,
-        forceSync: Boolean
-    ): Boolean {
-        if (forceSync) return true
-        if (futureAlarmTriggerTimes.isEmpty()) return true
-
-        val dataAgeHours = TimeUnit.MILLISECONDS.toHours(now - lastEventLoad)
-        if (lastEventLoad <= 0L || dataAgeHours >= MAX_DATA_AGE_HOURS) return true
-
-        val bufferDays = TimeUnit.MILLISECONDS.toDays(futureAlarmTriggerTimes.max() - now)
-        if (bufferDays < MIN_BUFFER_DAYS) return true
-
-        val hoursToNextAlarm = TimeUnit.MILLISECONDS.toHours(futureAlarmTriggerTimes.min() - now)
-        return hoursToNextAlarm <= NEAR_ALARM_HOURS
-    }
 
     /**
      * Entscheidet, ob nach einem Ladevorgang synchronisiert wird.
@@ -314,13 +274,64 @@ internal object WartungsKettenPlanung {
      */
     data class Zeitpunkte(val regulaer: Long, val wiederanlauf: Long)
 
-    fun zeitpunkte(jetzt: Long): Zeitpunkte {
+    /**
+     * Wie weit ein gemerkter Termin mindestens in der Zukunft liegen muss, um behalten zu werden.
+     *
+     * BEWUSST WINZIG, und das ist die Entscheidung: Jeder Termin, der hier durchfaellt, wird durch
+     * jetzt + 6 h ERSETZT - innerhalb dieses Fensters vor dem faelligen Lauf schiebt das Oeffnen
+     * der App ihn also doch wieder weg, genau der Fehler, gegen den [zielTermin] existiert. Die
+     * Minute aus `RufbereitschaftAbfrage.MINDEST_ABSTAND_MS` passt hier NICHT: dort plant ein
+     * Tick seinen eigenen Nachfolger, hier plant der Lauf im `finally` ohnehin jetzt + 6 h.
+     * Die eine Sekunde trennt nur den Termin ab, der in diesem Augenblick feuert; ihn noch einmal
+     * zu stellen, liesse ihn ein zweites Mal starten (harmlos dank [ServiceRunTracker], aber
+     * unnoetig).
+     */
+    const val BEHALTEN_MINDESTVORLAUF_MS = 1_000L
+
+    /**
+     * REIN UND TESTBAR: der Termin, auf den der regulaere Lauf gestellt wird.
+     *
+     * Ohne [frueherenTerminBehalten] (alle Aufrufer ausser den drei Eintritten in `MainScreen`)
+     * immer jetzt + [INTERVALL_STUNDEN] - unveraendert. Mit: der [gemerkterTermin], solange er in
+     * (jetzt + [BEHALTEN_MINDESTVORLAUF_MS], jetzt + 6 h] liegt. Dann wird er zwar NEU gestellt,
+     * aber nicht verschoben - das repariert eine Kette, die Android unter der Hand geloescht hat,
+     * ohne den naechsten Lauf wegzuschieben.
+     *
+     * Ausserhalb des Fensters gilt wieder jetzt + 6 h: ein VERGANGENER Termin heisst, der Lauf
+     * laeuft gerade (sein `finally` plant ohnehin neu) oder die Kette ist tot; ein Termin weiter
+     * als 6 h voraus kann nur nach einem Zurueckstellen der Uhr entstehen.
+     */
+    fun zielTermin(jetzt: Long, gemerkterTermin: Long?, frueherenTerminBehalten: Boolean): Long {
         val regulaer = jetzt + TimeUnit.HOURS.toMillis(INTERVALL_STUNDEN)
+        if (!frueherenTerminBehalten || gemerkterTermin == null) return regulaer
+        val imFenster = gemerkterTermin > jetzt + BEHALTEN_MINDESTVORLAUF_MS && gemerkterTermin <= regulaer
+        return if (imFenster) gemerkterTermin else regulaer
+    }
+
+    /**
+     * Regulaerer Lauf und Wachhund EINER Runde. Der Wachhund rechnet vom ZIEL, nicht von jetzt:
+     * bleibt der Termin stehen, muss er ihm folgen - sonst laege er bis zu 6 h hinter dem Lauf, den
+     * er absichern soll.
+     */
+    fun zeitpunkte(
+        jetzt: Long,
+        gemerkterTermin: Long? = null,
+        frueherenTerminBehalten: Boolean = false
+    ): Zeitpunkte {
+        val regulaer = zielTermin(jetzt, gemerkterTermin, frueherenTerminBehalten)
         return Zeitpunkte(
             regulaer = regulaer,
             wiederanlauf = regulaer + TimeUnit.MINUTES.toMillis(WACHHUND_KARENZ_MINUTEN)
         )
     }
+
+    /**
+     * Fuer die Status-Karte: der gemerkte Termin, wenn er noch bevorsteht - sonst `null`, und die
+     * Zeile entfaellt. Ein vergangener Termin ist kein "naechster" Abgleich mehr; ob die Kette
+     * dann laeuft, sagt "Zuletzt nachgesehen" darueber, nichts wird erfunden.
+     */
+    fun anzeigeTermin(gemerkterTermin: Long?, jetzt: Long): Long? =
+        gemerkterTermin?.takeIf { it > jetzt }
 
     /** Obergrenze fuer die Nachholversuche aus [AlarmMaintenanceService.start]. */
     const val MAX_NACHHOLVERSUCHE = 2
@@ -510,14 +521,15 @@ internal object WartungTokenFehler {
  *
  * WARUM ES DAS GIBT: `stopSelf(startId)` stoppt genau dann, wenn `startId` der zuletzt vergebene
  * ist. Das schuetzt nur den Fall "der FRUEHERE Lauf wird zuerst fertig". Wird der SPAETERE zuerst
- * fertig — und das ist der wahrscheinliche Fall, weil ein erzwungener Lauf (Zeitzone, Boot,
- * Master-Pause-resume, Re-Login) im Netz haengt, waehrend der regulaere 6h-Lauf ueber
- * [MaintenanceLoadDecision.shouldLoadEvents] in Millisekunden mit "Puffer reicht" zurueckkehrt —
+ * fertig — etwa weil ein erzwungener Lauf (Zeitzone, Boot, Master-Pause-resume, Re-Login) im Netz
+ * haengt, waehrend ein spaeter gestarteter schnell fertig wird (Master-Pause, gescheitertes Token,
+ * Treffer im Termin-Zwischenspeicher; bis 1.47 vor allem das inzwischen entfallene Lade-Gate mit
+ * "Puffer reicht") —
  * traf sein `stopSelf` den aktuellsten startId, Android zerstoerte den Service, `onDestroy` cancelte
  * den geteilten Scope und riss den noch laufenden frueheren Lauf mitten in `syncAlarms()` ab.
  * Zwischen `deleteAlarm()` und dem folgenden `saveAlarm()`/`scheduleSystemAlarm()` abgeschnitten
  * heisst: fuer diese Schicht existiert bis zum naechsten Wartungslauf KEIN Wecker — und gemeldet
- * haette es niemand, weil der andere Lauf "erfolgreich (uebersprungen)" loggte.
+ * haette es niemand, weil der andere Lauf erfolgreich loggte.
  *
  * Deshalb raeumt erst der ZULETZT endende Lauf ab, und zwar mit dem HOECHSTEN bis dahin gesehenen
  * startId (dem, den Android als "letzten Start" kennt).
@@ -563,7 +575,7 @@ internal class ServiceRunTracker {
 
 /**
  * Kurzlebiger Vordergrunddienst der 6h-Wartungskette, ausgeloest per exaktem Alarm; einziger
- * Planer ist [scheduleNext]. Ablauf: [performMaintenance], Lade-Gate: [MaintenanceLoadDecision].
+ * Planer ist [scheduleNext]. Ablauf: [performMaintenance], Leerlisten-Sperre: [MaintenanceLoadDecision].
  */
 @AndroidEntryPoint
 class AlarmMaintenanceService : Service() {
@@ -628,10 +640,11 @@ class AlarmMaintenanceService : Service() {
         private const val CATCHUP_DELAY_MS = 10_000L
 
         /**
-         * Erzwingt einen vollen Lauf (Kalender laden + synchronisieren), auch wenn der Puffer
-         * reicht und die Daten frisch sind. Gesetzt vom [TimezoneChangeReceiver] und vom
-         * Boot-Pfad — Anlaesse, bei denen die abgeleiteten Weckzeiten neu berechnet werden
-         * MUESSEN, nicht nur "koennten".
+         * Erzwingt die Kalender-Abfrage DIREKT bei Google, am Zwischenspeicher der Termine
+         * vorbei (`forceRefresh`, Gueltigkeit 15 min). Geladen und synchronisiert wird seit 1.48.0
+         * bei jedem Lauf; das Flag entscheidet nur noch, ob ein Treffer von eben genuegt. Gesetzt
+         * u. a. vom [TimezoneChangeReceiver] und vom Boot-Pfad - Anlaesse, bei denen ein
+         * Treffer wertlos waere (er haelt die Wanduhr-Zeiten der alten Zone).
          */
         const val EXTRA_FORCE_SYNC = "force_sync"
 
@@ -651,13 +664,13 @@ class AlarmMaintenanceService : Service() {
         private val KEY_LAST_MAINTENANCE = longPreferencesKey("last_maintenance_time")
 
         /**
-         * Zeitpunkt der letzten ECHTEN, erfolgreichen und nicht-leeren Kalender-Abfrage.
+         * Zeitpunkt der letzten ECHTEN, erfolgreichen und nicht-leeren Kalender-Abfrage DIESES
+         * Dienstes - angezeigt als "Termine zuletzt abgerufen" im Status-Tab.
          *
-         * Bewusst ein EIGENER Schluessel und nicht [KEY_LAST_MAINTENANCE]: der wird auch im
-         * Skip-Zweig und aus dem Vordergrund-Sync gestempelt ("Letzter Sync" in den
-         * Einstellungen) und ist damit als Frische-Signal fuer die Kalenderdaten wertlos —
-         * ein Skip-Lauf wuerde die Daten sonst dauerhaft "frisch" aussehen lassen und das
-         * 12h-Kriterium aus [MaintenanceLoadDecision] aushebeln.
+         * Bewusst ein EIGENER Schluessel und nicht [KEY_LAST_MAINTENANCE]: der wird auch aus dem
+         * Vordergrund-Sync und nach einem Raeumauftrag gestempelt und sagt deshalb nichts darueber,
+         * wann der Hintergrund zuletzt Termine geholt hat. (Bis 1.47 stempelte ihn ausserdem der
+         * Skip-Zweig des inzwischen entfallenen Lade-Gates.)
          */
         private val KEY_LAST_EVENT_LOAD = longPreferencesKey("last_event_load_time")
 
@@ -676,14 +689,14 @@ class AlarmMaintenanceService : Service() {
         }
 
         /**
-         * Zeitpunkt der letzten ECHTEN Kalender-Abfrage - fuer die Anzeige im Status-Tab.
+         * Zeitpunkt der letzten ECHTEN Kalender-Abfrage im Hintergrund - fuer die Anzeige im
+         * Status-Tab.
          *
          * WARUM ES DIESEN ZWEITEN LESER BRAUCHT: [getLastMaintenanceTime] beantwortet die Frage
-         * "wann hat der Dienst zuletzt nachgesehen" und wird auch dann gestempelt, wenn der Lauf
-         * UEBERSPRUNGEN wurde (Puffer reichte) oder aus dem Vordergrund kam. Als Auskunft
-         * "wie frisch sind meine Termine" ist er damit wertlos - "vor 15 Minuten" kann heissen
-         * "vor 15 Minuten wurde entschieden, nichts zu tun". Genau dafuer existiert
-         * [KEY_LAST_EVENT_LOAD] seit jeher; angezeigt wurde er nur nie.
+         * "wann wurde zuletzt abgeglichen" und wird auch aus dem Vordergrund und nach einem
+         * Raeumauftrag gestempelt (bis 1.47 ausserdem, wenn der Lauf das Laden UEBERSPRANG). Als
+         * Auskunft "wann hat der Hintergrund zuletzt Termine geholt" taugt er deshalb nicht.
+         * Genau dafuer existiert [KEY_LAST_EVENT_LOAD].
          */
         suspend fun getLastEventLoadTime(context: Context): Long {
             val dataStore = EntryPointAccessors
@@ -691,6 +704,24 @@ class AlarmMaintenanceService : Service() {
                 .mainDataStore()
             return dataStore.data.first()[KEY_LAST_EVENT_LOAD] ?: 0L
         }
+
+        /**
+         * Derselbe Zeitstempel wie [getLastEventLoadTime] als Flow - fuer `MainActivity`, die
+         * damit merkt, dass ein Hintergrundlauf (Nachfass nach "TimeOffice öffnen",
+         * Rufbereitschafts-Abfrage, 6h-Lauf) WAEHREND die App offen ist neue Termine geholt hat.
+         * Der erste Wert ist der aktuelle Stand. Nur Lesen; geschrieben wird allein hier im Dienst.
+         * Der Store wird erst beim Sammeln aufgeloest: so landet auch ein Fehler dabei beim
+         * `catch` des Sammlers, statt schon beim Bauen des Flows zu werfen.
+         */
+        fun beobachteLetztenTerminabruf(context: Context): Flow<Long> = flow {
+            emitAll(
+                EntryPointAccessors
+                    .fromApplication(context.applicationContext, AlarmMaintenanceEntryPoint::class.java)
+                    .mainDataStore()
+                    .data
+                    .map { it[KEY_LAST_EVENT_LOAD] ?: 0L }
+            )
+        }.distinctUntilChanged()
 
         /**
          * Stamps "now" as the last sync time.
@@ -714,9 +745,9 @@ class AlarmMaintenanceService : Service() {
          * nur per EXAKTEM Alarm (ein inexakter traegt die Freigabe nicht), gedeckelt durch
          * [WartungsKettenPlanung.darfNachholen]. Hergang: Skill cfalarm-wecker-und-boot.
          *
-         * @param forceSync ueberspringt das Lade-Gate ([MaintenanceLoadDecision.shouldLoadEvents])
-         *   und erzwingt Kalender-Abfrage + Delta-Sync. Default false — die regulaere 6h-Kette
-         *   und alle Bestandsaufrufer verhalten sich unveraendert.
+         * @param forceSync holt die Termine am Zwischenspeicher vorbei direkt bei Google (siehe
+         *   [EXTRA_FORCE_SYNC]). Geladen und synchronisiert wird auch ohne das Flag bei jedem
+         *   Lauf. Default false — die regulaere 6h-Kette setzt es nicht.
          * @param nachholVersuche wie viele Nachholversuche dieser Anlass schon hinter sich hat.
          *   Setzt nur der [AlarmMaintenanceBroadcastReceiver] aus dem Intent des Nachhol-Alarms.
          */
@@ -781,16 +812,29 @@ class AlarmMaintenanceService : Service() {
         }
 
         /**
-         * Stellt den naechsten Wartungslauf (+6h) — der EINZIGE Planer der Kette (ein zweiter auf
+         * Stellt den naechsten Wartungslauf — der EINZIGE Planer der Kette (ein zweiter auf
          * Request-Code 9999 lief frueher parallel; Hergang: Skill cfalarm-wecker-und-boot).
          * canScheduleExactAlarms() wird geprueft, weil setExactAndAllowWhileIdle() ohne die
          * Berechtigung wirft (API 31/32). Stellt auch den Wachhund [armiereWiederanlauf] - bleibt
          * EIN Planer, siehe [WartungsKettenPlanung.WACHHUND_REQUEST_CODE].
+         *
+         * @param frueherenTerminBehalten `true` NUR fuer die Eintritte in den Hauptbereich
+         *   (`MainScreen`): ein gemerkter Termin in den naechsten 6 h bleibt stehen und wird nur
+         *   neu gestellt, statt auf jetzt + 6 h zu ruecken - sonst schob jedes Oeffnen der App den
+         *   faelligen Lauf weg. Alle anderen Aufrufer (Wartungs-`finally`, Boot, Master-Pause
+         *   `resume()`, Wachhund) planen bewusst ab jetzt. Regel: [WartungsKettenPlanung.zielTermin].
          */
-        fun scheduleNext(context: Context) {
+        fun scheduleNext(context: Context, frueherenTerminBehalten: Boolean = false) {
             val alarmManager = context.getSystemService(ALARM_SERVICE) as AlarmManager
 
-            val zeitpunkte = WartungsKettenPlanung.zeitpunkte(System.currentTimeMillis())
+            // Gelesen wird nur, wer behalten will - der Default-Weg braucht den Merker nicht.
+            val gemerkt = if (frueherenTerminBehalten) WartungsKettenTermin.lies(context) else null
+            val zeitpunkte = WartungsKettenPlanung.zeitpunkte(
+                jetzt = System.currentTimeMillis(),
+                gemerkterTermin = gemerkt,
+                frueherenTerminBehalten = frueherenTerminBehalten
+            )
+            val behalten = gemerkt != null && zeitpunkte.regulaer == gemerkt
             val pendingIntent = wartungsPendingIntent(context, WartungsKettenPlanung.REGULAER_REQUEST_CODE)
 
             // Hier bewusst nur die Frage ueber ExakteAlarme, das Stellen direkt: `wartungsPendingIntent`
@@ -808,12 +852,25 @@ class AlarmMaintenanceService : Service() {
 
             armiereWiederanlauf(context, alarmManager, zeitpunkte.wiederanlauf)
 
+            // ERST NACH dem Stellen: ein Merker ohne gestellten Alarm verwiese auf einen Lauf, den
+            // es nicht gibt. Wirft nie (siehe WartungsKettenTermin).
+            WartungsKettenTermin.merke(context, zeitpunkte.regulaer)
+
             Logger.business(
                 LogTags.MAINTENANCE,
                 "⏰ Next maintenance scheduled for ${Date(zeitpunkte.regulaer)} " +
-                    "(Wiederanlauf-Wachhund ${Date(zeitpunkte.wiederanlauf)})"
+                    "(${if (behalten) "Termin behalten" else "ab jetzt geplant"}, " +
+                    "Wiederanlauf-Wachhund ${Date(zeitpunkte.wiederanlauf)})"
             )
         }
+
+        /**
+         * Fuer die Status-Karte: der gemerkte Termin des naechsten regulaeren Laufs, 0 = keiner
+         * (noch nie gestellt, Master-Pause, nicht lesbar). Synchrone SharedPreferences, deshalb
+         * vom Main-Thread weg gelesen.
+         */
+        suspend fun naechsterRegulaererLauf(context: Context): Long =
+            withContext(Dispatchers.IO) { WartungsKettenTermin.lies(context) ?: 0L }
 
         /**
          * EINE Stelle fuer den PendingIntent der Kette. Setzen und Abbrechen MUESSEN denselben
@@ -909,6 +966,11 @@ class AlarmMaintenanceService : Service() {
                     istWachhund = true
                 )
             )
+
+            // Und der gemerkte Termin mit: sonst stuende im Status-Tab waehrend der Pause ein
+            // "Naechster Abgleich im Hintergrund", der nie kommt. Nach den beiden cancel(), damit
+            // ein Fehler hier das Kappen nicht verhindert (wirft ohnehin nie).
+            WartungsKettenTermin.vergiss(context)
 
             Logger.business(
                 LogTags.MAINTENANCE,
@@ -1059,8 +1121,9 @@ class AlarmMaintenanceService : Service() {
     }
 
     /**
-     * Stempelt den Zeitpunkt einer erfolgreichen, nicht-leeren Kalender-Abfrage.
-     * Grundlage des 12h-Frische-Kriteriums in [MaintenanceLoadDecision].
+     * Stempelt den Zeitpunkt einer erfolgreichen, vollstaendigen und nicht-leeren
+     * Kalender-Abfrage - angezeigt als "Termine zuletzt abgerufen" und gelesen von
+     * [getLastEventLoadTime].
      */
     private suspend fun saveEventLoadTime() {
         mainDataStore.edit { prefs ->
@@ -1216,8 +1279,9 @@ class AlarmMaintenanceService : Service() {
      *
      * Das Zuruecksetzen haengt am TOKEN, nicht am Gesamterfolg des Laufs - der Zaehler zaehlt
      * Token-Fehlschlaege, und die Wartung steigt danach noch an mehreren Stellen regulaer aus
-     * (Lade-Gate, keine Kalender ausgewaehlt). Waere er an das Ende des Laufs gebunden, bliebe
-     * die Entprellung nach einem uebersprungenen Lauf faelschlich scharf.
+     * (keine Kalender ausgewaehlt, unvollstaendige oder leere Terminliste, Automatik aus). Waere
+     * er an das Ende des Laufs gebunden, bliebe die Entprellung nach einem solchen Lauf
+     * faelschlich scharf.
      */
     private suspend fun quittiereTokenErfolg() {
         try {
@@ -1288,9 +1352,9 @@ class AlarmMaintenanceService : Service() {
 
     /**
      * Ein Wartungslauf: Aufraeumen (Logs, freie Tage), Master-Pause, Raeumauftrag, Token,
-     * Lade-Gate, Kalender, Fail-safe-Sperren, Delta-Sync.
+     * Kalender (bei JEDEM Lauf), Fail-safe-Sperren, Delta-Sync.
      *
-     * @param forceSync ueberspringt das Lade-Gate - siehe [EXTRA_FORCE_SYNC].
+     * @param forceSync holt die Termine am Zwischenspeicher vorbei - siehe [EXTRA_FORCE_SYNC].
      */
     @VisibleForTesting
     internal suspend fun performMaintenance(forceSync: Boolean) {
@@ -1307,8 +1371,9 @@ class AlarmMaintenanceService : Service() {
         }
 
         // STEP 0b: ABGELAUFENE TAGES-FREIGABEN. Ebenfalls VOR dem Master-Pause-Gate, aus
-        // demselben Grund wie STEP 0: dahinter steigt die Wartung dreimal frueh aus (Pause,
-        // Token-Refresh, Lade-Gate), und ein Datums-Aufraeumen braucht weder Netz noch Token.
+        // demselben Grund wie STEP 0: dahinter steigt die Wartung mehrfach frueh aus (Pause,
+        // Token-Refresh, keine Kalenderauswahl, Abruf gescheitert), und ein Datums-Aufraeumen
+        // braucht weder Netz noch Token.
         // Anders als die Schichtspannen kann sich dieser Speicher nicht beim Schreiben selbst
         // aufraeumen - geschrieben wird nur, wenn der Nutzer einen Tag anfasst.
         try {
@@ -1329,19 +1394,18 @@ class AlarmMaintenanceService : Service() {
         // STEP 0a: OFFENER RAEUMAUFTRAG nach einer Kalender-Abwahl.
         //
         // GANZ VORNE, und das ist die tragende Entscheidung: weiter unten steigt die Wartung
-        // gleich zweimal aus, bevor sie die Kalenderauswahl ueberhaupt ansieht - beim
-        // fehlgeschlagenen Token-Refresh und im Skip-Zweig des Lade-Gates. Genau der Skip-Zweig
-        // ist nach einer Abwahl der Normalfall: die verwaisten Wecker reichen so weit wie die
-        // Kalender-Vorausschau (Standard 14 Tage), der
-        // Puffer ist also reichlich, und die Kalenderdaten sind frisch. Stuende dieser Schritt
-        // hinter dem Gate, waere er in genau der Lage blind, fuer die es ihn gibt. Ein Token
-        // braucht er ohnehin nicht - geraeumt wird ohne jede Netzabfrage.
+        // aus, bevor sie zum Sync kommt - beim fehlgeschlagenen Token-Refresh und, nach einer
+        // Abwahl der Normalfall, bei leerer Kalenderauswahl ("Keine Kalender ausgewaehlt").
+        // (Bis 1.47 kam der Skip-Zweig des Lade-Gates dazu: die verwaisten Wecker reichten so
+        // weit wie die Vorausschau, der Puffer war reichlich.) Stuende dieser Schritt dahinter,
+        // waere er in genau der Lage blind, fuer die es ihn gibt. Ein Token braucht er ohnehin
+        // nicht - geraeumt wird ohne jede Netzabfrage.
         arbeiteOffenenRaeumauftragAb()
 
         // STEP 0b: Kalender-Warnung gegen die AUSWAHL abgleichen - ebenfalls vor jedem Ausstieg
         // und ohne Netz. Nach einer Abwahl kaeme die Wartung sonst nie bis zum Abruf (keine
-        // Auswahl, oder schon das Lade-Gate), und eine Warnung ueber den entfernten Kalender
-        // stuende auf Dauer. Unlesbare Auswahl: nichts abgleichen, der Abruf unten entscheidet.
+        // Auswahl), und eine Warnung ueber den entfernten Kalender stuende auf Dauer. Unlesbare
+        // Auswahl: nichts abgleichen, der Abruf unten entscheidet.
         calendarSelectionRepository.getCurrentSelectedCalendarIds().onSuccess { auswahl ->
             kalenderWarnung { gleicheAuswahlAb(auswahl) }
         }
@@ -1357,43 +1421,13 @@ class AlarmMaintenanceService : Service() {
 
         quittiereTokenErfolg()
         Logger.d(LogTags.MAINTENANCE, "✅ Token valid")
-        
-        // STEP 2: HEALTH CHECK
-        Logger.d(LogTags.MAINTENANCE, "Step 2: Health check (time-based)")
-        
-        val allAlarms = alarmUseCase.getAllAlarms().getOrNull() ?: emptyList()
-        val now = System.currentTimeMillis()
-        val futureAlarms = allAlarms.filter { it.triggerTime > now }
-        val lastEventLoad = mainDataStore.data.first()[KEY_LAST_EVENT_LOAD] ?: 0L
 
-        Logger.d(
-            LogTags.MAINTENANCE,
-            "Found ${futureAlarms.size} future alarms, letzte Kalender-Abfrage: " +
-                if (lastEventLoad > 0) "${TimeUnit.MILLISECONDS.toHours(now - lastEventLoad)}h alt" else "nie"
-        )
+        // STEP 2 (Lade-Gate) ENTFALLEN seit 1.48.0: Die Termine werden bei JEDEM Lauf geholt.
+        // Bis 1.47 stand hier ein "Health Check", der nur unter drei Bedingungen lud (Puffer
+        // < 7 Tage, letzte Abfrage >= 12 h, naechster Wecker <= 48 h) und sonst mit "buffer
+        // sufficient" zurueckkehrte - gespart wurde nur die Abfrage selbst, das Netz war fuer das
+        // Token eben schon da. Begruendung an MaintenanceLoadDecision. Die Sperren unten bleiben.
 
-        val needsLoad = MaintenanceLoadDecision.shouldLoadEvents(
-            futureAlarmTriggerTimes = futureAlarms.map { it.triggerTime },
-            now = now,
-            lastEventLoad = lastEventLoad,
-            forceSync = forceSync
-        )
-
-        Logger.d(
-            LogTags.MAINTENANCE,
-            if (needsLoad) "Kalender wird geladen" else "Kalender-Abfrage uebersprungen (Puffer + Daten frisch)"
-        )
-
-        if (!needsLoad) {
-            val duration = System.currentTimeMillis() - startTime
-            Logger.business(
-                LogTags.MAINTENANCE,
-                "✅ Maintenance completed (skipped, buffer sufficient) in ${duration}ms"
-            )
-            saveMaintenanceTime()
-            return
-        }
-        
         // STEP 3: EVENT LOADING
         Logger.d(LogTags.MAINTENANCE, "Step 3: Loading events")
         
@@ -1426,7 +1460,9 @@ class AlarmMaintenanceService : Service() {
         // forceRefresh nur beim erzwungenen Lauf: der Cache haelt CalendarEvents als
         // LocalDateTime, also in der Zone, die beim Abruf galt. Nach einem Zeitzonen-Wechsel waere
         // ein Cache-Treffer wertlos (dieselben falschen Wanduhr-Zeiten) - genau deshalb muss der
-        // erzwungene Lauf wirklich an die API. Im Normalbetrieb bleibt es beim Cache.
+        // erzwungene Lauf wirklich an die API. Im Normalbetrieb bleibt es beim Cache: der gilt nur
+        // 15 Minuten (CalendarEventCache.TTL_MINUTES), ein Treffer heisst also, die App hat eben
+        // erst selbst abgerufen - der regulaere Lauf alle 6 h geht praktisch immer an die API.
         val eventsResult = calendarUseCase.getCalendarEventsWithStatus(
             calendarIds = selectedCalendars,
             forceRefresh = forceSync
@@ -1500,8 +1536,8 @@ class AlarmMaintenanceService : Service() {
         // ausgefallene Kalender, waeren das ALLE Schicht-Wecker, und die Loeschung trifft
         // Repository, AlarmManager und Direct-Boot-Spiegel gleichzeitig. Dieselbe Ueberlegung
         // wie bei der Leerlisten-Sperre direkt darunter und bei BootReceiver: lieber ein
-        // veralteter Wecker als gar keiner. Auch hier bewusst KEIN Zeitstempel - der naechste
-        // Lauf soll es sofort erneut versuchen.
+        // veralteter Wecker als gar keiner. Auch hier bewusst KEIN Zeitstempel: "Termine zuletzt
+        // abgerufen" soll nur einen Abruf nennen, aus dem auch synchronisiert werden konnte.
         if (!fetchOutcome.isComplete) {
             Logger.w(
                 LogTags.MAINTENANCE,
@@ -1514,8 +1550,8 @@ class AlarmMaintenanceService : Service() {
         // FAIL-SAFE: leere Eventliste NICHT synchronisieren. syncAlarms() versteht "keine Events"
         // als "alle Alarme loeschen" - und ein gescheiterter Abruf kann als success(emptyList())
         // zurueckkommen. Lieber ein veralteter Wecker als gar keiner (gleiche Logik wie
-        // BootReceiver.performAlarmRecovery). Auch NICHT stempeln: der naechste Lauf soll es
-        // sofort erneut versuchen, nicht erst nach 12h.
+        // BootReceiver.performAlarmRecovery). Auch NICHT stempeln - aus demselben Grund wie bei
+        // der Teilerfolg-Sperre darueber.
         if (!MaintenanceLoadDecision.shouldSyncAfterLoad(events.size)) {
             Logger.w(
                 LogTags.MAINTENANCE,

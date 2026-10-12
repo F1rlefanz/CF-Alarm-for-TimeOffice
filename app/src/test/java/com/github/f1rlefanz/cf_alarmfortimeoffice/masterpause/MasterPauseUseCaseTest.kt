@@ -112,16 +112,22 @@ class MasterPauseUseCaseTest {
         verify(f.calendarPreAlarmRefreshScheduler, times(1)).cancelAll()
         // #131 (G11-14): fehlte bis v1.45 - die stuendliche Abfrage blieb waehrend der Pause scharf.
         verify(f.rufbereitschaftAbfrage, times(1)).cancel()
-        // Stellvertretend fuer AlarmMaintenanceService.cancelNext(context): ZWEI Cancel auf dem
-        // AlarmManager, den es sich ueber getSystemService(ALARM_SERVICE) besorgt - der regulaere
-        // 6h-Slot UND der Wiederanlauf-Wachhund.
+        // Stellvertretend fuer AlarmMaintenanceService.cancelNext(context) und
+        // TimeOfficeNachfassAbgleich.abbrechen(context): VIER Cancel auf dem AlarmManager, den sich
+        // beide ueber getSystemService(ALARM_SERVICE) besorgen - der regulaere 6h-Slot, der
+        // Wiederanlauf-Wachhund und die beiden einmaligen Abgleiche nach "TimeOffice öffnen"
+        // (8804/8805). Die PendingIntents sind in diesem Testmodus null, die Zahl ist also das
+        // einzig Beobachtbare; welche Slots abbrechen() trifft, haelt TimeOfficeNachfassAbgleichTest.
         //
-        // Die Zahl ist tragend, nicht kosmetisch: der Wachhund zieht die Kette aus sich heraus
-        // wieder auf (sein Empfaenger ruft scheduleNext()). Bliebe er stehen, kaeme die pausierte
-        // Wartung 30 Minuten nach dem Pausieren von selbst zurueck - und genau das soll pause()
-        // verhindern. Bis Pruefrunde 6 stand hier times(1); der Wachhund war damals der einzige
-        // Slot ohne Absicherung.
-        verify(f.alarmManager, times(2)).cancel(anyOrNull<PendingIntent>())
+        // Die Zahl ist tragend, nicht kosmetisch:
+        // - Der Wachhund zieht die Kette aus sich heraus wieder auf (sein Empfaenger ruft
+        //   scheduleNext()). Bliebe er stehen, kaeme die pausierte Wartung 30 Minuten nach dem
+        //   Pausieren von selbst zurueck - und genau das soll pause() verhindern. Bis Pruefrunde 6
+        //   stand hier times(1); der Wachhund war damals der einzige Slot ohne Absicherung.
+        // - Die beiden Nachfass-Abgleiche sind der Zwilling von G11-14: blieben sie stehen,
+        //   startete jeder bis zu 10 Minuten nach dem Pausieren den Wartungs-Vordergrunddienst
+        //   samt Benachrichtigung, obwohl die App "pausiert" zeigt. Bis dahin stand hier times(2).
+        verify(f.alarmManager, times(4)).cancel(anyOrNull<PendingIntent>())
     }
 
     @Test
@@ -185,7 +191,11 @@ class MasterPauseUseCaseTest {
         o.verify(f.directBootAlarmStore).savePaused(true)
         o.verify(f.context).startService(anyOrNull())
         o.verify(f.alarmUseCase).deleteAllAlarms()
-        o.verify(f.alarmManager, times(2)).cancel(anyOrNull<PendingIntent>())
+        // 6h-Kette (regulaer + Wachhund), dann die beiden TimeOffice-Nachfass-Slots - direkt
+        // hintereinander. Die Lage ist tragend fuer diesen Test: ein in-order times(n>1) sammelt
+        // ALLE noch unverifizierten passenden Aufrufe ein; laegen zwei davon hinter dem Dimmer,
+        // gaelte alles danach schon als "vorbei".
+        o.verify(f.alarmManager, times(4)).cancel(anyOrNull<PendingIntent>())
         o.verify(f.dimSchedule).disable()
         o.verify(f.dndSchedule).disable()
         o.verify(f.hueSmartScheduler).cleanup()
@@ -229,7 +239,10 @@ class MasterPauseUseCaseTest {
         verify(f.directBootAlarmStore, times(1)).savePaused(true)
         verify(f.context, times(1)).startService(anyOrNull())
         verify(f.alarmUseCase, times(1)).deleteAllAlarms()
-        verify(f.context, times(1)).getSystemService(Context.ALARM_SERVICE)
+        // ZWEI Schritte holen sich den AlarmManager und scheitern hier daran: das Kappen der
+        // 6h-Kette und das Abraeumen der TimeOffice-Nachfass-Slots - der erste reisst den zweiten
+        // nicht mit.
+        verify(f.context, times(2)).getSystemService(Context.ALARM_SERVICE)
         verify(f.dimSchedule, times(1)).disable()
         verify(f.dndSchedule, times(1)).disable()
         verify(f.hueSmartScheduler, times(1)).cleanup()

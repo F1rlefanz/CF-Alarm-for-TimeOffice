@@ -17,6 +17,7 @@
 - `loadEventsForSelectedCalendars()` braucht einen Generation-Counter, kein einfaches
 - Neue Properties in `CalendarViewModel` (und jedem anderen ViewModel mit `init{}`-Block)
 - Kein echtes Push möglich, bewusst nicht versucht
+- Die Rückkehr in die App gleicht ab — und der Startpfad fragt Google, nicht den Zwischenspeicher (1.48.0)
 - Rufbereitschaft: stündliche Abfrage statt Warten auf die 6h-Wartung (16.09.2026)
 - Die Notification-Entscheidung lebt INNERHALB von `AlarmUseCase.syncAlarms()`, nicht bei dessen
 - Der allererste Sync (z. B. nach Neuinstallation) flutet nicht
@@ -152,9 +153,10 @@
   `hue/scheduling/workers/PreAlarmHealthCheckWorker`, gleiches Muster). Reduziert die Lücke, schließt
   sie aber NICHT — eine Änderung, die erst innerhalb der letzten 3h vor dem Alarm eintrifft (wie der
   Rufbereitschafts-Abruf vom 03.08.2026, der den Sync nur zufällig rechtzeitig erreichte), bleibt
-  weiterhin auf die nächste 6h-Wartung angewiesen. `reschedule()` läuft an denselben zwei Stellen wie
-  der bestehende Dimmer-Reschedule (`AlarmMaintenanceService`, `BootReceiver`), jeweils best-effort
-  im eigenen try/catch.
+  weiterhin auf die nächste 6h-Wartung angewiesen. `reschedule()` läuft über `ZeitkettenArmierer`:
+  nach Boot und Wartung (`armiereNebenketten`) und seit 1.48.0 nach jedem gelungenen Sync im
+  Vordergrund (`planeNachVordergrundSync`, siehe den Abschnitt zur Rückkehr unten) — jeweils
+  best-effort im eigenen try/catch.
 - **Rufbereitschaft: stündliche Abfrage statt Warten auf die 6h-Wartung (16.09.2026).** Der Fall,
   der die Lücke oben real gekostet hat: Rufbereitschaft (AD1, stiller Wecker 05:00 korrekt
   gefeuert). 08:10 lief die 6h-Wartung und übersprang die Kalender-Abfrage zu Recht (Daten 6 h
@@ -163,7 +165,8 @@
   3h-Vorab-Worker kannte den Wecker nicht, weil es ihn noch nicht gab. Um 13:26 öffnete der
   Nutzer die App: „Skipping alarm in the past: Spätschicht". Kein Fehler in der Weckerkette —
   es fehlte eine Abfrage im Fenster 08:51–12:30, und zwar an dem Tag, an dem die App WUSSTE, dass
-  ein Abruf wahrscheinlich ist. Das Lade-Gate zu ändern hätte nichts genützt (08:10 lag vor dem
+  ein Abruf wahrscheinlich ist. Das damalige Lade-Gate (bis 1.47) zu ändern hätte nichts
+  genützt, und auch das Laden bei jedem Lauf seit 1.48.0 hilft hier nicht (08:10 lag vor dem
   Eintrag, 14:10 nach der Weckzeit); es fehlten die Läufe dazwischen. Deshalb
   `service/RufbereitschaftAbfrage`: solange eine Spanne mit `ShiftDefinition.isOnCall` läuft, jede
   volle Stunde ab Spannenbeginn ein exakter Alarm, der den regulären Wartungslauf mit
@@ -198,6 +201,73 @@
   06:30 → 05:00, Wecker angepasst"). Das ist folgerichtig (der Sync sieht eine geänderte Weckzeit
   und kann die Ursache nicht unterscheiden), aber beim Deuten von Nutzer-Meldungen wissenswert:
   eine solche Meldung heißt nicht zwingend, dass sich der Dienstplan geändert hat.
+
+## Die Rückkehr in die App gleicht ab — und der Startpfad fragt Google (1.48.0)
+
+**Der Befund (12.10.2026, Fairphone, Debug-Log):** Die Chefin plante am Vormittag einen S2 auf
+einen Rufdienst-Tag. Er kam um 19:30 in CF-Alarm an, rund zehn Stunden später. Etwa 6,5 h davon
+lagen bei TimeOffice (trägt erst beim Öffnen ein, siehe `timeoffice.md`), aber 3,5 h in CF-Alarm:
+Google hatte den Dienst ab 15:52, und die App zeigte ihn bis 19:25 nicht. Zwei Ursachen:
+
+1. **Geladen wurde nur, wenn das `CalendarViewModel` NEU entstand.** Drei Rückkehrten (16:47,
+   18:18, 18:54) aus einer anderen App luden nichts; das ViewModel überlebte im Hintergrund.
+2. **Jedes Öffnen schob die 6h-Wartung nach hinten** (Regeln dazu im Wecker-Skill, Termin-Merker).
+
+**Die Regeln für 1.:**
+
+- **Entschieden wird an EINER Stelle**: `CalendarViewModel.sollBeiRueckkehrLaden` (rein, unter
+  Test). Laden, wenn der letzte Ladebeginn älter als `RUECKKEHR_FRISCH_MS` (5 min) ist ODER in der
+  Zukunft liegt (Uhr zurückgestellt), ODER wenn `last_event_load_time` (jeder Lauf von
+  `AlarmMaintenanceService`) neuer ist als der letzte Ladebeginn — dann zeigte die App einen
+  älteren Stand als den, nach dem die Wecker schon gestellt sind. NICHT laden, wenn das ViewModel
+  noch nie geladen hat: dann lädt gerade der Startpfad, und der App-Start lüde doppelt. Die 5
+  Minuten verspricht die Website wörtlich (`troubleshooting.html#abgleich`); `RueckkehrAbgleichTest`
+  hält beides zusammen.
+- **Ausgelöst ab STARTED, nicht in `onResume`**: `onResume` feuert auch nach jedem
+  Berechtigungsdialog, ohne dass die App verlassen wurde. `MainActivity.beobachteRueckkehrUndHintergrundAbruf`
+  (ein `repeatOnLifecycle(STARTED)`-Block, kein `onStart`-Override mehr).
+- **Solange die App offen ist, zählt jeder neue Hintergrund-Abruf** (Review 1.48.0). Die zwei
+  Abgleiche nach „TimeOffice öffnen" kommen typischerweise, während der Nutzer schon wieder in
+  CF-Alarm ist; sie stellten die Wecker neu, die Übersicht blieb alt. Derselbe Block beobachtet
+  `AlarmMaintenanceService.beobachteLetztenTerminabruf()` und führt jeden neuen Wert durch
+  dieselbe Entscheidung. Der Flow löst den Store erst beim Sammeln auf, damit ein Fehler im
+  `catch` landet statt die Activity zu reißen.
+- **Eine wiederhergestellte Activity greift auf das ViewModel zu** (Review 1.48.0). Sonst nur,
+  wenn ihr Lazy schon initialisiert ist (auf dem Anmeldebildschirm soll kein ViewModel samt
+  Token-Prüfung entstehen). Aber: Ein Konfigurationswechsel im Hintergrund (dunkles Design per
+  Zeitplan, Schriftgröße) baut die Activity bei der Rückkehr neu — ihr Lazy ist leer, das
+  ViewModel lebt weiter, und genau diese Rückkehr lud nichts. Nach einem Prozesstod entsteht ein
+  neues ViewModel; die Rückkehr lädt dann nicht doppelt (noch nie geladen).
+- **Derselbe Ladeweg**: `loadEventsForSelectedCalendars(forceRefresh = true, loadAll = false)` —
+  Generation-Counter, Vollständigkeits-Sperren und Alarm-Sync inklusive. Bewusst NICHT
+  `refreshData()`: das setzt die Paginierung zurück und lädt ALLE verfügbaren Kalender vor.
+  `forceRefresh = true` überspringt den Lazy-Reset, die alte Liste bleibt bis zur neuen stehen.
+- **Der Zwischenspeicher wird vorher verworfen — auch beim ERSTEN Abruf jedes ViewModels.** Der
+  Lazy-Pfad liest `CalendarEventCache` (15 min, prozessweit) unabhängig von `forceRefresh`. Ohne
+  Verwerfen hätte eine Rückkehr 5–15 min nach dem letzten Laden die alte Liste noch einmal gelesen.
+  Und der Startpfad eines NEUEN ViewModels (nach „Zurück" auf der Übersicht unter Android 8–11,
+  oder wenn ein Hintergrundlauf den Prozess gestartet hat) fand die Liste eines früheren Abrufs
+  vor und nannte sie „Abgeglichen um <jetzt>" (Review 1.48.0). Ein eigener Merker
+  (`zwischenspeicherBeimStartVerworfen`) statt `letzterLadebeginn == null`: der wird auch bei leerer
+  Auswahl gestempelt. GRENZE (bewusst offen): Wechsel von Auswahl oder Vorausschau laden ohne
+  Verwerfen.
+- **„Abgeglichen um HH:MM"** (Karte „Kalender-Events") ist der Ladebeginn des letzten VOLLSTÄNDIG
+  gelungenen Abrufs. Ein Teilerfolg erneuert ihn nicht (der fehlende Kalender ist meist der
+  Dienstplan), die Abwahl des letzten Kalenders leert ihn.
+- **Nach dem Sync im Vordergrund plant `ZeitkettenArmierer.planeNachVordergrundSync()`
+  Pre-Alarm-Refresh und Rufbereitschafts-Abfrage neu** (Review 1.48.0) — aus `CalendarViewModel`
+  und `ShiftViewModel`. Ein um 23:30 beim Zurückkehren angelegter Wecker für 04:30 bekam sonst
+  keinen Vorab-Abgleich, wenn die nächste Wartung erst um 05:00 kam. Dimmer und DND bleiben
+  draußen: ihr `enable()` schaltet sofort am Gerät (`applyCurrentState`), ein Blick in die App
+  soll nichts umschalten; ihre Fenster zieht die nächste Wartung nach (offener Punkt im Memory).
+
+**Verworfen:** ein zweiter Ladepfad für die Rückkehr (Einbahnstraße, Generation-Counter); die
+Rückkehr an `onResume`; ein Neuladen bei JEDER Rückkehr (jeder Wechsel in TimeOffice, Kamera oder
+einen Dialog wäre ein Abruf bei Google).
+
+**Nicht versucht, offen:** ein Content-Trigger auf dem `CalendarProvider` (JobScheduler/WorkManager
+`addContentUriTrigger`), der feuert, sobald die Kalender-Synchronisation des Geräts etwas ändert
+— näher an einem echten Push als alles hier. Spike im Memory `project_offene_punkte`.
 
 ## Der Teilerfolg: richtig gesperrt, aber unsichtbar (v1.26.0)
 
@@ -330,8 +400,9 @@ sichtbar sein".
 - **Zurückgenommen wird, sobald keiner der GEMELDETEN Kalender mehr scheitert** – auf drei Wegen:
   ein Abruf ohne sie (`onFetchOutcome`), ein Abgleich gegen die AUSWAHL (`gleicheAuswahlAb`, in der
   Wartung VOR jedem Ausstieg, auch vor dem Token-Schritt) und die Master-Pause (`ruhen`, beginnt
-  die Entprellung neu). Der Abgleich war nötig, weil die Wartung nach einer Abwahl nie bis zum
-  Abruf kommt – ohne Auswahl ohnehin, und meist endet sie schon am Lade-Gate. Die Warnung „die
+  die Entprellung neu). Der Abgleich war nötig, weil die Wartung nach einer Abwahl oft nicht bis
+  zum Abruf kommt – ohne Auswahl nie, und am Token-Schritt kann sie schon vorher aussteigen (bis
+  1.47 endete sie außerdem meist am inzwischen entfallenen Lade-Gate). Die Warnung „die
   bereits gestellten bleiben" stand dann auf Dauer neben geräumten Weckern. Bewusst KEIN
   `onFetchOutcome(emptySet())` dafür: das hieße „abgerufen und erholt". Bleibt eine Lücke von bis
   zu 6 h, wenn der Nutzer über das Launcher-Symbol öffnet und abwählt (der Tipp auf die Meldung

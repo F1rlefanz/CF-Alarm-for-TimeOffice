@@ -39,8 +39,9 @@ interface CalendarPreAlarmRefreshEntryPoint {
  * kurzfristige TimeOffice-Aenderung eine reelle Chance hat, VOR dem Wecker anzukommen, statt erst
  * bei der naechsten 6h-Wartung erkannt zu werden.
  *
- * Umgeht bewusst die MIN_BUFFER_DAYS-Skip-Logik aus `AlarmMaintenanceService` (die bleibt
- * unveraendert dort - dieser Worker ruft sie nicht auf, er soll bei jedem Lauf frisch laden).
+ * Laedt bei jedem Lauf frisch, direkt bei Google und am 15-min-Zwischenspeicher vorbei. (Bis 1.47
+ * umging er damit auch das Lade-Gate der 6h-Wartung - Puffer/Datenalter -, das es seit 1.48.0
+ * nicht mehr gibt: die Wartung laedt inzwischen ebenfalls bei jedem Lauf.)
  * Kein Retry bei Fehler (`Result.success()`) - dies ist nur eine Vorbereitung, die naechste
  * regulaere Wartung bzw. der naechste Vordergrund-Sync deckt denselben Zustand ohnehin ab.
  */

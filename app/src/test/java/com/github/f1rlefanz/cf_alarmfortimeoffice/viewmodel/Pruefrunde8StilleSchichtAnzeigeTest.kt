@@ -45,10 +45,14 @@ import org.mockito.kotlin.whenever
  * Wecker war aus der Oberflaeche gar nicht ablesbar, weil der stille ihn verdeckte.
  *
  * WAS BEWUSST GLEICH BLEIBT: [AlarmUiState.nextAlarmTime] waehlt weiterhin den fruehesten
- * Eintrag, auch wenn er stumm ist. Der Knopf "Ueberspringen" haengt ueber
- * `enabled = nextAlarmTime != null` an genau dieser Auswahl, und `AlarmSkipUseCase.findNextAlarm()`
- * filtert ebenfalls nur nach Zeit - wuerde hier gefiltert, zeigte die Karte einen anderen Wecker
- * an, als der Knopf ueberspringt. Diese Tests halten beides zugleich fest.
+ * Eintrag, auch wenn er stumm ist - er ist der Anker fuer Dimmer und DND, und "Tag freigeben"
+ * schlaegt seinen Tag vor (am Rufdienst-Tag ist der stille Eintrag der richtige Tag).
+ *
+ * SEIT 1.48.0: "Überspringen" haengt NICHT mehr an [AlarmUiState.nextAlarmTime], sondern an
+ * [AlarmUiState.nextRingingAlarmTime] - `AlarmSkipUseCase.skipNextAlarm()` waehlt den naechsten
+ * KLINGELNDEN Wecker ueber dieselbe Funktion (`AlarmSkipUseCase.naechsterKlingelnderWecker`), mit
+ * der die Anzeige ihn errechnet. Bis 1.47.1 traf der Knopf den stillen Eintrag, waehrend die Karte
+ * den klingelnden nannte. Die Tests zum Ziel stehen in `UeberspringenKlingelnderWeckerTest`.
  */
 @OptIn(ExperimentalCoroutinesApi::class) // Dispatchers.setMain/resetMain, advanceUntilIdle
 class Pruefrunde8StilleSchichtAnzeigeTest {
@@ -132,8 +136,8 @@ class Pruefrunde8StilleSchichtAnzeigeTest {
 
             val stand = viewModel.uiState.value
             assertEquals(
-                "Die Auswahl selbst bleibt der fruehste Eintrag - sonst weicht sie von dem ab, " +
-                    "was 'Ueberspringen' trifft",
+                "Die Auswahl selbst bleibt der fruehste Eintrag - Anker fuer Dimmer, DND und " +
+                    "'Tag freigeben'",
                 "20.08.2026 05:30",
                 stand.nextAlarmTime
             )
@@ -142,6 +146,11 @@ class Pruefrunde8StilleSchichtAnzeigeTest {
                 "Der naechste wirklich klingelnde Wecker muss zusaetzlich ablesbar sein",
                 "21.08.2026 05:00",
                 stand.nextRingingAlarmTime
+            )
+            assertEquals(
+                "Der Zeitpunkt fuer die Knopfzeile gehoert zu DEMSELBEN Wecker",
+                now + 36 * 60 * 60 * 1000L,
+                stand.nextRingingAlarmTriggerTime
             )
             assertEquals("Der Zaehler muss die stummen mitzaehlen", 1, stand.silentAlarmCount)
         }
@@ -175,6 +184,10 @@ class Pruefrunde8StilleSchichtAnzeigeTest {
         assertNull(
             "Es gibt keinen klingelnden Wecker - die Karte darf auch keinen nennen",
             stand.nextRingingAlarmTime
+        )
+        assertNull(
+            "...und der Knopf 'Überspringen' hat kein Ziel",
+            stand.nextRingingAlarmTriggerTime
         )
         assertEquals(1, stand.silentAlarmCount)
     }

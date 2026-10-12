@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Hilfe zu CF-Alarm: wenn der Wecker nicht klingelt, keine Schicht erkannt wird, der Kalender nicht erreichbar ist oder der Bildschirm nicht dimmt.">
+    <meta name="description" content="Hilfe zu CF-Alarm: wenn der Wecker nicht klingelt, eine Dienstplanänderung spät ankommt, keine Schicht erkannt wird, der Kalender nicht erreichbar ist oder der Bildschirm nicht dimmt.">
     <title>Hilfe – CF-Alarm</title>
     <script src="assets/js/theme.js"></script>
     <link rel="preload" href="assets/fonts/anton-latin.woff2" as="font" type="font/woff2" crossorigin>
@@ -47,6 +47,7 @@
                 <li><a href="#absichtlich-still">Absichtlich still</a></li>
                 <li><a href="#keine-schicht">Keine Schicht erkannt</a></li>
                 <li><a href="#kalender">Kalender-Meldungen</a></li>
+                <li><a href="#abgleich">Wann CF-Alarm nachsieht</a></li>
                 <li><a href="#dimmer">Bildschirm dimmt nicht</a></li>
                 <li><a href="#hue">Philips Hue</a></li>
                 <li><a href="#melden">Problem melden</a></li>
@@ -71,11 +72,12 @@
                 <li><strong>Lösung:</strong> Android-Einstellungen → Apps → CF-Alarm → „App bei Nichtnutzung pausieren“ ausschalten.</li>
             </ul>
 
-            <h3 id="timeoffice">3. TimeOffice überträgt nicht mehr</h3>
+            <h3 id="timeoffice">3. TimeOffice überträgt nicht oder erst spät</h3>
             <ul>
-                <li><strong>Anzeichen:</strong> Der Wecker klingelt zuverlässig, aber zur <em>alten</em> Schicht. Eine Änderung, die in TimeOffice schon steht, kommt nicht an – CF-Alarm arbeitet dann korrekt mit einem veralteten Kalender.</li>
-                <li><strong>Prüfen:</strong> System-Status → Karte „TimeOffice-Zuverlässigkeit“. Gegenprobe: Steht die Änderung in der Google-Kalender-App? Wenn nicht, liegt es an der Übertragung von TimeOffice.</li>
-                <li><strong>Lösung:</strong> Über „TimeOffice-Einstellungen öffnen“ bei TimeOffice die Akku-Nutzung auf „Uneingeschränkt“ stellen und „App bei Nichtnutzung pausieren“ ausschalten. Danach TimeOffice einmal öffnen.</li>
+                <li><strong>Anzeichen:</strong> Der Wecker klingelt zuverlässig, aber zur <em>alten</em> Schicht, oder ein neuer Dienst fehlt ganz. Die Änderung steht schon in TimeOffice, aber noch nicht im Google Kalender – und was dort fehlt, kann CF-Alarm nicht sehen.</li>
+                <li><strong>Wichtig zu wissen:</strong> Nach bisheriger Beobachtung trägt TimeOffice eine Änderung erst in den Kalender ein, wenn die App geöffnet wird – auch wenn alle Einstellungen stimmen. Die Meldung „Dienstplanänderung“ allein reicht nicht. Tippe darauf: TimeOffice öffnet sich und trägt die Änderung ein. Bis sie im Google Kalender angekommen ist, vergehen danach noch ein paar Minuten.</li>
+                <li><strong>Prüfen:</strong> System-Status → Karte „TimeOffice-Zuverlässigkeit“. Gegenprobe: Steht die Änderung in der Google-Kalender-App? Wenn nicht, hat TimeOffice sie noch nicht eingetragen. Steht sie dort, aber noch nicht in CF-Alarm, hat CF-Alarm seitdem noch nicht nachgesehen – „Mit Google Kalender abgleichen“ in der Übersicht holt sie sofort (siehe <a href="#abgleich">Wann sieht CF-Alarm in den Kalender?</a>).</li>
+                <li><strong>Lösung:</strong> Über „TimeOffice-Einstellungen öffnen“ bei TimeOffice die Akku-Nutzung auf „Uneingeschränkt“ stellen und „App bei Nichtnutzung pausieren“ ausschalten. Und nach jeder Dienstplan-Meldung TimeOffice kurz öffnen – am bequemsten im System-Status mit „TimeOffice öffnen“: Dann gleicht CF-Alarm nach 3 und nach 10 Minuten von selbst ab.</li>
             </ul>
 
             <h3 id="ausserdem">Außerdem prüfen</h3>
@@ -113,6 +115,20 @@
                 <li><strong>„Kalender nicht gefunden“</strong> – der Kalender wurde gelöscht oder nicht mehr freigegeben. Im System-Status unter „Kalender“ entfernst du ihn aus der Auswahl und wählst unter Einstellungen → „Kalender auswählen“ den richtigen.</li>
                 <li><strong>„Kalender-Zugriff erneuern“</strong> – Google verlangt eine neue Zustimmung. Tippe auf den Knopf und bestätige.</li>
             </ul>
+        </section>
+
+        <section class="content-card" id="abgleich">
+            <h2>Wann sieht CF-Alarm in den Kalender?</h2>
+            <p>CF-Alarm sieht nur, was im Google Kalender steht. Was TimeOffice dort noch nicht eingetragen hat, kann die App nicht sehen, so oft sie auch nachsieht – siehe <a href="#timeoffice">TimeOffice überträgt nicht oder erst spät</a>. Was im Kalender steht, holt CF-Alarm zu diesen Zeitpunkten ab:</p>
+            <ul>
+                <li><strong>Beim Öffnen der App:</strong> auch wenn du nur aus einer anderen App zurückkehrst – sofern der letzte Blick in den Kalender länger als 5 Minuten her ist. Gleicht CF-Alarm im Hintergrund ab, während die App offen ist, zieht die Übersicht gleich nach.</li>
+                <li><strong>Im Hintergrund:</strong> alle 6 Stunden, auch wenn du die App nicht öffnest.</li>
+                <li><strong>Bei Rufbereitschaft:</strong> jede Stunde, solange eine Rufbereitschaft läuft. Welche Schichten das sind, legst du unter Wecker → „Schichttypen verwalten“ fest (Schalter „Rufbereitschaft“ der Schicht).</li>
+                <li><strong>Vor jedem Wecker:</strong> etwa 3 Stunden vorher noch einmal.</li>
+                <li><strong>Nachdem du TimeOffice über CF-Alarm geöffnet hast:</strong> 3 und 10 Minuten danach (Knopf „TimeOffice öffnen“ im System-Status). Unter Android 12 klappt das nur, solange „Alarme &amp; Erinnerungen“ erlaubt ist – die Karte „TimeOffice-Zuverlässigkeit“ sagt es dir.</li>
+                <li><strong>Jederzeit von Hand:</strong> mit „Mit Google Kalender abgleichen“ in der Übersicht.</li>
+            </ul>
+            <p>Wann zuletzt abgeglichen wurde, zeigt die Übersicht in der Karte „Kalender-Events“; den letzten Abgleich im Hintergrund und den nächsten regelmäßigen (alle 6 Stunden) zeigt der System-Status in der Karte „Hintergrunddienst“. Solange „Hintergrunddienste pausieren“ eingeschaltet ist, sieht CF-Alarm im Hintergrund nicht nach.</p>
         </section>
 
         <section class="content-card" id="dimmer">

@@ -90,7 +90,16 @@ das baut man dieselbe Falle in neuer Form nach.
 - **Ein Vorgang, ein Name, an der Stelle, deren Inhalt er veraendert.** Drei Beschriftungen fuer
   einen Aufruf sind drei Versprechen; ein blosses Symbol kann nicht sagen, WAS es tut.
 - **Ein Zeitstempel nennt, worauf er sich bezieht** - und wer eine Diagnose-Anzeige einbaut, prueft
-  vorher, ob ihr Ergebnis den Nutzer im RELEASE-Build je erreicht.
+  vorher, ob ihr Ergebnis den Nutzer im RELEASE-Build je erreicht. Kennt eine Zeile nur EINEN von
+  mehreren Mechanismen, sagt ihr Name welchen ("Nächster regelmäßiger Abgleich", nicht "Nächster
+  Abgleich" - an Rufbereitschafts-Tagen stand sie sonst 6 h ueber der stuendlichen Abfrage).
+- **Eine Zeile, die das ZIEL eines Knopfs nennt, wird beim Tippen nachgerechnet** (1.48.0,
+  "Überspringen"): Anzeigen rechnen nur bei einer Emission, nicht mit der Uhr. Ist das genannte
+  Ziel inzwischen vorbei, lehnt der Knopf ab und sagt, dass NICHTS geschah - er trifft nie still
+  ein anderes Ziel als das genannte.
+- **Ein Hinweis zu einem Knopf steht direkt unter DIESEM Knopf und nennt ihn beim Namen** - nicht
+  unter einer ganzen Knopfreihe, die bei 320 dp umbricht. Und er verspricht nur, was in JEDEM
+  Zustand eintritt, den die Karte kennen kann (Pause, fehlende Berechtigung).
 - **Keine Karte bekommt `surfaceVariant` als Fläche** — in der hellen Palette ist das derselbe
   Wert wie `background`, die Karte verschwindet. Dezente Karten: `surface` +
   `BorderStroke(1.dp, outline)`. Und ein Zustand wird ADDITIV gezeigt (Rand, Text), nie durch

@@ -71,8 +71,10 @@
         <!-- background_services.xml: reine Diagnosedaten des ALTEN Geraets (device_info,
              Startzeitpunkt, Version) - auf dem Zielgeraet irrefuehrend, wird beim ersten
              Start ohnehin neu geschrieben.
-             Nicht aufgefuehrt, weil gar nicht in dieser Domain: direct_boot_alarms.xml liegt
-             im Device-Protected Storage (/data/user_de/) und ist ein Alarm-Spiegel. -->
+             Nicht aufgefuehrt, weil gar nicht in dieser Domain: direct_boot_alarms.xml und
+             wartung_kette.xml (Termin des naechsten 6h-Wartungslaufs) liegen im
+             Device-Protected Storage (/data/user_de/) und sind Laufzeitzustand DIESES Geraets -
+             sie reisen bewusst nicht mit. -->
         <exclude domain="sharedpref" path="background_services.xml"/>
 
         <!-- weckbildschirm_verdraengung.xml: die Aussage "DIESES Geraet verdraengt den

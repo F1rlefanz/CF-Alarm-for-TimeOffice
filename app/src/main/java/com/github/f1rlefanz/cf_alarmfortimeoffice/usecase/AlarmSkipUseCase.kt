@@ -73,6 +73,36 @@ class AlarmSkipUseCase @Inject constructor(
         /** Loeschversuche beim Ueberspringen - siehe [loescheDauerhaftMitNachfassen]. */
         internal const val DELETE_ATTEMPTS = DauerhaftesLoeschen.VERSUCHE
         internal const val DELETE_RETRY_DELAY_MS = DauerhaftesLoeschen.WARTEZEIT_MS
+
+        /**
+         * DIE Regel fuer "der naechste Wecker, der wirklich klingelt": in der Zukunft und NICHT
+         * still ([AlarmInfo.isSilent]), davon der frueheste.
+         *
+         * EINE Stelle fuer zwei Leser, und genau das ist der Zweck: das Ziel von [skipNextAlarm]
+         * UND die Anzeige "Nächster klingelnder Wecker" samt Knopftext im Wecker-Tab
+         * (`berechneWeckerAnzeige` im AlarmViewModel rechnet ueber diese Funktion). Laufen die
+         * beiden auseinander, nennt der Knopf einen anderen Wecker, als er abschaltet.
+         *
+         * WELCHER FEHLER DAS WAR (12.10.2026, Rufdienst-Tag): bis 1.47.1 nahm das Ueberspringen
+         * den zeitlich naechsten EINTRAG, auch einen stillen. Am Morgen standen ein stiller
+         * Rufdienst-Eintrag um 05:00 und der eigene Wecker um 05:30 an; die Karte zeigte
+         * "Nächster klingelnder Wecker: 05:30", der Knopf haette aber den stillen 05:00-Eintrag
+         * geloescht - also nichts hoerbar veraendert, waehrend der Nutzer den Wecker fuer
+         * abgeschaltet hielt. Ein stiller Eintrag klingelt ohnehin nicht; ihn zu "ueberspringen"
+         * kann nie gemeint sein. Das Gate in `syncAlarms()` und der Backstop in
+         * `scheduleSystemAlarm()` bleiben unberuehrt - sie erkennen den uebersprungenen Wecker an
+         * id und Weckzeitpunkt, gleich welche Regel ihn ausgewaehlt hat.
+         *
+         * Bewusst OHNE Skip-Filter: solange ein Ueberspringen aktiv ist, bietet die Oberflaeche
+         * keinen Knopf dafuer an, und der uebersprungene Eintrag ist ohnehin geloescht. Die
+         * Anzeige filtert ihn vorher selbst heraus (fuer den seltenen Fall, dass er liegenblieb).
+         *
+         * @param jetzt Vergleichszeitpunkt (Epoch-Millis) - als Parameter, damit Tests ihn setzen.
+         */
+        internal fun naechsterKlingelnderWecker(alarme: List<AlarmInfo>, jetzt: Long): AlarmInfo? =
+            alarme
+                .filter { it.triggerTime > jetzt && !it.isSilent }
+                .minByOrNull { it.triggerTime }
     }
 
     override val skipStatusFlow: Flow<AlarmSkipState> = alarmSkipRepository.skipStatusFlow
@@ -85,9 +115,13 @@ class AlarmSkipUseCase @Inject constructor(
         // gemerkt und nach dem Lauf an die Stelle des verpackten Fehlers gesetzt.
         var ruecknahme: SkipRolledBackException? = null
         val ergebnis = SafeExecutor.safeExecute("AlarmSkipUseCase.skipNextAlarm") {
-            // 1. Nächsten Alarm ermitteln
+            // 1. Naechsten KLINGELNDEN Wecker ermitteln - dieselbe Regel wie die Anzeige
+            // (siehe [naechsterKlingelnderWecker]). Stehen nur stille Eintraege an, gibt es
+            // nichts zu ueberspringen: abbrechen, bevor irgendetwas angefasst ist.
             val nextAlarm = findNextAlarm()
-                ?: throw IllegalStateException("Kein aktiver Alarm gefunden")
+                ?: throw IllegalStateException(
+                    "Kein klingelnder Wecker zum Ueberspringen gefunden (stille Eintraege zaehlen nicht)"
+                )
 
             // 1a. Ist die Alarm-Persistenz gesperrt, kann dieses Ueberspringen gar nicht gelingen -
             // und zwar STILL: `AlarmRepository.deleteAlarm()` entfernt den Eintrag dann nur aus dem
@@ -288,11 +322,13 @@ class AlarmSkipUseCase @Inject constructor(
             isExpired
         }
 
-    private suspend fun findNextAlarm(): AlarmInfo? {
-        val currentTime = System.currentTimeMillis()
-        return alarmRepository.getAllAlarms()
+    /**
+     * Das Ziel des Ueberspringens - der naechste KLINGELNDE Wecker, nicht der naechste Eintrag.
+     * Ein unlesbarer Bestand heisst "kein Ziel": der Vorgang bricht dann ab, bevor etwas
+     * angefasst ist, und der Wecker klingelt (die sichere Richtung).
+     */
+    private suspend fun findNextAlarm(): AlarmInfo? =
+        alarmRepository.getAllAlarms()
             .getOrNull()
-            ?.filter { it.triggerTime > currentTime }
-            ?.minByOrNull { it.triggerTime }
-    }
+            ?.let { naechsterKlingelnderWecker(it, System.currentTimeMillis()) }
 }

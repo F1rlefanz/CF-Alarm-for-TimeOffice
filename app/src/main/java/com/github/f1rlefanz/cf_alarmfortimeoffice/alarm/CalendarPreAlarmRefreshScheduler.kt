@@ -26,11 +26,12 @@ import javax.inject.Singleton
  * zeitkritischer Weckvorgang, nur Vorbereitung) - dasselbe Muster wie
  * [com.github.f1rlefanz.cf_alarmfortimeoffice.hue.scheduling.workers.PreAlarmHealthCheckWorker].
  *
- * [reschedule] ist der einzige Einstiegspunkt. Aufrufer:
- * [com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmMaintenanceService] und
- * [com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.receiver.BootReceiver], an denselben Stellen,
- * an denen dort bereits der Dimmer-Reschedule laeuft - beide rufen best-effort mit eigenem
- * try/catch, ein Fehler hier darf weder Wartung noch Boot-Recovery stoeren.
+ * [reschedule] ist der einzige Einstiegspunkt, immer ueber
+ * [com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.ZeitkettenArmierer]: nach Boot und Wartung
+ * (`armiereNebenketten`) und seit 1.48.0 nach jedem gelungenen Sync im Vordergrund
+ * (`planeNachVordergrundSync`) - sonst bekam ein beim Zurueckkehren in die App angelegter Wecker
+ * erst mit der naechsten Wartung seinen Vorab-Abgleich. Alle best-effort mit eigenem try/catch,
+ * ein Fehler hier darf weder Wartung noch Boot-Recovery noch den Sync stoeren.
  */
 @Singleton
 class CalendarPreAlarmRefreshScheduler @Inject constructor(
@@ -39,7 +40,8 @@ class CalendarPreAlarmRefreshScheduler @Inject constructor(
 ) {
     companion object {
         const val WORK_TAG = "calendar_pre_alarm_refresh"
-        private val PRE_ALARM_LEAD_MILLIS = TimeUnit.HOURS.toMillis(3)
+        /** `internal` fuer den Test, der den Satz zum Abgleich-Rhythmus im Status-Tab gegenprueft. */
+        internal val PRE_ALARM_LEAD_MILLIS = TimeUnit.HOURS.toMillis(3)
         private const val MAX_LOOKAHEAD_DAYS = 14L
 
         // Wie HueSmartScheduler.getNextAlarmTimes(): unbegrenztes Vorausplanen wuerde bei vielen
@@ -93,7 +95,7 @@ class CalendarPreAlarmRefreshScheduler @Inject constructor(
         )
 
         // Vorherige Planung komplett verwerfen und neu aufbauen - einfacher/robuster als ein Diff;
-        // reschedule() laeuft ohnehin nur alle 6h bzw. beim Boot, nicht bei jeder Kleinigkeit.
+        // reschedule() laeuft nach Wartung, Boot und Sync im Vordergrund, nicht bei jeder Kleinigkeit.
         workManager.cancelAllWorkByTag(WORK_TAG)
 
         var scheduled = 0

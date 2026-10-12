@@ -217,7 +217,8 @@ class CalendarUnavailableNotifierZustellungTest {
     //
     // HERGANG (Review 30.09.2026): Zurueckgenommen wurde nur nach einem Kalenderabruf. Fehlte der
     // EINZIGE Kalender und nahm der Nutzer ihn aus der Auswahl, stieg jede folgende Wartung vor
-    // dem Abruf aus (keine Auswahl - und nach einer Abwahl meist schon am Lade-Gate). Die Meldung
+    // dem Abruf aus (keine Auswahl - und bis 1.47 nach einer Abwahl meist schon am inzwischen
+    // entfallenen Lade-Gate). Die Meldung
     // "... die bereits gestellten bleiben" stand dann auf Dauer, obwohl die Abwahl die Wecker
     // gerade geraeumt hatte. Dasselbe nach der Master-Pause, die alle Wecker loescht.
 

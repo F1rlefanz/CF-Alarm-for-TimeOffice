@@ -14,7 +14,9 @@ import org.junit.Test
  * `stopSelf(startId)`. Das schuetzt nur die Reihenfolge "frueherer Lauf wird zuerst fertig".
  * Der wahrscheinliche Fall ist der umgekehrte: ein forceSync-Lauf (Zeitzonen-Wechsel, Boot,
  * Master-Pause-resume, Re-Login) haengt in Token-Refresh und Kalenderabruf, waehrend der
- * regulaere 6h-Lauf in Millisekunden mit "Puffer reicht" zurueckkehrt. Dessen startId IST dann
+ * regulaere 6h-Lauf in Millisekunden mit "Puffer reicht" zurueckkehrt (so bis 1.47; das Lade-Gate
+ * ist entfallen, schnell fertig wird ein Lauf heute z. B. bei Master-Pause oder gescheitertem
+ * Token - die Reihenfolge-Frage bleibt dieselbe). Dessen startId IST dann
  * die zuletzt vergebene - Android zerstoert den Service, `onDestroy` cancelt den Scope und
  * schneidet den forceSync-Lauf mitten in `syncAlarms()` ab. Zwischen `deleteAlarm()` und dem
  * folgenden `saveAlarm()`/`scheduleSystemAlarm()` abgeschnitten heisst: fuer diese Schicht gibt

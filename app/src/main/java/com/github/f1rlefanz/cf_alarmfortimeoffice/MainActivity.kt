@@ -29,6 +29,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.manager.OAuth2TokenManage
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimBedienungshilfenWunsch
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimmerModellMigration
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndScheduleUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmMaintenanceService
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.RufbereitschaftAbfrage
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.RufbereitschaftMigration
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.connection.HueBridgeConnectionManager
@@ -49,6 +50,8 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.NavigationViewModel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.ShiftViewModel
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
@@ -130,7 +133,10 @@ class MainActivity : ComponentActivity() {
     @Inject lateinit var rufbereitschaftAbfrage: RufbereitschaftAbfrage
 
     private val authViewModel: AuthViewModel by viewModels()
-    private val calendarViewModel: CalendarViewModel by viewModels()
+    // Der Lazy selbst als eigenes Feld: pruefeRueckkehrAbgleich() fragt, ob das ViewModel schon existiert, ohne
+    // es dabei anzulegen (siehe dort).
+    private val calendarViewModelLazy: Lazy<CalendarViewModel> = viewModels()
+    private val calendarViewModel: CalendarViewModel by calendarViewModelLazy
     private val shiftViewModel: ShiftViewModel by viewModels()
     private val alarmViewModel: AlarmViewModel by viewModels()
     private val mainViewModel: MainViewModel by viewModels()
@@ -199,6 +205,8 @@ class MainActivity : ComponentActivity() {
         authViewModel.starteAnmeldeWiederherstellung(this)
 
         // POST_NOTIFICATIONS wird erst im Hauptbereich abgefragt (LaunchedEffect im "main"-Screen).
+
+        beobachteRueckkehrUndHintergrundAbruf(wiederhergestellt = savedInstanceState != null)
 
         setContent {
             CFAlarmForTimeOfficeTheme {
@@ -386,6 +394,66 @@ class MainActivity : ComponentActivity() {
         }
     }
     
+    /**
+     * Rueckkehr in die App: Termine neu abgleichen, wenn der letzte Blick in den Kalender zu lange
+     * her ist - die Entscheidung trifft `CalendarViewModel.sollBeiRueckkehrLaden`, geladen wird
+     * ueber dessen einen Ladeweg. Befund 12.10.2026: drei Rueckkehrten luden nichts, der neue
+     * Dienst stand 3,5 h bei Google, ohne dass die App ihn zeigte.
+     *
+     * AB STARTED, NICHT RESUMED: onResume feuert auch nach jeder System-Berechtigungsabfrage und
+     * jedem anderen Fenster, das die App nur halb verdeckt - ohne dass sie je verlassen wurde.
+     *
+     * SOLANGE DIE APP OFFEN IST, ZAEHLT AUCH JEDER NEUE HINTERGRUND-ABRUF (Review 1.48.0): Die
+     * Abgleiche nach "TimeOffice öffnen" kommen typischerweise, waehrend der Nutzer schon wieder
+     * in CF-Alarm ist. Sie stellten die Wecker neu, aber die Uebersicht zeigte bis zur naechsten
+     * Rueckkehr die alte Terminliste samt altem "Abgeglichen um". Jeder neue Wert von
+     * `last_event_load_time` fuehrt deshalb durch DIESELBE Entscheidung (Regel "der Hintergrund
+     * hat seit dem letzten Laden neu abgerufen"). Der erste Wert ist der Stand beim Start und
+     * wird uebersprungen - fuer den gilt die Pruefung darueber. Scheitert das Lesen, bleibt es bei
+     * ihr; ein Wurf darf die Activity nicht mitreissen.
+     *
+     * NUR, WENN DIESE ACTIVITY DAS ViewModel SCHON BENUTZT: ohne die Pruefung legte der Zugriff es
+     * hier an - auf dem Anmelde- oder Ladebildschirm, bevor ueberhaupt jemand angemeldet ist (es
+     * entsteht sonst erst mit dem Hauptbereich oder dem Einstieg aus der Kalender-Warnung), samt
+     * Token-Pruefung im init. Beim allerersten Start existiert es deshalb meist noch nicht; den
+     * ersten Abruf macht ohnehin der Startpfad des ViewModels. Abgemeldet gibt es nichts
+     * abzugleichen.
+     *
+     * AUSNAHME [wiederhergestellt] (Review 1.48.0): Aendert sich die Konfiguration, WAEHREND die
+     * App im Hintergrund liegt (dunkles Design per Zeitplan, Schriftgroesse, Sprache), baut Android
+     * die Activity bei der Rueckkehr neu auf. Das ViewModel bleibt erhalten, der Lazy dieser neuen
+     * Instanz ist aber noch leer - ohne die Ausnahme lud genau diese Rueckkehr nichts. Der Zugriff
+     * liefert dann das behaltene ViewModel. Nach einem Prozesstod entsteht stattdessen ein neues,
+     * und dessen eigener Startpfad laedt (noch nie geladen = die Rueckkehr laedt nicht doppelt).
+     * Eine Drehung im Vordergrund geht denselben Weg; laedt sie nach mehr als 5 Minuten, ist das
+     * ein harmloser Abruf.
+     */
+    private fun beobachteRueckkehrUndHintergrundAbruf(wiederhergestellt: Boolean) {
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                pruefeRueckkehrAbgleich(wiederhergestellt)
+                AlarmMaintenanceService.beobachteLetztenTerminabruf(applicationContext)
+                    .drop(1)
+                    .catch { e ->
+                        Logger.w(
+                            LogTags.CALENDAR,
+                            "Hintergrund-Abruf nicht beobachtbar - abgeglichen wird nur beim Zurueckkehren",
+                            e
+                        )
+                    }
+                    .collect { pruefeRueckkehrAbgleich(wiederhergestellt) }
+            }
+        }
+    }
+
+    private fun pruefeRueckkehrAbgleich(wiederhergestellt: Boolean) {
+        if ((calendarViewModelLazy.isInitialized() || wiederhergestellt) &&
+            authViewModel.uiState.value.isSignedIn
+        ) {
+            calendarViewModel.aktualisiereBeiRueckkehr()
+        }
+    }
+
     override fun onResume() {
         super.onResume()
         // Der EINZIGE Aufruf: onResume folgt immer auf onCreate. Bis v1.45 stand er zusaetzlich am

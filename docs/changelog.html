@@ -47,7 +47,36 @@
              Dieser Kommentar steht bewusst VOR dem BEGIN-Marker und ueberlebt deshalb. -->
         <!-- CHANGELOG:BEGIN -->
         <div class="content-card">
-            <h3>🆕 Version 1.47.1 <small>(Aktuell – interne Alpha)</small></h3>
+            <h3>🆕 Version 1.48.0 <small>(Aktuell – interne Alpha)</small></h3>
+            <p><strong>Stand:</strong> Oktober 2026</p>
+            <p><em>Dienstplan-Änderungen kommen schneller an: Die App schaut nach, sobald du sie öffnest, verschiebt ihren Hintergrund-Abgleich nicht mehr und hilft dabei, Änderungen aus TimeOffice in den Kalender zu bringen.</em></p>
+
+            <h4>🐛 Behoben</h4>
+            <ul>
+                <li><strong>Öffnen der App holt jetzt neue Termine:</strong> Bisher lud die App den Kalender nur nach einem Neustart. Kam sie nur aus dem Hintergrund zurück, zeigte sie stundenlang den alten Stand, auch wenn ein neuer Dienst längst im Kalender stand. Jetzt gleicht sie ab, sobald du sie öffnest und der letzte Blick länger als fünf Minuten her ist – auch wenn sich in der Zwischenzeit zum Beispiel das dunkle Design eingeschaltet hat. Auf der Übersicht steht, wann zuletzt abgeglichen wurde.</li>
+                <li><strong>Die Übersicht zieht mit, während die App offen ist:</strong> Holt CF-Alarm im Hintergrund neue Termine, während du in der App bist, zeigt die Karte „Kalender-Events“ sie gleich mit – nicht erst beim nächsten Öffnen.</li>
+                <li><strong>Nachschauen schiebt den Hintergrund-Abgleich nicht mehr nach hinten:</strong> Jedes Öffnen der App setzte den nächsten Abgleich im Hintergrund wieder auf „in sechs Stunden“. Wer oft nachsah, bekam dadurch seltener neue Dienste. Der geplante Termin bleibt jetzt, wo er ist, und der System-Status zeigt ihn an.</li>
+                <li><strong>„Überspringen“ trifft den Wecker, der angezeigt wird:</strong> War der nächste Eintrag still (etwa an einem Rufdienst-Tag), übersprang der Knopf diesen stillen Eintrag statt des Weckers, der wirklich klingelt. Jetzt gilt er dem nächsten klingelnden Wecker und nennt dessen Datum und Uhrzeit. Ist der genannte Wecker inzwischen schon vorbei, überspringt der Knopf nichts und sagt das.</li>
+                <li><strong>Der Vorab-Abgleich gilt jetzt für jeden Wecker:</strong> Etwa drei Stunden vor einem Wecker sieht CF-Alarm noch einmal in den Kalender. Für Wecker, die beim Öffnen der App oder nach einer Änderung an den Schichttypen entstanden, wurde dieser Blick bisher erst später eingeplant – manchmal zu spät.</li>
+            </ul>
+
+            <h4>✨ Neu</h4>
+            <ul>
+                <li><strong>„TimeOffice öffnen“ im System-Status:</strong> TimeOffice trägt eine Dienstplan-Änderung erst in den Kalender ein, wenn die App geöffnet wird. Der neue Knopf in der Karte „TimeOffice-Zuverlässigkeit“ öffnet TimeOffice, und CF-Alarm gleicht nach drei und nach zehn Minuten von selbst ab.</li>
+                <li><strong>Der Abgleich hat jetzt Uhrzeiten:</strong> Die Karte „Hintergrunddienst“ zeigt, wann der nächste regelmäßige Abgleich kommt, und erklärt, wann die App überhaupt in den Kalender schaut.</li>
+            </ul>
+
+            <h4>🎨 Feinschliff</h4>
+            <ul>
+                <li><strong>Der Hintergrund-Abgleich holt bei jedem Lauf die Termine:</strong> Bisher ließ er die Abfrage unter bestimmten Bedingungen aus, in einer freien Woche bis zu zwölf Stunden lang. Jetzt gilt einfach: alle sechs Stunden, an Rufbereitschafts-Tagen stündlich.</li>
+                <li><strong>„Tag freigeben“ sagt, was sonst noch wegfällt:</strong> An einem freigegebenen Tag stellen auch spätere Dienstplan-Änderungen keinen Wecker mehr, und an einem Rufbereitschafts-Tag entfällt die stündliche Kalender-Abfrage. Deine eigenen Wecker bleiben. Das steht jetzt im Hinweis.</li>
+                <li><strong>Sauberer auf schmalen Anzeigen und bei großer Schrift:</strong> Im Wecker-Tab stehen Erklärung und Knopf (Überspringen, Tag freigeben, Schlummer-Dauer) bei wenig Platz untereinander, statt Wörter mitten durchzubrechen. „Zuletzt nachgesehen“ sagt nach einem frischen Abgleich „Gerade eben“ statt „Vor 0 Minuten“.</li>
+                <li><strong>Hilfe zu TimeOffice überarbeitet:</strong> Die Problemhilfe erklärt, warum eine Änderung erst nach dem Öffnen von TimeOffice ankommt, und ein neuer Abschnitt beschreibt, wann CF-Alarm in den Kalender schaut.</li>
+            </ul>
+        </div>
+
+        <div class="content-card">
+            <h3>Version 1.47.1</h3>
             <p><strong>Stand:</strong> Oktober 2026</p>
             <p><em>Wartungsversion — für die Bedienung ändert sich nichts.</em></p>
 

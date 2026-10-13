@@ -11,6 +11,7 @@ import android.os.Build
 import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.AlarmPrefs
+import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.GeklingelteWeckzeiten
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.WecktonAnstieg
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.IHueRuleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmSoundService
@@ -260,6 +261,12 @@ class AlarmReceiver : BroadcastReceiver() {
                 }
 
                 Logger.business(LogTags.ALARM_RECEIVER, "📱 ALARM TRIGGERED! Shift: $shiftName")
+
+                // Erst NACH der Skip-Pruefung: ein uebersprungener Wecker darf kein Dimm-Fenster
+                // beenden (siehe GeklingelteWeckzeiten). Bewusst VOR der Stille-Pruefung - eine
+                // stille Schicht beendet das Fenster ueber ihre Schichtspanne ohnehin, beide Quellen
+                // sagen also dasselbe. Device-Protected, also auch im Direct Boot.
+                GeklingelteWeckzeiten.merke(context)
 
                 // STILLE SCHICHT: Ton/Vibration/Vollbild-Wecker UND Hue bleiben aus, wenn diese
                 // Schicht als still markiert ist. Der Zeit-Anker selbst (dieser Broadcast) feuert

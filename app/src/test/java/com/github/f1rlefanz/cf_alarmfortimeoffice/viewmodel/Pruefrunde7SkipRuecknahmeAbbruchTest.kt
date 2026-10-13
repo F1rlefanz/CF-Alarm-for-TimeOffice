@@ -151,6 +151,7 @@ class Pruefrunde7SkipRuecknahmeAbbruchTest {
             masterPausePrefs = masterPausePrefs,
             alarmPrefs = alarmPrefs,
             tagFreigabeUseCase = tagFreigabeUseCaseOhneFreigaben(),
+            zeitkettenArmierer = org.mockito.kotlin.mock(),
             alarmRepository = mock<IAlarmRepository>().apply {
                 stub {
                     on { isPersistenceBlocked() } doReturn false

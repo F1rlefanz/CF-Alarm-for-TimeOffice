@@ -126,6 +126,26 @@ data class DimWindow(
     val endClockMinutes: Int = 6 * 60,
     val endOffsetMinutes: Int = 0,
     /**
+     * NUR für das Ende [DimAnchor.ALARM_SONST_CLOCK]: wie viele Minuten NACH der gefundenen Weckzeit
+     * noch gedimmt bleibt („bis Weckzeit + X, spätestens um [endClockMinutes]"). Die Uhrzeit bleibt
+     * eine harte Obergrenze - Nutzerentscheidung 13.10.2026, damit „spätestens" wahr bleibt. Wird
+     * nur auf eine gefundene Weckzeit addiert; ohne Wecker endet das Fenster unverändert an der Uhrzeit.
+     *
+     * WARUM DAS ES GIBT (Nutzerwunsch 13.10.2026): Im Winter ist es beim Frühdienst-Wecken
+     * stockfinster, und ein schlagartig helles Display blendet. Für ALARM-verankerte Enden gab es
+     * den Versatz schon ([endOffsetMinutes]), für dieses Ende - das einzige, das auch MANUELLE
+     * Wecker sieht - nicht.
+     *
+     * EIGENES FELD statt [endOffsetMinutes]: der Editor lässt beim Umstellen des Ende-Ankers den
+     * alten Versatz im gespeicherten Fenster stehen. Würde dieses Ende ihn plötzlich lesen, dimmten
+     * bestehende Regeln nach dem Update still länger. Default 0 = Verhalten wie bisher.
+     *
+     * „Nicht stören" (Modus „folgt dem Dimmer") macht den Nachlauf bewusst NICHT mit - wer gerade
+     * geweckt wurde, soll erreichbar sein (Nutzerentscheidung 13.10.2026, siehe
+     * `DimScheduleUseCase.previewTimelineWithStatus`).
+     */
+    val weckzeitNachlaufMinuten: Int = 0,
+    /**
      * An welchen Tagen eines Schicht-BLOCKS dieses Fenster gilt (siehe [Blockposition]). Default =
      * alle, damit jedes bestehende Fenster unverändert weiterwirkt; ein alter Regelbestand ohne
      * dieses Feld liest sich damit als "wie bisher". Leere Menge = Fenster gilt nirgends (nicht

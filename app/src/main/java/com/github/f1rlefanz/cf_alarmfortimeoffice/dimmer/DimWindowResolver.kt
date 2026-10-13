@@ -45,6 +45,9 @@ object DimWindowResolver {
      */
     private const val LOOKBACK_DAYS = 1L
 
+    /** Obergrenze für [DimWindow.weckzeitNachlaufMinuten]; der Editor klemmt auf denselben Wert. */
+    const val NACHLAUF_MAX_MINUTEN = 120
+
     /** Ein aufgelöstes Dimm-Fenster samt Intensität der Regel, aus der es stammt. */
     data class DimSpan(val range: LongRange, val strength: Int, val warmth: Int)
 
@@ -79,7 +82,7 @@ object DimWindowResolver {
                 shiftEndEpoch + w.endOffsetMinutes * MIN_MS
             }
             DimAnchor.ALARM_SONST_CLOCK ->
-                endeAnWeckzeitSonstUhrzeit(start, w.endClockMinutes, zone, weckzeiten)
+                endeAnWeckzeitSonstUhrzeit(start, w.endClockMinutes, zone, weckzeiten, w.weckzeitNachlaufMinuten)
             DimAnchor.CLOCK -> {
                 // Roll-forward ueber KALENDERTAGE, nicht ueber +24h-Millis: an einem
                 // DST-Umstellungstag ist ein Tag 23 h bzw. 25 h lang, ein fixer Millis-Sprung
@@ -123,7 +126,7 @@ object DimWindowResolver {
             }
 
             DimAnchor.ALARM_SONST_CLOCK -> {
-                val end = endeAnWeckzeitSonstUhrzeit(start, w.endClockMinutes, zone, weckzeiten)
+                val end = endeAnWeckzeitSonstUhrzeit(start, w.endClockMinutes, zone, weckzeiten, w.weckzeitNachlaufMinuten)
                 if (end > start) start..end else null
             }
 
@@ -145,12 +148,17 @@ object DimWindowResolver {
      * schrumpfen lassen – deshalb echt größer als [start]. Die Aufrufer verwerfen `end <= start`
      * ohnehin, aber ein Fenster, das wegen des eigenen Startzeitpunkts verschwindet, wäre eine
      * stille Dimm-Lücke statt eines erkennbaren Fehlers.
+     *
+     * [nachlaufMinuten] ([DimWindow.weckzeitNachlaufMinuten]) verlängert nur ein an einer WECKZEIT
+     * gefundenes Ende, und die Schranke deckelt auch das: „bis Weckzeit + X, spätestens um die
+     * Uhrzeit". Welche Weckzeit zur Nacht gehört, entscheidet weiterhin allein die Schranke.
      */
     private fun endeAnWeckzeitSonstUhrzeit(
         start: Long,
         endClockMinutes: Int,
         zone: ZoneId,
-        weckzeiten: List<Long>
+        weckzeiten: List<Long>,
+        nachlaufMinuten: Int = 0
     ): Long {
         var date = dateOf(start, zone)
         var schranke = wallClock(date, endClockMinutes, zone)
@@ -158,8 +166,9 @@ object DimWindowResolver {
             date = date.plusDays(1)
             schranke = wallClock(date, endClockMinutes, zone)
         }
-        val weckzeit = weckzeiten.firstOrNull { it > start && it < schranke }
-        return weckzeit ?: schranke
+        val weckzeit = weckzeiten.firstOrNull { it > start && it < schranke } ?: return schranke
+        val nachlauf = nachlaufMinuten.coerceIn(0, NACHLAUF_MAX_MINUTEN) * MIN_MS
+        return minOf(weckzeit + nachlauf, schranke)
     }
 
     /**
@@ -231,6 +240,7 @@ object DimWindowResolver {
         ruleForShift: (String) -> DimRule?,
         ruleForFreeDay: () -> DimRule?,
         weckzeiten: List<Long> = emptyList(),
+        mitWeckzeitNachlauf: Boolean = true,
     ): List<DimSpan> {
         val byDate = slotsByDate(alarms, zone)
         // Aufsteigend sortiert, weil [endeAnWeckzeitSonstUhrzeit] die FRUEHESTE passende Weckzeit
@@ -248,7 +258,7 @@ object DimWindowResolver {
                 // Freier Tag - unveraendert: FREI schlaegt UNIVERSAL, sonst nichts.
                 val freeRule = ruleForFreeDay() ?: continue
                 for (w in freeRule.windows) {
-                    resolveWindowForDate(w, date, null, zone, sortierteWeckzeiten)
+                    resolveWindowForDate(ohneNachlaufFalls(w, mitWeckzeitNachlauf), date, null, zone, sortierteWeckzeiten)
                         ?.let { out += DimSpan(it, freeRule.strength, freeRule.warmth) }
                 }
                 continue
@@ -274,7 +284,7 @@ object DimWindowResolver {
             val position = blockpositionFuerTag(date, wahl.anker.shiftName, byDate)
             for (w in wahl.rule.windows) {
                 if (position !in w.blockPositionen) continue
-                resolveWindowForDate(w, date, wahl.anker, zone, sortierteWeckzeiten)
+                resolveWindowForDate(ohneNachlaufFalls(w, mitWeckzeitNachlauf), date, wahl.anker, zone, sortierteWeckzeiten)
                     ?.let { out += DimSpan(it, wahl.rule.strength, wahl.rule.warmth) }
             }
         }
@@ -479,6 +489,10 @@ object DimWindowResolver {
     private fun slotsByDate(alarms: List<AlarmSlot>, zone: ZoneId): Map<LocalDate, List<AlarmSlot>> =
         alarms.groupBy { Instant.ofEpochMilli(it.triggerTime).atZone(zone).toLocalDate() }
             .mapValues { (_, slots) -> slots.sortedWith(compareBy({ it.triggerTime }, { it.shiftName })) }
+
+    /** „Nicht stören" folgt dem Dimmer OHNE den Nachlauf nach der Weckzeit - siehe [DimWindow.weckzeitNachlaufMinuten]. */
+    private fun ohneNachlaufFalls(w: DimWindow, mitNachlauf: Boolean): DimWindow =
+        if (mitNachlauf || w.weckzeitNachlaufMinuten == 0) w else w.copy(weckzeitNachlaufMinuten = 0)
 
     /**
      * CLOCK-Start = jede KALENDERNACHT des Datums; sonst schicht-relativ (nur mit Alarm auflösbar).

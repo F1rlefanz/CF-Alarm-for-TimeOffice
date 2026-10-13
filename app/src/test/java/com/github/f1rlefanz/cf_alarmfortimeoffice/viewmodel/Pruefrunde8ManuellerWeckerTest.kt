@@ -109,6 +109,8 @@ class Pruefrunde8ManuellerWeckerTest {
      * @param repositorium standardmaessig eine Attrappe mit heiler Persistenz. Die BEFUND-11-Tests
      *   reichen hier den ECHTEN [AlarmRepository] herein - siehe die Begruendung dort.
      */
+    private val armierer = mock<com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.ZeitkettenArmierer>()
+
     private fun buildViewModel(
         start: ShiftConfig,
         repositorium: IAlarmRepository = heilesRepositorium()
@@ -161,6 +163,7 @@ class Pruefrunde8ManuellerWeckerTest {
             masterPausePrefs = masterPausePrefs,
             alarmPrefs = alarmPrefs,
             tagFreigabeUseCase = tagFreigabeUseCaseOhneFreigaben(),
+            zeitkettenArmierer = armierer,
             alarmRepository = alarmRepository
         )
     }
@@ -407,5 +410,41 @@ class Pruefrunde8ManuellerWeckerTest {
 
         assertNull(viewModel.manualAlarmState.value.error)
         verify(alarmUseCase).scheduleSystemAlarm(any())
+    }
+
+    // ------------------------------------------------- Dimmer/DND ziehen nach (13.10.2026)
+
+    /**
+     * Ein manueller Wecker kann ein laufendes Nacht-Fenster „bis zur Weckzeit, spaetestens um X"
+     * frueher beenden. Ohne Nachzug blieb der naechste Dimm-Wechsel auf der Uhrzeit-Grenze stehen
+     * (Emulator, 13.10.2026: Wecker 05:30 angelegt, naechster Wechsel weiter 07:00).
+     */
+    @Test
+    fun `ein angelegter manueller Wecker armiert Dimmer und DND neu`() = runTest {
+        val viewModel = buildViewModel(ShiftConfig(definitions = listOf(fruehAlt)))
+        advanceUntilIdle()
+        viewModel.selectManualAlarmDate(zukunftstag)
+        viewModel.selectManualAlarmShift(fruehAlt)
+        advanceUntilIdle()
+
+        viewModel.createManualAlarm()
+        advanceUntilIdle()
+
+        verify(armierer).armiere("MANUELLER WECKER", true, true)
+    }
+
+    @Test
+    fun `ohne angelegten Wecker wird nichts nachgezogen`() = runTest {
+        val viewModel = buildViewModel(ShiftConfig(definitions = listOf(fruehAlt)))
+        advanceUntilIdle()
+        viewModel.selectManualAlarmDate(zukunftstag)
+        viewModel.selectManualAlarmShift(fruehAlt)
+        advanceUntilIdle()
+        nurEinmalReadAendern(ShiftConfig(definitions = emptyList()))
+
+        viewModel.createManualAlarm()
+        advanceUntilIdle()
+
+        verify(armierer, never()).armiere(any(), any(), any())
     }
 }

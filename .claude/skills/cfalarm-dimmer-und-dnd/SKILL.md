@@ -102,6 +102,15 @@ das baut man dieselbe Falle in neuer Form nach.
 - **Das Fenster-Ende ist HALB OFFEN (`first <= now < last`)** — sonst bleibt der Randzustand hängen.
 - **Die Tick-Kette darf nicht abreißen**: Keep-alive-Tick (6 h), solange der Dimmer AN ist, plus
   kurzer Retry-Tick (15 min) nach einem Lesefehler der Fenster-Grundlage.
+- **Ein GEKLINGELTER Wecker bleibt drei Tage in der Weckzeit-Zeitleiste** (`GeklingelteWeckzeiten`,
+  geschrieben vom `AlarmReceiver` NACH der Skip-Prüfung, Device-Protected). Ohne ihn fiel ein
+  manueller Wecker nach dem Klingeln heraus, und jede Neuberechnung öffnete die Nacht bis zur
+  Uhrzeit-Grenze erneut (FP6, 13.10.2026). Nicht beim ANLEGEN merken — dann beendete ein gelöschter
+  Wecker das Fenster. Anlegen/Löschen eines manuellen Weckers armiert Dimmer und DND neu.
+- **„Bis Weckzeit + X, spätestens um die Uhrzeit"** (`DimWindow.weckzeitNachlaufMinuten`, eigenes
+  Feld, NICHT `endOffsetMinutes`): die Uhrzeit bleibt harte Obergrenze, und DND-Modus 1 liest die
+  Zeitleiste OHNE den Nachlauf (`mitWeckzeitNachlauf = false`) — nach dem Wecken erreichbar.
+  Hergang in `reference/dimmer.md`, letzter Abschnitt.
 - **Ein MANUELLER Wecker spannt kein Dimm-Fenster mehr selbst auf** — er kann eines nur noch über
   `ALARM_SONST_CLOCK` beenden. ALARM-verankerte Regelfenster lösen über die Schichtspannen auf; die
   alte Wellness-Quelle legte ihr Fenster dagegen um JEDE Weckzeit des Alarm-Bestands. Bewusst in

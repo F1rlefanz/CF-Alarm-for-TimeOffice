@@ -27,7 +27,17 @@ Schreibkonventionen (der Generator verlässt sich darauf):
 - `### 🐛 Behoben` — Rubrik, mit Emoji wie bisher.
 - `- **Kurzfassung:** Erklärung` — ein Eintrag.
 
-## 🆕 Version 1.49.1 (Aktuell – interne Alpha)
+## 🆕 Version 1.49.2 (Aktuell – interne Alpha)
+
+**Stand:** Oktober 2026
+
+_Klarer erklärt, wann der Bildschirm nach dem Wecken noch gedimmt bleibt._
+
+### 🎨 Feinschliff
+
+- **„Minuten nach dem Wecken“ erklärt:** Der Regel-Editor und die Anleitung sagen jetzt, an welchen Morgen die Minuten gelten – nur wenn der Wecker vor der eingestellten Uhrzeit klingelt. Mit einer Regel für alle Tage wirken sie also zum Beispiel am Frühdienst, nicht an Spätdienst- oder freien Tagen. Eigene Regeln je Schicht brauchst du dafür nicht.
+
+## Version 1.49.1
 
 **Stand:** Oktober 2026
 

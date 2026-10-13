@@ -27,7 +27,18 @@ Schreibkonventionen (der Generator verlässt sich darauf):
 - `### 🐛 Behoben` — Rubrik, mit Emoji wie bisher.
 - `- **Kurzfassung:** Erklärung` — ein Eintrag.
 
-## 🆕 Version 1.49.0 (Aktuell – interne Alpha)
+## 🆕 Version 1.49.1 (Aktuell – interne Alpha)
+
+**Stand:** Oktober 2026
+
+_Dimmen und „Nicht stören“ ziehen sofort mit, wenn sich ein Dienst verschiebt._
+
+### 🐛 Behoben
+
+- **Verschobener Dienst, alte Dimm-Zeiten:** Holte die App beim Öffnen einen geänderten Dienst, richteten sich Zeitfenster, die an der Weckzeit oder am Dienst hängen – etwa „eine Stunde vor der Weckzeit dimmen“ oder „Nicht stören“ während der Dienstzeit –, bis zu sechs Stunden lang noch nach der alten Zeit. Jetzt passen sie sich sofort an. Hat sich nichts geändert, schaltet ein Blick in die App weiterhin nichts um.
+- **Update direkt nach einem Neustart:** Kam ein Update der App, bevor das Handy nach einem Neustart zum ersten Mal entsperrt wurde, konnte danach der Schicht-Dimmer ausgeschaltet sein. Das passiert nicht mehr.
+
+## Version 1.49.0
 
 **Stand:** Oktober 2026
 

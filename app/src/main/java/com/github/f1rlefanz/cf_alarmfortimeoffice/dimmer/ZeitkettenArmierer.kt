@@ -3,6 +3,8 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.CalendarPreAlarmRefreshScheduler
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndScheduleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.RufbereitschaftAbfrage
+import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpan
+import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpanStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import kotlinx.coroutines.NonCancellable
@@ -47,7 +49,9 @@ class ZeitkettenArmierer @Inject constructor(
     private val dimSchedule: dagger.Lazy<DimScheduleUseCase>,
     private val dndSchedule: dagger.Lazy<DndScheduleUseCase>,
     private val rufbereitschaftAbfrage: dagger.Lazy<RufbereitschaftAbfrage>,
-    private val preAlarmRefresh: dagger.Lazy<CalendarPreAlarmRefreshScheduler>
+    private val preAlarmRefresh: dagger.Lazy<CalendarPreAlarmRefreshScheduler>,
+    /** Nur fuer [schichtStand] - der Vergleich vor/nach einem Vordergrund-Sync. */
+    private val shiftSpanStore: dagger.Lazy<ShiftSpanStore>
 ) {
     /**
      * [anlass] steht als Präfix in der WARN-Zeile und ist die einzige Spur, aus der sich später
@@ -119,16 +123,24 @@ class ZeitkettenArmierer @Inject constructor(
      * zusagen. Genauso startete eine kurzfristig eingetragene Rufbereitschaft ihre stuendliche
      * Abfrage erst mit der naechsten Wartung.
      *
-     * DIMMER UND DND BLEIBEN BEWUSST DRAUSSEN: deren `enable()` wendet den Zustand sofort am
-     * Geraet an (`applyCurrentState`) - ein Blick in die App soll nichts umschalten. Ihre Fenster
-     * zieht weiterhin die naechste Wartung nach.
+     * DIMMER UND DND NUR, WENN SICH DER SCHICHTSTAND GEAENDERT HAT ([standVorher], seit 1.49.1):
+     * deren `enable()` wendet den Zustand sofort am Geraet an (`applyCurrentState`) - ein blosser
+     * Blick in die App soll nichts umschalten. Hat der Sync aber einen Dienst verschoben,
+     * hingen Fenster, deren BEGINN an Weckzeit oder Dienst haengt („60 min vor der Weckzeit",
+     * „Nicht stoeren waehrend der Dienstzeit"), bis zur naechsten Wartung - bis zu 6 h - an der
+     * alten Zeit. Der neu berechnete Zustand ist dann genau der, den es ohnehin geben muesste.
+     * Verglichen werden die Schichtspannen (die einzige Fenster-Grundlage, die ein Sync
+     * schreibt; manuelle Wecker fasst er nicht an). Ist [standVorher] `null` (vorher nicht
+     * lesbar) oder der Stand danach nicht lesbar, bleibt es beim alten Verhalten: die Wartung
+     * zieht nach. Ein nur durch das Aufraeumen alter Spannen veraenderter Stand armiert
+     * unnoetig, aber harmlos - die Neuberechnung ergibt denselben Zustand.
      *
      * Beide Ketten sind gefahrlos haeufig aufrufbar: `reschedule()` rechnet jeweils vom Ist-Zustand
      * und ersetzt die bisherige Planung, die Rufbereitschafts-Abfrage fragt die Master-Pause selbst,
      * und waehrend der Pause gibt es keinen Wecker, den der Pre-Alarm-Refresh einplanen koennte.
      * Jeder Schritt einzeln gefangen - der Sync ist zu diesem Zeitpunkt laengst durch.
      */
-    suspend fun planeNachVordergrundSync() {
+    suspend fun planeNachVordergrundSync(standVorher: List<ShiftSpan>? = null) {
         withContext(NonCancellable) {
             runCatching { preAlarmRefresh.get().reschedule() }
                 .onFailure {
@@ -138,6 +150,23 @@ class ZeitkettenArmierer @Inject constructor(
                 .onFailure {
                     Logger.w(LogTags.MAINTENANCE, "VORDERGRUND: Rufbereitschafts-Abfrage nicht neu geplant", it)
                 }
+            if (standVorher != null) {
+                val standDanach = schichtStand()
+                if (standDanach != null && standDanach != standVorher) {
+                    // Dimmer vor DND - dieselbe Reihenfolge-Zusicherung wie in [armiere].
+                    runCatching { dimSchedule.get().enable() }
+                        .onFailure { Logger.w(LogTags.DIMMER, "VORDERGRUND: Dimmer-Kette nicht neu armiert", it) }
+                    runCatching { dndSchedule.get().enable() }
+                        .onFailure { Logger.w(LogTags.DND, "VORDERGRUND: DND-Kette nicht neu armiert", it) }
+                }
+            }
         }
     }
+
+    /**
+     * Der Schichtstand VOR einem Vordergrund-Sync, fuer [planeNachVordergrundSync]. `null`, wenn
+     * er nicht lesbar ist - dann zieht nach dem Sync nur die naechste Wartung Dimmer und DND nach.
+     */
+    suspend fun schichtStand(): List<ShiftSpan>? =
+        runCatching { shiftSpanStore.get().spansNow().getOrNull() }.getOrNull()
 }

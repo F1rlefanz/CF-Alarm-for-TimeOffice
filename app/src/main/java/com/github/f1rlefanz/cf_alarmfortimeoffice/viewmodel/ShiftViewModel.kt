@@ -803,13 +803,15 @@ class ShiftViewModel @Inject constructor(
             // Orchestrator: syncAlarms erkennt die Schichten selbst (frische Engine dank
             // Cache-Invalidierung in saveShiftConfig) und setzt die System-Alarme intern.
             // Kein Vor-Recognize und kein delay()-Hack mehr noetig.
+            // Vorher-Stand fuer den Dimmer-/DND-Nachzug, siehe planeNachVordergrundSync.
+            val schichtStandVorher = armierer.schichtStand()
             alarmUseCase.syncAlarms(currentEvents, config, currentHorizontEnde)
                 .onSuccess { alarms ->
                     Logger.business(LogTags.ALARM, "✅ CONFIG-UPDATE: Alarm-Sync erfolgreich - ${alarms.size} Alarme aktiv")
                     // Neue oder verschobene Weckzeiten (z. B. ein neues Kuerzel) brauchen ihren
                     // Vorab-Abgleich 3 h vorher jetzt, nicht erst nach der naechsten Wartung -
                     // derselbe Nachzug wie nach dem Sync im CalendarViewModel (Review 1.48.0).
-                    armierer.planeNachVordergrundSync()
+                    armierer.planeNachVordergrundSync(schichtStandVorher)
                 }
                 .onFailure { error ->
                     Logger.w(LogTags.ALARM, "⚠️ CONFIG-UPDATE: Alarm-Sync fehlgeschlagen", error)

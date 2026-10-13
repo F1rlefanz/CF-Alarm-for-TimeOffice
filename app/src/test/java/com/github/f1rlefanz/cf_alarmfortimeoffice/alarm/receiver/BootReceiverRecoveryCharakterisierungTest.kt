@@ -77,7 +77,7 @@ class BootReceiverRecoveryCharakterisierungTest {
         val dnd = mock<DndScheduleUseCase>()
         val preAlarm = mock<CalendarPreAlarmRefreshScheduler>()
         val ruf = mock<RufbereitschaftAbfrage>()
-        r.zeitkettenArmierer = ZeitkettenArmierer({ dim }, { dnd }, { ruf }, { preAlarm })
+        r.zeitkettenArmierer = ZeitkettenArmierer({ dim }, { dnd }, { ruf }, { preAlarm }, { org.mockito.kotlin.mock() })
         r.masterPausePrefs = mock<MasterPausePrefs> {
             if (paused == null) {
                 onBlocking { pausedNow() } doThrow IllegalStateException("DataStore")

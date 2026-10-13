@@ -29,7 +29,8 @@ class ZeitkettenArmiererTest {
         val dim: DimScheduleUseCase,
         val dnd: DndScheduleUseCase,
         val abfrage: RufbereitschaftAbfrage,
-        val preAlarm: CalendarPreAlarmRefreshScheduler
+        val preAlarm: CalendarPreAlarmRefreshScheduler,
+        val spanStore: com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpanStore
     )
 
     private fun fixture(): Fixture {
@@ -37,9 +38,10 @@ class ZeitkettenArmiererTest {
         val dnd = mock<DndScheduleUseCase>()
         val abfrage = mock<RufbereitschaftAbfrage>()
         val preAlarm = mock<CalendarPreAlarmRefreshScheduler>()
+        val spanStore = mock<com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpanStore>()
         return Fixture(
-            ZeitkettenArmierer({ dim }, { dnd }, { abfrage }, { preAlarm }),
-            dim, dnd, abfrage, preAlarm
+            ZeitkettenArmierer({ dim }, { dnd }, { abfrage }, { preAlarm }, { spanStore }),
+            dim, dnd, abfrage, preAlarm, spanStore
         )
     }
 
@@ -186,12 +188,12 @@ class ZeitkettenArmiererTest {
     // --- planeNachVordergrundSync (Review 1.48.0) ---------------------------------------------
 
     /**
-     * Nach einem Sync im Vordergrund: nur die beiden Ketten, die aus dem Bestand rechnen. Dimmer
+     * Nach einem Sync im Vordergrund ohne bekannten Vorher-Stand: nur die beiden Ketten, die aus dem Bestand rechnen. Dimmer
      * und DND wenden ihren Zustand in enable() sofort am Geraet an - ein Blick in die App soll
      * nichts umschalten.
      */
     @Test
-    fun `planeNachVordergrundSync plant Pre-Alarm-Refresh und Rufbereitschaft, fasst Dimmer und DND nicht an`() =
+    fun `planeNachVordergrundSync plant Pre-Alarm-Refresh und Rufbereitschaft, ohne Vorher-Stand nicht Dimmer und DND`() =
         runTest {
             val f = fixture()
 
@@ -213,5 +215,65 @@ class ZeitkettenArmiererTest {
         f.armierer.planeNachVordergrundSync()
 
         verify(f.abfrage).reschedule()
+    }
+
+    // --- Dimmer/DND nach einem Vordergrund-Sync nur bei geaendertem Schichtstand (1.49.1) -------
+
+    private val fruehVorher = com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpan(
+        shiftName = "Frühschicht", startTime = 1_000_000L, endTime = 2_000_000L, alarmTriggerTime = 900_000L
+    )
+
+    private fun Fixture.standDanach(spannen: List<com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpan>) {
+        spanStore.stub { onBlocking { spansNow() } doAnswer { Result.success(spannen) } }
+    }
+
+    /**
+     * Ein verschobener Dienst verschiebt Fenster, deren BEGINN an Weckzeit oder Dienst haengt -
+     * ohne Nachzug hingen sie bis zur naechsten Wartung (bis zu 6 h) an der alten Zeit.
+     */
+    @Test
+    fun `geaenderter Schichtstand - Dimmer und DND werden neu armiert, Dimmer zuerst`() = runTest {
+        val f = fixture()
+        f.standDanach(listOf(fruehVorher.copy(startTime = 500_000L, alarmTriggerTime = 400_000L)))
+
+        f.armierer.planeNachVordergrundSync(standVorher = listOf(fruehVorher))
+
+        inOrder(f.dim, f.dnd) {
+            verify(f.dim).enable()
+            verify(f.dnd).enable()
+        }
+    }
+
+    @Test
+    fun `unveraenderter Schichtstand - ein Blick in die App schaltet nichts um`() = runTest {
+        val f = fixture()
+        f.standDanach(listOf(fruehVorher))
+
+        f.armierer.planeNachVordergrundSync(standVorher = listOf(fruehVorher))
+
+        verify(f.dim, never()).enable()
+        verify(f.dnd, never()).enable()
+    }
+
+    @Test
+    fun `unbekannter Vorher-Stand - es bleibt beim Nachzug durch die Wartung`() = runTest {
+        val f = fixture()
+        f.standDanach(listOf(fruehVorher.copy(startTime = 1L)))
+
+        f.armierer.planeNachVordergrundSync(standVorher = null)
+
+        verify(f.dim, never()).enable()
+        verify(f.dnd, never()).enable()
+    }
+
+    @Test
+    fun `nicht lesbarer Stand danach - nichts umschalten`() = runTest {
+        val f = fixture()
+        f.spanStore.stub { onBlocking { spansNow() } doAnswer { Result.failure(RuntimeException("kaputt")) } }
+
+        f.armierer.planeNachVordergrundSync(standVorher = listOf(fruehVorher))
+
+        verify(f.dim, never()).enable()
+        verify(f.dnd, never()).enable()
     }
 }

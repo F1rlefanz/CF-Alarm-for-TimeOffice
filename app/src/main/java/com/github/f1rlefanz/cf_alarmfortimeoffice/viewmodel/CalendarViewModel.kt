@@ -1723,6 +1723,8 @@ class CalendarViewModel @Inject constructor(
                     // entfernte Events loescht und die System-Alarme INTERN setzt (inkl.
                     // idempotentem Re-Arming). Kein Vorab-deleteAllAlarms und kein separates
                     // scheduleSystemAlarm mehr im ViewModel (frueher: Verlustfenster + Doppel-Scheduling).
+                    // Vorher-Stand fuer den Dimmer-/DND-Nachzug, siehe planeNachVordergrundSync.
+                    val schichtStandVorher = zeitkettenArmierer.schichtStand()
                     alarmUseCase.syncAlarms(events, shiftConfig, abrufHorizontEnde)
                         .onSuccess { syncedAlarms ->
                             Logger.business(LogTags.ALARM, "✅ AUTO-ALARM: Alarm-Sync erfolgreich - ${syncedAlarms.size} Alarme aktiv")
@@ -1734,7 +1736,7 @@ class CalendarViewModel @Inject constructor(
                             // VOR dem Zeitstempel, der im Unit-Test (kein Hilt-Graph) wirft. Seit
                             // die Rueckkehr in die App neu laedt, entstehen Wecker oft hier und
                             // warteten sonst bis zur naechsten Wartung (Review 1.48.0).
-                            zeitkettenArmierer.planeNachVordergrundSync()
+                            zeitkettenArmierer.planeNachVordergrundSync(schichtStandVorher)
                             // "Letzter Sync"-Zeitstempel auch im Vordergrund setzen, damit die
                             // Status-Anzeige den tatsaechlich letzten Sync widerspiegelt (nicht nur die 6h-Wartung).
                             AlarmMaintenanceService.recordSyncTime(appContext)

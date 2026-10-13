@@ -428,7 +428,7 @@ class CalendarViewModelSyncWiringTest {
         selectedIds.value = setOf("cal-a")
         advanceUntilIdle()
 
-        org.mockito.kotlin.verifyBlocking(armierer) { planeNachVordergrundSync() }
+        org.mockito.kotlin.verifyBlocking(armierer) { planeNachVordergrundSync(org.mockito.kotlin.anyOrNull()) }
     }
 
     @Test
@@ -440,6 +440,30 @@ class CalendarViewModelSyncWiringTest {
         selectedIds.value = setOf("cal-a")
         advanceUntilIdle()
 
-        org.mockito.kotlin.verifyBlocking(armierer, never()) { planeNachVordergrundSync() }
+        org.mockito.kotlin.verifyBlocking(armierer, never()) { planeNachVordergrundSync(org.mockito.kotlin.anyOrNull()) }
+    }
+
+    /**
+     * Der Vorher-Stand fuer den Dimmer-/DND-Nachzug (1.49.1) muss VOR dem Sync gelesen und an
+     * planeNachVordergrundSync weitergereicht werden - gelesen danach, saehe er schon den neuen
+     * Stand, und ein verschobener Dienst zoege die Fenster nie nach.
+     */
+    @Test
+    fun `der Schichtstand wird vor dem Sync gelesen und weitergereicht`() = runTest(dispatcher) {
+        val vorher = listOf(com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpan("F", 1L, 2L, 0L))
+        armierer.stub { onBlocking { schichtStand() } doReturn vorher }
+        val alarmUseCase = mock<IAlarmUseCase>()
+        alarmUseCase.stub {
+            onBlocking { syncAlarms(any(), any(), anyOrNull()) } doReturn Result.success(emptyList())
+        }
+        buildViewModel(pageEvents = (0 until 4).map { event("A$it", it) }, totalEvents = 4, alarmUseCase = alarmUseCase)
+
+        selectedIds.value = setOf("cal-a")
+        advanceUntilIdle()
+
+        val reihenfolge = org.mockito.kotlin.inOrder(armierer, alarmUseCase)
+        reihenfolge.verifyBlocking(armierer) { schichtStand() }
+        reihenfolge.verifyBlocking(alarmUseCase) { syncAlarms(any(), any(), anyOrNull()) }
+        reihenfolge.verifyBlocking(armierer) { planeNachVordergrundSync(vorher) }
     }
 }

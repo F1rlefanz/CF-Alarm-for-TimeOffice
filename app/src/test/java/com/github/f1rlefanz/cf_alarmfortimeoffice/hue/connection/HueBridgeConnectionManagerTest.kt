@@ -91,12 +91,13 @@ class HueBridgeConnectionManagerTest {
      */
     private fun buildManagerForRecoveryTests(
         hasStoredBridge: Boolean,
+        isReachable: Boolean = true,
     ): Triple<HueBridgeConnectionManager, NetworkStateMonitor, HueApiClient> {
         val context = mock<Context>()
         whenever(context.applicationContext).thenReturn(context)
 
         val networkMonitor = mock<NetworkStateMonitor>()
-        whenever(networkMonitor.isReachableSubnet(any())).thenReturn(true)
+        whenever(networkMonitor.isReachableSubnet(any())).thenReturn(isReachable)
 
         val apiClient = mock<HueApiClient>()
 
@@ -116,6 +117,8 @@ class HueBridgeConnectionManagerTest {
             networkMonitor,
             apiClient,
             testHueDataStore = fakeDataStore,
+            // Die echte Discovery braeuchte Netz und einen echten Context.
+            testBridgeDiscovery = { emptyList() },
         )
 
         return Triple(manager, networkMonitor, apiClient)
@@ -289,6 +292,72 @@ class HueBridgeConnectionManagerTest {
             manager.attemptRecoveryIfDisconnected()
 
             verify(apiClient, never()).getBridgeConfig(any(), any())
+        }
+    }
+
+    // --- #138: Rueckzug ausser Haus -------------------------------------------------------
+    //
+    // Ausser Haus flattert das "validiert" des Mobilfunks, und jedes Flattern stiess bis 1.49.2
+    // einen vollen Versuch an - alle 25-40 min, den ganzen Tag. Die Drosselung gilt NUR fuer den
+    // Netzwerk-Beobachter (ausserHausGedrosselt = true); sie ist eine Haeufigkeit, kein Veto.
+
+    private fun HueApiClient.bridgeAntwortetNicht() = stub {
+        on { getBridgeConfig(any(), any()) } doAnswer { throw java.io.IOException("failed to connect") }
+    }
+
+    @Test
+    fun `ausser Haus - nach einem Fehlschlag laesst der Netzwerk-Beobachter die naechsten Anlaeufe aus`() {
+        runBlocking {
+            val (manager, _, apiClient) = buildManagerForRecoveryTests(hasStoredBridge = true, isReachable = false)
+            apiClient.bridgeAntwortetNicht()
+
+            manager.attemptRecoveryIfDisconnected(ausserHausGedrosselt = true)
+            manager.attemptRecoveryIfDisconnected(ausserHausGedrosselt = true)
+            manager.attemptRecoveryIfDisconnected(ausserHausGedrosselt = true)
+
+            verify(apiClient, times(1)).getBridgeConfig(any(), any())
+        }
+    }
+
+    @Test
+    fun `ausser Haus - ungedrosselte Anlaeufe (App oeffnen) fragen trotzdem jedes Mal echt`() {
+        runBlocking {
+            val (manager, _, apiClient) = buildManagerForRecoveryTests(hasStoredBridge = true, isReachable = false)
+            apiClient.bridgeAntwortetNicht()
+
+            manager.attemptRecoveryIfDisconnected(ausserHausGedrosselt = true)
+            manager.attemptRecoveryIfDisconnected()
+
+            verify(apiClient, times(2)).getBridgeConfig(any(), any())
+        }
+    }
+
+    @Test
+    fun `zurueck im Bridge-Subnetz wird sofort und ungedrosselt versucht`() {
+        runBlocking {
+            val (manager, networkMonitor, apiClient) =
+                buildManagerForRecoveryTests(hasStoredBridge = true, isReachable = false)
+            apiClient.bridgeAntwortetNicht()
+            manager.attemptRecoveryIfDisconnected(ausserHausGedrosselt = true)
+
+            // Heimkehr: die Subnetz-Pruefung sagt jetzt "zu Hause".
+            whenever(networkMonitor.isReachableSubnet(any())).thenReturn(true)
+            manager.attemptRecoveryIfDisconnected(ausserHausGedrosselt = true)
+
+            verify(apiClient, times(2)).getBridgeConfig(any(), any())
+        }
+    }
+
+    @Test
+    fun `der Weckpfad wird ausser Haus nie gedrosselt`() {
+        runBlocking {
+            val (manager, _, apiClient) = buildManagerForRecoveryTests(hasStoredBridge = true, isReachable = false)
+            apiClient.bridgeAntwortetNicht()
+            manager.attemptRecoveryIfDisconnected(ausserHausGedrosselt = true)
+
+            runCatching { manager.getValidatedConnection() }
+
+            verify(apiClient, times(2)).getBridgeConfig(any(), any())
         }
     }
 }

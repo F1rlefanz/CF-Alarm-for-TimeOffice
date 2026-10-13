@@ -14,13 +14,24 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import okhttp3.Call
+import okhttp3.Callback
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.Response
 import java.io.IOException
+import java.io.InterruptedIOException
+import java.net.ConnectException
+import java.net.NoRouteToHostException
+import java.net.UnknownHostException
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 import javax.net.ssl.SSLContext
 import javax.net.ssl.TrustManager
 
@@ -37,8 +48,12 @@ import javax.net.ssl.TrustManager
  * pinning (Trust-On-First-Use) as an additional audit layer on top of the existing
  * hybrid certificate validation. Pass null only if a context is genuinely unavailable;
  * the client still works correctly without it, just without the pinning audit layer.
+ * @param testClient Nur fuer Tests: ersetzt den TLS-Client (z.B. durch einen mit Interceptor).
  */
-class HueApiClient(context: Context? = null) {
+class HueApiClient(
+    context: Context? = null,
+    private val testClient: OkHttpClient? = null,
+) {
 
     companion object {
         private const val TIMEOUT_SECONDS = 10L
@@ -58,6 +73,7 @@ class HueApiClient(context: Context? = null) {
      * so the client is built lazily on first network use — off the main thread, out of the startup path.
      */
     private val client: OkHttpClient by lazy {
+        testClient?.let { return@lazy it }
         val trustManager = HueTrustManager.create(appContext)
         val sslContext = SSLContext.getInstance("TLS").apply {
             init(null, arrayOf<TrustManager>(trustManager), null)
@@ -124,26 +140,91 @@ class HueApiClient(context: Context? = null) {
                 "DELETE" -> requestBuilder.delete()
             }
             
-            // .use { }: Auf dem Erfolgspfad schliesst `body.string()` die Antwort selbst - auf
-            // dem Fehlerpfad liest hier aber NIEMAND den Body, und eine ungelesene Antwort haelt
-            // ihre Verbindung im Pool fest, bis der GC sie einsammelt. Genau dieser Pfad wird bei
-            // einer zickenden Bridge oft durchlaufen (jede 6h-Wartung, jeder Weckvorgang).
-            client.newCall(requestBuilder.build()).execute().use { response ->
-                if (response.isSuccessful) {
-                    val responseBody = response.body.string()
-                    Result.success(responseBody)
-                } else {
-                    val error = "HTTPS ${response.code}: ${response.message}"
-                    Logger.w(LogTags.HUE_NETWORK, "HTTPS request failed: $error")
-                    Result.failure(IOException(error))
-                }
+            val response = executeCancellable(client.newCall(requestBuilder.build()))
+            if (response.successful) {
+                Result.success(response.body)
+            } else {
+                val error = "HTTPS ${response.code}: ${response.message}"
+                Logger.w(LogTags.HUE_NETWORK, "HTTPS request failed: $error")
+                Result.failure(IOException(error))
             }
-            
+        } catch (e: CancellationException) {
+            // Kein Fehler der Bridge, sondern das Ende des Aufrufers (z.B. ein abgelaufener
+            // Kurzversuch) - weiterwerfen und NICHT loggen.
+            throw e
+        } catch (e: IOException) {
+            // Erwartbar, sobald das Handy nicht im Heimnetz ist: EINE Zeile ohne Stacktrace.
+            // Das Urteil ("nicht erreichbar", "Licht ging nicht an") faellen und loggen die
+            // Aufrufer. Bis 1.49.2 stand hier ERROR mit vollem Stacktrace - an Tagen ausser Haus
+            // rund 90 % des Datei-Logs (#138).
+            if (e.istVerbindungsausfall()) {
+                Logger.d(LogTags.HUE_NETWORK, "Bridge $bridgeIp nicht erreicht: ${e.javaClass.simpleName}: ${e.message}")
+            } else {
+                Logger.w(LogTags.HUE_NETWORK, "HTTPS-Anfrage an $bridgeIp gescheitert: ${e.javaClass.simpleName}: ${e.message}")
+            }
+            Result.failure(e)
         } catch (e: Exception) {
             Logger.e(LogTags.HUE_NETWORK, "Secure HTTPS request to $bridgeIp failed: ${e.message}", e)
             Result.failure(e)
         }
     }
+
+    /** Was von einer Antwort gebraucht wird - gelesen, solange sie noch offen ist. */
+    private class GeleseneAntwort(val successful: Boolean, val code: Int, val message: String, val body: String)
+
+    /**
+     * Fuehrt [call] ABBRECHBAR aus. Ein blockierendes `execute()` bemerkt den Abbruch der
+     * Coroutine nicht: ein `withTimeoutOrNull(3.seconds)` darum wartete trotzdem das volle
+     * `connectTimeout` (10 s) ab - am Fairphone belegt, "gedeckelt auf 3s" und danach
+     * "failed to connect ... after 10000ms" (#138). Hier bricht der Abbruch der Coroutine den
+     * Call selbst ab, und damit sind ALLE Deckel auf diesem Pfad ehrlich (Kurzversuch,
+     * Wiederverbindung, Neusuche, das Hue-Budget im AlarmReceiver).
+     *
+     * Die Antwort wird im Callback vollstaendig gelesen und geschlossen (`use`): eine ungelesene
+     * Antwort haelt ihre Verbindung im Pool fest, bis der GC sie einsammelt - auch dann, wenn
+     * sie erst nach dem Abbruch eintrifft und niemand mehr auf sie wartet.
+     */
+    private suspend fun executeCancellable(call: Call): GeleseneAntwort =
+        suspendCancellableCoroutine { cont ->
+            cont.invokeOnCancellation { call.cancel() }
+            call.enqueue(object : Callback {
+                override fun onFailure(call: Call, e: IOException) {
+                    cont.resumeWithException(e)
+                }
+
+                override fun onResponse(call: Call, response: Response) {
+                    val gelesen = try {
+                        response.use {
+                            GeleseneAntwort(
+                                successful = it.isSuccessful,
+                                code = it.code,
+                                message = it.message,
+                                // Den Body nur auf dem Erfolgspfad lesen; `use` schliesst ihn
+                                // auf beiden.
+                                body = if (it.isSuccessful) it.body.string() else ""
+                            )
+                        }
+                    } catch (e: IOException) {
+                        cont.resumeWithException(e)
+                        return
+                    }
+                    cont.resume(gelesen)
+                }
+            })
+        }
+
+    /**
+     * Die Bridge ist schlicht nicht da (ausser Haus, Bridge aus, falsche Adresse) - im Gegensatz
+     * zu TLS- oder Protokollfehlern, die auf eine ERREICHBARE, aber ablehnende Gegenstelle zeigen
+     * und deshalb sichtbar bleiben.
+     */
+    private fun IOException.istVerbindungsausfall(): Boolean =
+        this is ConnectException ||
+            this is NoRouteToHostException ||
+            this is UnknownHostException ||
+            // SocketTimeoutException ist eine InterruptedIOException; beide meinen hier
+            // "keine Antwort in der erlaubten Zeit".
+            this is InterruptedIOException
 
     /**
      * Validates if IP address is in private network range (RFC 1918)

@@ -40,7 +40,9 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
+import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 
@@ -166,9 +168,23 @@ class HueBridgeConnectionManager private constructor(
          * **Sie daempft nur die Discovery, sie verhindert keinen Versuch.** Der billige Teil -
          * ein echter Request gegen die GESPEICHERTE Adresse ([recoverConnection]) - laeuft bei
          * JEDEM Anlauf, weil [attemptRecoveryIfDisconnected] den Zustand nach einem Fehlschlag
-         * ehrlich hinterlaesst. Sackgasse und Dauerfeuer sind damit beide ausgeschlossen.
+         * ehrlich hinterlaesst - ausser Haus allerdings gedrosselt ([AUSSER_HAUS_BACKOFF_START]).
+         * Sackgasse und Dauerfeuer sind damit beide ausgeschlossen.
          */
         private val REDISCOVERY_MIN_INTERVAL = 15.minutes
+
+        /**
+         * Rueckzug der AUTONOMEN Wiederverbindung ausser Haus (#138): nach jedem gescheiterten
+         * Versuch aus fremdem Subnetz verdoppelt sich der Abstand, beginnend hier, gedeckelt auf
+         * [AUSSER_HAUS_BACKOFF_MAX]. Vorher lief ausser Haus alle 25-40 min ein Versuch, den
+         * ganzen Tag - ausgeloest vom Netzwerk-Beobachter, dessen Mobilfunk-"validiert" flattert.
+         *
+         * **Das ist eine Drosselung, kein Veto:** sie gilt NUR fuer den Netzwerk-Beobachter. Der
+         * Weckpfad, der Pruefen-Knopf und das Oeffnen der App fragen weiter jedes Mal echt, und
+         * sobald die Subnetz-Pruefung "zu Hause" sagt, wird sofort und ungedrosselt versucht.
+         */
+        private val AUSSER_HAUS_BACKOFF_START = 15.minutes
+        private val AUSSER_HAUS_BACKOFF_MAX = 2.hours
     }
     
     private val contextRef = java.lang.ref.WeakReference(context.applicationContext)
@@ -193,6 +209,21 @@ class HueBridgeConnectionManager private constructor(
      */
     @Volatile
     private var lastRediscoveryAttempt = 0L
+
+    /**
+     * Erfolglose Versuche aus fremdem Subnetz seit dem letzten Erfolg bzw. seit der Rueckkehr
+     * ins Bridge-Subnetz. Steuert, dass eine Abwesenheit im Release-Log (WARN+) GENAU EINMAL
+     * auftaucht - mit der Begruendung des ersten Fehlschlags - und die Rueckkehr einmal mit der
+     * Zahl der Versuche. Alles dazwischen steht nur im Debug-Log (#138).
+     */
+    private val ausserHausFehlversuche = AtomicInteger(0)
+
+    /** Drosselung der autonomen Wiederverbindung ausser Haus, siehe [AUSSER_HAUS_BACKOFF_START]. */
+    @Volatile
+    private var ausserHausBackoffMs = 0L
+
+    @Volatile
+    private var naechsterAusserHausVersuch = 0L
 
     // Genau eine Initialisierung pro Prozess - siehe initialize().
     private val initialized = AtomicBoolean(false)
@@ -648,7 +679,9 @@ class HueBridgeConnectionManager private constructor(
                 Logger.i(LogTags.HUE_BRIDGE, "✅ BRIDGE-MANAGER: Connection recovery successful")
                 return@withContext Pair(bridgeIp, username)
             } else {
-                Logger.w(LogTags.HUE_BRIDGE, "❌ BRIDGE-MANAGER: Connection recovery failed - validation failed")
+                // Nur Debug: den Grund (und ausser Haus die einmalige Meldung) schreibt probeBridge,
+                // das Urteil der Aufrufer - eine weitere WARN-Zeile je Versuch war Rauschen (#138).
+                Logger.d(LogTags.HUE_BRIDGE, "❌ BRIDGE-MANAGER: Connection recovery failed - validation failed")
                 return@withContext null
             }
         } catch (e: TimeoutCancellationException) {
@@ -662,8 +695,10 @@ class HueBridgeConnectionManager private constructor(
                 -1 // Never connected
             }
             
-            Logger.e(LogTags.HUE_BRIDGE, "⚠️ HUE TIMEOUT: Bridge did not respond within ${CRITICAL_RECOVERY_TIMEOUT.inWholeSeconds}s. " +
-                    "Last successful connection was ${hoursAgo}h ago. Bridge IP attempted: $bridgeIp", e)
+            // Ohne Stacktrace: der einer TimeoutCancellationException zeigt nur die
+            // Coroutine-Maschinerie, nichts ueber die Bridge (#138).
+            Logger.w(LogTags.HUE_BRIDGE, "⚠️ HUE TIMEOUT: Bridge did not respond within ${CRITICAL_RECOVERY_TIMEOUT.inWholeSeconds}s. " +
+                    "Last successful connection was ${hoursAgo}h ago. Bridge IP attempted: $bridgeIp")
             
             return@withContext null
         } catch (e: Exception) {
@@ -698,7 +733,7 @@ class HueBridgeConnectionManager private constructor(
      * Bridge-Kennung? Die Kennung faellt beim Pruefen ohnehin ab - getrennt abzufragen waere ein
      * zweiter Request.
      */
-    private data class BridgeProbe(val reachable: Boolean, val bridgeId: String?)
+    private data class BridgeProbe(val reachable: Boolean, val bridgeId: String?, val grund: String? = null)
 
     /**
      * Der eigentliche Versuch hinter [validateConnectionCredentials] - Begruendung der
@@ -710,20 +745,24 @@ class HueBridgeConnectionManager private constructor(
     private suspend fun probeBridge(bridgeIp: String, username: String): BridgeProbe {
         val sameSubnet = isBridgeReachableNow(bridgeIp)
         if (!sameSubnet) {
-            Logger.w(
+            // Nur Debug: ins Release-Log gehoert erst das ERGEBNIS, und das einmal pro Abwesenheit
+            // ([protokolliereProbe]). Gast-WLAN/VLAN erreichen die Bridge trotz fremden Subnetzes -
+            // dort waere eine WARN-Zeile hier bei jedem Versuch reines Rauschen.
+            Logger.d(
                 LogTags.HUE_BRIDGE,
                 "⚠️ BRIDGE-MANAGER: $bridgeIp liegt in keinem lokalen IPv4-Subnetz dieses Geraets " +
                     "(vermutlich ausser Haus) - Versuch trotzdem, gedeckelt auf ${OFF_SUBNET_PROBE_TIMEOUT.inWholeSeconds}s"
             )
         }
-        return try {
+        val probe = try {
             if (sameSubnet) {
                 val config: HueBridgeConfig? = apiClient.getBridgeConfig(bridgeIp, username)
                 Logger.d(LogTags.HUE_BRIDGE, "✅ BRIDGE-MANAGER: Connection validation successful")
                 BridgeProbe(true, config?.bridgeid?.takeIf { it.isNotBlank() })
             } else {
                 // withTimeoutOrNull statt withTimeout: ein Ablauf ist hier ein normales
-                // Ergebnis ("nicht erreichbar"), kein Fehler.
+                // Ergebnis ("nicht erreichbar"), kein Fehler. Wirksam ist der Deckel erst, seit
+                // der HueApiClient den Call beim Abbruch selbst abbricht (#138).
                 val ok = withTimeoutOrNull(OFF_SUBNET_PROBE_TIMEOUT) {
                     val config: HueBridgeConfig? = apiClient.getBridgeConfig(bridgeIp, username)
                     BridgeProbe(true, config?.bridgeid?.takeIf { it.isNotBlank() })
@@ -736,8 +775,7 @@ class HueBridgeConnectionManager private constructor(
                     )
                     ok
                 } else {
-                    Logger.d(LogTags.HUE_BRIDGE, "❌ BRIDGE-MANAGER: $bridgeIp auch im Kurzversuch nicht erreichbar")
-                    BridgeProbe(false, null)
+                    BridgeProbe(false, null, "keine Antwort in ${OFF_SUBNET_PROBE_TIMEOUT.inWholeSeconds} s")
                 }
             }
         } catch (e: CancellationException) {
@@ -745,8 +783,47 @@ class HueBridgeConnectionManager private constructor(
             // Ende der umgebenden Coroutine (siehe CLAUDE.md, "Fehlerbehandlung").
             throw e
         } catch (e: Exception) {
-            Logger.d(LogTags.HUE_BRIDGE, "❌ BRIDGE-MANAGER: Connection validation failed: ${e.message}")
-            BridgeProbe(false, null)
+            BridgeProbe(false, null, "${e.javaClass.simpleName}: ${e.message}")
+        }
+        protokolliereProbe(bridgeIp, sameSubnet, probe)
+        return probe
+    }
+
+    /**
+     * Fuehrt Buch ueber eine Abwesenheit und schreibt sie so ins Log, dass das Release-Log
+     * (WARN+) sie EINMAL zeigt: den ersten Fehlschlag mit Grund und die Rueckkehr mit der Zahl
+     * der Versuche. Bis 1.49.2 stand jeder Versuch mit zwei vollen Stacktraces auf ERROR (#138).
+     */
+    private fun protokolliereProbe(bridgeIp: String, sameSubnet: Boolean, probe: BridgeProbe) {
+        if (probe.reachable) {
+            val versuche = ausserHausFehlversuche.getAndSet(0)
+            if (versuche > 0) {
+                Logger.w(
+                    LogTags.HUE_BRIDGE,
+                    "✅ BRIDGE-MANAGER: Bridge $bridgeIp wieder erreichbar nach $versuche erfolglosen " +
+                        "Versuch(en) aus fremdem Subnetz"
+                )
+            }
+            ausserHausBackoffMs = 0L
+            naechsterAusserHausVersuch = 0L
+            return
+        }
+        if (sameSubnet) {
+            // Im Bridge-Subnetz ist ein Fehlschlag KEINE Abwesenheit (Bridge aus, neue Adresse) -
+            // die laute Meldung dafuer machen die Aufrufer. Eine laufende Zaehlung endet hier,
+            // damit die naechste Abwesenheit wieder einmal im Release-Log steht.
+            ausserHausFehlversuche.set(0)
+            Logger.d(LogTags.HUE_BRIDGE, "❌ BRIDGE-MANAGER: Connection validation failed: ${probe.grund}")
+            return
+        }
+        if (ausserHausFehlversuche.incrementAndGet() == 1) {
+            Logger.w(
+                LogTags.HUE_BRIDGE,
+                "❌ BRIDGE-MANAGER: $bridgeIp aus fremdem Subnetz nicht erreichbar, vermutlich ausser Haus " +
+                    "(${probe.grund}) - weitere Versuche dieser Abwesenheit nur im Debug-Log"
+            )
+        } else {
+            Logger.d(LogTags.HUE_BRIDGE, "❌ BRIDGE-MANAGER: $bridgeIp auch im Kurzversuch nicht erreichbar (${probe.grund})")
         }
     }
 
@@ -812,7 +889,7 @@ class HueBridgeConnectionManager private constructor(
                 // Fehlschlag den Collector fuer den ganzen Prozess. Hergang: Skill cfalarm-hue.
                 if (available) {
                     try {
-                        attemptRecoveryIfDisconnected()
+                        attemptRecoveryIfDisconnected(ausserHausGedrosselt = true)
                     } catch (e: Exception) {
                         Logger.w(
                             LogTags.HUE_BRIDGE,
@@ -857,9 +934,23 @@ class HueBridgeConnectionManager private constructor(
      * [HueBridgeConnectionManagerTest].
      */
     @VisibleForTesting
-    internal suspend fun attemptRecoveryIfDisconnected() {
+    internal suspend fun attemptRecoveryIfDisconnected(ausserHausGedrosselt: Boolean = false) {
         if (currentConnectionState.get() is ConnectionState.CONNECTED) return
-        if (!hasStoredBridge()) return
+        val gespeicherteIp = resolveHueDataStore()?.data?.first()?.get(KEY_BRIDGE_IP) ?: return
+        // Einmal zu Beginn bestimmt: "zu Hause" gibt den Versuch frei und setzt die Drosselung
+        // zurueck, "ausser Haus" unterliegt ihr (nur auf dem Netzwerk-Beobachter-Pfad).
+        val ausserHaus = !isBridgeReachableNow(gespeicherteIp)
+        if (!ausserHaus) {
+            ausserHausBackoffMs = 0L
+            naechsterAusserHausVersuch = 0L
+        } else if (ausserHausGedrosselt && System.currentTimeMillis() < naechsterAusserHausVersuch) {
+            Logger.d(
+                LogTags.HUE_BRIDGE,
+                "🔄 BRIDGE-MANAGER: ausser Haus - automatische Wiederverbindung gedrosselt bis " +
+                    java.text.SimpleDateFormat("HH:mm", java.util.Locale.ROOT).format(java.util.Date(naechsterAusserHausVersuch))
+            )
+            return
+        }
 
         val paused = try {
             resolveMasterPausePrefs()?.pausedNow() == true
@@ -907,6 +998,16 @@ class HueBridgeConnectionManager private constructor(
             //
             // compareAndSet statt Pruefen-dann-Setzen: sonst bliebe genau zwischen beiden
             // Schritten dasselbe Rennen in klein bestehen.
+            if (!recovered && ausserHaus) {
+                // Naechsten Rueckzug planen - auch, wenn dieser Versuch nicht vom
+                // Netzwerk-Beobachter kam: gescheitert ist gescheitert.
+                ausserHausBackoffMs = if (ausserHausBackoffMs == 0L) {
+                    AUSSER_HAUS_BACKOFF_START.inWholeMilliseconds
+                } else {
+                    (ausserHausBackoffMs * 2).coerceAtMost(AUSSER_HAUS_BACKOFF_MAX.inWholeMilliseconds)
+                }
+                naechsterAusserHausVersuch = System.currentTimeMillis() + ausserHausBackoffMs
+            }
             val eigenerZustand = optimistisch
             if (!recovered && eigenerZustand is ConnectionState.CONNECTED) {
                 val ehrlich = ConnectionState.ERROR(
@@ -915,11 +1016,10 @@ class HueBridgeConnectionManager private constructor(
                 )
                 if (currentConnectionState.compareAndSet(eigenerZustand, ehrlich)) {
                     _connectionStatus.value = ehrlich
-                    Logger.w(
-                        LogTags.HUE_BRIDGE,
-                        "⚠️ BRIDGE-MANAGER: Wiederverbindung fehlgeschlagen - Zustand wird ehrlich auf " +
-                            "'nicht verbunden' zurueckgesetzt, damit der naechste Anlauf ueberhaupt startet"
-                    )
+                    // Ausser Haus steht die Abwesenheit schon einmal im Release-Log (probeBridge).
+                    val text = "⚠️ BRIDGE-MANAGER: Wiederverbindung fehlgeschlagen - Zustand wird ehrlich auf " +
+                        "'nicht verbunden' zurueckgesetzt, damit der naechste Anlauf ueberhaupt startet"
+                    if (ausserHaus) Logger.d(LogTags.HUE_BRIDGE, text) else Logger.w(LogTags.HUE_BRIDGE, text)
                 } else {
                     Logger.d(
                         LogTags.HUE_BRIDGE,
@@ -1011,7 +1111,14 @@ class HueBridgeConnectionManager private constructor(
         if (found == null) {
             // KEIN Loeschen, kein Zustandswechsel auf DISCONNECTED: die Bridge ist weiterhin
             // eingerichtet, nur gerade nicht auffindbar.
-            Logger.w(LogTags.HUE_BRIDGE, "⚠️ BRIDGE-MANAGER: Neusuche ohne Treffer - gespeicherte Konfiguration bleibt unveraendert")
+            // Ausser Haus ist "ohne Treffer" der Normalfall (mDNS reicht nicht ueber das Subnetz,
+            // N-UPnP kennt nur die gespeicherte Adresse) - dort nur Debug (#138).
+            val text = "⚠️ BRIDGE-MANAGER: Neusuche ohne Treffer - gespeicherte Konfiguration bleibt unveraendert"
+            if (storedIp != null && !isBridgeReachableNow(storedIp)) {
+                Logger.d(LogTags.HUE_BRIDGE, text)
+            } else {
+                Logger.w(LogTags.HUE_BRIDGE, text)
+            }
             return false
         }
 

@@ -36,6 +36,14 @@ das baut man dieselbe Falle in neuer Form nach.
   Falsch-Negative bei Gast-WLAN, VLAN, Mesh, Doppel-NAT und am Emulator. **Beide** Aufrufstellen
   (Einrichtung und Cache-Pfad) sind so gebaut; der Verbindungszustand wird dabei nicht auf `ERROR`
   herabgestuft.
+- **Der `HueApiClient` führt jeden Call ABBRECHBAR aus** (`enqueue` + `call.cancel()` beim
+  Coroutine-Abbruch), nie mit blockierendem `execute()` — sonst ist jeder `withTimeout` um einen
+  Hue-Aufruf gelogen (der 3-s-Kurzversuch wartete 10 s, #138). `CancellationException` wird dort
+  weitergeworfen, nicht geloggt.
+- **Außer Haus wird gedrosselt, nicht verboten:** nur der Netzwerk-Beobachter-Pfad
+  (`attemptRecoveryIfDisconnected(ausserHausGedrosselt = true)`) zieht sich nach Fehlschlägen
+  zurück (15 min, verdoppelnd bis 2 h). Weckpfad, Prüfen-Knopf und App-Öffnen fragen immer echt;
+  im Bridge-Subnetz wird sofort versucht. Eine Abwesenheit steht EINMAL im Release-Log.
 - **`healthCheckScope` braucht einen `CoroutineExceptionHandler`** — ein `SupervisorJob` isoliert nur
   Geschwister, die Exception beendet trotzdem den PROZESS. Das `try/catch` des
   Netzwerk-Recovery-Collectors liegt **INNERHALB** des `collect`.

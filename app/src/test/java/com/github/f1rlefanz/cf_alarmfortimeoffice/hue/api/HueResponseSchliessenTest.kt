@@ -16,7 +16,8 @@ import java.io.File
  *
  * Geprueft wird strukturell, nicht ueber einen echten Server: Ein Test mit MockWebServer braeuchte
  * eine neue Testabhaengigkeit, und die Zusicherung ist ohnehin eine Schreibweise - JEDE
- * `execute()`-Stelle im Hue-Netzpfad fuehrt ihre Antwort ueber `use { }`.
+ * `execute()`-Stelle im Hue-Netzpfad fuehrt ihre Antwort ueber `use { }`, ebenso jedes
+ * `onResponse` eines `enqueue`-Callbacks (seit #138 der Weg des HueApiClient).
  */
 class HueResponseSchliessenTest {
 
@@ -41,6 +42,22 @@ class HueResponseSchliessenTest {
                     danach.startsWith(".use {") || danach.startsWith(".use{")
                 )
                 ab = quelle.indexOf(".execute()", ab + 1)
+            }
+            // Der abbrechbare Weg (#138, HueApiClient): `enqueue` mit Callback. Dort muss jede
+            // `onResponse` ihre Antwort ueber `response.use` fuehren, bevor die naechste
+            // Funktion beginnt - sonst bleibt auch eine NACH dem Abbruch eintreffende Antwort offen.
+            var cb = quelle.indexOf("override fun onResponse(")
+            while (cb >= 0) {
+                gefunden++
+                val rumpf = quelle.substring(cb + 1).let { r ->
+                    val ende = r.indexOf("override fun ").takeIf { it >= 0 } ?: r.length
+                    r.substring(0, ende)
+                }
+                assertTrue(
+                    "$pfad: onResponse bei Zeichen $cb fuehrt die Antwort nicht ueber response.use { }",
+                    rumpf.contains("response.use {") || rumpf.contains("response.use{")
+                )
+                cb = quelle.indexOf("override fun onResponse(", cb + 1)
             }
             assertTrue("$pfad enthaelt keinen HTTP-Aufruf mehr - Test prueft nichts", gefunden > 0)
         }

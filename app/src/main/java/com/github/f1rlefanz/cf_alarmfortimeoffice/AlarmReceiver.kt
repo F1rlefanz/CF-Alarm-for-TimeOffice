@@ -13,6 +13,7 @@ import androidx.core.app.NotificationCompat
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.AlarmPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.GeklingelteWeckzeiten
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.WecktonAnstieg
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.ZeitkettenArmierer
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.IHueRuleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmSoundService
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmInfo
@@ -59,6 +60,8 @@ class AlarmReceiver : BroadcastReceiver() {
     @Inject lateinit var shiftUseCase: IShiftUseCase
     @Inject lateinit var alarmUseCase: IAlarmUseCase
     @Inject lateinit var alarmPrefs: AlarmPrefs
+    /** Lazy: erst beim Gebrauch aufgeloest, nur bei entsperrtem Speicher (siehe Aufrufstelle). */
+    @Inject lateinit var zeitkettenArmierer: dagger.Lazy<ZeitkettenArmierer>
 
     companion object {
         /**
@@ -324,6 +327,21 @@ class AlarmReceiver : BroadcastReceiver() {
                             "⚠️ Alarm $alarmId for $shiftName: Weckton-Dienst kam nicht hoch - " +
                                 "es weckt nur der Notausgang"
                         )
+                    }
+
+                    // DIMMER/DND NACH DEM MERKEN NEU BEWERTEN (Review 13.10.2026): Der Dimm-Tick an der
+                    // Weckzeit und dieser Broadcast feuern im selben Augenblick. Rechnete der Tick,
+                    // nachdem der verstrichene Wecker aus dem Bestand gefallen ist, aber BEVOR
+                    // merke() geschrieben hat, oeffnete er die Nacht bis zur Uhrzeit-Grenze und
+                    // plante den naechsten Wechsel erst dort. Erst NACH dem Weckton-Start - der
+                    // Wecker wartet auf nichts hiervon. Nur entsperrt: Dimmer und DND lesen
+                    // CE-Speicher; im Direct Boot bleibt es beim Verhalten ohne Nachzug.
+                    if (userUnlocked) {
+                        try {
+                            zeitkettenArmierer.get().armiere("WECKER AUSGELOEST")
+                        } catch (e: Exception) {
+                            Logger.w(LogTags.ALARM_RECEIVER, "Dimmer/DND nach dem Wecker nicht neu bewertet", e)
+                        }
                     }
 
                     // 🎨 HUE INTEGRATION - Execute matching light rules

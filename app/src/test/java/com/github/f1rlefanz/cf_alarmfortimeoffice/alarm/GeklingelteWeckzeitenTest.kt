@@ -51,6 +51,14 @@ class GeklingelteWeckzeitenTest {
         assertEquals(emptyList<Long>(), GeklingelteWeckzeiten.dekodiere(null))
     }
 
+    @Test
+    fun `die gemerkte Zeit ist die volle Minute der Weckzeit, nicht der Zustellzeitpunkt`() {
+        val weckzeit = 1_800_000_000_000L - Math.floorMod(1_800_000_000_000L, 60_000L)
+        assertEquals(weckzeit, GeklingelteWeckzeiten.aufMinute(weckzeit + 51))
+        assertEquals(weckzeit, GeklingelteWeckzeiten.aufMinute(weckzeit + 59_999))
+        assertEquals(weckzeit, GeklingelteWeckzeiten.aufMinute(weckzeit))
+    }
+
     // ------------------------------------------------------------------ Verdrahtung
 
     private fun quelle(pfad: String): String =
@@ -66,6 +74,19 @@ class GeklingelteWeckzeitenTest {
         val merke = src.indexOf("GeklingelteWeckzeiten.merke(")
         assertTrue("Skip-Pruefung gefunden", skip > 0)
         assertTrue("merke() nach der Skip-Pruefung", merke > skip)
+    }
+
+    @Test
+    fun `nach dem Merken bewertet der Receiver Dimmer und DND neu - nach dem Weckton-Start`() {
+        // Der Dimm-Tick an der Weckzeit kann VOR merke() rechnen und die Nacht bis zur
+        // Uhrzeit-Grenze oeffnen (Review 13.10.2026). Der Nachzug muss danach kommen - und nach
+        // dem Start des Wecktons, damit der Wecker auf nichts hiervon wartet.
+        val src = quelle("AlarmReceiver.kt")
+        val merke = src.indexOf("GeklingelteWeckzeiten.merke(")
+        val ton = src.indexOf("val dienstLaeuft = startAlarmSoundService(", merke)
+        val armiere = src.indexOf("armiere(\"WECKER AUSGELOEST\")")
+        assertTrue("Weckton-Start nach merke()", ton > merke)
+        assertTrue("Nachzug nach dem Weckton-Start", armiere > ton)
     }
 
     @Test

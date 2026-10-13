@@ -67,12 +67,21 @@ object GeklingelteWeckzeiten {
     internal fun dekodiere(text: String?): List<Long> =
         text.orEmpty().split(',').mapNotNull { it.trim().toLongOrNull() }
 
-    /** Merkt [zeitpunkt] als Weckzeit, an der gerade ein Wecker klingelt. */
+    /**
+     * Auf die volle Minute abgerundet: Weckzeiten sind ganze Minuten (`HH:mm`), der Broadcast kommt
+     * aber ein paar Millisekunden bis Sekunden danach. Ungerundet verschob sich das Fensterende
+     * beim Herausfallen des Weckers aus dem Bestand - und mit ihm die Fenster-Identitaet, an der
+     * ein Korrektur-Override haengt (`isOverrideStale`); ein „Heller/Dunkler" im Nachlauf waere
+     * dann mitten darin verworfen worden.
+     */
+    internal fun aufMinute(zeitpunkt: Long): Long = zeitpunkt - Math.floorMod(zeitpunkt, 60_000L)
+
+    /** Merkt [zeitpunkt] (abgerundet, siehe [aufMinute]) als Weckzeit, an der gerade ein Wecker klingelt. */
     fun merke(context: Context, zeitpunkt: Long = System.currentTimeMillis()) {
         try {
             synchronized(sperre) {
                 val p = prefs(context)
-                val neu = mitNeuemEintrag(dekodiere(p.getString(SCHLUESSEL, null)), zeitpunkt, zeitpunkt)
+                val neu = mitNeuemEintrag(dekodiere(p.getString(SCHLUESSEL, null)), aufMinute(zeitpunkt), zeitpunkt)
                 // commit(), nicht apply(): der Receiver-Prozess kann direkt nach dem Wecken enden,
                 // und der Merker muss die nächste Fensterberechnung erreichen.
                 p.edit().putString(SCHLUESSEL, kodiere(neu)).commit()

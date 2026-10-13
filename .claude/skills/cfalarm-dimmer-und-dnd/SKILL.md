@@ -106,7 +106,8 @@ das baut man dieselbe Falle in neuer Form nach.
   geschrieben vom `AlarmReceiver` NACH der Skip-Prüfung, Device-Protected). Ohne ihn fiel ein
   manueller Wecker nach dem Klingeln heraus, und jede Neuberechnung öffnete die Nacht bis zur
   Uhrzeit-Grenze erneut (FP6, 13.10.2026). Nicht beim ANLEGEN merken — dann beendete ein gelöschter
-  Wecker das Fenster. Anlegen/Löschen eines manuellen Weckers armiert Dimmer und DND neu.
+  Wecker das Fenster. Anlegen/Löschen eines manuellen Weckers armiert Dimmer und DND neu, und
+  der Receiver armiert nach dem Merken neu (Rennen gegen den Tick an der Weckzeit).
 - **„Bis Weckzeit + X, spätestens um die Uhrzeit"** (`DimWindow.weckzeitNachlaufMinuten`, eigenes
   Feld, NICHT `endOffsetMinutes`): die Uhrzeit bleibt harte Obergrenze, und DND-Modus 1 liest die
   Zeitleiste OHNE den Nachlauf (`mitWeckzeitNachlauf = false`) — nach dem Wecken erreichbar.

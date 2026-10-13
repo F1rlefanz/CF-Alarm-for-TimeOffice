@@ -787,6 +787,15 @@ drei Tage wie die Spannen; `computeWindows` liest sie in die Zeitleiste. Verworf
 Device-Protected, weil der Receiver auch im Direct Boot feuert; jeder Zugriff wirft nie, ein
 Lesefehler fällt auf das alte Verhalten zurück.
 
+**Das Rennen an der Weckzeit (Review vor dem Merge).** Dimm-Tick und Wecker-Broadcast feuern im
+selben Augenblick. Rechnet der Tick, nachdem der verstrichene Wecker aus dem Bestand gefallen
+ist, aber bevor `merke()` geschrieben hat, öffnet er bei Nachlauf 0 die Nacht bis zur
+Uhrzeit-Grenze — und plant den nächsten Wechsel erst dort. Deshalb ruft der Receiver nach dem
+Weckton-Start (nie davor, der Wecker wartet auf nichts) `ZeitkettenArmierer.armiere("WECKER
+AUSGELOEST")`, nur entsperrt. Und die Zeit wird auf die volle Minute abgerundet: ungerundet
+verschob sich das Fensterende beim Herausfallen des Weckers um die Zustellverzögerung — und mit
+ihm die Fenster-Identität eines Korrektur-Overrides (`isOverrideStale`).
+
 **Der Nachlauf: `DimWindow.weckzeitNachlaufMinuten`** („bis Weckzeit + X, spätestens um die
 Uhrzeit"), Nutzerwunsch: im Winter blendet das schlagartig helle Display beim Frühdienst. Zwei
 Nutzerentscheidungen (13.10.2026): die Uhrzeit bleibt HARTE Obergrenze (`min(weckzeit + X,

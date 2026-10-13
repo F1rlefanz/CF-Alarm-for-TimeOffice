@@ -47,7 +47,19 @@
              Dieser Kommentar steht bewusst VOR dem BEGIN-Marker und ueberlebt deshalb. -->
         <!-- CHANGELOG:BEGIN -->
         <div class="content-card">
-            <h3>🆕 Version 1.49.2 <small>(Aktuell – interne Alpha)</small></h3>
+            <h3>🆕 Version 1.49.3 <small>(Aktuell – interne Alpha)</small></h3>
+            <p><strong>Stand:</strong> Oktober 2026</p>
+            <p><em>Unterwegs sucht die App deine Hue-Bridge seltener und kürzer – das schont Akku und Funk und hält das Fehlerprotokoll lesbar.</em></p>
+
+            <h4>🐛 Behoben</h4>
+            <ul>
+                <li><strong>Hue unterwegs:</strong> Bist du nicht zu Hause, gibt die App die Suche nach deiner Bridge jetzt wirklich nach wenigen Sekunden auf, statt jedes Mal zehn und mehr Sekunden zu warten. Nach erfolglosen Versuchen fragt sie zunehmend seltener nach (höchstens alle zwei Stunden). Sobald du wieder im Heimnetz bist, verbindet sie sich sofort wie gewohnt – und dein Wecklicht am Morgen ist davon nie betroffen.</li>
+                <li><strong>Lesbares Fehlerprotokoll:</strong> Ein Tag außer Haus füllte das Protokoll, das du im Bereich Status über „Logs an Entwickler senden“ verschickst, bisher fast vollständig mit Hue-Fehlermeldungen. Jetzt steht eine Abwesenheit dort genau einmal, und die Rückkehr ebenfalls.</li>
+            </ul>
+        </div>
+
+        <div class="content-card">
+            <h3>Version 1.49.2</h3>
             <p><strong>Stand:</strong> Oktober 2026</p>
             <p><em>Klarer erklärt, wann der Bildschirm nach dem Wecken noch gedimmt bleibt.</em></p>
 

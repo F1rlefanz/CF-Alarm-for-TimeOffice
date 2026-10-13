@@ -27,7 +27,18 @@ Schreibkonventionen (der Generator verlässt sich darauf):
 - `### 🐛 Behoben` — Rubrik, mit Emoji wie bisher.
 - `- **Kurzfassung:** Erklärung` — ein Eintrag.
 
-## 🆕 Version 1.49.2 (Aktuell – interne Alpha)
+## 🆕 Version 1.49.3 (Aktuell – interne Alpha)
+
+**Stand:** Oktober 2026
+
+_Unterwegs sucht die App deine Hue-Bridge seltener und kürzer – das schont Akku und Funk und hält das Fehlerprotokoll lesbar._
+
+### 🐛 Behoben
+
+- **Hue unterwegs:** Bist du nicht zu Hause, gibt die App die Suche nach deiner Bridge jetzt wirklich nach wenigen Sekunden auf, statt jedes Mal zehn und mehr Sekunden zu warten. Nach erfolglosen Versuchen fragt sie zunehmend seltener nach (höchstens alle zwei Stunden). Sobald du wieder im Heimnetz bist, verbindet sie sich sofort wie gewohnt – und dein Wecklicht am Morgen ist davon nie betroffen.
+- **Lesbares Fehlerprotokoll:** Ein Tag außer Haus füllte das Protokoll, das du im Bereich Status über „Logs an Entwickler senden“ verschickst, bisher fast vollständig mit Hue-Fehlermeldungen. Jetzt steht eine Abwesenheit dort genau einmal, und die Rückkehr ebenfalls.
+
+## Version 1.49.2
 
 **Stand:** Oktober 2026
 

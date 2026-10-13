@@ -12,6 +12,7 @@
 - `getBridgeConfig` prüft die Antwort (`bridgeid` oder `mac` müssen da sein), statt sie nur zu
 - Der gesamte Hue-Pfad ist IPv4-only
 - Die Subnetz-Prüfung ist ein HINWEIS auf das Timeout, NIEMALS ein Veto
+- Der `HueApiClient` führt jeden Call ABBRECHBAR aus; außer Haus wird gedrosselt, nicht verboten
 - `healthCheckScope` braucht einen `CoroutineExceptionHandler` — der `SupervisorJob` reicht
 - Eine im Direct-Boot übersprungene Hue-Planung wird NACHGEHOLT
 - `cleanup()` auf Prozess-Singletons cancelt NUR Kinder
@@ -94,6 +95,41 @@
   Netz" ist kein Bridge-/Zugangsdaten-Fehler). `HueBridgeConnectionManagerTest` hält beide
   Richtungen fest; am Gerät belegt (Kopplung erfolgreich, Log: „Bridge trotz fremden Subnetzes
   erreichbar — die Heuristik lag falsch").
+- **Der `HueApiClient` führt jeden Call ABBRECHBAR aus — und außer Haus wird gedrosselt, nicht
+  verboten** (#138, 1.49.3). Befund am Fairphone (1.47.0, Datei-Log nur WARN+), 12.10.2026: 30
+  Bridge-Timeouts und 1.798 Stacktrace-Zeilen bei 135 KB Log — rund 90 % des Inhalts an einem
+  Tag außer Haus. Drei Ursachen, im Code nachvollzogen:
+  1. *Der Kurzversuch griff nicht.* `execute()` lief blockierend in `withContext(IO)`; ein
+     Coroutine-Abbruch unterbricht keinen Socket-Connect. `withTimeoutOrNull(3 s)` wartete also
+     das volle `connectTimeout` (10 s) ab — im Log „gedeckelt auf 3s", direkt danach
+     „failed to connect … after 10000ms". Dasselbe galt für JEDEN Deckel auf diesem Pfad
+     (Wiederverbindung 10 s, Neusuche 30 s, das 45-s-Budget im `AlarmReceiver`). Jetzt
+     `enqueue` + `invokeOnCancellation { call.cancel() }`; die Antwort wird im Callback per
+     `response.use` gelesen, damit auch eine nach dem Abbruch eintreffende nicht offen bleibt
+     (`HueResponseSchliessenTest` prüft beide Schreibweisen). Die Manager-Tests konnten das nie
+     sehen — sie mocken den Client, und ein `delay()` im Mock ist abbrechbar. Deshalb misst
+     `HueApiClientAbbruchTest` die Wanduhr an einem echten OkHttp-Call mit blockierendem
+     Interceptor.
+  2. *Doppelter Stacktrace auf ERROR je Versuch:* `HueApiClient` loggte jede Exception mit
+     Stacktrace, `recoverConnection()` die `TimeoutCancellationException` noch einmal (deren
+     Stacktrace zeigt nur Coroutine-Maschinerie). Jetzt: Verbindungsausfall im Client nur Debug,
+     andere IO-Fehler (TLS, Protokoll — eine erreichbare, aber ablehnende Gegenstelle) WARN ohne
+     Stacktrace; im Manager pro Abwesenheit EINE WARN-Zeile mit Grund und eine bei der Rückkehr
+     mit der Zahl der Versuche (`protokolliereProbe`). Der Weckpfad bleibt laut:
+     `HueLightRepository` und `AlarmReceiver` loggen ihr Scheitern selbst auf ERROR.
+  3. *Kein Rückzug außer Haus.* Die Gesundheitsschleife war NICHT die Quelle (sie prüft nur im
+     Zustand CONNECTED, nach dem ersten Fehlschlag steht ERROR). Getrieben wurden die Versuche
+     vom Netzwerk-Beobachter: Mobilfunk-„validiert" flattert, jedes `true` startete eine volle
+     Wiederverbindung samt Neusuche. Jetzt zieht sich NUR dieser Pfad zurück (15 min,
+     verdoppelnd bis 2 h). **Das ist eine Häufigkeit, kein Veto:** Weckpfad
+     (`getValidatedConnection`), Prüfen-Knopf und App-Öffnen fragen jedes Mal echt, und sobald
+     die Subnetz-Prüfung „zu Hause" sagt, wird sofort und ungedrosselt versucht. Den Rückzug an
+     jedes `isNetworkAvailable`-Ereignis zurückzusetzen wäre falsch — genau diese Ereignisse
+     waren das Dauerfeuer.
+  Am Emulator belegt (13.10.2026): Bridge erreichbar trotz fremden Subnetzes, über den neuen
+  Call-Weg mit echtem TLS; Bridge per temporärer Host-Firewall gesperrt → keine Stacktraces aus
+  dem Transport, die Abwesenheit genau einmal auf WARN. Die Firewall-Sperre wirkt als sofortige
+  Ablehnung, nicht als Hänger — die 3-s-Grenze belegt der Unit-Test, nicht diese Messung.
 - **`healthCheckScope` braucht einen `CoroutineExceptionHandler` — der `SupervisorJob` reicht
   NICHT.** Ein SupervisorJob isoliert nur Geschwister; die Exception läuft trotzdem zum
   Thread-Default-Handler und beendet den PROZESS. In diesem Scope liegen fünf fire-and-forget

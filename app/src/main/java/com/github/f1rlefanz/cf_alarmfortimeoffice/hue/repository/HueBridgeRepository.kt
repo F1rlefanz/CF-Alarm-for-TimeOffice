@@ -123,6 +123,13 @@ class HueBridgeRepository @Inject constructor(
             connectionManager.getValidatedConnection()
             Result.success(true)
 
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: IllegalStateException) {
+            // "Bridge nicht erreichbar" - der erwartbare Ausgang ausser Haus. Der Text sagt alles,
+            // der Stacktrace zeigte nur Coroutine-Maschinerie (#138).
+            Logger.w(LogTags.HUE_BRIDGE, "Connection validation failed: ${e.message}")
+            Result.success(false)
         } catch (e: Exception) {
             Logger.w(LogTags.HUE_BRIDGE, "Connection validation failed", e)
             Result.success(false)

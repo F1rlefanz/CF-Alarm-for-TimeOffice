@@ -132,8 +132,7 @@ class ZeitkettenArmierer @Inject constructor(
      * Verglichen werden die Schichtspannen (die einzige Fenster-Grundlage, die ein Sync
      * schreibt; manuelle Wecker fasst er nicht an). Ist [standVorher] `null` (vorher nicht
      * lesbar) oder der Stand danach nicht lesbar, bleibt es beim alten Verhalten: die Wartung
-     * zieht nach. Ein nur durch das Aufraeumen alter Spannen veraenderter Stand armiert
-     * unnoetig, aber harmlos - die Neuberechnung ergibt denselben Zustand.
+     * zieht nach. Verglichen wird ueber [schichtStandGeaendert], nicht per Listengleichheit.
      *
      * Beide Ketten sind gefahrlos haeufig aufrufbar: `reschedule()` rechnet jeweils vom Ist-Zustand
      * und ersetzt die bisherige Planung, die Rufbereitschafts-Abfrage fragt die Master-Pause selbst,
@@ -152,7 +151,7 @@ class ZeitkettenArmierer @Inject constructor(
                 }
             if (standVorher != null) {
                 val standDanach = schichtStand()
-                if (standDanach != null && standDanach != standVorher) {
+                if (standDanach != null && schichtStandGeaendert(standVorher, standDanach, System.currentTimeMillis())) {
                     // Dimmer vor DND - dieselbe Reihenfolge-Zusicherung wie in [armiere].
                     runCatching { dimSchedule.get().enable() }
                         .onFailure { Logger.w(LogTags.DIMMER, "VORDERGRUND: Dimmer-Kette nicht neu armiert", it) }
@@ -169,4 +168,19 @@ class ZeitkettenArmierer @Inject constructor(
      */
     suspend fun schichtStand(): List<ShiftSpan>? =
         runCatching { shiftSpanStore.get().spansNow().getOrNull() }.getOrNull()
+
+    companion object {
+        /**
+         * Hat sich der Schichtstand durch den Sync geaendert? Verglichen werden nur die noch
+         * NICHT beendeten Spannen, und zwar als Menge.
+         *
+         * WARUM NICHT `vorher != nachher` (Review 1.49.1): `ShiftSpanStore.mische` haengt eine
+         * inzwischen beendete Spanne ans ENDE der Liste (der Kalender-Abruf beginnt bei „jetzt"
+         * und kennt sie nicht mehr), und `prune` wirft sie nach drei Tagen weg. Die Listen waeren
+         * dann nach JEDEM Schichtende verschieden, und schon ein blosser Blick in die App armierte
+         * Dimmer und DND neu. Beendete Spannen kann ein Sync ohnehin nicht mehr aendern.
+         */
+        internal fun schichtStandGeaendert(vorher: List<ShiftSpan>, nachher: List<ShiftSpan>, jetzt: Long): Boolean =
+            vorher.filter { it.endTime > jetzt }.toSet() != nachher.filter { it.endTime > jetzt }.toSet()
+    }
 }

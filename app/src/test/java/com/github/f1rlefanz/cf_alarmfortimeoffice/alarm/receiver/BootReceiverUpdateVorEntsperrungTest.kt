@@ -37,6 +37,9 @@ class BootReceiverUpdateVorEntsperrungTest {
         assertTrue("Spiegel-Restore laeuft immer zuerst", spiegel in 0 until pruefung)
         assertTrue("Pruefung vor Wartungs-Anker", pruefung < anker)
         assertTrue("Pruefung vor der vollen Recovery", pruefung < recovery)
-        assertTrue("gesperrt: der Zweig endet vor der Recovery", block.substring(pruefung, recovery).contains("return"))
+        assertTrue(
+            "gesperrt: der Zweig endet vor der Recovery (eigene return-Zeile, kein Kommentar)",
+            Regex("""(?m)^\s*return\s*$""").containsMatchIn(block.substring(pruefung, recovery))
+        )
     }
 }

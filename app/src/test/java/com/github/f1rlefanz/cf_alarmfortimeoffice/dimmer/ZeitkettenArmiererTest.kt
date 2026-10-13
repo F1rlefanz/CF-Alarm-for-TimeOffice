@@ -4,6 +4,8 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.CalendarPreAlarmRefreshS
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndScheduleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.RufbereitschaftAbfrage
 import kotlinx.coroutines.test.runTest
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.mockito.kotlin.inOrder
 import org.mockito.kotlin.mock
@@ -220,7 +222,7 @@ class ZeitkettenArmiererTest {
     // --- Dimmer/DND nach einem Vordergrund-Sync nur bei geaendertem Schichtstand (1.49.1) -------
 
     private val fruehVorher = com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpan(
-        shiftName = "Frühschicht", startTime = 1_000_000L, endTime = 2_000_000L, alarmTriggerTime = 900_000L
+        shiftName = "Frühschicht", startTime = 4_000_001_000_000L, endTime = 4_000_002_000_000L, alarmTriggerTime = 4_000_000_900_000L
     )
 
     private fun Fixture.standDanach(spannen: List<com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpan>) {
@@ -234,7 +236,7 @@ class ZeitkettenArmiererTest {
     @Test
     fun `geaenderter Schichtstand - Dimmer und DND werden neu armiert, Dimmer zuerst`() = runTest {
         val f = fixture()
-        f.standDanach(listOf(fruehVorher.copy(startTime = 500_000L, alarmTriggerTime = 400_000L)))
+        f.standDanach(listOf(fruehVorher.copy(startTime = 4_000_000_500_000L, alarmTriggerTime = 4_000_000_400_000L)))
 
         f.armierer.planeNachVordergrundSync(standVorher = listOf(fruehVorher))
 
@@ -275,5 +277,18 @@ class ZeitkettenArmiererTest {
 
         verify(f.dim, never()).enable()
         verify(f.dnd, never()).enable()
+    }
+
+    @Test
+    fun `nur umsortiert oder eine Spanne beendet und aufgeraeumt - kein geaenderter Stand`() {
+        // Review 1.49.1: mische() haengt beendete Spannen ans Ende, prune() wirft sie spaeter weg.
+        val jetzt = 10_000_000L
+        val beendet = fruehVorher.copy(startTime = 1L, endTime = 2L)
+        val laufend = fruehVorher.copy(startTime = jetzt - 1, endTime = jetzt + 100)
+        val kommend = fruehVorher.copy(startTime = jetzt + 1_000, endTime = jetzt + 2_000)
+        assertFalse(ZeitkettenArmierer.schichtStandGeaendert(listOf(beendet, laufend, kommend), listOf(laufend, kommend, beendet), jetzt))
+        assertFalse(ZeitkettenArmierer.schichtStandGeaendert(listOf(beendet, laufend, kommend), listOf(laufend, kommend), jetzt))
+        assertTrue(ZeitkettenArmierer.schichtStandGeaendert(listOf(laufend, kommend), listOf(laufend, kommend.copy(alarmTriggerTime = 5L)), jetzt))
+        assertTrue(ZeitkettenArmierer.schichtStandGeaendert(listOf(laufend, kommend), listOf(laufend), jetzt))
     }
 }

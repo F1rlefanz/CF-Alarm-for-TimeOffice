@@ -197,7 +197,7 @@ class ShiftViewModelSyncGateTest {
             vm.updateShiftConfig(ShiftConfig(autoAlarmEnabled = true))
             advanceUntilIdle()
 
-            verifyBlocking(armierer) { planeNachVordergrundSync() }
+            verifyBlocking(armierer) { planeNachVordergrundSync(org.mockito.kotlin.anyOrNull()) }
         }
 
     @Test
@@ -211,6 +211,6 @@ class ShiftViewModelSyncGateTest {
         vm.updateShiftConfig(ShiftConfig(autoAlarmEnabled = true))
         advanceUntilIdle()
 
-        verifyBlocking(armierer, never()) { planeNachVordergrundSync() }
+        verifyBlocking(armierer, never()) { planeNachVordergrundSync(org.mockito.kotlin.anyOrNull()) }
     }
 }

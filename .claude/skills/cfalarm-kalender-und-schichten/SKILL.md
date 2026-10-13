@@ -78,7 +78,9 @@ das baut man dieselbe Falle in neuer Form nach.
   gilt nur für Wecker, die es schon GIBT. Neu geplant nach Boot und Wartung UND seit 1.48.0 nach
   jedem gelungenen Sync im Vordergrund (`ZeitkettenArmierer.planeNachVordergrundSync()`, aus
   `CalendarViewModel` und `ShiftViewModel`) — sonst wartete ein beim Öffnen der App angelegter
-  Wecker bis zur nächsten Wartung auf seinen Vorab-Abgleich.
+  Wecker bis zur nächsten Wartung auf seinen Vorab-Abgleich. Dimmer und DND zieht dieselbe Funktion
+  seit 1.49.1 nur nach, wenn sich die Schichtspannen gegenüber dem VOR dem Sync gelesenen Stand
+  (`ZeitkettenArmierer.schichtStand()`) geändert haben.
 - **Die Rückkehr in die App gleicht ab** (1.48.0, Befund 12.10.2026): `MainActivity` prüft ab
   STARTED (nicht `onResume`) UND bei jedem neuen `last_event_load_time`, solange sie offen ist;
   entschieden wird NUR in `CalendarViewModel.sollBeiRueckkehrLaden` (älter als

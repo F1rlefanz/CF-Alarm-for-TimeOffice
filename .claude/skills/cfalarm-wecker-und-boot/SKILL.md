@@ -115,6 +115,12 @@ das baut man dieselbe Falle in neuer Form nach.
   Leerlisten-Sperre bleibt.
 - **`BootReceiver` liest die Kalenderauswahl über den DataStore**, nicht über den noch nicht
   hydrierten `StateFlow`, und setzt **vor** der langen Recovery einen Wartungs-Anker.
+- **Ein Update VOR der ersten Entsperrung (MY_PACKAGE_REPLACED, gesperrt) macht NUR den
+  Spiegel-Restore** — wie LOCKED_BOOT_COMPLETED; die volle Recovery bringt BOOT_COMPLETED nach dem
+  Entsperren. Vorher lief sie: `armiereNebenketten` → Dimmer-`enable()` las den settings-DataStore
+  gesperrt (still „leer", für den ganzen Prozess), und nach dem Entsperren schrieb die
+  Dimmer-Migration im selben Prozess „Dimmer aus" zurück (Emulator, 13.10.2026; `pruefe_direct_boot.py`
+  sieht das nicht, es installiert nicht im gesperrten Zustand).
 - **Ein fehlgeschlagener Token-Abruf ist NICHT pauschal ein Anmeldeproblem.** `WartungTokenFehler`
   stuft nach dem Vertrag von GoogleAuthUtil ein (`IOException` = voruebergehend,
   `GoogleAuthException` = endgueltig) und entscheidet deshalb an der URSACHE eines
@@ -135,8 +141,9 @@ das baut man dieselbe Falle in neuer Form nach.
   Wartung über `ZeitkettenArmierer.armiereNebenketten()`, die EINE Stelle für alle vier
   Nebenketten samt Pause-Abräumen; die Master-Pause räumt/plant sie in `pause()`/`resume()`) und
   seit 1.48.0 nach jedem gelungenen Sync im Vordergrund
-  (`ZeitkettenArmierer.planeNachVordergrundSync()`: NUR sie und der Pre-Alarm-Refresh — Dimmer und
-  DND schalten in `enable()` sofort am Gerät, ein Blick in die App soll nichts umschalten). Ein
+  (`ZeitkettenArmierer.planeNachVordergrundSync()`: sie und der Pre-Alarm-Refresh immer, Dimmer und
+  DND seit 1.49.1 NUR bei geändertem Schichtstand — sie schalten in `enable()` sofort am Gerät, ein
+  bloßer Blick in die App soll nichts umschalten; der Vorher-Stand wird VOR dem Sync gelesen). Ein
   Termin liegt mindestens eine Minute in der Zukunft (`MINDEST_ABSTAND_MS`), sonst plant der Tick
   sich bei Uhren-Schlupf selbst noch einmal. Exakte Alarme mit inexaktem Fallback wie
   `scheduleNext()`; kein WorkManager-Periodic, weil Doze den um Stunden schiebt. Hergang im

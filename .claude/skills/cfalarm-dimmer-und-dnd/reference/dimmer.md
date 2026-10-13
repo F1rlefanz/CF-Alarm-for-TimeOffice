@@ -812,5 +812,12 @@ manueller Wecker plante den Dimmer NICHT neu — der nächste Wechsel blieb auf 
 lief über den Wecker hinweg. `AlarmViewModel.createManualAlarm`/`deleteManualAlarm` rufen jetzt
 `ZeitkettenArmierer.armiere("MANUELLER WECKER")`. Das widerspricht nicht der Regel „ein Blick in
 die App schaltet nichts um" (`planeNachVordergrundSync`): Anlegen ist eine ausdrückliche Handlung.
-Offen bleibt der bekannte Rest: ein VORDERGRUND-Sync, der Schichtwecker verschiebt, zieht Dimmer
-und DND weiterhin erst mit der nächsten Wartung nach.
+**Der Vordergrund-Sync (1.49.1).** Ein Sync in der offenen App, der Schichtwecker verschob, zog
+Dimmer und DND erst mit der nächsten Wartung nach (bis zu 6 h). Das ENDE eines Fensters heilte
+der Receiver-Nachzug ohnehin (der Wecker rechnet beim Klingeln neu), aber Fenster, deren BEGINN an
+Weckzeit oder Dienst hängt („60 min vor der Weckzeit", DND „während der Dienstzeit"), hingen an der
+alten Zeit. Jetzt: `ZeitkettenArmierer.schichtStand()` VOR dem Sync, `planeNachVordergrundSync(standVorher)`
+danach — Dimmer und DND nur, wenn sich die Schichtspannen geändert haben. Das hält die Regel „ein
+bloßer Blick in die App schaltet nichts um" (Emulator: leerer Abgleich ohne Neuberechnung,
+geänderte Schicht-Weckzeit mit). Unbekannter oder unlesbarer Stand: nichts anfassen, die Wartung
+zieht nach.

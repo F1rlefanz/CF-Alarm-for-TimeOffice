@@ -94,8 +94,8 @@
     <string name="dimmer_rules_master_off_action">Dimmen einschalten</string>
     <string name="dimmer_end_alarm_sonst_clock">Weckzeit, spätestens</string>
     <string name="dimmer_end_alarm_sonst_clock_hinweis">Endet an deiner Weckzeit (plus die Minuten danach) — spätestens aber zur eingestellten Uhrzeit. Liegt in diesem Fenster kein Wecker, endet es zur Uhrzeit.</string>
-    <string name="dimmer_end_nachlauf">Nach dem Wecken noch gedimmt (Minuten)</string>
-    <string name="dimmer_end_nachlauf_hinweis">0 bis %1$d Minuten. Mit „Schlaf-Fenster folgt dem Dimmer“ endet „Nicht stören“ trotzdem an der Weckzeit.</string>
+    <string name="dimmer_end_nachlauf">Minuten nach dem Wecken</string>
+    <string name="dimmer_end_nachlauf_hinweis">So lange bleibt es nach dem Wecken noch gedimmt, 0 bis %1$d Minuten. Mit „Schlaf-Fenster folgt dem Dimmer“ endet „Nicht stören“ trotzdem an der Weckzeit.</string>
     <string name="dimmer_start_offset">Minuten zur Weckzeit (−60 = eine Stunde davor)</string>
     <string name="dimmer_end_offset">Minuten nach Wecker</string>
     <string name="dimmer_shiftend_offset">Minuten nach Schichtende</string>

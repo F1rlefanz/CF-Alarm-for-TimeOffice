@@ -14,6 +14,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.ICalendarUs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IShiftUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.NutzerEntsperrung
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
@@ -244,6 +245,22 @@ class BootReceiver : BroadcastReceiver() {
                     "📦 LEVEL 4: App updated - performing post-update recovery"
                 )
                 restoreAlarmsFromDirectBootStore(context, "APP_UPDATED")
+                // UPDATE VOR DER ERSTEN ENTSPERRUNG (Emulator, 13.10.2026): Kommt das Update, waehrend
+                // der Nutzer seit dem Neustart noch nicht entsperrt hat, darf hier NICHTS den
+                // CE-Speicher anfassen. Die volle Recovery tat es (ueber armiereNebenketten ->
+                // Dimmer-enable() -> settings-DataStore): DataStore lieferte still "leer" und hielt
+                // das fuer den ganzen Prozess. Nach dem Entsperren lief im SELBEN Prozess die
+                // Dimmer-Migration auf diesem Leer und schrieb "Dimmer aus, 0 Regeln" zurueck.
+                // Wie bei LOCKED_BOOT_COMPLETED genuegt der Spiegel-Restore; die volle Recovery
+                // bringt BOOT_COMPLETED, das Android nach der ersten Entsperrung ohnehin zustellt.
+                if (!NutzerEntsperrung.istEntsperrt(context, LogTags.MAINTENANCE_L4)) {
+                    Logger.w(
+                        LogTags.MAINTENANCE_L4,
+                        "🔐 LEVEL 4: Update vor der ersten Entsperrung - nur Spiegel-Restore, " +
+                            "volle Recovery folgt mit BOOT_COMPLETED"
+                    )
+                    return
+                }
                 startMaintenanceAnchor(context, "APP_UPDATED")
                 performCompleteSystemRecovery(context, "APP_UPDATED")
             }

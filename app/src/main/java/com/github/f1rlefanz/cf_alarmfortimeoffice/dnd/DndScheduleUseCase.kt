@@ -289,7 +289,10 @@ class DndScheduleUseCase @Inject constructor(
             // eigene getAllAlarms()-Zweig unten wird dann gar nicht betreten): der Dimmer erholte
             // sich planmaessig nach 15 Minuten und dimmte die Nacht, DND kam erst 6 Stunden spaeter
             // wieder - also praktisch erst morgens.
-            val preview = dimSchedule.previewTimelineWithStatus()
+            // OHNE den Nachlauf nach der Weckzeit (DimWindow.weckzeitNachlaufMinuten): der Bildschirm
+            // darf nach dem Wecken noch gedimmt bleiben, "Nicht stoeren" endet aber an der Weckzeit -
+            // wer gerade geweckt wurde, soll erreichbar sein (Nutzerentscheidung 13.10.2026).
+            val preview = dimSchedule.previewTimelineWithStatus(mitWeckzeitNachlauf = false)
             out += preview.intervals.map { DndFenster(it.range, DndQuelle.FOLGT_DIMMER) }
             if (preview.alarmReadFailed) alarmReadFailed = true
         }

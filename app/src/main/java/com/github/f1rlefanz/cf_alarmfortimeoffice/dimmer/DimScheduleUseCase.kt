@@ -5,6 +5,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import androidx.annotation.VisibleForTesting
+import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.GeklingelteWeckzeiten
 import com.github.f1rlefanz.cf_alarmfortimeoffice.freietage.FreieTageStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPausePrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpanStore
@@ -330,10 +331,16 @@ class DimScheduleUseCase @Inject constructor(
         val alarmReadFailed: Boolean
     )
 
-    /** Siehe [previewTimeline] - identische Berechnung, zusaetzlich mit dem Lesefehler-Status. */
-    suspend fun previewTimelineWithStatus(): TimelinePreview {
+    /**
+     * Siehe [previewTimeline] - identische Berechnung, zusaetzlich mit dem Lesefehler-Status.
+     *
+     * [mitWeckzeitNachlauf] = false laesst den Nachlauf nach der Weckzeit weg
+     * ([DimWindow.weckzeitNachlaufMinuten]): DND-Modus 1 folgt dem Dimmer, endet aber an der
+     * Weckzeit - wer gerade geweckt wurde, soll erreichbar sein (Nutzerentscheidung 13.10.2026).
+     */
+    suspend fun previewTimelineWithStatus(mitWeckzeitNachlauf: Boolean = true): TimelinePreview {
         val now = System.currentTimeMillis()
-        val w = computeWindows()
+        val w = computeWindows(mitWeckzeitNachlauf)
         return TimelinePreview(
             intervals = DimWindowResolver.mergeToTimeline(w.spans).filter { it.range.last > now },
             alarmReadFailed = w.alarmReadFailed
@@ -360,9 +367,9 @@ class DimScheduleUseCase @Inject constructor(
      * unabhaengige Ketten (Migration, Wartung, Boot-Recovery) binnen fuenf Sekunden dasselbe
      * Ergebnis erzeugten.
      */
-    private suspend fun computeWindows(): Windows {
+    private suspend fun computeWindows(mitWeckzeitNachlauf: Boolean = true): Windows {
         val begonnen = System.nanoTime()
-        return computeWindowsIntern().also {
+        return computeWindowsIntern(mitWeckzeitNachlauf).also {
             Logger.d(
                 LogTags.DIMMER,
                 "computeWindows #${zaehler.incrementAndGet()} in " +
@@ -372,7 +379,7 @@ class DimScheduleUseCase @Inject constructor(
         }
     }
 
-    private suspend fun computeWindowsIntern(): Windows {
+    private suspend fun computeWindowsIntern(mitWeckzeitNachlauf: Boolean): Windows {
         val anySourceEnabled = prefs.togglesNow().dimEnabled
         if (!anySourceEnabled) return Windows(emptyList(), alarmReadFailed = false, anySourceEnabled = false)
 
@@ -443,7 +450,17 @@ class DimScheduleUseCase @Inject constructor(
         // ueber ein Nacht-Fenster mit CLOCK-Start ab (das endet dann an genau diesem Wecker).
         // Die Alternative - manuelle Wecker in `slots` aufzunehmen - ist ausgeschlossen: sie
         // wuerde aus einem freien Tag still einen Schicht-Tag machen und die FREI-Regel aushebeln.
-        val weckzeiten = (spans.map { it.alarmTriggerTime } + alarms.map { it.triggerTime })
+        //
+        // GEKLINGELTE WECKZEITEN (seit 13.10.2026): Der Alarm-Bestand wirft Verstrichenes beim
+        // Laden weg - ein MANUELLER Wecker fiel damit nach dem Klingeln aus der Zeitleiste, und
+        // jede spaetere Neuberechnung oeffnete die Nacht erneut bis zur Uhrzeit-Grenze (Fairphone:
+        // Update um 05:36 nach dem 05:30-Wecker, gedimmt bis 07:00). Der Merker haelt sie so lange
+        // vor wie die Schichtspannen ihre Weckzeiten. Hergang an [GeklingelteWeckzeiten].
+        val weckzeiten = (
+            spans.map { it.alarmTriggerTime } +
+                alarms.map { it.triggerTime } +
+                GeklingelteWeckzeiten.lies(context)
+            )
             .distinct()
             .sorted()
 
@@ -456,6 +473,7 @@ class DimScheduleUseCase @Inject constructor(
                 ruleForShift = { name -> dimRuleUseCase.findRuleForShift(name, rules) },
                 ruleForFreeDay = { dimRuleUseCase.findRuleForFreeDay(rules) },
                 weckzeiten = weckzeiten,
+                mitWeckzeitNachlauf = mitWeckzeitNachlauf,
             )
         }
 

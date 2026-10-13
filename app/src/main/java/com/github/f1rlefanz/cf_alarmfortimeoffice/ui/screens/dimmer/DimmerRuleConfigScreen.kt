@@ -49,6 +49,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimAnchor
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimOverlayPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimRule
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimWindow
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimWindowResolver
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.SimpleBackTopAppBar
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.hilfe.HilfeThema
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.DimmerRulesViewModel
@@ -441,6 +442,24 @@ private fun WindowEditor(
                     }
                     Text(
                         text = stringResource(R.string.dimmer_end_alarm_sonst_clock_hinweis),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    // Nachlauf nach der Weckzeit - eigenes Feld, nicht endOffsetMinutes (Begruendung
+                    // an DimWindow.weckzeitNachlaufMinuten). Geklemmt wie im Resolver, damit das
+                    // Feld nie einen Wert zeigt, der anders wirkt als angezeigt.
+                    OffsetField(
+                        value = window.weckzeitNachlaufMinuten,
+                        label = stringResource(R.string.dimmer_end_nachlauf)
+                    ) {
+                        onChange(
+                            window.copy(
+                                weckzeitNachlaufMinuten = it.coerceIn(0, DimWindowResolver.NACHLAUF_MAX_MINUTEN)
+                            )
+                        )
+                    }
+                    Text(
+                        text = stringResource(R.string.dimmer_end_nachlauf_hinweis, DimWindowResolver.NACHLAUF_MAX_MINUTEN),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

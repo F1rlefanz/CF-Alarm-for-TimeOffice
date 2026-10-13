@@ -101,7 +101,7 @@ class DndScheduleTickChainTest {
     @Test
     fun `Lesefehler im Dimmer-Pfad ergibt den 15-Minuten-Retry, nicht den 6-Stunden-Keep-alive`() = runTest {
         val dimSchedule = mock<DimScheduleUseCase>()
-        whenever(dimSchedule.previewTimelineWithStatus()).thenReturn(
+        whenever(dimSchedule.previewTimelineWithStatus(mitWeckzeitNachlauf = false)).thenReturn(
             DimScheduleUseCase.TimelinePreview(intervals = emptyList(), alarmReadFailed = true)
         )
 
@@ -121,7 +121,7 @@ class DndScheduleTickChainTest {
         // Gegenprobe: eine wirklich leere Nacht (z. B. Nachtdienst-Unterdrueckung) darf NICHT als
         // Fehler gelten - "leere Fensterliste" ist bedeutungstragend, kein Defekt.
         val dimSchedule = mock<DimScheduleUseCase>()
-        whenever(dimSchedule.previewTimelineWithStatus()).thenReturn(
+        whenever(dimSchedule.previewTimelineWithStatus(mitWeckzeitNachlauf = false)).thenReturn(
             DimScheduleUseCase.TimelinePreview(intervals = emptyList(), alarmReadFailed = false)
         )
 

@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.AlarmPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.WecktonAnstieg
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.ZeitkettenArmierer
 import com.github.f1rlefanz.cf_alarmfortimeoffice.error.ErrorHandler
 import com.github.f1rlefanz.cf_alarmfortimeoffice.freietage.FreigabeZurueckgenommenException
 import com.github.f1rlefanz.cf_alarmfortimeoffice.freietage.TagFreigabeUseCase
@@ -167,7 +168,13 @@ class AlarmViewModel @Inject constructor(
      */
     private val alarmRepository: IAlarmRepository,
     /** "Tag freigeben" - siehe [TagFreigabeUiState] fuer die Abgrenzung zum Ueberspringen. */
-    private val tagFreigabeUseCase: TagFreigabeUseCase
+    private val tagFreigabeUseCase: TagFreigabeUseCase,
+    /**
+     * Ein manueller Wecker verschiebt das Ende eines Dimm-Fensters „bis zur Weckzeit, spaetestens
+     * um X" - ohne Nachzug blieb der naechste Dimm-Wechsel auf der alten Uhrzeit-Grenze stehen
+     * (Emulator, 13.10.2026: Wecker 05:30 angelegt, Wechsel weiter 07:00). Siehe [createManualAlarm].
+     */
+    private val zeitkettenArmierer: ZeitkettenArmierer
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(AlarmUiState())
@@ -1599,6 +1606,11 @@ class AlarmViewModel @Inject constructor(
                                     LogTags.ALARM,
                                     "✅ Manual alarm created: ${schicht.name} for $selectedDate"
                                 )
+                                // Dimmer und DND nachziehen: die neue Weckzeit kann ein laufendes
+                                // Nacht-Fenster frueher beenden. Eine ausdrueckliche Handlung des
+                                // Nutzers - anders als ein blosser Blick in die App darf sie den
+                                // Zustand sofort anwenden (vgl. planeNachVordergrundSync).
+                                zeitkettenArmierer.armiere("MANUELLER WECKER")
                             }
                             .onFailure { error ->
                                 // ZURUECKROLLEN, nicht liegenlassen - dieselbe Begruendung wie in
@@ -1664,6 +1676,9 @@ class AlarmViewModel @Inject constructor(
                             LogTags.ALARM,
                             "✅ Manual alarm deleted: ${activeAlarm.shiftName}"
                         )
+                        // Gegenstueck zu createManualAlarm: das Fenster endet nicht mehr an
+                        // dieser Weckzeit, sondern an der naechsten oder der Uhrzeit-Grenze.
+                        zeitkettenArmierer.armiere("MANUELLER WECKER")
                     }
                     .onFailure { error ->
                         _manualAlarmState.value = _manualAlarmState.value.copy(

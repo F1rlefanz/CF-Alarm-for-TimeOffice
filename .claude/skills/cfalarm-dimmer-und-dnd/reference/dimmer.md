@@ -30,6 +30,7 @@
 - „Nicht gebunden" hat ZWEI Lagen — Schalter aus, oder Schalter an und trotzdem getrennt (26./27.09.2026)
 - „Kurz hell, dann wieder dunkel“ — das Verschwinden ist nicht loggbar, die Rueckkehr schon
 - `DimCorrectionNotifier.show()` prüft `NotificationManagerCompat.areNotificationsEnabled()`
+- Manuelle Wecker nach dem Klingeln, der Nachlauf nach der Weckzeit und der Nachzug beim Anlegen (1.49.0)
 
 ---
 
@@ -757,3 +758,59 @@
   vor `notify()`** (Fix v1.22.1) — ohne POST_NOTIFICATIONS-Berechtigung verschluckt `notify()` sonst
   lautlos, ohne Log oder Exception, und sieht im Logcat identisch aus wie der obige Toggle-Bug.
 
+---
+
+## Manuelle Wecker nach dem Klingeln, der Nachlauf nach der Weckzeit und der Nachzug beim Anlegen (1.49.0)
+
+**Der Befund (Fairphone, 13.10.2026, Datei-Log, read-only gelesen).** Nachtfenster
+`CLOCK 22:00 → ALARM_SONST_CLOCK 07:00`; der Abrufdienst-Wecker galt an dem Morgen nicht, das Ende
+kam vom MANUELLEN 05:30-Wecker. 22:00: „Fenster 22:00-05:30". 05:30:01: Wecker, Dimmen aus —
+korrekt. 05:36:25: Auto-Update, Prozess getötet, Dienst kehrt zurück, Neuberechnung: „Fenster
+22:00-07:00" — der Dimmer ging WIEDER AN und blieb bis 07:00. Laut Nutzer nicht zum ersten Mal.
+
+**Die Ursache.** Die Weckzeit-Zeitleiste in `computeWindows` bestand aus Schichtspannen (überleben
+die Weckzeit, drei Tage Rückschau) und dem Alarm-Bestand. Der Bestand wirft Verstrichenes beim
+LADEN weg (`AlarmRepository`, `triggerTime > now`). Ein manueller Wecker verschwand damit nach dem
+Klingeln aus der Zeitleiste, und JEDE Neuberechnung zwischen Weckzeit und Uhrzeit-Grenze (Update,
+Sync, Dienst-Rückkehr, Regeländerung) öffnete die Nacht erneut. Ob der Bildschirm nach dem Wecken
+hell blieb, war Zufall.
+
+**Der Fix: `alarm/GeklingelteWeckzeiten`.** Der `AlarmReceiver` merkt sich jede AUSGELÖSTE
+Weckzeit (nach der Skip-Prüfung, vor der Stille-Prüfung) in Device-Protected SharedPreferences,
+drei Tage wie die Spannen; `computeWindows` liest sie in die Zeitleiste. Verworfene Alternativen:
+- *Beim Anlegen merken:* ein gelöschter oder übersprungener Wecker beendete das Fenster dann an
+  einem Morgen, an dem nichts klingelte.
+- *Merken in `computeWindows` (was es dort sieht):* dasselbe Problem — die Berechnung weiß nicht,
+  ob ein Wecker später gelöscht wurde.
+- *Den Repository-Filter lockern:* der Bestand ist die Quelle für Anzeige, Boot und Skip; ein
+  verstrichener Eintrag dort hat überall sonst Folgen.
+Device-Protected, weil der Receiver auch im Direct Boot feuert; jeder Zugriff wirft nie, ein
+Lesefehler fällt auf das alte Verhalten zurück.
+
+**Das Rennen an der Weckzeit (Review vor dem Merge).** Dimm-Tick und Wecker-Broadcast feuern im
+selben Augenblick. Rechnet der Tick, nachdem der verstrichene Wecker aus dem Bestand gefallen
+ist, aber bevor `merke()` geschrieben hat, öffnet er bei Nachlauf 0 die Nacht bis zur
+Uhrzeit-Grenze — und plant den nächsten Wechsel erst dort. Deshalb ruft der Receiver nach dem
+Weckton-Start (nie davor, der Wecker wartet auf nichts) `ZeitkettenArmierer.armiere("WECKER
+AUSGELOEST")`, nur entsperrt. Und die Zeit wird auf die volle Minute abgerundet: ungerundet
+verschob sich das Fensterende beim Herausfallen des Weckers um die Zustellverzögerung — und mit
+ihm die Fenster-Identität eines Korrektur-Overrides (`isOverrideStale`).
+
+**Der Nachlauf: `DimWindow.weckzeitNachlaufMinuten`** („bis Weckzeit + X, spätestens um die
+Uhrzeit"), Nutzerwunsch: im Winter blendet das schlagartig helle Display beim Frühdienst. Zwei
+Nutzerentscheidungen (13.10.2026): die Uhrzeit bleibt HARTE Obergrenze (`min(weckzeit + X,
+schranke)`, „spätestens" bleibt wahr), und **„Nicht stören" macht den Nachlauf NICHT mit** — DND
+Modus 1 ruft `previewTimelineWithStatus(mitWeckzeitNachlauf = false)`, wer gerade geweckt wurde,
+soll erreichbar sein. **Eigenes Feld statt `endOffsetMinutes`:** der Editor lässt beim
+Ankerwechsel den alten Versatz im gespeicherten Fenster stehen — ein Ende, das ihn plötzlich
+liest, hätte bestehende Regeln nach dem Update still verlängert. Geklemmt auf
+`0..NACHLAUF_MAX_MINUTEN` (120) im Resolver UND im Editor. Die Weckzeit-Suche selbst (welche
+Weckzeit gehört zur Nacht) bleibt allein an der Schranke.
+
+**Der Nachzug beim Anlegen (Emulator-Nebenbefund).** Ein im laufenden Fenster angelegter
+manueller Wecker plante den Dimmer NICHT neu — der nächste Wechsel blieb auf 07:00, das Fenster
+lief über den Wecker hinweg. `AlarmViewModel.createManualAlarm`/`deleteManualAlarm` rufen jetzt
+`ZeitkettenArmierer.armiere("MANUELLER WECKER")`. Das widerspricht nicht der Regel „ein Blick in
+die App schaltet nichts um" (`planeNachVordergrundSync`): Anlegen ist eine ausdrückliche Handlung.
+Offen bleibt der bekannte Rest: ein VORDERGRUND-Sync, der Schichtwecker verschiebt, zieht Dimmer
+und DND weiterhin erst mit der nächsten Wartung nach.

@@ -27,7 +27,22 @@ Schreibkonventionen (der Generator verlässt sich darauf):
 - `### 🐛 Behoben` — Rubrik, mit Emoji wie bisher.
 - `- **Kurzfassung:** Erklärung` — ein Eintrag.
 
-## 🆕 Version 1.48.0 (Aktuell – interne Alpha)
+## 🆕 Version 1.49.0 (Aktuell – interne Alpha)
+
+**Stand:** Oktober 2026
+
+_Der Schicht-Dimmer hält sich an deinen manuellen Wecker – und darf nach dem Wecken auf Wunsch noch eine Weile dunkel bleiben._
+
+### 🐛 Behoben
+
+- **Nach einem manuellen Wecker ging das Dimmen wieder an:** Endete die Nacht an einem selbst gestellten Wecker, konnte der Bildschirm danach erneut gedimmt werden – bis zur eingestellten Uhrzeit, etwa nach einem App-Update am frühen Morgen. Ein manueller Wecker beendet die Nacht jetzt genauso verlässlich wie ein Schichtwecker.
+- **Ein neuer manueller Wecker zählt sofort:** Wer abends einen manuellen Wecker stellt, während schon gedimmt wird, bekommt das Ende des Dimmens jetzt gleich auf diesen Wecker gelegt – vorher galt bis zum nächsten Abgleich weiter die Uhrzeit.
+
+### ✨ Neu
+
+- **Nach dem Wecken noch gedimmt:** Bei „Weckzeit, spätestens“ lässt sich einstellen, wie viele Minuten der Bildschirm nach dem Wecken noch gedunkelt bleibt (bis zu 120). So blendet das Display im dunklen Winter nicht schlagartig. Die eingestellte Uhrzeit bleibt die Obergrenze, und „Nicht stören“ endet trotzdem an der Weckzeit – du bist nach dem Wecken erreichbar.
+
+## Version 1.48.0
 
 **Stand:** Oktober 2026
 

@@ -157,10 +157,10 @@ private fun SchlummerFeld(snoozeMinutes: Int, onSnoozeMinutesChange: (Int) -> Un
                 )
             },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
-            keyboardActions = KeyboardActions(onDone = {
-                uebernehmen()
-                focusManager.clearFocus()
-            }),
+            // „Fertig“ gibt nur den Fokus ab - uebernommen wird EINMAL, im Fokusverlust darunter.
+            // Ein zweites uebernehmen() hier liefe auf dem schon korrigierten Wert und loeschte
+            // den Hinweis wieder, bevor ihn jemand sieht.
+            keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
             modifier = Modifier
                 .width(132.dp)
                 .semantics { contentDescription = "Schlummer-Dauer in Minuten" }

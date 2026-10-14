@@ -34,13 +34,13 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.uhrBeimFortsetze
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.wecker.ANDERER_TAG_KNOPF
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.wecker.Abschnittstitel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.wecker.KlangKarte
-import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.wecker.NICHT_WECKEN_NUR_NAECHSTER
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.wecker.TagDetails
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.wecker.TagKarte
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.wecker.TagesAktionen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.wecker.WeckerZustand
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.wecker.alsSkipLage
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.wecker.leerzustandText
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.wecker.nichtWeckenHinweis
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.wecker.weckerZustand
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.wecker.zustandsHinweisText
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.warning
@@ -238,9 +238,9 @@ fun WeckerTabContent(
             }
         }
 
-        if (tage.any { it.eintraege.isNotEmpty() }) {
+        nichtWeckenHinweis(tage)?.let { satz ->
             Text(
-                NICHT_WECKEN_NUR_NAECHSTER,
+                satz,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

@@ -13,6 +13,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.SchichtWirkung
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.SkipLage
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.TagesSchicht
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.WeckerEintrag
+import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.WeckerTag
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
@@ -221,6 +222,32 @@ internal const val ZURUECKNEHMEN_ERKLAERUNG: String =
 internal const val NICHT_WECKEN_NUR_NAECHSTER: String =
     "„Nicht wecken“ gibt es nur für den nächsten Wecker. Fällt ein späterer Dienst aus, tippe auf " +
         "seinen Tag und wähle „Dienst fällt aus“."
+
+/**
+ * Statt [NICHT_WECKEN_NUR_NAECHSTER], solange ein Wecker ausgelassen ist: dann traegt der folgende
+ * Wecker zwar „nächster“, aber KEINEN Knopf - es gibt genau einen Skip-Platz. Der Satz darf ihn
+ * dann nicht versprechen.
+ */
+internal const val NUR_EIN_WECKER_AUSLASSEN: String =
+    "Es lässt sich immer nur ein Wecker auslassen – „Doch wecken“ nimmt das zurück. Fällt ein " +
+        "späterer Dienst aus, tippe auf seinen Tag und wähle „Dienst fällt aus“."
+
+/**
+ * PURE, TESTBAR: der Satz unter der Liste - nur in dem Zustand, den er beschreibt.
+ *
+ * - Eine Zeile „weckt diesmal nicht“ steht da: [NUR_EIN_WECKER_AUSLASSEN].
+ * - Eine Zeile bietet „Nicht wecken“ an: [NICHT_WECKEN_NUR_NAECHSTER].
+ * - Sonst (nur stille Eintraege, nur freigegebene Tage, Skip ohne bekannten Zeitpunkt): keiner -
+ *   jeder der beiden verspraeche einen Knopf, den es in der Liste nicht gibt.
+ */
+internal fun nichtWeckenHinweis(tage: List<WeckerTag>): String? {
+    val eintraege = tage.flatMap { it.eintraege }
+    return when {
+        eintraege.any { it is WeckerEintrag.Uebersprungen } -> NUR_EIN_WECKER_AUSLASSEN
+        eintraege.any { it is WeckerEintrag.Wecker && it.nichtWeckenMoeglich } -> NICHT_WECKEN_NUR_NAECHSTER
+        else -> null
+    }
+}
 
 /** Der Textknopf unter der Liste - dieselbe Geste, derselbe Name wie am Tag. */
 internal const val ANDERER_TAG_KNOPF: String = "Dienst fällt an einem anderen Tag aus …"

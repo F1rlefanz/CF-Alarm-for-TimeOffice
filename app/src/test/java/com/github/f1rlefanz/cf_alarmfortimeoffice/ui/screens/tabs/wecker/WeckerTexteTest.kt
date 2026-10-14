@@ -14,7 +14,9 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.Kaertchen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.LichtStatus
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.SchichtFolgen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.TagesSchicht
+import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.SkipLage
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.WeckerEintrag
+import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.baueWeckerTage
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -22,6 +24,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.LocalDate
 import java.time.LocalTime
+import java.time.ZoneId
 
 /** Texte und reine Entscheidungen des Wecker-Tabs (#139). */
 class WeckerTexteTest {
@@ -166,6 +169,35 @@ class WeckerTexteTest {
         assertTrue(NICHT_WECKEN_NUR_NAECHSTER.contains("„Nicht wecken“"))
         assertTrue(NICHT_WECKEN_NUR_NAECHSTER.contains("„Dienst fällt aus“"))
         assertTrue(ANDERER_TAG_KNOPF.startsWith("Dienst fällt"))
+        assertTrue(NUR_EIN_WECKER_AUSLASSEN.contains("„Doch wecken“"))
+        assertTrue(NUR_EIN_WECKER_AUSLASSEN.contains("„Dienst fällt aus“"))
+    }
+
+    private val jetzt = 1_000_000_000_000L
+    private val tag = 24 * 60 * 60 * 1000L
+
+    private fun liste(vararg alarme: AlarmInfo, skip: SkipLage = SkipLage.KEIN) =
+        baueWeckerTage(alarme.toList(), emptyList(), skip, jetzt, ZoneId.of("UTC"), emptyMap())
+
+    private fun wecker(id: Int, abstand: Long, still: Boolean = false) = AlarmInfo(
+        id = id, shiftId = "s$id", shiftName = "Früh", triggerTime = jetzt + abstand,
+        formattedTime = "", isSilent = still
+    )
+
+    @Test
+    fun `der Satz unter der Liste verspricht nur einen Knopf, den es gibt`() {
+        // Normalfall: der naechste Wecker hat „Nicht wecken“.
+        assertEquals(NICHT_WECKEN_NUR_NAECHSTER, nichtWeckenHinweis(liste(wecker(1, tag))))
+        // Skip aktiv: der folgende Wecker heisst „nächster“, hat aber keinen Knopf.
+        assertEquals(
+            NUR_EIN_WECKER_AUSLASSEN,
+            nichtWeckenHinweis(
+                liste(wecker(2, 2 * tag), skip = SkipLage(aktiv = true, alarmId = 1, weckzeitpunkt = jetzt + tag))
+            )
+        )
+        // Nur stille Eintraege: nirgends ein Knopf, also kein Satz.
+        assertNull(nichtWeckenHinweis(liste(wecker(3, tag, still = true))))
+        assertNull(nichtWeckenHinweis(emptyList()))
     }
 
     // --- Klang ------------------------------------------------------------------------------

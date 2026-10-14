@@ -164,6 +164,8 @@ class HueSmartScheduler private constructor() {
          * Wird die App direkt nach dem Tippen weggewischt, blieb der Auftrag stehen: das Licht fuhr
          * am freien Morgen vor einer Weckzeit hoch, die es nicht mehr gab, und weil der
          * Weckzeit-Pfad im `AlarmReceiver` dann nie lief, entstand auch kein Auto-Aus.
+         * Laeuft die Rampe beim Tippen SCHON, greift diese Pruefung nicht mehr - dafuer legt die
+         * Rampe ihr Auto-Aus gleich mit an (`HueRuleUseCase.vorabAutoAusZiele`).
          *
          * Dieselben Bedingungen wie [sonnenaufgangsKandidaten] (aktiv, nicht still), dazu
          * derselbe Schichtname und dieselbe Weckzeit, verglichen als Ortszeit wie beim Planen.

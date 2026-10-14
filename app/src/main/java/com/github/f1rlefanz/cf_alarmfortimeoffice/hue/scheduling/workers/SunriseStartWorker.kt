@@ -31,6 +31,17 @@ class SunriseStartWorker(
 
         /** Die Weckzeit als ISO-Ortszeit - fuer [HueSmartScheduler.sonnenaufgangNochGedeckt]. */
         const val KEY_WECKZEIT = "weckzeit"
+
+        /**
+         * PURE, TESTBAR: ganze Minuten von [jetzt] bis [weckzeit], aufgerundet und nie negativ
+         * (WorkManager startet den Auftrag auch verspaetet). Echte Zeit, nicht Wanduhr - dieselbe
+         * Rechnung wie beim Planen ([HueSmartScheduler.realeVerzoegerungMillis]), sonst laege das
+         * Vorab-Auto-Aus in der Nacht der Zeitumstellung eine Stunde daneben.
+         */
+        internal fun minutenBisWecker(jetzt: LocalDateTime, weckzeit: LocalDateTime): Int {
+            val millis = HueSmartScheduler.realeVerzoegerungMillis(jetzt, weckzeit).coerceAtLeast(0L)
+            return ((millis + 59_999L) / 60_000L).toInt()
+        }
     }
 
     private val bridgeManager = HueBridgeConnectionManager.getInstance(context)
@@ -46,7 +57,8 @@ class SunriseStartWorker(
         // hier raeumt sonst nur ein Beobachter ab, der den Prozess-Tod nicht ueberlebt - siehe
         // HueSmartScheduler.sonnenaufgangNochGedeckt. Ein Auftrag aus einer Version OHNE Weckzeit
         // laeuft wie bisher. Im Zweifel (Bestand nicht lesbar) KEINE Rampe: der Wecker klingelt
-        // davon unabhaengig, ein Licht ohne Wecker bekaeme dagegen nie ein Auto-Aus.
+        // davon unabhaengig, und ein Licht ohne Wecker ginge allenfalls ueber das Vorab-Auto-Aus
+        // wieder aus - besser gar nicht erst an.
         val weckzeit = inputData.getString(KEY_WECKZEIT)?.let { runCatching { LocalDateTime.parse(it) }.getOrNull() }
         if (weckzeit != null) {
             val gedeckt = try {
@@ -78,7 +90,12 @@ class SunriseStartWorker(
                 .fromApplication(applicationContext, HueSmartSchedulerEntryPoint::class.java)
                 .hueRuleUseCase()
 
-            val result = ruleUseCase.executeSunrisePreAlarm(shiftName)
+            // Mit Weckzeit legt der Lauf das Auto-Aus gleich mit an - sonst bliebe das Licht an,
+            // wenn der Wecker WAEHREND der Rampe geloescht wird (HueRuleUseCase.vorabAutoAusZiele).
+            val result = ruleUseCase.executeSunrisePreAlarm(
+                shiftName,
+                weckzeit?.let { minutenBisWecker(LocalDateTime.now(), it) }
+            )
             if (result.isSuccess) {
                 val exec = result.getOrNull()
                 Logger.i(

@@ -6,6 +6,9 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.ProbeZustand
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.SchlummerEingabe
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.reinerSchichtname
+import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.LetzterSchichtStand
+import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpan
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.dienstzeitText
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.kurzesDatum
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.AlarmSkipUiState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.Kaertchen
@@ -17,6 +20,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.WeckerEintrag
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.WeckerTag
 import java.time.LocalDate
 import java.time.LocalTime
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlin.math.roundToInt
@@ -106,6 +110,16 @@ internal fun weckerWirkungen(
         }
         .toMap()
 
+/**
+ * PURE, TESTBAR: welche Schichtspannen die Tagesliste liest. Waehrend der Master-Pause und bei
+ * ausgeschalteter Automatik KEINE: dann ist kein Wecker gestellt (der Hinweis oben sagt es), und
+ * der Spannen-Bestand wird in diesen Lagen auch nicht mehr geschrieben - ein Tag „Dienst ohne
+ * Wecker“ aus einem alten Stand widerspraeche dem Hinweis. `null` (nicht lesbar, noch nicht
+ * gelesen) heisst ebenfalls keine: die Liste faellt dann auf die Wecker allein zurueck.
+ */
+internal fun spannenFuerTagesliste(zustand: WeckerZustand?, stand: LetzterSchichtStand?): List<ShiftSpan> =
+    if (zustand != null) emptyList() else stand?.spans.orEmpty()
+
 /** "Mi 14.10." - dieselbe Datumsform wie in der Dienstzeit („ganztägig bis So 18.10.“). */
 internal fun tagUeberschrift(datum: LocalDate): String = kurzesDatum(datum)
 
@@ -118,18 +132,14 @@ internal fun relativerTag(datum: LocalDate, heute: LocalDate): String? = when (d
 
 /**
  * "F · 06:00–14:12", mehrere Schichten mit Komma. Der Name ohne "(Manuell)": dass ein Wecker von
- * Hand gestellt ist, sagt dessen Zeile. Unbekannte Dienstzeit (Feld 0) -> nur der Name.
+ * Hand gestellt ist, sagt dessen Zeile. Unbekannte Dienstzeit (Feld 0) -> nur der Name. Die
+ * Dienstzeit kommt aus derselben Formatierung wie in der Uebersicht ([dienstzeitText]):
+ * „Abrufdienst · ganztägig“ statt „00:00–00:00“.
  */
-internal fun schichtenText(schichten: List<TagesSchicht>): String =
+internal fun schichtenText(schichten: List<TagesSchicht>, zone: ZoneId): String =
     schichten.joinToString(", ") { schicht ->
         val name = reinerSchichtname(schicht.name)
-        val beginn = schicht.beginn
-        val ende = schicht.ende
-        when {
-            beginn != null && ende != null -> "$name$NBSP·$NBSP${uhrzeit(beginn)}–${uhrzeit(ende)}"
-            beginn != null -> "$name$NBSP·${NBSP}ab$NBSP${uhrzeit(beginn)}"
-            else -> name
-        }
+        dienstzeitText(schicht.beginn, schicht.ende, zone)?.let { "$name$NBSP·$NBSP$it" } ?: name
     }
 
 internal fun uhrzeit(zeit: LocalTime): String = zeit.format(UHRZEIT)

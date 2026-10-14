@@ -40,6 +40,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.WeckerEintrag
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.WeckerTag
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.alsText
 import java.time.LocalDate
+import java.time.ZoneId
 
 /**
  * Was eine Tageskarte und das Bottom-Sheet bedienen koennen. Die Aktionen rufen die BESTEHENDEN
@@ -145,7 +146,7 @@ private fun TagKopf(tag: WeckerTag, heute: LocalDate) {
     }
     if (tag.schichten.isNotEmpty()) {
         Text(
-            schichtenText(tag.schichten),
+            schichtenText(tag.schichten, ZoneId.systemDefault()),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )

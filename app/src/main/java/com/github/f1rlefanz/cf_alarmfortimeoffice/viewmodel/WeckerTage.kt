@@ -1,8 +1,10 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.freietage.FreieTageStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmInfo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.reinerSchichtname
+import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpan
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.AlarmSkipUseCase
 import java.time.Instant
 import java.time.LocalDate
@@ -18,6 +20,13 @@ import java.time.ZoneId
  * `TagFreigabeUseCase.gehoertZuTag`, `AlarmUseCase.istTagFreigegeben` und `berechneWeckerAnzeige`.
  * Wer hier den Schichtbeginn nimmt, zeigt eine Nachtschicht, die um 23:30 weckt und um 00:15
  * beginnt, an einem anderen Tag, als „Dienst fällt aus“ sie freigibt.
+ *
+ * ZWEI QUELLEN JE TAG (Fairphone-Rueckmeldung 14.10.2026): die Wecker aus dem Bestand UND die
+ * Dienste aus dem `ShiftSpanStore`. Ein Wecker ist ein Weckzeitpunkt, eine Spanne ist ein Dienst -
+ * und der Bestand verliert seinen Wecker in genau den Lagen, in denen der Tag gebraucht wird: nach
+ * „Nicht wecken“ (geloescht), nach dem Klingeln (verstrichen) und nach „Dienst fällt aus“
+ * (geloescht). Die Spanne bleibt in allen dreien. Ihr Tagesanker ist derselbe
+ * ([FreieTageStore.tagVon], die Weckzeit).
  */
 data class WeckerTag(
     val datum: LocalDate,
@@ -25,17 +34,23 @@ data class WeckerTag(
     val freigegeben: Boolean,
     /** Nach Weckzeit sortiert; bei einem freigegebenen Tag ohne eigene Wecker leer. */
     val eintraege: List<WeckerEintrag>,
-    /** Die Schichten des Tages in Reihenfolge ihrer Wecker, ohne Doppelungen. */
+    /**
+     * Die Dienste des Tages in Reihenfolge ihrer Weckzeit, ohne Doppelungen - aus Weckern UND
+     * Schichtspannen. Auch an einem freigegebenen Tag: dort nennt sie den Dienst, der AUSFAELLT.
+     */
     val schichten: List<TagesSchicht>,
     /** Was die Dienste dieses Tages ausserhalb des Weckers ausloesen - siehe [kaertchenFuer]. */
     val kaertchen: List<Kaertchen>
 )
 
-/** Eine Schicht des Tages mit Dienstzeit; `null` = unbekannt (Feld war 0). */
+/**
+ * Eine Schicht des Tages mit Dienstzeit als Epoch-Millis; 0 = unbekannt (wie in `AlarmInfo`).
+ * Millis statt Uhrzeit: „ganztägig“ und „bis So 18.10.“ brauchen das DATUM des Endes.
+ */
 data class TagesSchicht(
     val name: String,
-    val beginn: LocalTime?,
-    val ende: LocalTime?
+    val beginn: Long,
+    val ende: Long
 )
 
 sealed interface WeckerEintrag {
@@ -135,11 +150,29 @@ data class SkipLage(
  *   einen anderen Wecker, als er abschaltet. Freigegebene Tage filtert diese Grundmenge bewusst
  *   NICHT vor - `skipNextAlarm` kennt sie auch nicht.
  *
+ * - Schichtspannen ([spannen]) zaehlen nur, solange ihr Dienst nicht zu Ende ist und ihr Tag nicht
+ *   vor heute liegt. Sie ERGAENZEN einen Tag, den es ohnehin gibt (Schichtzeile, Kaertchen), und
+ *   sie halten genau einen Tag zusaetzlich in der Liste: HEUTE, solange der Dienst laeuft oder
+ *   bevorsteht - auch wenn sein Wecker schon geklingelt hat. Am Krankheitsmorgen muss man den Tag
+ *   noch antippen und „Dienst fällt aus“ waehlen koennen; vorher verschwand er mit der Weckzeit.
+ *   Kuenftige Tage NUR aus einer Spanne entstehen bewusst nicht: ein Dienst ohne Wecker an einem
+ *   kommenden Tag (abgewiesener Sync, Horizont) saehe aus wie ein Fehler der Liste.
+ * - Der verstrichene Wecker von heute erscheint NICHT als Zeile („hat um 05:30 geweckt“): ob er
+ *   wirklich geklingelt hat, weiss die Anzeige nicht - er kann uebersprungen oder still gewesen
+ *   sein, und der Bestand hat ihn verworfen. Eine Zeile, die das behauptet, waere eine Anzeige, die
+ *   es nicht gibt (Skill cfalarm-ui-und-navigation). Der Tag zeigt Dienst, Dienstzeit, Kaertchen.
+ * - Die Spannen kommen ROH, nicht durch `FreieTageStore.filtereSpannen`: die Liste ist Anzeige und
+ *   will gerade an einem freigegebenen Tag nennen, WELCHER Dienst ausfaellt. Dessen Wirkungen
+ *   (Kaertchen) zeigt sie dort trotzdem nicht - siehe unten.
+ *
+ * @param spannen der zuletzt geschriebene Stand des `ShiftSpanStore` (`ShiftUiState.letzterSchichtStand`).
  * @param wirkungen Schichtname (rein, ohne „(Manuell)“) -> [SchichtWirkung]. Fehlt ein Name,
  *   bekommt seine Schicht kein Kaertchen.
  */
 internal fun baueWeckerTage(
     alarme: List<AlarmInfo>,
+    // Bewusst OHNE Default, wie [wirkungen]: vergessen hiesse still „keine Dienste“.
+    spannen: List<ShiftSpan>,
     freieTage: Collection<LocalDate>,
     skip: SkipLage,
     jetzt: Long,
@@ -181,10 +214,16 @@ internal fun baueWeckerTage(
             WeckerEintrag.Uebersprungen(skipZeit, uhrzeitVon(skipZeit, zone))
     }
 
-    return (eintraegeJeTag.keys + freiAbHeute).sorted().map { datum ->
+    val spannenJeTag = spannen
+        .filter { it.endTime > jetzt }
+        .groupBy { FreieTageStore.tagVon(it, zone) }
+        .filterKeys { !it.isBefore(heute) }
+    val heuteMitDienst = listOfNotNull(heute.takeIf { spannenJeTag.containsKey(it) })
+
+    return (eintraegeJeTag.keys + freiAbHeute + heuteMitDienst).sorted().map { datum ->
         val eintraege = eintraegeJeTag[datum].orEmpty().sortedBy { it.triggerTime }
         val freigegeben = datum in freiAbHeute
-        val schichten = schichtenDesTages(eintraege, zone)
+        val schichten = schichtenDesTages(eintraege, spannenJeTag[datum].orEmpty())
         WeckerTag(
             datum = datum,
             freigegeben = freigegeben,
@@ -193,9 +232,7 @@ internal fun baueWeckerTage(
             // Freigegeben: `FreieTageStore.filtereSpannen` nimmt die Spannen dieses Tages aus
             // Dimmer, „Nicht stören“ und der Rufbereitschafts-Abfrage - es wirkt also nichts davon.
             kaertchen = if (freigegeben) emptyList() else kaertchenFuerSchichten(
-                eintraege.filterIsInstance<WeckerEintrag.Wecker>()
-                    .map { reinerSchichtname(it.alarm.shiftName) }
-                    .distinct(),
+                schichten.map { reinerSchichtname(it.name) }.distinct(),
                 wirkungen
             )
         )
@@ -235,25 +272,25 @@ internal fun kaertchenFuerSchichten(
 }
 
 /**
- * Eine Zeile je Schicht, zusammengefasst ueber den REINEN Namen: ein manueller „Frühdienst
- * (Manuell)“ neben dem Dienstplan-Frühdienst ist dieselbe Schicht, und der Kopf des Tages soll sie
- * nicht doppelt nennen - dass ein Wecker von Hand gestellt ist, sagt schon dessen Zeile. Bevorzugt
- * wird der Eintrag MIT bekannter Dienstzeit (ein manueller hat 0/0) und dessen Anzeigename.
+ * Eine Zeile je Schicht, zusammengefasst ueber den REINEN Namen - aus den Weckern UND den
+ * Schichtspannen des Tages. Ein manueller „Frühdienst (Manuell)“ neben dem Dienstplan-Frühdienst
+ * ist dieselbe Schicht, und die Spanne zum Wecker ist derselbe Dienst: der Kopf des Tages nennt
+ * ihn einmal. Bevorzugt wird der Eintrag MIT bekannter Dienstzeit (ein manueller hat 0/0) und
+ * dessen Anzeigename. Reihenfolge: nach Weckzeit.
  */
-private fun schichtenDesTages(eintraege: List<WeckerEintrag>, zone: ZoneId): List<TagesSchicht> =
-    eintraege.filterIsInstance<WeckerEintrag.Wecker>()
-        .map { it.alarm }
-        .filter { it.shiftName.isNotBlank() }
-        .groupBy { reinerSchichtname(it.shiftName) }
+private fun schichtenDesTages(eintraege: List<WeckerEintrag>, spannen: List<ShiftSpan>): List<TagesSchicht> {
+    val ausWeckern = eintraege.filterIsInstance<WeckerEintrag.Wecker>().map { it.alarm }.map {
+        it.triggerTime to TagesSchicht(it.shiftName, it.shiftStartTime, it.shiftEndTime)
+    }
+    val ausSpannen = spannen.map { it.alarmTriggerTime to TagesSchicht(it.shiftName, it.startTime, it.endTime) }
+    return (ausWeckern + ausSpannen)
+        .sortedBy { it.first }
+        .map { it.second }
+        .filter { it.name.isNotBlank() }
+        .groupBy { reinerSchichtname(it.name) }
         .values
-        .map { gruppe ->
-            val alarm = gruppe.firstOrNull { it.shiftStartTime != 0L || it.shiftEndTime != 0L } ?: gruppe.first()
-            TagesSchicht(
-                name = alarm.shiftName,
-                beginn = alarm.shiftStartTime.takeIf { it != 0L }?.let { uhrzeitVon(it, zone) },
-                ende = alarm.shiftEndTime.takeIf { it != 0L }?.let { uhrzeitVon(it, zone) }
-            )
-        }
+        .map { gruppe -> gruppe.firstOrNull { it.beginn != 0L || it.ende != 0L } ?: gruppe.first() }
+}
 
 private fun tagVon(millis: Long, zone: ZoneId): LocalDate =
     Instant.ofEpochMilli(millis).atZone(zone).toLocalDate()

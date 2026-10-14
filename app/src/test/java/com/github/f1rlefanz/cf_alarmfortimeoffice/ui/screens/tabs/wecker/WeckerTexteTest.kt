@@ -6,6 +6,8 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.ProbeZustand
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.SchlummerEingabe
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmInfo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
+import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.LetzterSchichtStand
+import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpan
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.AlarmSkipUiState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.DienstzeitDnd
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.DimmStatus
@@ -23,6 +25,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.LocalDate
+import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.ZoneId
 
@@ -113,15 +116,40 @@ class WeckerTexteTest {
         assertNull(relativerTag(heute.plusDays(2), heute))
     }
 
+    private val berlin: ZoneId = ZoneId.of("Europe/Berlin")
+
+    private fun ms(text: String): Long = LocalDateTime.parse(text).atZone(berlin).toInstant().toEpochMilli()
+
     @Test
     fun `Schichten mit Dienstzeit, ohne Manuell-Zusatz, unbekannte Zeit ohne Uhrzeit`() {
         val text = schichtenText(
             listOf(
-                TagesSchicht("F (Manuell)", LocalTime.of(6, 0), LocalTime.of(14, 12)),
-                TagesSchicht("AD1", null, null)
-            )
+                TagesSchicht("F (Manuell)", ms("2026-10-14T06:00"), ms("2026-10-14T14:12")),
+                TagesSchicht("AD1", 0L, 0L)
+            ),
+            berlin
         )
         assertEquals("F · 06:00–14:12, AD1", text)
+    }
+
+    @Test
+    fun `ganztaegiger Dienst heisst ganztaegig, nicht 00-00 bis 00-00`() {
+        val text = schichtenText(
+            listOf(TagesSchicht("Abrufdienst", ms("2026-10-17T00:00"), ms("2026-10-18T00:00"))),
+            berlin
+        ).replace(' ', ' ')
+        assertEquals("Abrufdienst · ganztägig", text)
+    }
+
+    @Test
+    fun `Spannen nur ohne Pause und mit Automatik`() {
+        val spanne = ShiftSpan("F", ms("2026-10-14T06:00"), ms("2026-10-14T14:00"), ms("2026-10-14T05:00"))
+        val stand = LetzterSchichtStand(listOf(spanne), stand = 1L)
+        assertEquals(listOf(spanne), spannenFuerTagesliste(null, stand))
+        assertTrue(spannenFuerTagesliste(WeckerZustand.MASTER_PAUSE, stand).isEmpty())
+        assertTrue(spannenFuerTagesliste(WeckerZustand.AUTOMATIK_AUS, stand).isEmpty())
+        // Nicht lesbar / noch nicht gelesen: die Liste faellt auf die Wecker allein zurueck.
+        assertTrue(spannenFuerTagesliste(null, null).isEmpty())
     }
 
     private fun wecker(
@@ -177,7 +205,7 @@ class WeckerTexteTest {
     private val tag = 24 * 60 * 60 * 1000L
 
     private fun liste(vararg alarme: AlarmInfo, skip: SkipLage = SkipLage.KEIN) =
-        baueWeckerTage(alarme.toList(), emptyList(), skip, jetzt, ZoneId.of("UTC"), emptyMap())
+        baueWeckerTage(alarme.toList(), emptyList(), emptyList(), skip, jetzt, ZoneId.of("UTC"), emptyMap())
 
     private fun wecker(id: Int, abstand: Long, still: Boolean = false) = AlarmInfo(
         id = id, shiftId = "s$id", shiftName = "Früh", triggerTime = jetzt + abstand,

@@ -134,7 +134,7 @@ class UeberspringenKlingelnderWeckerTest {
     }
 
     private fun wecker(alarme: List<AlarmInfo>, jetzt: Long, zone: ZoneId): List<WeckerEintrag.Wecker> =
-        baueWeckerTage(alarme, emptyList(), SkipLage.KEIN, jetzt, zone, emptyMap())
+        baueWeckerTage(alarme, emptyList(), emptyList(), SkipLage.KEIN, jetzt, zone, emptyMap())
             .flatMap { it.eintraege }
             .filterIsInstance<WeckerEintrag.Wecker>()
 

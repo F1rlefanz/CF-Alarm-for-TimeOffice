@@ -41,6 +41,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.wecker.WeckerZ
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.wecker.alsSkipLage
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.wecker.leerzustandText
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.wecker.nichtWeckenHinweis
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.wecker.spannenFuerTagesliste
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.wecker.weckerZustand
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.wecker.zustandsHinweisText
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.warning
@@ -149,8 +150,15 @@ fun WeckerTabContent(
     // Was dazwischen veralten kann, faengt die Ziel-Nachrechnung in skipNextAlarm() ab (die Zeile
     // reicht ihren Weckzeitpunkt mit).
     val fortgesetzt = uhrBeimFortsetzen()
+    val config = shiftState.currentShiftConfig
+    val zustand = weckerZustand(masterPausePaused, config?.autoAlarmEnabled)
+    // Die Dienste aus dem Schichtspannen-Bestand - dieselbe Quelle wie die Karte „Nächste
+    // Schicht“ offline (`ShiftViewModel` liest ihn bei jeder Kalender-Emission, nur im
+    // Vordergrund). Ohne sie verlor ein Tag nach „Nicht wecken“ und nach dem Klingeln seinen Dienst.
+    val spannen = spannenFuerTagesliste(zustand, shiftState.letzterSchichtStand)
     val tage = remember(
         alarmState.activeAlarms,
+        spannen,
         alarmState.nextRingingAlarmTriggerTime,
         tagFreigabeState.freieTage,
         skipLage,
@@ -159,6 +167,7 @@ fun WeckerTabContent(
     ) {
         baueWeckerTage(
             alarme = alarmState.activeAlarms,
+            spannen = spannen,
             freieTage = tagFreigabeState.freieTage,
             skip = skipLage,
             jetzt = System.currentTimeMillis(),
@@ -167,8 +176,6 @@ fun WeckerTabContent(
         )
     }
     val heute = LocalDate.now(zone)
-    val config = shiftState.currentShiftConfig
-    val zustand = weckerZustand(masterPausePaused, config?.autoAlarmEnabled)
     // Beide Vorgaenge teilen sich im ViewModel EINE Wiedereintrittssperre (`skipVorgangLaeuft`):
     // waehrend einer laeuft, kehrt jeder Tap wortlos zurueck. Also sind waehrenddessen ALLE
     // Knoepfe gesperrt, nicht nur der des laufenden Vorgangs.

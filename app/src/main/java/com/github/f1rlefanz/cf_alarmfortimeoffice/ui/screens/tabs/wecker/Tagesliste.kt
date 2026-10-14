@@ -14,6 +14,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.DoNotDisturbOn
+import androidx.compose.material.icons.filled.Lightbulb
+import androidx.compose.material.icons.filled.PhoneInTalk
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -29,6 +34,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
@@ -37,6 +43,7 @@ import androidx.compose.ui.unit.dp
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.reinerSchichtname
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.CompactContentPadding
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
+import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.Kaertchen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.SchichtWirkung
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.WeckerEintrag
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.WeckerTag
@@ -124,7 +131,7 @@ internal fun TagKarte(
                     horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_SMALL),
                     verticalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_SMALL)
                 ) {
-                    tag.kaertchen.forEach { Etikett(kaertchenText(it), EtikettTon.WIRKUNG) }
+                    tag.kaertchen.forEach { Etikett(kaertchenText(it), EtikettTon.WIRKUNG, kaertchenSymbol(it)) }
                 }
             }
         }
@@ -387,4 +394,12 @@ private fun WirkungenDesTages(tag: WeckerTag, wirkungen: Map<String, SchichtWirk
             }
         }
     }
+}
+
+/** Dieselben Symbole wie an der Stelle, die die Funktion einstellt (Tab bzw. Einstellung). */
+private fun kaertchenSymbol(kaertchen: Kaertchen): ImageVector = when (kaertchen) {
+    Kaertchen.NICHT_STOEREN -> Icons.Default.DoNotDisturbOn
+    Kaertchen.DIMMEN -> Icons.Default.DarkMode
+    Kaertchen.LICHT -> Icons.Default.Lightbulb
+    Kaertchen.RUFBEREITSCHAFT -> Icons.Default.PhoneInTalk
 }

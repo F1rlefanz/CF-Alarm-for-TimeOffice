@@ -4,6 +4,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmInfo
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -77,12 +78,17 @@ class DienstzeitTest {
     }
 
     @Test
-    fun `kein normales Leerzeichen - die Karte bricht nur hinter ihrem Trenner um`() {
+    fun `umbrechen darf die Dienstzeit nur um bis - Datum und Uhrzeit bleiben am Stueck`() {
+        // 320 dp, Schrift 1,3: als EIN Wort braeche „Nachtdienst · 22:00 bis So 18.10. 06:00“
+        // mitten im Wort. Normale Leerzeichen stehen deshalb nur direkt vor und nach „bis“.
         listOf(
-            dienstzeitText(millis(2026, 10, 16, 0, 0), millis(2026, 10, 19, 0, 0), zone),
-            dienstzeitText(millis(2026, 10, 16, 6, 0), millis(2026, 10, 18, 6, 0), zone),
-            dienstzeitText(millis(2026, 10, 16, 6, 0), 0L, zone)
-        ).forEach { assertFalse(it!!, it.contains(' ')) }
+            dienstzeitText(millis(2026, 10, 16, 0, 0), millis(2026, 10, 19, 0, 0), zone)!!,
+            dienstzeitText(millis(2026, 10, 16, 6, 0), millis(2026, 10, 18, 6, 0), zone)!!
+        ).forEach { text ->
+            assertEquals(text, 2, text.count { it == ' ' })
+            assertTrue(text, text.contains(" bis "))
+        }
+        assertFalse(dienstzeitText(millis(2026, 10, 16, 6, 0), 0L, zone)!!.contains(' '))
     }
 
     @Test
@@ -109,5 +115,17 @@ class DienstzeitTest {
             formattedTime = "x", shiftStartTime = millis(2026, 10, 17, 0, 0), shiftEndTime = millis(2026, 10, 18, 0, 0)
         )
         assertEquals("Abrufdienst${TRENNER}ganztägig", schichtZeile(alarm, zone))
+    }
+
+    @Test
+    fun `in der Karte Naechster Wecker bleibt auch die mehrtaegige Dienstzeit am Stueck`() {
+        // Die Karte bricht nur hinter ihrem Trenner um - auch „ganztägig bis So 18.10.“ nicht.
+        val alarm = AlarmInfo(
+            id = 1, shiftId = "abruf", shiftName = "Abrufdienst", triggerTime = millis(2026, 10, 15, 23, 0),
+            formattedTime = "x", shiftStartTime = millis(2026, 10, 16, 0, 0), shiftEndTime = millis(2026, 10, 19, 0, 0)
+        )
+        val teile = schichtZeile(alarm, zone)!!.split(TRENNER)
+        assertEquals(2, teile.size)
+        assertTrue(teile.none { it.contains(' ') })
     }
 }

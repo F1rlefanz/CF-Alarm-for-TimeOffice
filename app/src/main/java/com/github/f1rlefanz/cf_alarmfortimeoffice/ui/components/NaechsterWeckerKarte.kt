@@ -207,7 +207,8 @@ internal fun weckerTagText(datum: LocalDate, heute: LocalDate): String {
  */
 internal fun schichtZeile(alarm: AlarmInfo, zone: ZoneId): String? {
     // Dieselbe Formatierung wie die Tagesliste im Wecker-Tab - „ganztägig“ statt „00:00–00:00“.
-    val dienstzeit = dienstzeitText(alarm.shiftStartTime, alarm.shiftEndTime, zone)
+    // Am Stueck: diese Karte bricht nur hinter ihrem Trenner um.
+    val dienstzeit = dienstzeitText(alarm.shiftStartTime, alarm.shiftEndTime, zone)?.replace(' ', NBSP)
     val teile = listOfNotNull(
         reinerSchichtname(alarm.shiftName).trim().takeIf { it.isNotEmpty() },
         dienstzeit,

@@ -139,7 +139,9 @@ internal fun relativerTag(datum: LocalDate, heute: LocalDate): String? = when (d
 internal fun schichtenText(schichten: List<TagesSchicht>, zone: ZoneId): String =
     schichten.joinToString(", ") { schicht ->
         val name = reinerSchichtname(schicht.name)
-        dienstzeitText(schicht.beginn, schicht.ende, zone)?.let { "$name$NBSP·$NBSP$it" } ?: name
+        // Normales Leerzeichen hinter dem Punkt: eine lange Dienstzeit („bis So 18.10. 06:00“)
+        // darf in der schmalen Karte in die naechste Zeile, statt mitten im Wort zu brechen.
+        dienstzeitText(schicht.beginn, schicht.ende, zone)?.let { "$name$NBSP· $it" } ?: name
     }
 
 internal fun uhrzeit(zeit: LocalTime): String = zeit.format(UHRZEIT)

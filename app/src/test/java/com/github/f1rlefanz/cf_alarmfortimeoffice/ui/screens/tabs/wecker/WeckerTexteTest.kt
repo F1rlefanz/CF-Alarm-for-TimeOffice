@@ -129,7 +129,7 @@ class WeckerTexteTest {
             ),
             berlin
         )
-        assertEquals("F · 06:00–14:12, AD1", text)
+        assertEquals("F · 06:00–14:12, AD1", text.replace('\u00A0', ' '))
     }
 
     @Test

@@ -21,6 +21,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -51,6 +52,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.OrtQuelle
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.TageslichtStand
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.HueViewModel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.ShiftViewModel
+import kotlinx.coroutines.launch
 
 /**
  * Die einzige netzbeduerftige Aktion dieses Bildschirms: "Regel testen" schaltet echte Lampen.
@@ -136,12 +138,14 @@ fun HueRuleConfigScreen(
         onDispose { hueViewModel.clearEditingRule() }
     }
 
-    // Tageslicht (#140): Ort beim Oeffnen UND bei jedem Fortsetzen neu lesen - er kann sich auf dem
-    // Ort-Bildschirm oder in den Einstellungen geaendert haben. Der Wecker-Bestand wird nur
-    // gelesen, solange dieser Editor ihn abonniert.
+    // Tageslicht (#140): Ort beim Oeffnen, bei jedem Fortsetzen UND bei jeder Aenderung neu lesen,
+    // solange der Editor sichtbar ist - er kann sich auf dem Ort-Bildschirm, in den Einstellungen
+    // oder durch eine noch laufende Standortabfrage (schreibt evtl. erst nach dem Zurueck)
+    // geaendert haben. Der Wecker-Bestand wird nur gelesen, solange dieser Editor ihn abonniert.
+    val tageslichtScope = rememberCoroutineScope()
     LifecycleResumeEffect(Unit) {
-        hueViewModel.ladeTageslichtStand()
-        onPauseOrDispose { }
+        val beobachtung = tageslichtScope.launch { hueViewModel.verfolgeTageslichtStand() }
+        onPauseOrDispose { beobachtung.cancel() }
     }
     val tageslichtStand by hueViewModel.tageslichtStand.collectAsStateWithLifecycle()
     val wecker by hueViewModel.weckerFuerTageslicht.collectAsStateWithLifecycle()

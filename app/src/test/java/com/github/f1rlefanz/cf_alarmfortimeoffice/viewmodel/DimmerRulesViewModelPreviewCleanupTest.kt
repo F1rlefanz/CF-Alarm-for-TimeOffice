@@ -1,7 +1,7 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel
 
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
-import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.TageslichtQuelle
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.ITageslichtRepository
 import androidx.lifecycle.viewModelScope
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimOverlayPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimRuleUseCase
@@ -102,7 +102,7 @@ class DimmerRulesViewModelPreviewCleanupTest {
         whenever(ruleUseCase.rules).thenReturn(flowOf(emptyList()))
         return DimmerRulesViewModel(
             ruleUseCase, shiftUseCase, dimSchedule, mock<ZeitkettenArmierer>(),
-            prefs, mock<ShiftSpanStore>(), mock<IAlarmUseCase>(), TageslichtQuelle.OHNE
+            prefs, mock<ShiftSpanStore>(), mock<IAlarmUseCase>(), mock<ITageslichtRepository>()
         )
     }
 

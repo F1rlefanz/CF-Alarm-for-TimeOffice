@@ -18,7 +18,10 @@ AGGREGATION je Praefix (2 Stellen; fuer DE zusaetzlich 3 Stellen):
  3. Ausreisser verwerfen: PLZ, die weiter als AUSREISSER_KM vom koordinatenweisen MEDIAN der
     Region liegen. Der Median ist robust, das Mittel danach genau.
  4. Schwerpunkt = Mittel der verbliebenen PLZ-Punkte.
- 5. Name = Ort der PLZ, die dem Schwerpunkt am naechsten liegt (stabil und lesbar).
+ 5. Name = Ort der PLZ, die dem Schwerpunkt am naechsten liegt (stabil und lesbar). Ortsnamen
+    mit "Postfach" sind nachrangig: AT fuehrt Postfach-PLZ ("1201 Wien Postfach") MIT
+    Genauigkeitsangabe, Punkt 1 laesst sie durch - als Regionsname ist "Wien Postfach" unsinnig.
+    Sie zaehlen weiter fuer den Schwerpunkt (ihre Koordinaten sind die des Orts).
 
 Die Ausgabe ist deterministisch (gleiche Zips -> byte-gleiche Dateien, LF-Zeilenenden). Der
 "Stand" ist das Dateidatum im Zip, nicht das heutige Datum - ein erneuter Lauf mit denselben
@@ -87,6 +90,10 @@ def _plz_punkte(zip_pfad, land):
     return punkte
 
 
+def _ist_postfach(ort):
+    return "postfach" in ort.lower()
+
+
 def _region(praefix, plz_liste, punkte):
     med_b = statistics.median(punkte[p][0] for p in plz_liste)
     med_l = statistics.median(punkte[p][1] for p in plz_liste)
@@ -95,9 +102,12 @@ def _region(praefix, plz_liste, punkte):
         return None
     breite = sum(punkte[p][0] for p in behalten) / len(behalten)
     laenge = sum(punkte[p][1] for p in behalten) / len(behalten)
-    naechste = min(behalten, key=lambda p: (_km(breite, laenge, punkte[p][0], punkte[p][1]), p))
+    # Postfach-Namen nachrangig (Modul-Kopf Punkt 5): erst eine PLZ mit echtem Ortsnamen
+    naechste = min(behalten, key=lambda p: (
+        all(_ist_postfach(o[0]) for o in punkte[p][2]),
+        _km(breite, laenge, punkte[p][0], punkte[p][1]), p))
     orte = punkte[naechste][2]
-    name = min(orte, key=lambda o: (_km(breite, laenge, o[1], o[2]), o[0]))[0]
+    name = min(orte, key=lambda o: (_ist_postfach(o[0]), _km(breite, laenge, o[1], o[2]), o[0]))[0]
     return Region(praefix, breite, laenge, name)
 
 

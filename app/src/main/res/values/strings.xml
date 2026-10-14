@@ -472,7 +472,7 @@
     <string name="tageslicht_plz_region">Region %1$s</string>
     <string name="tageslicht_plz_unbekannt">Diese Postleitzahl kennt die App nicht.</string>
     <string name="tageslicht_stufe_zeitzone">Zeitzone</string>
-    <string name="tageslicht_stufe_zeitzone_text">Automatisch, wenn oben nichts eingestellt ist. %1$s liegt ungefähr bei %2$s, bis zu 20 Minuten ungenau.</string>
+    <string name="tageslicht_stufe_zeitzone_text">Automatisch, wenn oben nichts eingestellt ist. %1$s liegt ungefähr bei %2$s, bis zu einer guten halben Stunde ungenau.</string>
     <string name="tageslicht_stufe_zeitzone_unbekannt">Für die Zeitzone %1$s kennt die App keinen Ort.</string>
     <string name="tageslicht_genauer_oben">Wird nicht genutzt, weil oben ein genauerer Ort eingestellt ist.</string>
     <string name="tageslicht_ort_einstellen">Ort einstellen</string>
@@ -509,7 +509,7 @@
     <string name="tageslicht_hue_ort_aendern">Ändern</string>
     <string name="tageslicht_ohne_ort_hue">Kein Ort eingestellt – die Regel läuft immer.</string>
     <string name="tageslicht_hue_naechster_an">Nächster Wecker %1$s · %2$s %3$s → Licht geht an</string>
-    <string name="tageslicht_hue_naechster_aus">Nächster Wecker %1$s · %2$s %3$s → entfällt, draußen schon hell</string>
+    <string name="tageslicht_hue_naechster_aus">Nächster Wecker %1$s · %2$s %3$s → entfällt, Weckzeit liegt danach</string>
     <string name="tageslicht_etikett_dunkel">nur bei Dunkelheit</string>
     <string name="tageslicht_ereignis_daemmerung">Dämmerung</string>
     <string name="tageslicht_ereignis_sonnenaufgang">Sonnenaufgang</string>

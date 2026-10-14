@@ -9,10 +9,19 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.IHueBri
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.IHueLightUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.IHueRuleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmInfo
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.GespeicherterStandort
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.ITageslichtRepository
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.Ort
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.OrtQuelle
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.PlzLand
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.TageslichtEinstellungen
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.TageslichtStand
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -27,6 +36,7 @@ import org.junit.Before
 import org.junit.Test
 import org.mockito.kotlin.any
 import org.mockito.kotlin.doReturn
+import org.mockito.kotlin.doSuspendableAnswer
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.never
 import org.mockito.kotlin.stub
@@ -70,7 +80,8 @@ class HueViewModelRegelAktionTest {
     private fun buildFixture(
         anlegen: Result<HueSchedule> = Result.success(regel),
         aendern: Result<HueSchedule> = Result.success(regel),
-        loeschen: Result<Unit> = Result.success(Unit)
+        loeschen: Result<Unit> = Result.success(Unit),
+        tageslicht: ITageslichtRepository = mock()
     ): Fixture {
         val bridgeUseCase = mock<IHueBridgeUseCase>()
         whenever(bridgeUseCase.getDiscoveryStatus()).thenReturn(emptyFlow<DiscoveryStatus>())
@@ -104,7 +115,8 @@ class HueViewModelRegelAktionTest {
             // Unbestueckt lieferte der Mock fuer den Flow null - der Konstruktor braucht ihn.
             alarmUseCase = mock<IAlarmUseCase> {
                 on { activeAlarms } doReturn MutableStateFlow(emptyList<AlarmInfo>())
-            }
+            },
+            tageslichtRepository = tageslicht
         )
         return Fixture(viewModel, ruleUseCase, scheduler)
     }
@@ -227,5 +239,38 @@ class HueViewModelRegelAktionTest {
         advanceUntilIdle()
 
         assertEquals("Die Regel konnte nicht gelöscht werden.", f.viewModel.uiState.value.error)
+    }
+
+    // ---- Tageslicht (#140) -----------------------------------------------------------------
+
+    /** Stand und Einstellungen getrennt steuerbar: der Test schreibt erst den Stand, dann das Signal. */
+    private class FakeTageslicht : ITageslichtRepository {
+        val einstellungenFlow = MutableStateFlow(TageslichtEinstellungen.LEER)
+        var aktuell: TageslichtStand = TageslichtStand.ohneOrt()
+        override val einstellungen: Flow<TageslichtEinstellungen> = einstellungenFlow
+        override suspend fun stand() = aktuell
+        override suspend fun setzePlz(land: PlzLand, plz: String) = Unit
+        override suspend fun speichereStandort(breite: Double, laenge: Double, jetzt: Long) = Unit
+        override suspend fun entferneStandort() = Unit
+    }
+
+    @Test
+    fun `ein Ort, der erst nach dem Oeffnen des Editors geschrieben wird, erscheint ohne erneutes Oeffnen`() = runTest(dispatcher) {
+        val repo = FakeTageslicht()
+        val f = buildFixture(tageslicht = repo)
+        f.ruleUseCase.stub { onBlocking { tageslichtStand() } doSuspendableAnswer { repo.aktuell } }
+
+        val beobachtung = launch { f.viewModel.verfolgeTageslichtStand() }
+        advanceUntilIdle()
+        assertNull("vor dem Schreiben kein Ort", f.viewModel.tageslichtStand.value?.ort)
+
+        // Die Standortabfrage (Activity-ViewModel) schreibt, waehrend der Editor schon offen ist
+        val ort = Ort(48.1, 11.6, OrtQuelle.STANDORT, null)
+        repo.aktuell = TageslichtStand(ort, repo.aktuell.zone)
+        repo.einstellungenFlow.value = TageslichtEinstellungen(GespeicherterStandort(481, 116, 1L), null, null)
+        advanceUntilIdle()
+
+        assertEquals(ort, f.viewModel.tageslichtStand.value?.ort)
+        beobachtung.cancel()
     }
 }

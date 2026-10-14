@@ -223,7 +223,8 @@ internal fun RulePreviewCard(
 
 /**
  * Die Urteilszeile (#140) als Text: "Nächster Wecker Mi 05:30 · Sonnenaufgang 07:31 → Licht geht
- * an" bzw. "… → entfällt, draußen schon hell". Einmal im Editor gebaut und an Tageslicht-Karte UND
+ * an" bzw. "… → entfällt, Weckzeit liegt danach" - NICHT "draußen schon hell": ein Abendwecker
+ * liegt nach dem Morgen des Wecktags und entfällt auch bei Dunkelheit (Plan §0.9). Einmal im Editor gebaut und an Tageslicht-Karte UND
  * Zusammenfassung gereicht - zwei eigene Herleitungen waeren zwei Wahrheiten.
  */
 @Composable

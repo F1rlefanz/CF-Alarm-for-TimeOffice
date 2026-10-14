@@ -83,8 +83,9 @@ fun DimmerRuleConfigScreen(
     val tageslichtGeladen by viewModel.tageslichtGeladen.collectAsStateWithLifecycle()
     val existing = remember(ruleId) { viewModel.ruleById(ruleId) }
 
-    // Auch beim Zurueckkommen vom Ort-Bildschirm: dort kann sich der Ort gerade geaendert haben.
-    LaunchedEffect(Unit) { viewModel.ladeTageslicht() }
+    // Beobachtet den Ort, solange der Editor sichtbar ist - nicht nur beim Eintritt: eine
+    // Standortabfrage ueberlebt das Verlassen des Ort-Bildschirms und schreibt evtl. erst danach.
+    LaunchedEffect(Unit) { viewModel.verfolgeTageslicht() }
 
     // rememberSaveable statt remember: das Formular muss den Umweg ueber "Ort einstellen" (der
     // Editor verlaesst dabei die Komposition) und eine Drehung ueberstehen - sonst sind
@@ -221,7 +222,8 @@ fun DimmerRuleConfigScreen(
                 val beispiel = remember(w, tageslichtGeladen) { viewModel.nachlaufBeispiel(w) }
                 WindowEditor(
                     window = w,
-                    ohneOrt = !ortBekannt,
+                    // null = Ort noch nicht geladen: weder Kein-Ort-Hinweis noch Beispiel.
+                    ohneOrt = ortBekannt?.not(),
                     beispiel = nachlaufBeispielText(beispiel, w.nachlaufBisHell),
                     onOrtEinstellen = onOrtEinstellen,
                     // Die Blockposition gibt es nur fuer eine benannte Schicht: FREI-Tage haben
@@ -455,7 +457,7 @@ private fun ankerLabel(anker: DimAnchor): String = when (anker) {
 @Composable
 private fun WindowEditor(
     window: DimWindow,
-    ohneOrt: Boolean,
+    ohneOrt: Boolean?,
     beispiel: String?,
     onOrtEinstellen: () -> Unit,
     schichtbezogen: Boolean,

@@ -459,7 +459,7 @@ class AlarmManagerService(
             }
 
             // Erstelle enhanced alarm intent
-            val alarmIntent = createEnhancedAlarmIntent(alarmId, shiftMatch)
+            val alarmIntent = createEnhancedAlarmIntent(alarmId, shiftMatch, alarmTimeMillis)
             val pendingIntent = createAlarmPendingIntent(alarmId, alarmIntent)
 
             Logger.business(
@@ -523,11 +523,14 @@ class AlarmManagerService(
     /**
      * Creates enhanced alarm intent with comprehensive shift information
      */
-    private fun createEnhancedAlarmIntent(alarmId: Int, shiftMatch: ShiftMatch): Intent {
+    private fun createEnhancedAlarmIntent(alarmId: Int, shiftMatch: ShiftMatch, triggerTime: Long): Intent {
         return Intent(application, AlarmReceiver::class.java).apply {
             putExtra(AlarmReceiver.EXTRA_ALARM_ID, alarmId)
             putExtra(AlarmReceiver.EXTRA_SHIFT_NAME, shiftMatch.shiftDefinition.name)
             putExtra(AlarmReceiver.EXTRA_SHIFT_START_TIME, formatAlarmTime(shiftMatch.calendarEvent.startTime))
+            // Geplante Weckzeit fuer die Hue-Tageslicht-Bedingung - im kalten Prozess kennt der
+            // Receiver sie sonst nicht (AlarmReceiver.geplanteWeckzeit).
+            putExtra(AlarmReceiver.EXTRA_TRIGGER_TIME, triggerTime)
             setPackage(application.packageName)
             action = enhancedAlarmAction(alarmId)
         }
@@ -984,7 +987,8 @@ class AlarmManagerService(
          *    Vorgaenger keine (Altbestand), bleibt es bei null.
          * 2. Sonst ist es das erste Schlummern: die juengste geklingelte Weckzeit
          *    ([GeklingelteWeckzeiten], vom `AlarmReceiver` beim Ausloesen geschrieben, auf die
-         *    Minute gerundet) - das IST die Weckzeit dieses Weckers.
+         *    Minute gerundet, die GEPLANTE Zeit - `AlarmReceiver.zuMerkendeWeckzeit`) - das IST die
+         *    Weckzeit dieses Weckers.
          * 3. Fehlt auch die (Merker nicht schreibbar): null. Bewusst KEIN "jetzt" als Ersatz -
          *    um Mitternacht laege das auf dem falschen Tag, und eine falsche Zuordnung hiesse ein
          *    abgebrochener Wecker an einem Tag, den niemand freigegeben hat.
@@ -1448,6 +1452,9 @@ class AlarmManagerService(
                 putExtra(AlarmReceiver.EXTRA_ALARM_ID, id)
                 putExtra(AlarmReceiver.EXTRA_SHIFT_NAME, shiftName)
                 putExtra(AlarmReceiver.EXTRA_SHIFT_START_TIME, shiftStartTimeFormatted)
+                // Wie im regulaeren Pfad (createEnhancedAlarmIntent) - sonst trueg der Spiegel-
+                // Wecker sie nicht, und FLAG_UPDATE_CURRENT ueberschriebe das Extra mit nichts.
+                putExtra(AlarmReceiver.EXTRA_TRIGGER_TIME, triggerTime)
                 setPackage(context.packageName)
                 action = enhancedAlarmAction(id)
             }

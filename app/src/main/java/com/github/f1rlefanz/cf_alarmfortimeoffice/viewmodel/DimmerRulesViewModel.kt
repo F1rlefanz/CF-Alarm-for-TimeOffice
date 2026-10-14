@@ -15,6 +15,8 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.TageslichtEnde
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.ZeitkettenArmierer
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpanStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.HellAb
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.ITageslichtRepository
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.TageslichtEinstellungen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.TageslichtQuelle
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.TageslichtStand
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
@@ -35,6 +37,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -59,7 +63,11 @@ class DimmerRulesViewModel @Inject constructor(
     private val shiftSpanStore: ShiftSpanStore,
     /** Naechste Weckzeiten fuer die Beispielzeile unter "Nachlauf nur, solange es dunkel ist" (#140). */
     private val alarmUseCase: IAlarmUseCase,
-    private val tageslicht: TageslichtQuelle
+    /**
+     * Ort-Einstellungen als SIGNAL ([ITageslichtRepository.einstellungen]), aufgeloest wird
+     * weiter ausschliesslich ueber [TageslichtQuelle.stand] - derselbe Weg wie zur Laufzeit.
+     */
+    private val tageslicht: ITageslichtRepository
 ) : ViewModel() {
 
     /**
@@ -192,33 +200,58 @@ class DimmerRulesViewModel @Inject constructor(
 
     /**
      * Was die Beispielzeile braucht: Ort/Zone und die aktiven Weckzeiten. Ein Schnappschuss, den
-     * [ladeTageslicht] beim Oeffnen des Editors holt - auch beim Zurueckkommen vom Ort-Bildschirm,
-     * damit ein dort eingestellter Ort sofort im Editor steht.
+     * [verfolgeTageslicht] beim Oeffnen des Editors holt und bei JEDER Aenderung der
+     * Ort-Einstellungen erneuert - auch dann, wenn eine Standortabfrage den Ort-Bildschirm
+     * ueberlebt und erst schreibt, nachdem der Nutzer schon zurueck im Editor ist (bis zu 30 s).
+     * Ein Einmal-Schnappschuss behauptete dort bis zum naechsten Oeffnen "Kein Ort eingestellt",
+     * waehrend die Laufzeit laengst mit dem neuen Ort rechnete.
      */
     private var tageslichtLage = TageslichtLage(TageslichtStand.ohneOrt(), emptyList())
 
     private data class TageslichtLage(val stand: TageslichtStand, val weckzeiten: List<Long>)
 
-    private val _ortBekannt = MutableStateFlow(false)
+    private val _ortBekannt = MutableStateFlow<Boolean?>(null)
 
     /**
-     * Ist ein Ort bekannt (Standort, PLZ oder Zeitzone)? `false`, bis [ladeTageslicht] es weiss -
-     * der Editor zeigt dann "Kein Ort eingestellt - der Nachlauf gilt immer", und genau so wirkt
-     * es auch (fail-safe: voller Nachlauf).
+     * Ist ein Ort bekannt (Standort, PLZ oder Zeitzone)? `null`, solange [verfolgeTageslicht] noch
+     * nicht geladen hat - der Editor zeigt dann weder Hinweis noch Beispiel. Mit `false` stuende
+     * bis zum ersten Laden der rote "Kein Ort eingestellt"-Hinweis da, auch wenn ein Ort gesetzt
+     * ist (Zwilling: `ortBeschreibung` im Hue-Editor). `false` heisst "kein Ort - der Nachlauf
+     * gilt immer", und genau so wirkt es auch (fail-safe: voller Nachlauf).
      */
-    val ortBekannt: StateFlow<Boolean> = _ortBekannt.asStateFlow()
+    val ortBekannt: StateFlow<Boolean?> = _ortBekannt.asStateFlow()
 
     private val _tageslichtGeladen = MutableStateFlow(0)
 
-    /** Zaehlt jeden abgeschlossenen [ladeTageslicht] - der Editor rechnet daran die Beispielzeile neu. */
+    /** Zaehlt jedes abgeschlossene Laden des Tageslicht-Stands - der Editor rechnet daran die Beispielzeile neu. */
     val tageslichtGeladen: StateFlow<Int> = _tageslichtGeladen.asStateFlow()
 
     /**
-     * Holt Ort und Weckzeiten fuer die Beispielzeile. Beides ist fail-safe: [TageslichtQuelle.stand]
-     * wirft nicht (gesperrt/Lesefehler = kein Ort), und ein unlesbarer Alarm-Bestand heisst nur
+     * Haelt Ort und Weckzeiten fuer die Beispielzeile aktuell, solange der Aufrufer (der Editor,
+     * per `LaunchedEffect`) laeuft: die erste Emission laedt, jede Aenderung der Ort-Einstellungen
+     * laedt neu.
+     *
+     * `distinctUntilChanged` ist tragend: [ITageslichtRepository.einstellungen] haengt am GANZEN
+     * `settings`-Store und gaebe sonst bei jedem fremden Schreibvorgang neu aus. Ein Lesefehler
+     * des Signals wird zu einem letzten Laden (das selbst fail-safe ist), nie zu einem Abbruch
+     * ohne Stand.
+     */
+    suspend fun verfolgeTageslicht() {
+        tageslicht.einstellungen
+            .distinctUntilChanged()
+            .catch { e ->
+                Logger.w(LogTags.DIMMER, "Ort-Einstellungen nicht beobachtbar - Editor laedt einmalig", e)
+                emit(TageslichtEinstellungen.LEER)
+            }
+            .collect { ladeTageslicht() }
+    }
+
+    /**
+     * Holt Ort und Weckzeiten. Beides ist fail-safe: [TageslichtQuelle.stand] wirft nicht
+     * (gesperrt/Lesefehler = kein Ort), und ein unlesbarer Alarm-Bestand heisst nur
      * "kein Beispiel" - nie eine erfundene Weckzeit.
      */
-    fun ladeTageslicht() = viewModelScope.launch {
+    private suspend fun ladeTageslicht() {
         val stand = tageslicht.stand()
         val weckzeiten = alarmUseCase.getAllAlarms().getOrNull()
             ?.filter { it.isActive }

@@ -84,6 +84,25 @@ class BauePlzTabelleTest(unittest.TestCase):
         self.assertGreater(r["10"].laenge, 13.3)
         self.assertEqual(r["10"].name, "Berlin")
 
+    def test_postfach_name_ist_nachrangig(self):
+        # Nachbildung von AT "12": die Postfach-PLZ liegen dem Schwerpunkt am naechsten und
+        # haben eine Genauigkeitsangabe - der Name muss trotzdem der echte Ortsname sein.
+        zeilen = [
+            zeile("AT", "1200", "Wien", 48.240, 16.380),
+            zeile("AT", "1201", "Wien Postfach", 48.220, 16.390, genauigkeit="1"),
+            zeile("AT", "1210", "Wien", 48.200, 16.400),
+            zeile("AT", "1211", "Wien Postfach", 48.221, 16.391, genauigkeit="1"),
+        ]
+        pfad = baue_zip(self.tmp.name, "AT", zeilen)
+        r = self.regionen(pfad, "AT", mit_drei=False)
+        self.assertEqual(r["12"].name, "Wien")
+        self.assertAlmostEqual(r["12"].breite, (48.240 + 48.220 + 48.200 + 48.221) / 4, places=6,
+                               msg="Postfach-PLZ zaehlen weiter fuer den Schwerpunkt")
+
+    def test_nur_postfach_namen_bleiben_als_letzter_ausweg(self):
+        pfad = baue_zip(self.tmp.name, "AT", [zeile("AT", "1201", "Wien Postfach", 48.22, 16.39, genauigkeit="1")])
+        self.assertEqual(self.regionen(pfad, "AT", mit_drei=False)["12"].name, "Wien Postfach")
+
     def test_drei_stellige_praefixe_nur_auf_wunsch(self):
         ohne = self.regionen(self.de, "DE", mit_drei=False)
         mit = self.regionen(self.de, "DE", mit_drei=True)

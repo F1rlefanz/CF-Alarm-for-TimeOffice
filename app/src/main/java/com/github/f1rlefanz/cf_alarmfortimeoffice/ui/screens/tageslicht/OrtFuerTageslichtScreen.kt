@@ -78,7 +78,8 @@ data class OrtBildschirmZustand(
     /**
      * Die GESPEICHERTE PLZ, wenn sie gerade gilt. Kann von [plzEingabe] abweichen: eine unbekannte
      * Eingabe wird nicht gespeichert, es gilt weiter die alte - und die Aktuell-Karte nennt, was
-     * gilt. `null` = wie [plzEingabe] (Vorschau ohne ViewModel).
+     * gilt. `null` = wie [plzEingabe] (keine PLZ-Quelle aktiv, oder der Startzustand vor dem
+     * ersten Laden).
      */
     val genutztPlz: String? = null,
     /** Regionsname zu [genutztPlz]; `null` = wie [plzRegion]. */

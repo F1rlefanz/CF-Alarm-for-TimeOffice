@@ -3,9 +3,10 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht
 import java.time.ZoneId
 
 /**
- * Letzte Stufe der Ort-Kette (#140): ein fester, ungefaehrer Ort je DACH-Zeitzone. Bis zu etwa
- * 20 Minuten ungenau (so steht es auch im Ort-Bildschirm) - besser als gar keine Schwelle, und
- * jede genauere Stufe schlaegt ihn. Andere Zonen: `null` = kein Ort, keine Einschraenkung.
+ * Letzte Stufe der Ort-Kette (#140): ein fester, ungefaehrer Ort je DACH-Zeitzone.
+ * Bis zu einer guten halben Stunde ungenau (so steht es auch im Ort-Bildschirm) - besser als
+ * gar keine Schwelle, und jede genauere Stufe schlaegt ihn. Andere Zonen: `null` = kein Ort,
+ * keine Einschraenkung.
  */
 object ZeitzonenOrte {
 

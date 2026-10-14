@@ -29,9 +29,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.github.f1rlefanz.cf_alarmfortimeoffice.R
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.HellAb
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.CompactOutlinedButton
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.MIN_TOUCH_TARGET
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.wecker.Etikett
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.wecker.EtikettTon
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.wecker.InhaltUndBedienung
 
 /**
  * Dimm-Fenster "Weckzeit, spaetestens": bis wann der Nachlauf hoechstens laeuft (#140).
@@ -42,12 +44,15 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.wecker.Etikett
  *
  * [beispiel] ist die fertige Zeile fuer den naechsten Wecker ("Nächster Wecker Do 05:15 → …");
  * `null`, wenn keiner im Fenster liegt.
+ *
+ * [ohneOrt] `null` = der Ort ist noch nicht geladen: dann steht unter der Wahl nichts - sonst
+ * blitzte fuer einen Moment der rote Kein-Ort-Hinweis auf, der nicht stimmt.
  */
 @Composable
 fun NachlaufBisHellWahl(
     wahl: HellAb,
     onWahl: (HellAb) -> Unit,
-    ohneOrt: Boolean,
+    ohneOrt: Boolean?,
     beispiel: String?,
     onOrtEinstellen: () -> Unit
 ) {
@@ -72,7 +77,7 @@ fun NachlaufBisHellWahl(
                 }
             }
         }
-        if (wahl != HellAb.IMMER) {
+        if (wahl != HellAb.IMMER && ohneOrt != null) {
             if (ohneOrt) {
                 OhneOrtHinweis(stringResource(R.string.tageslicht_ohne_ort_dimmer), onOrtEinstellen)
             } else {
@@ -158,14 +163,23 @@ fun TageslichtKarte(
                     OhneOrtHinweis(stringResource(R.string.tageslicht_ohne_ort_hue), onOrtAendern)
                 } else {
                     naechster?.let { Text(it, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium) }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            stringResource(R.string.tageslicht_hue_ort, ortText),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.weight(1f)
+                    // Pflichtweg "Text links, Knopf rechts" (UI-Skill): bei 320 dp bleiben hier
+                    // 256 dp, also untereinander - Knopf linksbuendig, nicht verloren am Rand.
+                    InhaltUndBedienung(
+                        inhalt = { m ->
+                            Text(
+                                stringResource(R.string.tageslicht_hue_ort, ortText),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = m
+                            )
+                        },
+                        untereinanderAusrichtung = Alignment.Start
+                    ) {
+                        CompactOutlinedButton(
+                            onClick = onOrtAendern,
+                            text = stringResource(R.string.tageslicht_hue_ort_aendern)
                         )
-                        TextButton(onClick = onOrtAendern) { Text(stringResource(R.string.tageslicht_hue_ort_aendern)) }
                     }
                 }
             }

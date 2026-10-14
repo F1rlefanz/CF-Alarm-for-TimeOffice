@@ -18,6 +18,8 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueScheduleRule
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.passtAufSchicht
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmInfo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.reinerSchichtname
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.ITageslichtRepository
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.TageslichtEinstellungen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.TageslichtStand
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
@@ -32,6 +34,8 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -47,7 +51,9 @@ class HueViewModel @Inject constructor(
     private val hueRuleUseCase: IHueRuleUseCase,
     private val hueBridgeConnectionManager: HueBridgeConnectionManager,
     private val hueSmartScheduler: HueSmartScheduler,
-    private val alarmUseCase: IAlarmUseCase
+    private val alarmUseCase: IAlarmUseCase,
+    /** Nur als SIGNAL fuer [verfolgeTageslichtStand]; aufgeloest wird ueber [IHueRuleUseCase.tageslichtStand]. */
+    private val tageslichtRepository: ITageslichtRepository
 ) : ViewModel() {
 
     /**
@@ -89,8 +95,9 @@ class HueViewModel @Inject constructor(
 
     /**
      * Ort und Zone fuer die Urteilszeile im Regel-Editor. `null` = noch nicht geladen (die Zeile
-     * schweigt dann). Geladen beim Oeffnen des Editors und bei jedem Fortsetzen
-     * ([ladeTageslichtStand]) - der Ort kann sich auf dem Ort-Bildschirm geaendert haben.
+     * schweigt dann). Neu geladen bei jedem Fortsetzen des Editors und bei jeder Aenderung der
+     * Ort-Einstellungen ([verfolgeTageslichtStand]) - auch wenn eine Standortabfrage erst schreibt,
+     * nachdem der Nutzer den Ort-Bildschirm schon verlassen hat.
      */
     val tageslichtStand: StateFlow<TageslichtStand?> = _tageslichtStand.asStateFlow()
 
@@ -507,20 +514,34 @@ class HueViewModel @Inject constructor(
     }
 
     /**
+     * Haelt [tageslichtStand] aktuell, solange der Aufrufer (der Editor, zwischen Resume und
+     * Pause) laeuft: die erste Emission der Ort-Einstellungen laedt, jede Aenderung laedt neu.
+     * `distinctUntilChanged` ist tragend - die Einstellungen haengen am ganzen `settings`-Store.
+     * Ein Lesefehler des Signals wird zu einem letzten Laden, nie zu "nichts geladen".
+     */
+    suspend fun verfolgeTageslichtStand() {
+        tageslichtRepository.einstellungen
+            .distinctUntilChanged()
+            .catch { e ->
+                Logger.w(LogTags.HUE_VIEWMODEL, "Ort-Einstellungen nicht beobachtbar - Editor laedt einmalig", e)
+                emit(TageslichtEinstellungen.LEER)
+            }
+            .collect { ladeTageslichtStand() }
+    }
+
+    /**
      * Laedt [tageslichtStand] neu. Wirft nie: ein Fehlschlag wird zu "kein Ort" - dieselbe
      * Richtung wie zur Laufzeit (`TageslichtQuelle.stand()`), dort laeuft die Regel dann immer,
      * und genau das sagt der Editor dann auch. Keine Koordinaten im Log.
      */
-    fun ladeTageslichtStand() {
-        viewModelScope.launch {
-            _tageslichtStand.value = try {
-                hueRuleUseCase.tageslichtStand()
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                Logger.w(LogTags.HUE_VIEWMODEL, "Tageslicht-Stand nicht lesbar - Editor zeigt 'kein Ort'", e)
-                TageslichtStand.ohneOrt()
-            }
+    private suspend fun ladeTageslichtStand() {
+        _tageslichtStand.value = try {
+            hueRuleUseCase.tageslichtStand()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Logger.w(LogTags.HUE_VIEWMODEL, "Tageslicht-Stand nicht lesbar - Editor zeigt 'kein Ort'", e)
+            TageslichtStand.ohneOrt()
         }
     }
 

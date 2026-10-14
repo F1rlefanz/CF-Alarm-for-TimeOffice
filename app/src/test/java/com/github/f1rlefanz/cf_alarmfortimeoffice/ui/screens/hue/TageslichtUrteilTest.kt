@@ -14,6 +14,7 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
@@ -74,6 +75,19 @@ class TageslichtUrteilTest {
     fun `Wecker am Abend liegt nach dem Morgen des Wecktags - entfaellt`() {
         // Plan §0.9: bewusst so entschieden; die Zeile muss es ehrlich zeigen.
         assertFalse(tageslichtUrteil(ms(21, 0), stand, HellAb.SONNENAUFGANG)!!.laeuft)
+    }
+
+    @Test
+    fun `die entfaellt-Zeile behauptet kein Tageslicht - sie gilt auch fuer den Abendwecker`() {
+        // Derselbe String steht beim Abendwecker (21:00, stockdunkel) direkt unter dem Hinweis
+        // "entfällt dann, auch wenn es draußen dunkel ist" - er darf nur den Vergleich nennen.
+        val datei = listOf(File("app/src/main/res/values/strings.xml"), File("src/main/res/values/strings.xml"))
+            .firstOrNull { it.isFile } ?: error("strings.xml nicht gefunden")
+        val zeile = datei.readLines().single { it.contains("name=\"tageslicht_hue_naechster_aus\"") }
+            .substringAfter('>').substringBefore("</string>")
+        assertFalse("Kausale Hell-Behauptung: $zeile", zeile.contains("hell", ignoreCase = true))
+        assertFalse("Kausale Hell-Behauptung: $zeile", zeile.contains("Tageslicht", ignoreCase = true))
+        assertTrue("Vergleich mit dem Hell-Zeitpunkt fehlt: $zeile", zeile.contains("danach"))
     }
 
     @Test

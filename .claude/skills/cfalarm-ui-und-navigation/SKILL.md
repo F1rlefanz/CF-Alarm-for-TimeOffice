@@ -55,14 +55,16 @@ das baut man dieselbe Falle in neuer Form nach.
   ausgeschalteter Automatik ist keiner gestellt. Drei Offline-Texte hatten den Satz fest verdrahtet
   und widersprachen auf derselben Karte dem Pausenhinweis (Emulator, 01.10.2026).
 - **Ein Zustand, der die App dauerhaft nicht wecken lässt, MUSS dort stehen, wo der Nutzer
-  nachsieht** — nicht nur an seinem Schalter. Die Master-Pause hat dabei **Vorrang vor „N aktive
-  Alarme"**, und es steht höchstens EIN Zusatz-Hinweis gleichzeitig.
+  nachsieht** — nicht nur an seinem Schalter. Die Master-Pause hat dabei **Vorrang vor dem angezeigten
+  nächsten Wecker** (Karte „Nächster Wecker“, bis 1.49 „N aktive Alarme“), und es steht höchstens
+  EIN Zusatz-Hinweis gleichzeitig.
 - **Eine Meldung erreicht ihren Nutzer nur, wenn sie in GENAU dem Zustand gerendert wird, in dem sie
   gesetzt wird** — Renderstelle UND Zustand bei jedem neuen Meldungsfeld per grep prüfen.
 - **Kein `SnackbarDuration.Indefinite`**: es blockiert über den Mutex des `SnackbarHostState` alle
   übrigen Meldungen samt ihrer `clearError()`-Aufrufe. Bleibende Zustände sind Karten im Status-Tab.
 - **Auf dem ANZEIGEPFAD bekommt ein sicherheitsrelevanter Compose-Parameter KEINEN Default**
-  (`masterPausePaused` in `AlarmStatusHeader`, `WeckerTabContent`, `StatusTabContent`) — sonst
+  (`masterPausePaused` in `NaechsterWeckerKarte`, `WeckerTabContent`, `StatusTabContent`;
+  in `NaechsterWeckerKarte` ebenso `autoAlarmEnabled`) — sonst
   fällt ein künftiger Aufrufer wortlos in den alten Fehler zurück. Reine Textfunktionen wie
   `noShiftExplanation()` dürfen einen Default haben; dort ist der Wert ein Zusatz, keine Zusage.
 - **Hilfe gibt es genau einmal: auf der Website (`docs/`).** Die App verweist nur, über

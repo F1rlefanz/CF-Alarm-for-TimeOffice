@@ -12,8 +12,9 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 
 /**
  * Die Sonnenaufgangs-AUSFUEHRUNG - herausgeloest aus [HueRuleUseCase], damit sie einen eigenen,
- * benennbaren Ort hat. Reine Verschiebung, kein Redesign: Auswahl, Validierung und Auto-Aus
- * bleiben in [HueRuleUseCase].
+ * benennbaren Ort hat. Reine Verschiebung, kein Redesign: Auswahl, Validierung und die Auto-Aus-
+ * RECHNUNG bleiben in [HueRuleUseCase] - auch fuer das Vorab-Auto-Aus der Rampe
+ * ([HueRuleUseCase.vorabAutoAusZiele]).
  *
  * ABSICHTLICH KEIN HILT-BINDING: [HueRuleUseCase] erzeugt diese Klasse selbst und behaelt damit
  * seinen zweiparametrigen Konstruktor. Es gibt keinen zweiten Besitzer der Sonnenaufgangs-Rampe.
@@ -32,7 +33,7 @@ internal class HueSunriseExecutor(
      * startet). Aufgerufen vom Pre-Alarm-Worker; der Pfad zur Weckzeit ueberspringt diese Regeln
      * dann bzw. schnappt sie ueber [finalizeSunriseForRule] auf den Endzustand.
      */
-    suspend fun executeSunrisePreAlarm(shiftName: String): Result<RuleExecutionResult> {
+    suspend fun executeSunrisePreAlarm(shiftName: String, minutenBisWecker: Int?): Result<RuleExecutionResult> {
         Logger.i(LogTags.HUE_USECASE, "🌅 Executing PRE-ALARM sunrise ramps for shift: $shiftName")
 
         return try {
@@ -52,6 +53,22 @@ internal class HueSunriseExecutor(
                 attempted += result.attempted
                 succeeded += result.succeeded
                 errors.addAll(result.errors)
+            }
+
+            // Auto-Aus schon JETZT auf die Bridge - siehe HueRuleUseCase.vorabAutoAusZiele.
+            // Best-effort wie im Weckzeit-Pfad: ein Fehler kippt die Rampe nicht.
+            if (minutenBisWecker != null && succeeded > 0) {
+                try {
+                    lightUseCase.scheduleBridgeAutoOff(
+                        HueRuleUseCase.vorabAutoAusZiele(sunriseRules, minutenBisWecker),
+                        shiftName
+                    ).onFailure { errors.add("Vorab-Auto-Aus fehlgeschlagen: ${it.message}") }
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Logger.e(LogTags.HUE_USECASE, "Failed to schedule pre-alarm auto-off", e)
+                    errors.add("Vorab-Auto-Aus fehlgeschlagen: ${e.message}")
+                }
             }
 
             val result = RuleExecutionResult(

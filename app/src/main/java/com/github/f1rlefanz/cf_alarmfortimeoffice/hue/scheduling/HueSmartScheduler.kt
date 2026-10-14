@@ -155,6 +155,32 @@ class HueSmartScheduler private constructor() {
             .sortedBy { it.second }
             .take(10)
 
+        /**
+         * Steht der Wecker, fuer den ein Vorab-Sonnenaufgang geplant wurde, beim FEUERN noch?
+         *
+         * WARUM (Krankheitstag-Pruefung, 14.10.2026): „Dienst fällt aus“ und „Nicht wecken“
+         * loeschen den Wecker, und den geplanten [SunriseStartWorker] raeumt nur der
+         * Alarm-Beobachter dieser Klasse ab - 1,5 s entprellt, und nur, solange der Prozess lebt.
+         * Wird die App direkt nach dem Tippen weggewischt, blieb der Auftrag stehen: das Licht fuhr
+         * am freien Morgen vor einer Weckzeit hoch, die es nicht mehr gab, und weil der
+         * Weckzeit-Pfad im `AlarmReceiver` dann nie lief, entstand auch kein Auto-Aus.
+         * Laeuft die Rampe beim Tippen SCHON, greift diese Pruefung nicht mehr - dafuer legt die
+         * Rampe ihr Auto-Aus gleich mit an (`HueRuleUseCase.vorabAutoAusZiele`).
+         *
+         * Dieselben Bedingungen wie [sonnenaufgangsKandidaten] (aktiv, nicht still), dazu
+         * derselbe Schichtname und dieselbe Weckzeit, verglichen als Ortszeit wie beim Planen.
+         * Keine zweite Wahrheit: es ist die Frage „waere er heute noch ein Kandidat?“.
+         */
+        internal fun sonnenaufgangNochGedeckt(
+            alarms: List<AlarmInfo>,
+            shiftName: String,
+            weckzeit: LocalDateTime,
+            zone: ZoneId = ZoneId.systemDefault()
+        ): Boolean = alarms.any {
+            it.isActive && !it.isSilent && it.shiftName == shiftName &&
+                Instant.ofEpochMilli(it.triggerTime).atZone(zone).toLocalDateTime() == weckzeit
+        }
+
         internal fun realeVerzoegerungMillis(von: LocalDateTime, bis: LocalDateTime): Long {
             val zone = ZoneId.systemDefault()
             return bis.atZone(zone).toInstant().toEpochMilli() -
@@ -574,7 +600,14 @@ class HueSmartScheduler private constructor() {
 
             val workRequest = OneTimeWorkRequestBuilder<SunriseStartWorker>()
                 .setInitialDelay(delayMillis, TimeUnit.MILLISECONDS)
-                .setInputData(workDataOf("shift_name" to shiftName))
+                .setInputData(
+                    workDataOf(
+                        SunriseStartWorker.KEY_SHIFT_NAME to shiftName,
+                        // Fuer die Pruefung beim Feuern, ob der Wecker noch steht -
+                        // siehe [sonnenaufgangNochGedeckt].
+                        SunriseStartWorker.KEY_WECKZEIT to alarmTime.toString()
+                    )
+                )
                 .addTag(SUNRISE_START_WORK)
                 .setConstraints(Constraints.Builder()
                     .setRequiredNetworkType(NetworkType.CONNECTED)

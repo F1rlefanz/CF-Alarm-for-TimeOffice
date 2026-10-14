@@ -111,6 +111,12 @@ das baut man dieselbe Falle in neuer Form nach.
   Wert wie `background`, die Karte verschwindet. Dezente Karten: `surface` +
   `BorderStroke(1.dp, outline)`. Und ein Zustand wird ADDITIV gezeigt (Rand, Text), nie durch
   Wegnehmen der Fläche.
+- **Etiketten (klein, AUF einer Karte) sind gefuellt** — Status als Pille aus `tonPaar()`
+  (`ui/theme/Theme.kt`: Erfolg/Warnung/Info, Flaeche + eigene Textfarbe), neutral auf
+  `surfaceContainer` + Rand. Die Ampelfarben selbst erreichen auf ihrer weichen Flaeche KEINE 4,5:1
+  (`ThemeKontrastTest` prueft jedes Paar). Knoepfe an Listenzeilen: umrandeter Kompaktknopf
+  (`CompactContentPadding`), untereinander LINKSbuendig (`untereinanderAusrichtung = Start`) — ein
+  Textknopf allein am rechten Rand sah am Fairphone verloren aus (14.10.2026).
 - **Die Wecker-Tagesliste (#139, `viewmodel/WeckerTage.kt`) waehlt den naechsten klingelnden
   Wecker ueber `AlarmSkipUseCase.naechsterKlingelnderWecker` — dieselbe Auswahl wie der Knopf**,
   und nur dieser bekommt „Nicht wecken“ (Variante A, Eigentuemer 14.10.2026: der Skip-Merker
@@ -119,6 +125,13 @@ das baut man dieselbe Falle in neuer Form nach.
   (`SkipLage.wirktNoch`) darf die Liste nicht sperren. Die Liste rechnet beim Zurueckkehren in die
   App und bei jedem neuen Ziel nach — sonst haengt der Knopf an einem verstrichenen Wecker
   (Review 14.10.2026). Kaertchen kommen aus `SchichtFolgen`, keine Nachbildung.
+  **Die Dienste eines Tages kommen zusaetzlich aus dem `ShiftSpanStore`** (ROH, ueber
+  `ShiftUiState.letzterSchichtStand`, bewusst NICHT durch `filtereSpannen` — die Liste will am
+  freigegebenen Tag nennen, welcher Dienst ausfaellt; Kaertchen gibt es dort trotzdem keine): sonst
+  verliert der Tag nach „Nicht wecken“ und nach dem Klingeln seinen Dienst, und am Krankheitsmorgen
+  ist „Dienst fällt aus“ nicht mehr erreichbar. Heute bleibt, solange der Dienst laeuft; ein
+  kuenftiger Tag entsteht nie aus einer Spanne allein. Dienstzeiten nur ueber
+  `ui/components/Dienstzeit.kt` („ganztägig“ ueber Kalendertage, nicht ueber 24 h — Zeitumstellung).
 - **Neue Screens einmal bei 320 dp ansehen** (`adb shell wm density 540` auf 1080 px, danach
   `wm density reset`) — das Gerät des Eigentümers läuft so. Lange zusammengesetzte Hauptwörter
   brechen dort mitten im Wort um.

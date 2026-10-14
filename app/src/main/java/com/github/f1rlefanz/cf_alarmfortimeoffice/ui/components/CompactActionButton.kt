@@ -33,7 +33,7 @@ import androidx.compose.ui.unit.dp
  * NICHT für ganzbreite Buttons verwenden: dort ist ein Umbruch über zwei Zeilen gewollt (etwa bei
  * "Verbindung trennen / Bridge vergessen") und eine erzwungene Kürzung wäre die schlechtere Wahl.
  */
-private val CompactContentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+internal val CompactContentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
 
 @Composable
 fun CompactButton(

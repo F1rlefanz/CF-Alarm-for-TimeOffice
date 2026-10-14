@@ -172,6 +172,16 @@ das baut man dieselbe Falle in neuer Form nach.
   bis 1.45 plante `HueSmartScheduler` den Sonnenaufgangs-Worker trotzdem 15 min vor der Weckzeit —
   das Licht fuhr nachts hoch, und weil der Wecker still blieb, entstand kein Auto-Aus. Gefunden über
   die Statuszeile (#70). Ein dritter Hue-Pfad muss die Stille ebenfalls prüfen.
+- **Der Sonnenaufgangs-Worker prüft beim Feuern, ob sein Wecker noch gilt**
+  (`HueSmartScheduler.sonnenaufgangNochGedeckt`: derselbe aktive, nicht stille Wecker zur
+  mitgeführten Weckzeit; Bestand unlesbar = kein Licht). Bis 1.50.0 räumte nur der Alarm-Beobachter
+  (1,5 s Entprellung, nur solange der Prozess lebt) einen geplanten Sonnenaufgang ab: wer krank
+  „Dienst fällt aus“ tippte und die App wegwischte, bekam das Licht trotzdem — ohne Auto-Aus, weil
+  kein Wecker mehr klingelte (Review 14.10.2026). Alte Jobs ohne Weckzeit laufen wie bisher.
+- **Die Vorab-Rampe legt ihr Auto-Aus sofort auf der Bridge an** (Minuten bis Weckzeit +
+  Regeldauer, `HueRuleUseCase.vorabAutoAusZiele`); feuert der Wecker, ersetzt
+  `scheduleBridgeAutoOff` den Zeitplan wie bisher. Sonst blieb ein Licht an, dessen Rampe schon lief,
+  als der Tag freigegeben wurde. Regeln ohne Auto-Aus-Dauer bleiben bewusst an (wie nach jedem Wecker).
 - **`IHueConfigRepository.getConfiguration()` emittiert bei JEDER Änderung des @HueDataStore** — die
   Statuszeile je Schicht liest geänderte Regeln darüber nach. Ein `distinctUntilChanged` dort macht sie
   für Regeländerungen blind.

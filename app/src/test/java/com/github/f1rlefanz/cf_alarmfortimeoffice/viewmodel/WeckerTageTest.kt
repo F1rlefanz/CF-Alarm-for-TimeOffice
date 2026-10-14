@@ -3,9 +3,9 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmInfo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.MANUELLER_ALARM_SUFFIX
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
+import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpan
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.LocalDate
@@ -54,8 +54,9 @@ class WeckerTageTest {
         skip: SkipLage = SkipLage.KEIN,
         jetzt: Long = this.jetzt,
         zone: ZoneId = berlin,
-        wirkungen: Map<String, SchichtWirkung> = emptyMap()
-    ) = baueWeckerTage(alarme, freieTage, skip, jetzt, zone, wirkungen)
+        wirkungen: Map<String, SchichtWirkung> = emptyMap(),
+        spannen: List<ShiftSpan> = emptyList()
+    ) = baueWeckerTage(alarme, spannen, freieTage, skip, jetzt, zone, wirkungen)
 
     private fun WeckerTag.wecker() = eintraege.filterIsInstance<WeckerEintrag.Wecker>()
 
@@ -104,7 +105,7 @@ class WeckerTageTest {
         val nacht = alarm(1, "2026-10-15T23:30", beginn = ms("2026-10-16T00:15"), ende = ms("2026-10-16T07:00"))
         val liste = tage(listOf(nacht))
         assertEquals(LocalDate.of(2026, 10, 15), liste.single().datum)
-        assertEquals(TagesSchicht("Frühdienst", LocalTime.of(0, 15), LocalTime.of(7, 0)), liste.single().schichten.single())
+        assertEquals(TagesSchicht("Frühdienst", ms("2026-10-16T00:15"), ms("2026-10-16T07:00")), liste.single().schichten.single())
     }
 
     @Test
@@ -118,12 +119,12 @@ class WeckerTageTest {
     }
 
     @Test
-    fun `unbekannte Dienstzeit bleibt null`() {
+    fun `unbekannte Dienstzeit bleibt 0`() {
         val manuell = alarm(1, "2026-10-15T05:00", manuell = true)
         val schicht = tage(listOf(manuell)).single().schichten.single()
         assertEquals("Frühdienst$MANUELLER_ALARM_SUFFIX", schicht.name)
-        assertNull(schicht.beginn)
-        assertNull(schicht.ende)
+        assertEquals(0L, schicht.beginn)
+        assertEquals(0L, schicht.ende)
     }
 
     // --- still / manuell / naechster -----------------------------------------------------------
@@ -175,7 +176,7 @@ class WeckerTageTest {
         assertTrue(manuell.naechster)
         // Gleicher reiner Name = eine Schicht im Tageskopf, mit der bekannten Dienstzeit.
         assertEquals(
-            listOf(TagesSchicht("Frühdienst", LocalTime.of(6, 0), null)),
+            listOf(TagesSchicht("Frühdienst", ms("2026-10-15T06:00"), 0L)),
             liste.single().schichten
         )
     }
@@ -408,5 +409,123 @@ class WeckerTageTest {
             wirkungen = wirkungen
         )
         assertEquals(listOf(Kaertchen.NICHT_STOEREN, Kaertchen.RUFBEREITSCHAFT), liste.single().kaertchen)
+    }
+
+    // --- Schichtspannen (Fairphone-Rueckmeldung 14.10.2026) ------------------------------------
+
+    private fun spanne(name: String, beginn: String, ende: String, weckzeit: String) =
+        ShiftSpan(shiftName = name, startTime = ms(beginn), endTime = ms(ende), alarmTriggerTime = ms(weckzeit))
+
+    private val frueh15 = spanne("Frühdienst", "2026-10-15T06:00", "2026-10-15T14:00", "2026-10-15T05:00")
+
+    @Test
+    fun `nach Nicht wecken behaelt der Tag Dienst und Kaertchen`() {
+        // skipNextAlarm() hat den Wecker geloescht - die Spanne steht noch.
+        val liste = tage(
+            skip = SkipLage(aktiv = true, alarmId = 1, weckzeitpunkt = ms("2026-10-15T05:00")),
+            spannen = listOf(frueh15),
+            wirkungen = mapOf("Frühdienst" to wirkung(dndAn = true))
+        )
+        val tag = liste.single()
+        assertTrue(tag.eintraege.single() is WeckerEintrag.Uebersprungen)
+        assertEquals(listOf(TagesSchicht("Frühdienst", ms("2026-10-15T06:00"), ms("2026-10-15T14:00"))), tag.schichten)
+        assertEquals(listOf(Kaertchen.NICHT_STOEREN), tag.kaertchen)
+    }
+
+    @Test
+    fun `nach Nicht wecken kein Kaertchen Licht - Hue haengt am Wecker`() {
+        // Frühdienst mit Hue-Regel und Dimmen, „Nicht wecken“ angetippt: der Wecker ist geloescht,
+        // der Sonnenaufgang verwirft sich, der Weckzeit-Pfad laeuft nie. Dimmen folgt der Spanne.
+        val wirkungen = mapOf(
+            "Frühdienst" to wirkung(dimmen = DimmStatus.Wirksam(DimmArt.EIGENE, 0), licht = LichtStatus.Regeln(1, 0))
+        )
+        val uebersprungen = tage(
+            skip = SkipLage(aktiv = true, alarmId = 1, weckzeitpunkt = ms("2026-10-15T05:00")),
+            spannen = listOf(frueh15),
+            wirkungen = wirkungen
+        ).single()
+        assertEquals(listOf(Kaertchen.DIMMEN), uebersprungen.kaertchen)
+
+        // Gegenprobe: derselbe Tag MIT Wecker zeigt das Licht.
+        val mitWecker = tage(
+            alarme = listOf(alarm(1, "2026-10-15T05:00")),
+            spannen = listOf(frueh15),
+            wirkungen = wirkungen
+        ).single()
+        assertEquals(listOf(Kaertchen.DIMMEN, Kaertchen.LICHT), mitWecker.kaertchen)
+    }
+
+    @Test
+    fun `heute bleibt der Tag, solange der Dienst laeuft - auch nach dem Klingeln`() {
+        // 12:00, Wecker um 05:00 ist verstrichen und aus dem Bestand, Dienst bis 14:00.
+        val heute = spanne("Frühdienst", "2026-10-14T06:00", "2026-10-14T14:00", "2026-10-14T05:00")
+        val tag = tage(spannen = listOf(heute), wirkungen = mapOf("Frühdienst" to wirkung(isOnCall = true))).single()
+        assertEquals(LocalDate.of(2026, 10, 14), tag.datum)
+        assertFalse(tag.freigegeben)
+        // Keine Zeile fuer den verstrichenen Wecker - ob er geklingelt hat, weiss die Anzeige nicht.
+        assertTrue(tag.eintraege.isEmpty())
+        assertEquals("Frühdienst", tag.schichten.single().name)
+        assertEquals(listOf(Kaertchen.RUFBEREITSCHAFT), tag.kaertchen)
+    }
+
+    @Test
+    fun `heute verschwindet der Tag, wenn der Dienst zu Ende ist`() {
+        val vorbei = spanne("Frühdienst", "2026-10-14T06:00", "2026-10-14T11:59", "2026-10-14T05:00")
+        assertTrue(tage(spannen = listOf(vorbei)).isEmpty())
+    }
+
+    @Test
+    fun `ein kuenftiger Tag entsteht nicht aus einer Spanne allein`() {
+        assertTrue(tage(spannen = listOf(frueh15)).isEmpty())
+    }
+
+    @Test
+    fun `ein Dienst vom Vortag, der noch laeuft, haelt keinen Tag - Anker ist die Weckzeit`() {
+        // Nachtdienst, Wecker gestern 20:30, Dienst bis heute 13:00 - verankert an GESTERN, und
+        // gestern steht nicht in der Liste (wie ein freigegebener Tag von gestern).
+        val nacht = spanne("Nachtdienst", "2026-10-13T22:00", "2026-10-14T13:00", "2026-10-13T20:30")
+        assertTrue(tage(spannen = listOf(nacht)).isEmpty())
+    }
+
+    @Test
+    fun `ein freigegebener Tag nennt den Dienst, der ausfaellt - ohne Kaertchen`() {
+        val tag = tage(
+            freieTage = listOf(LocalDate.of(2026, 10, 15)),
+            spannen = listOf(frueh15),
+            wirkungen = mapOf("Frühdienst" to wirkung(dndAn = true))
+        ).single()
+        assertTrue(tag.freigegeben)
+        assertTrue(tag.eintraege.isEmpty())
+        assertEquals("Frühdienst", tag.schichten.single().name)
+        assertTrue(tag.kaertchen.isEmpty())
+    }
+
+    @Test
+    fun `Wecker und Spanne desselben Dienstes ergeben eine Schicht, auch neben dem manuellen`() {
+        val liste = tage(
+            listOf(
+                alarm(1, "2026-10-15T04:30", manuell = true),
+                alarm(2, "2026-10-15T05:00", beginn = ms("2026-10-15T06:00"), ende = ms("2026-10-15T14:00"))
+            ),
+            spannen = listOf(frueh15)
+        )
+        assertEquals(
+            listOf(TagesSchicht("Frühdienst", ms("2026-10-15T06:00"), ms("2026-10-15T14:00"))),
+            liste.single().schichten
+        )
+    }
+
+    @Test
+    fun `zwei Dienste aus Wecker und Spanne stehen in der Reihenfolge ihrer Weckzeit`() {
+        val abruf = spanne("Abrufdienst", "2026-10-15T00:00", "2026-10-16T00:00", "2026-10-14T23:00")
+        val liste = tage(listOf(alarm(1, "2026-10-15T05:00")), spannen = listOf(abruf, frueh15))
+        // Die Abruf-Spanne ankert an ihrer Weckzeit (heute, 14.10.) - nicht am 15. - und haelt
+        // heute in der Liste, weil ihr Dienst noch bevorsteht.
+        assertEquals(listOf(LocalDate.of(2026, 10, 14), LocalDate.of(2026, 10, 15)), liste.map { it.datum })
+        assertEquals(listOf("Abrufdienst"), liste[0].schichten.map { it.name })
+        assertEquals(listOf("Frühdienst"), liste[1].schichten.map { it.name })
+        val spaeterAbruf = spanne("Abrufdienst", "2026-10-15T16:00", "2026-10-15T22:00", "2026-10-15T15:00")
+        val zwei = tage(listOf(alarm(1, "2026-10-15T05:00")), spannen = listOf(spaeterAbruf, frueh15))
+        assertEquals(listOf("Frühdienst", "Abrufdienst"), zwei.single().schichten.map { it.name })
     }
 }

@@ -19,11 +19,31 @@ val ColorScheme.success: Color
 val ColorScheme.warning: Color
     @Composable get() = if (isSystemInDarkTheme()) WarningAmberDark else WarningAmber
 
+/** Die drei Status-Toene, die als weiche Flaeche mit Text erscheinen (Etiketten der Tagesliste). */
+enum class StatusTon { ERFOLG, WARNUNG, INFO }
+
+/** Flaeche und Text eines [StatusTon]s - als Paar, damit niemand den Text ohne seine Flaeche nimmt. */
+data class TonPaar(val flaeche: Color, val text: Color)
+
+/**
+ * PURE, TESTBAR: das Farbpaar eines Status-Tons. Der Kontrast jedes Paares ist in
+ * `ThemeKontrastTest` gegen WCAG AA (4,5:1) geprueft - wer hier tauscht, sieht es dort.
+ */
+fun tonPaar(ton: StatusTon, dunkel: Boolean): TonPaar = when (ton) {
+    StatusTon.ERFOLG -> if (dunkel) TonPaar(SuccessContainerDark, SuccessGreenDark) else TonPaar(SuccessContainerLight, OnSuccessContainerLight)
+    StatusTon.WARNUNG -> if (dunkel) TonPaar(WarningContainerDark, WarningAmberDark) else TonPaar(WarningContainerLight, OnWarningContainerLight)
+    StatusTon.INFO -> if (dunkel) TonPaar(InfoContainerDark, InfoBlueDark) else TonPaar(InfoContainerLight, InfoBlue)
+}
+
+/** [tonPaar] im aktuellen Hell/Dunkel - dieselbe Weiche wie [success]/[warning]. */
+@Composable
+fun ColorScheme.tonPaar(ton: StatusTon): TonPaar = tonPaar(ton, isSystemInDarkTheme())
+
 /**
  * Corporate-Design-Farbschemata - bewusst statt Material You, damit die App auf jedem Geraet in
  * den Unternehmensfarben erscheint.
  */
-private val LightColorScheme = lightColorScheme(
+internal val LightColorScheme = lightColorScheme(
     primary = BrandRed,
     onPrimary = SurfaceWhite,
     primaryContainer = BrandRedLight,
@@ -69,7 +89,7 @@ private val LightColorScheme = lightColorScheme(
     onErrorContainer = OnErrorContainerLight
 )
 
-private val DarkColorScheme = darkColorScheme(
+internal val DarkColorScheme = darkColorScheme(
     primary = BrandRedLightMode,
     onPrimary = Color(0xFF5C0016),
     primaryContainer = DarkContainer,

@@ -27,7 +27,30 @@ Schreibkonventionen (der Generator verlässt sich darauf):
 - `### 🐛 Behoben` — Rubrik, mit Emoji wie bisher.
 - `- **Kurzfassung:** Erklärung` — ein Eintrag.
 
-## 🆕 Version 1.50.0 (Aktuell – interne Alpha)
+## 🆕 Version 1.50.1 (Aktuell – interne Alpha)
+
+**Stand:** Oktober 2026
+
+_Feinschliff an der Tagesliste: ganztägige Dienste lesen sich richtig, der heutige Dienst bleibt erreichbar, und „Dienst fällt aus“ ist klarer als Weg für Krankheitstage erklärt._
+
+### 🎨 Feinschliff
+
+- **Knöpfe in der Tagesliste:** „Nicht wecken“, „Doch wecken“ und „Zurücknehmen“ sehen jetzt aus wie die übrigen Knöpfe der App und stehen auf schmalen Anzeigen ordentlich unter ihrer Zeile statt allein am rechten Rand.
+- **Etiketten in Farbe:** „nächster“ ist grün, „von dir gestellt“ blau, „weckt diesmal nicht“ orange; „still“ und „Dienst fällt aus“ bleiben zurückhaltend grau. Die Kärtchen „Nicht stören“, Dimmen, Licht und Kalender-Abfrage haben eine ruhige Fläche – gut lesbar im hellen wie im dunklen Design.
+- **Klarer bei Krankheit:** Der Hinweis unter der Liste und die Erklärung am Knopf sagen jetzt deutlich, dass „Nicht wecken“ den Wecker samt Weck-Licht auslässt, den Dienst aber stehen lässt, während „Dienst fällt aus“ für jeden Tag gedacht ist, an dem du krank bist, frei hast oder getauscht hast – auch für heute. Für einen Tag, der nicht in der Liste steht, gibt es darunter „Tag auswählen: Dienst fällt aus …“.
+- **„Nächste Schicht“ in der Übersicht:** Die Karte nennt die Dienstzeit (bzw. „ganztägig“) statt nur des Beginns.
+- **Etiketten mit Luft:** Brechen die farbigen Etiketten einer Weckerzeile auf schmalen Anzeigen um, stehen sie nicht mehr Fläche an Fläche.
+
+### 🐛 Behoben
+
+- **Ganztägige Dienste:** Ein Abrufdienst über den ganzen Tag steht jetzt als „ganztägig“ da statt als „00:00–00:00“, mehrtägige als „ganztägig bis …“.
+- **Tag nach „Nicht wecken“:** Ein Tag, dessen Wecker du ausgelassen hast, zeigt weiter seinen Dienst und was der Dienst sonst auslöst – nur das Licht nicht mehr, denn ohne Wecker geht keins an.
+- **24-Stunden-Dienste:** Ein Dienst von 07:00 bis 07:00 am Folgetag steht jetzt mit seinem Ende-Datum da statt als „07:00–07:00“.
+- **Lange Dienstzeiten in „Nächster Wecker“:** Eine mehrtägige Dienstzeit bricht auf schmalen Anzeigen vor oder nach „bis“ um statt mitten im Datum.
+- **Heutiger Dienst bleibt antippbar:** Ist der Wecker heute schon vorbei, bleibt der Tag in der Liste, solange sein Dienst läuft oder noch bevorsteht – so erreichst du am Krankheitsmorgen noch „Dienst fällt aus“.
+- **Kein Sonnenaufgangs-Licht am ausgefallenen Tag:** Wählst du „Dienst fällt aus“ und schließt die App gleich danach, ging ein schon geplanter Sonnenaufgang am Morgen trotzdem an. Er prüft jetzt beim Start, ob sein Wecker noch steht. Läuft der Sonnenaufgang schon, wenn du „Dienst fällt aus“ oder „Nicht wecken“ wählst, geht das Licht trotzdem wieder aus, wenn die Regel ein Auto-Aus hat – zur selben Zeit wie sonst nach dem Wecker.
+
+## Version 1.50.0
 
 **Stand:** Oktober 2026
 

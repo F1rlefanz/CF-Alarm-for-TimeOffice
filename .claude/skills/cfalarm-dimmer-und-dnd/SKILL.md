@@ -199,6 +199,8 @@ das baut man dieselbe Falle in neuer Form nach.
   verworfen — die Regelliste koennte ihn nicht anzeigen. Folge fuer die Nutzertexte: „Nicht
   stoeren bleibt aus" gilt NUR fuer die Dienstzeit; nachts kann Modus 1 weiterhin schalten, weil
   er dem Dimmer folgt. Hergang im Skill `cfalarm-wecker-und-boot` (dortige Hergang-Datei zu „Tag freigeben").
+  Die Wecker-Tagesliste liest die Spannen ABSICHTLICH ungefiltert (reine Anzeige: sie nennt den
+  ausfallenden Dienst) — das ist keine zweite Filterstelle, sondern kein Wirkungs-Konsument.
 - **Die Dienstzeit-Fenster kommen aus `ShiftSpanStore`, NICHT aus dem Alarm-Bestand** — ein Alarm
   überlebt die Weckzeit nicht. Spannen werden in `syncAlarms()` **vor** dem Vergangenheits-Filter
   geschrieben, **auch in den beiden Leer-Zweigen**, und der Schreibvorgang ist nicht-fatal gekapselt.

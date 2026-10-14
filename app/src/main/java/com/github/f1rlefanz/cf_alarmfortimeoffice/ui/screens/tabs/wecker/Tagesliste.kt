@@ -3,6 +3,7 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.wecker
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -22,24 +23,26 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.reinerSchichtname
-import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.warning
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.CompactContentPadding
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.SchichtWirkung
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.WeckerEintrag
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.WeckerTag
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.alsText
 import java.time.LocalDate
+import java.time.ZoneId
 
 /**
  * Was eine Tageskarte und das Bottom-Sheet bedienen koennen. Die Aktionen rufen die BESTEHENDEN
@@ -104,12 +107,15 @@ internal fun TagKarte(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = modifier
                         )
-                    }
+                    },
+                    untereinanderAusrichtung = Alignment.Start
                 ) {
-                    TextButton(
-                        onClick = { aktionen.onZuruecknehmen(tag.datum) },
-                        enabled = !aktionen.gesperrt
-                    ) { Text("Zurücknehmen") }
+                    KartenKnopf(
+                        text = "Zurücknehmen",
+                        laeuft = false,
+                        enabled = !aktionen.gesperrt,
+                        onClick = { aktionen.onZuruecknehmen(tag.datum) }
+                    )
                 }
             }
 
@@ -118,7 +124,7 @@ internal fun TagKarte(
                     horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_SMALL),
                     verticalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_SMALL)
                 ) {
-                    tag.kaertchen.forEach { Etikett(kaertchenText(it)) }
+                    tag.kaertchen.forEach { Etikett(kaertchenText(it), EtikettTon.WIRKUNG) }
                 }
             }
         }
@@ -141,11 +147,11 @@ private fun TagKopf(tag: WeckerTag, heute: LocalDate) {
         relativerTag(tag.datum, heute)?.let {
             Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        if (tag.freigegeben) Etikett("Dienst fällt aus", hervorgehoben = true)
+        if (tag.freigegeben) Etikett("Dienst fällt aus", EtikettTon.GEDAEMPFT)
     }
     if (tag.schichten.isNotEmpty()) {
         Text(
-            schichtenText(tag.schichten),
+            schichtenText(tag.schichten, ZoneId.systemDefault()),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -181,9 +187,12 @@ private fun EintragZeile(eintrag: WeckerEintrag, mehrereSchichten: Boolean, akti
                     color = if (klingeltNicht) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
                     textDecoration = if (klingeltNicht) TextDecoration.LineThrough else null
                 )
+                // Zeilenabstand wie im TagKopf: bei 320 dp und Schrift 1,3 brechen die gefuellten
+                // Etiketten um und stiessen sonst Flaeche an Flaeche aneinander.
                 FlowRow(
                     modifier = Modifier.weight(1f),
                     horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_SMALL),
+                    verticalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_EXTRA_SMALL),
                     itemVerticalAlignment = Alignment.CenterVertically
                 ) {
                     if (wecker != null) {
@@ -192,26 +201,21 @@ private fun EintragZeile(eintrag: WeckerEintrag, mehrereSchichten: Boolean, akti
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        if (wecker.naechster) Etikett("nächster", hervorgehoben = true)
-                    } else {
-                        Text(
-                            UEBERSPRUNGEN_TEXT,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.warning
-                        )
                     }
+                    weckerEtiketten(eintrag).forEach { Etikett(it.text, it.ton) }
                 }
             }
-        }
+        },
+        untereinanderAusrichtung = Alignment.Start
     ) {
         when {
-            wecker?.nichtWeckenMoeglich == true -> SkipKnopf(
+            wecker?.nichtWeckenMoeglich == true -> KartenKnopf(
                 text = "Nicht wecken",
                 laeuft = aktionen.skipLaeuft,
                 enabled = !aktionen.gesperrt,
                 onClick = { aktionen.onNichtWecken(wecker.triggerTime) }
             )
-            uebersprungen -> SkipKnopf(
+            uebersprungen -> KartenKnopf(
                 text = "Doch wecken",
                 laeuft = aktionen.skipLaeuft,
                 enabled = !aktionen.gesperrt,
@@ -221,13 +225,26 @@ private fun EintragZeile(eintrag: WeckerEintrag, mehrereSchichten: Boolean, akti
     }
 }
 
+/**
+ * Die Knoepfe an Wecker- und Tageszeilen („Nicht wecken“, „Doch wecken“, „Zurücknehmen“): ein
+ * umrandeter Kompaktknopf wie „Probehören“ und „Dienst fällt aus“ - als reiner Textknopf sah er am
+ * Fairphone anders aus als alle uebrigen und stand allein am Rand (14.10.2026). Das 48-dp-Ziel
+ * bringt `OutlinedButton` ueber `minimumInteractiveComponentSize` selbst mit.
+ *
+ * Laeuft der Vorgang, dreht sich ein Kreis UEBER der unsichtbar weiter gesetzten Beschriftung: der
+ * Knopf behaelt seine Breite, die Zeile springt nicht.
+ */
 @Composable
-private fun SkipKnopf(text: String, laeuft: Boolean, enabled: Boolean, onClick: () -> Unit) {
-    TextButton(onClick = onClick, enabled = enabled) {
-        if (laeuft) {
-            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-        } else {
-            Text(text)
+private fun KartenKnopf(text: String, laeuft: Boolean, enabled: Boolean, onClick: () -> Unit) {
+    OutlinedButton(onClick = onClick, enabled = enabled, contentPadding = CompactContentPadding) {
+        Box(contentAlignment = Alignment.Center) {
+            Text(
+                text,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.alpha(if (laeuft) 0f else 1f)
+            )
+            if (laeuft) CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
         }
     }
 }
@@ -281,10 +298,11 @@ internal fun TagDetails(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                    }
+                    },
+                    untereinanderAusrichtung = Alignment.Start
                 ) {
                     when {
-                        eintrag is WeckerEintrag.Wecker && eintrag.nichtWeckenMoeglich -> SkipKnopf(
+                        eintrag is WeckerEintrag.Wecker && eintrag.nichtWeckenMoeglich -> KartenKnopf(
                             text = "Nicht wecken",
                             laeuft = aktionen.skipLaeuft,
                             enabled = !aktionen.gesperrt,
@@ -293,7 +311,7 @@ internal fun TagDetails(
                                 onSchliessen()
                             }
                         )
-                        eintrag is WeckerEintrag.Uebersprungen -> SkipKnopf(
+                        eintrag is WeckerEintrag.Uebersprungen -> KartenKnopf(
                             text = "Doch wecken",
                             laeuft = aktionen.skipLaeuft,
                             enabled = !aktionen.gesperrt,

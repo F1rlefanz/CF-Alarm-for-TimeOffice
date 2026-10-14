@@ -62,6 +62,54 @@ class HueRuleUseCase @Inject constructor(
          * instead of waiting for the real configured duration (which can be many minutes).
          */
         private const val AUTO_OFF_TEST_DURATION_SECONDS = 20
+
+        /**
+         * Auto-Aus-Ziele von BEREITS AUSGEWAEHLTEN Regeln - bewusst OHNE eigenen Schicht-Filter
+         * (die Auswahl gehoert allein [findApplicableRules]), sonst verloeren UNIVERSAL-Regeln ihr
+         * Auto-Aus. Besitzt nur den Rechenweg inkl. Sonnenaufgangs-Versatz.
+         * Hergang: Skill cfalarm-hue, reference/hue-api-und-regeln.md
+         */
+        internal fun autoOffTargetsOf(rules: List<HueSchedule>): List<AutoOffTarget> {
+            return try {
+                rules.asSequence()
+                    // Only the light actions' `duration` decides whether auto-off applies -
+                    // sunrise rules included (auto-off then counts from the ramp's end state).
+                    .flatMap { rule ->
+                        // A ramp starting AT the alarm time (startBeforeAlarm == false) is only bright
+                        // after durationMinutes - delay the auto-off by that so it never fires mid-ramp.
+                        val sunriseOffsetMinutes = rule.sunrise
+                            ?.takeIf { it.enabled && !it.startBeforeAlarm }
+                            ?.durationMinutes ?: 0
+                        rule.lightActions.asSequence()
+                            .filter { action -> action.on == true && (action.duration ?: 0) > 0 && action.targetId.isNotBlank() }
+                            .map { action -> AutoOffTarget(action.targetId, action.isGroup, action.duration!! + sunriseOffsetMinutes) }
+                    }
+                    .distinct()
+                    .toList()
+            } catch (e: Exception) {
+                Logger.e(LogTags.HUE_USECASE, "Failed to compute auto-off actions", e)
+                emptyList()
+            }
+        }
+
+        /**
+         * Auto-Aus fuer eine Vorab-Rampe, die GERADE gestartet ist - gezaehlt ab JETZT, deshalb
+         * die Minuten bis zur Weckzeit obendrauf. Endet also zum selben Zeitpunkt wie das Auto-Aus,
+         * das der Weckzeit-Pfad spaeter anlegt.
+         *
+         * WARUM (Krankheitstag-Pruefung, 14.10.2026): Laeuft die Rampe schon und der Nutzer tippt
+         * „Dienst fällt aus“ oder „Nicht wecken“, wird der Wecker geloescht und feuert nie - der
+         * Weckzeit-Pfad im `AlarmReceiver`, bis dahin der EINZIGE Ort fuer das Auto-Aus, laeuft
+         * nicht, und das Licht blieb an. Ein Abbrechen der Rampe beim Tippen waere kein Ersatz:
+         * es haengt am lebenden Prozess. Der Zeitplan liegt auf der Bridge.
+         *
+         * Feuert der Wecker doch, ersetzt `scheduleBridgeAutoOff` den Zeitplan (raeumt eigene
+         * Timer vorher ab). Bleibt er stehen, weil die Weckzeit-Regeln kein Auto-Aus-Ziel haben
+         * (dann wird nicht geraeumt), schaltet er erst NACH Weckzeit plus Regeldauer aus - genau
+         * das, was die Regel ohnehin verspricht.
+         */
+        internal fun vorabAutoAusZiele(rules: List<HueSchedule>, minutenBisWecker: Int): List<AutoOffTarget> =
+            autoOffTargetsOf(rules).map { it.copy(delayMinutes = it.delayMinutes + minutenBisWecker.coerceAtLeast(0)) }
     }
     
     override suspend fun getAllRules(): Result<List<HueSchedule>> {
@@ -254,40 +302,11 @@ class HueRuleUseCase @Inject constructor(
         }
     }
 
-    override suspend fun executeSunrisePreAlarm(shiftName: String): Result<RuleExecutionResult> =
-        sunriseExecutor.executeSunrisePreAlarm(shiftName)
+    override suspend fun executeSunrisePreAlarm(shiftName: String, minutenBisWecker: Int?): Result<RuleExecutionResult> =
+        sunriseExecutor.executeSunrisePreAlarm(shiftName, minutenBisWecker)
 
     override fun getPreAlarmSunriseLeadMinutes(rules: List<HueSchedule>, shiftName: String): Int? =
         sunriseExecutor.getPreAlarmSunriseLeadMinutes(rules, shiftName)
-
-    /**
-     * Auto-Aus-Ziele von BEREITS AUSGEWAEHLTEN Regeln - bewusst OHNE eigenen Schicht-Filter
-     * (die Auswahl gehoert allein [findApplicableRules]), sonst verloeren UNIVERSAL-Regeln ihr
-     * Auto-Aus. Besitzt nur den Rechenweg inkl. Sonnenaufgangs-Versatz.
-     * Hergang: Skill cfalarm-hue, reference/hue-api-und-regeln.md
-     */
-    private fun autoOffTargetsOf(rules: List<HueSchedule>): List<AutoOffTarget> {
-        return try {
-            rules.asSequence()
-                // Only the light actions' `duration` decides whether auto-off applies -
-                // sunrise rules included (auto-off then counts from the ramp's end state).
-                .flatMap { rule ->
-                    // A ramp starting AT the alarm time (startBeforeAlarm == false) is only bright
-                    // after durationMinutes - delay the auto-off by that so it never fires mid-ramp.
-                    val sunriseOffsetMinutes = rule.sunrise
-                        ?.takeIf { it.enabled && !it.startBeforeAlarm }
-                        ?.durationMinutes ?: 0
-                    rule.lightActions.asSequence()
-                        .filter { action -> action.on == true && (action.duration ?: 0) > 0 && action.targetId.isNotBlank() }
-                        .map { action -> AutoOffTarget(action.targetId, action.isGroup, action.duration!! + sunriseOffsetMinutes) }
-                }
-                .distinct()
-                .toList()
-        } catch (e: Exception) {
-            Logger.e(LogTags.HUE_USECASE, "Failed to compute auto-off actions", e)
-            emptyList()
-        }
-    }
 
     /**
      * Converts a HueSchedule rule to executable LightAction list

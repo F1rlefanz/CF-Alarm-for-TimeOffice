@@ -115,6 +115,16 @@ beim nächsten erfolgreichen Load aus dem Spiegel verschwindet. **Dieselbe Grenz
 fallen Sonnenaufgang und Lichtregeln automatisch weg. Wer hier „sicherheitshalber" einen eigenen
 Hue-Zweig ergänzt, baut eine zweite Wahrheit.
 
+**Eine Lücke gab es trotzdem (Krankheitstag-Prüfung, 14.10.2026):** einen schon GEPLANTEN
+Vorab-Sonnenaufgang (`SunriseStartWorker`) räumte nur der Alarm-Beobachter im `HueSmartScheduler`
+ab — 1,5 s entprellt und nur im lebenden Prozess. Wird die App direkt nach „Dienst fällt aus“
+weggewischt, blieb der Auftrag stehen, und das Licht fuhr am freien Morgen ohne Auto-Aus hoch.
+Seitdem trägt der Auftrag seine Weckzeit und fragt beim Feuern
+`HueSmartScheduler.sonnenaufgangNochGedeckt` — dieselben Bedingungen wie beim Planen, kein
+Freigabe-Zweig. Bekannt und offen: ein Schlummern, das am Krankheitsmorgen schon läuft, klingelt
+nach einer Freigabe weiter (der Schlummer-Merker kennt keine Freigabe); und eine Rampe, die bereits
+läuft, wird nicht zurückgedreht.
+
 ## Was am Emulator gemessen wurde (24.08.2026)
 
 Ausgangslage nachgestellt (S2 12:48–20:00 GMT laufend, Trigger „Während der Dienstzeit" an):

@@ -60,8 +60,13 @@ interface IHueRuleUseCase {
      *
      * Matched by shift name (the value the alarm carries) so the worker doesn't need a
      * full ShiftMatch.
+     *
+     * @param minutenBisWecker Minuten von jetzt bis zur Weckzeit. Gesetzt, legt der Lauf nach der
+     *   Rampe schon das Auto-Aus auf der Bridge an (`HueRuleUseCase.vorabAutoAusZiele`) - sonst
+     *   bliebe das Licht an, wenn der Wecker danach geloescht wird und nie feuert. `null` (Auftrag
+     *   ohne Weckzeit aus einer aelteren Version): kein Vorab-Auto-Aus.
      */
-    suspend fun executeSunrisePreAlarm(shiftName: String): Result<RuleExecutionResult>
+    suspend fun executeSunrisePreAlarm(shiftName: String, minutenBisWecker: Int?): Result<RuleExecutionResult>
 
     /**
      * Lead time in minutes for pre-alarm sunrise: the longest duration among enabled

@@ -6,6 +6,10 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.ProbeZustand
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.SchlummerEingabe
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.reinerSchichtname
+import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.LetzterSchichtStand
+import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpan
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.dienstzeitText
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.kurzesDatum
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.AlarmSkipUiState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.Kaertchen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.SchichtFolgen
@@ -16,8 +20,8 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.WeckerEintrag
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.WeckerTag
 import java.time.LocalDate
 import java.time.LocalTime
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
-import java.time.format.TextStyle
 import java.util.Locale
 import kotlin.math.roundToInt
 
@@ -30,7 +34,6 @@ import kotlin.math.roundToInt
 private const val NBSP = ' '
 
 private val UHRZEIT: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm", Locale.GERMAN)
-private val TAG_MONAT: DateTimeFormatter = DateTimeFormatter.ofPattern("dd.MM.", Locale.GERMAN)
 
 // ---- Zustandshinweis oben ---------------------------------------------------------------
 
@@ -84,6 +87,23 @@ internal fun leerzustandText(zustand: WeckerZustand?, vorausschauTage: Int): Str
 
 // ---- Tagesliste ------------------------------------------------------------------------
 
+/**
+ * Wie ein Etikett aussieht (Mockup #139): Status-Etiketten als gefuellte Pille im weichen Ton,
+ * Wirkungs-Kaertchen als ruhige gefuellte Flaeche mit Rand.
+ */
+internal enum class EtikettTon {
+    /** „nächster“ - gruen. */
+    ERFOLG,
+    /** „von dir gestellt“ - blau. */
+    INFO,
+    /** „weckt diesmal nicht“ - bernstein. */
+    WARNUNG,
+    /** „Dienst fällt aus“, „still“ - zurueckgenommen, neutral. */
+    GEDAEMPFT,
+    /** Die Kaertchen „Nicht stören“, „Dimmen“, „Licht“, Kalender-Abfrage. */
+    WIRKUNG
+}
+
 /** Die Skip-Lage, wie die Tagesliste sie braucht - aus dem Zustand des ViewModels. */
 internal fun AlarmSkipUiState.alsSkipLage(): SkipLage = SkipLage(
     aktiv = isNextAlarmSkipped,
@@ -107,10 +127,18 @@ internal fun weckerWirkungen(
         }
         .toMap()
 
-/** "Mi 14.10." - Wochentag ohne Punkt, damit er nicht wie ein Satzende aussieht. */
-internal fun tagUeberschrift(datum: LocalDate): String =
-    datum.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.GERMAN).removeSuffix(".") +
-        " " + datum.format(TAG_MONAT)
+/**
+ * PURE, TESTBAR: welche Schichtspannen die Tagesliste liest. Waehrend der Master-Pause und bei
+ * ausgeschalteter Automatik KEINE: dann ist kein Wecker gestellt (der Hinweis oben sagt es), und
+ * der Spannen-Bestand wird in diesen Lagen auch nicht mehr geschrieben - ein Tag „Dienst ohne
+ * Wecker“ aus einem alten Stand widerspraeche dem Hinweis. `null` (nicht lesbar, noch nicht
+ * gelesen) heisst ebenfalls keine: die Liste faellt dann auf die Wecker allein zurueck.
+ */
+internal fun spannenFuerTagesliste(zustand: WeckerZustand?, stand: LetzterSchichtStand?): List<ShiftSpan> =
+    if (zustand != null) emptyList() else stand?.spans.orEmpty()
+
+/** "Mi 14.10." - dieselbe Datumsform wie in der Dienstzeit („ganztägig bis So 18.10.“). */
+internal fun tagUeberschrift(datum: LocalDate): String = kurzesDatum(datum)
 
 /** "heute"/"morgen" neben dem Datum - ein Wecker-Tag liest sich so ohne Kalender im Kopf. */
 internal fun relativerTag(datum: LocalDate, heute: LocalDate): String? = when (datum) {
@@ -121,18 +149,16 @@ internal fun relativerTag(datum: LocalDate, heute: LocalDate): String? = when (d
 
 /**
  * "F · 06:00–14:12", mehrere Schichten mit Komma. Der Name ohne "(Manuell)": dass ein Wecker von
- * Hand gestellt ist, sagt dessen Zeile. Unbekannte Dienstzeit (Feld 0) -> nur der Name.
+ * Hand gestellt ist, sagt dessen Zeile. Unbekannte Dienstzeit (Feld 0) -> nur der Name. Die
+ * Dienstzeit kommt aus derselben Formatierung wie in der Uebersicht ([dienstzeitText]):
+ * „Abrufdienst · ganztägig“ statt „00:00–00:00“.
  */
-internal fun schichtenText(schichten: List<TagesSchicht>): String =
+internal fun schichtenText(schichten: List<TagesSchicht>, zone: ZoneId): String =
     schichten.joinToString(", ") { schicht ->
         val name = reinerSchichtname(schicht.name)
-        val beginn = schicht.beginn
-        val ende = schicht.ende
-        when {
-            beginn != null && ende != null -> "$name$NBSP·$NBSP${uhrzeit(beginn)}–${uhrzeit(ende)}"
-            beginn != null -> "$name$NBSP·${NBSP}ab$NBSP${uhrzeit(beginn)}"
-            else -> name
-        }
+        // Normales Leerzeichen hinter dem Punkt: eine lange Dienstzeit („bis So 18.10. 06:00“)
+        // darf in der schmalen Karte in die naechste Zeile, statt mitten im Wort zu brechen.
+        dienstzeitText(schicht.beginn, schicht.ende, zone)?.let { "$name$NBSP· $it" } ?: name
     }
 
 internal fun uhrzeit(zeit: LocalTime): String = zeit.format(UHRZEIT)
@@ -140,24 +166,45 @@ internal fun uhrzeit(zeit: LocalTime): String = zeit.format(UHRZEIT)
 /**
  * PURE, TESTBAR: was ein Wecker tut, in einem Satzstueck. Ein Dienstplan-Wecker an einem
  * freigegebenen Tag klingelt nicht (Gate und Backstop) - er darf nicht als "Weckt" erscheinen.
+ * Herkunft und Zustand („von dir gestellt“, „still“, „nächster“) stehen NICHT hier, sondern als
+ * farbige Etiketten daneben ([weckerEtiketten]).
  *
  * @param mehrereSchichten nennt den Dienst, wenn der Tag mehrere hat - sonst steht er schon oben.
  */
 internal fun weckerArt(eintrag: WeckerEintrag.Wecker, mehrereSchichten: Boolean): String {
     val art = when {
         eintrag.entfaelltDurchFreigabe -> "Entfällt, der Dienst fällt aus"
-        eintrag.still -> "Still: kein Ton"
+        eintrag.still -> "Kein Ton"
         else -> "Weckt"
     }
     val teile = buildList {
         add(art)
-        if (eintrag.manuell) add("von dir gestellt")
         if (mehrereSchichten && eintrag.alarm.shiftName.isNotBlank()) add(reinerSchichtname(eintrag.alarm.shiftName))
     }
     return teile.joinToString(" · ")
 }
 
+/** Ein Etikett in einer Weckerzeile: Text und Ton - ohne Compose, damit es testbar bleibt. */
+internal data class EtikettInhalt(val text: String, val ton: EtikettTon)
+
+/**
+ * PURE, TESTBAR: die Etiketten einer Weckerzeile, in Lesereihenfolge hinter [weckerArt].
+ * Farben wie im Mockup: „nächster“ gruen, „von dir gestellt“ blau, „weckt diesmal nicht“
+ * bernstein, „still“ gedaempft.
+ */
+internal fun weckerEtiketten(eintrag: WeckerEintrag): List<EtikettInhalt> = when (eintrag) {
+    is WeckerEintrag.Uebersprungen -> listOf(EtikettInhalt(UEBERSPRUNGEN_ETIKETT, EtikettTon.WARNUNG))
+    is WeckerEintrag.Wecker -> buildList {
+        if (eintrag.still) add(EtikettInhalt("still", EtikettTon.GEDAEMPFT))
+        if (eintrag.manuell) add(EtikettInhalt("von dir gestellt", EtikettTon.INFO))
+        if (eintrag.naechster) add(EtikettInhalt("nächster", EtikettTon.ERFOLG))
+    }
+}
+
 internal const val UEBERSPRUNGEN_TEXT: String = "Weckt diesmal nicht"
+
+/** Dasselbe als Etikett in der Zeile - klein geschrieben wie die uebrigen Etiketten. */
+internal const val UEBERSPRUNGEN_ETIKETT: String = "weckt diesmal nicht"
 
 /** Die Zeile im Bottom-Sheet: was dieser Wecker ist - Herkunft ausgeschrieben. */
 internal fun weckerBeschreibung(eintrag: WeckerEintrag): String = when (eintrag) {
@@ -183,7 +230,9 @@ internal const val RUFBEREITSCHAFT_BESCHREIBUNG: String =
 
 /**
  * Was „Dienst fällt aus“ bewirkt - steht direkt am Knopf (Skill: ein Hinweis zu einem Knopf steht
- * unter DIESEM Knopf). Gekuerzte Fassung des frueheren Freigabe-Hinweises.
+ * unter DIESEM Knopf). Gekuerzte Fassung des frueheren Freigabe-Hinweises. Der Anlass steht vorn
+ * (Eigentuemer 14.10.2026): die Funktion ist fuer den Krankheits-, Tausch- oder freien Tag - JEDEN,
+ * auch heute -, nicht ein Ausweg fuer „spaetere“ Tage.
  *
  * JEDE Aussage ist am Code belegt (Stand 1.48.0, Hergang cfalarm-wecker-und-boot/reference/
  * tag-freigeben.md):
@@ -197,12 +246,17 @@ internal const val RUFBEREITSCHAFT_BESCHREIBUNG: String =
  *    ueber dieselbe Funktion, `TagFreigabeUseCase` plant sie beim Freigeben neu.
  *  - "eigene Wecker bleiben": `istTagFreigegeben` und `TagFreigabeUseCase.gehoertZuTag` nehmen
  *    manuelle Wecker aus.
+ *  - "kein Weck-Licht": Hue laeuft nur ueber den Weckzeit-Pfad im `AlarmReceiver` und den
+ *    Vorab-Sonnenaufgang, der beim Start prueft, ob sein Wecker noch steht
+ *    (`HueSmartScheduler.sonnenaufgangNochGedeckt`); laeuft die Rampe schon, schaltet ihr
+ *    Vorab-Auto-Aus sie ab (`HueRuleUseCase.vorabAutoAusZiele`).
  *  - "der Termin im Kalender bleibt": die App schreibt nie in den Kalender.
  * Wer eine dieser Stellen aendert, prueft diesen Text mit.
  */
 internal const val DIENST_FAELLT_AUS_ERKLAERUNG: String =
-    "Für diesen Tag wird kein Wecker aus dem Dienstplan gestellt, auch nicht nach späteren " +
-        "Änderungen im Dienstplan. „Nicht stören“ und Dimmen richten sich nicht mehr nach dem " +
+    "Krank, frei oder getauscht? Für diesen Tag wird kein Wecker aus dem Dienstplan gestellt, " +
+        "auch nicht nach späteren Änderungen im Dienstplan. Ohne Wecker geht auch kein Weck-Licht an. " +
+        "„Nicht stören“ und Dimmen richten sich nicht mehr nach dem " +
         "Dienst – der Tag zählt als freier Tag. Die stündliche Rufdienst-Abfrage entfällt. " +
         "Deine eigenen Wecker bleiben, der Termin im Kalender auch."
 
@@ -218,10 +272,21 @@ internal const val ZURUECKNEHMEN_ERKLAERUNG: String =
 /**
  * Der Satz unter der Liste (Variante A): „Nicht wecken“ steht nur am naechsten klingelnden
  * Wecker, weil es genau einen Skip-Platz gibt und `skipNextAlarm` immer den naechsten trifft.
+ *
+ * Er grenzt die beiden Knoepfe gegeneinander ab (Eigentuemer 14.10.2026: der fruehere Satz
+ * „Fällt ein späterer Dienst aus …“ las sich, als waere „Dienst fällt aus“ nur ein Ausweg fuer
+ * spaetere Tage - gemeint ist der Krankheitstag, auch heute):
+ *  - „der Dienst bleibt, „Nicht stören“ und Dimmen richten sich weiter nach ihm“: ein Skip loescht
+ *    nur den Wecker; die Dienstzeit-Fenster kommen aus dem `ShiftSpanStore`, nicht aus dem
+ *    Alarm-Bestand (Skill cfalarm-dimmer-und-dnd). Bewusst NICHT „laufen weiter“ - ohne Regel
+ *    laeuft nichts.
+ *  - „das Weck-Licht bleibt aus“: Hue haengt am Wecker (siehe [DIENST_FAELLT_AUS_ERKLAERUNG]);
+ *    die Tagesliste nimmt deshalb auch das Kaertchen „Licht“ weg (`lichtMoeglich`).
  */
 internal const val NICHT_WECKEN_NUR_NAECHSTER: String =
-    "„Nicht wecken“ gibt es nur für den nächsten Wecker. Fällt ein späterer Dienst aus, tippe auf " +
-        "seinen Tag und wähle „Dienst fällt aus“."
+    "„Nicht wecken“ gibt es für den nächsten Wecker: er klingelt nicht, und sein Weck-Licht bleibt " +
+        "aus. Der Dienst bleibt – „Nicht stören“ und Dimmen richten sich weiter nach ihm. Krank " +
+        "oder frei? Tippe auf den Tag und wähle „Dienst fällt aus“."
 
 /**
  * Statt [NICHT_WECKEN_NUR_NAECHSTER], solange ein Wecker ausgelassen ist: dann traegt der folgende
@@ -229,8 +294,8 @@ internal const val NICHT_WECKEN_NUR_NAECHSTER: String =
  * dann nicht versprechen.
  */
 internal const val NUR_EIN_WECKER_AUSLASSEN: String =
-    "Es lässt sich immer nur ein Wecker auslassen – „Doch wecken“ nimmt das zurück. Fällt ein " +
-        "späterer Dienst aus, tippe auf seinen Tag und wähle „Dienst fällt aus“."
+    "Es lässt sich immer nur ein Wecker auslassen – „Doch wecken“ nimmt das zurück. Krank oder " +
+        "frei? Tippe auf den Tag und wähle „Dienst fällt aus“."
 
 /**
  * PURE, TESTBAR: der Satz unter der Liste - nur in dem Zustand, den er beschreibt.
@@ -249,8 +314,12 @@ internal fun nichtWeckenHinweis(tage: List<WeckerTag>): String? {
     }
 }
 
-/** Der Textknopf unter der Liste - dieselbe Geste, derselbe Name wie am Tag. */
-internal const val ANDERER_TAG_KNOPF: String = "Dienst fällt an einem anderen Tag aus …"
+/**
+ * Der Textknopf unter der Liste: dieselbe Geste wie „Dienst fällt aus“ am Tag, fuer einen Tag, der
+ * NICHT in der Liste steht (noch kein Wecker, nach der Vorausschau). Bewusst ohne „anderen“
+ * Dienst/„spaeteren“ Tag - auch heute ist ein moeglicher Tag.
+ */
+internal const val ANDERER_TAG_KNOPF: String = "Tag auswählen: Dienst fällt aus …"
 
 // ---- Klang ------------------------------------------------------------------------------
 

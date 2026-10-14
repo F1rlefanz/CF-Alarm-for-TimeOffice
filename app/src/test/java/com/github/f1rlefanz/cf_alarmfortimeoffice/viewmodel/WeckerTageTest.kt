@@ -55,8 +55,9 @@ class WeckerTageTest {
         jetzt: Long = this.jetzt,
         zone: ZoneId = berlin,
         wirkungen: Map<String, SchichtWirkung> = emptyMap(),
-        spannen: List<ShiftSpan> = emptyList()
-    ) = baueWeckerTage(alarme, spannen, freieTage, skip, jetzt, zone, wirkungen)
+        spannen: List<ShiftSpan> = emptyList(),
+        schlummern: List<Schlummern> = emptyList()
+    ) = baueWeckerTage(alarme, spannen, freieTage, skip, schlummern, jetzt, zone, wirkungen)
 
     private fun WeckerTag.wecker() = eintraege.filterIsInstance<WeckerEintrag.Wecker>()
 
@@ -527,5 +528,37 @@ class WeckerTageTest {
         val spaeterAbruf = spanne("Abrufdienst", "2026-10-15T16:00", "2026-10-15T22:00", "2026-10-15T15:00")
         val zwei = tage(listOf(alarm(1, "2026-10-15T05:00")), spannen = listOf(spaeterAbruf, frueh15))
         assertEquals(listOf("Frühdienst", "Abrufdienst"), zwei.single().schichten.map { it.name })
+    }
+
+    // --- Schlummern ---------------------------------------------------------------------------
+
+    @Test
+    fun `ein schwebender Snooze steht als Zeile an dem Tag, an dem er klingelt`() {
+        val bis = ms("2026-10-14T23:59") + 1
+        val liste = tage(schlummern = listOf(Schlummern(bis, ms("2026-10-14T05:30"), "Frühschicht", manuell = false)))
+
+        val zeile = liste.single().eintraege.single() as WeckerEintrag.Schlummert
+        assertEquals(bis, zeile.triggerTime)
+        assertFalse(zeile.manuell)
+    }
+
+    @Test
+    fun `ein verstrichener Snooze erscheint nicht`() {
+        val liste = tage(schlummern = listOf(Schlummern(jetzt, ms("2026-10-14T05:30"), "Frühschicht", manuell = false)))
+
+        assertTrue(liste.isEmpty())
+    }
+
+    @Test
+    fun `Snooze eines freigegebenen Tages fehlt, ein manueller bleibt`() {
+        val bis = jetzt + 10 * 60_000L
+        val weckzeit = jetzt - 60_000L
+        val heute = java.time.Instant.ofEpochMilli(jetzt).atZone(berlin).toLocalDate()
+
+        val dienst = tage(freieTage = listOf(heute), schlummern = listOf(Schlummern(bis, weckzeit, "Frühschicht", false)))
+        val eigener = tage(freieTage = listOf(heute), schlummern = listOf(Schlummern(bis, weckzeit, "Frühschicht (Manuell)", true)))
+
+        assertTrue(dienst.flatMap { it.eintraege }.none { it is WeckerEintrag.Schlummert })
+        assertTrue(eigener.flatMap { it.eintraege }.any { it is WeckerEintrag.Schlummert })
     }
 }

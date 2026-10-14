@@ -237,7 +237,7 @@ class WeckerTexteTest {
     private val tag = 24 * 60 * 60 * 1000L
 
     private fun liste(vararg alarme: AlarmInfo, skip: SkipLage = SkipLage.KEIN) =
-        baueWeckerTage(alarme.toList(), emptyList(), emptyList(), skip, jetzt, ZoneId.of("UTC"), emptyMap())
+        baueWeckerTage(alarme.toList(), emptyList(), emptyList(), skip, emptyList(), jetzt, ZoneId.of("UTC"), emptyMap())
 
     private fun wecker(id: Int, abstand: Long, still: Boolean = false) = AlarmInfo(
         id = id, shiftId = "s$id", shiftName = "Früh", triggerTime = jetzt + abstand,

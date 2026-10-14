@@ -132,9 +132,11 @@ Verstrichenes beim Laden weg, `AlarmRepository:322`), also findet ihn `betroffen
 Snooze liegt in einem EIGENEN PendingIntent-Slot, den `cancelSystemAlarm` nie trifft.
 
 **Die Lösung hat zwei Schichten, wie jede Freigabe:**
-- **Gate:** `freigeben()` bricht direkt nach der Markierung jeden schwebenden Snooze ab, der zum
-  Tag gehört (`AlarmManagerService.cancelSnoozesFuerFreigabe`, über `cancelSnooze` samt Merker -
-  ein Neustart holt ihn nicht zurück).
+- **Gate:** `freigeben()` bricht jeden schwebenden Snooze ab, der zum Tag gehört
+  (`AlarmManagerService.cancelSnoozesFuerFreigabe`, über `cancelSnooze` samt Merker - ein
+  Neustart holt ihn nicht zurück). **Erst NACH der Löschschleife** (Review 14.10.2026): scheitert
+  dort ein Löschen, wird die Freigabe zurückgenommen, und ein vorher abgebrochener Snooze wäre an
+  einem nicht freigegebenen Tag samt Merker verloren.
 - **Backstop:** der `AlarmReceiver` prüft beim Feuern eines Snooze (`snoozeAlarmAction`), ob sein
   Tag freigegeben ist, und klingelt dann nicht. Nötig, weil die Markierung zuerst steht: stirbt
   der Prozess zwischen Markierung und Abbruch, räumt bei Weckern das Gate im nächsten Sync auf,
@@ -147,7 +149,11 @@ Freigabe des Folgetags bräche dann einen Wecker eines Tages ab, den niemand fre
 die Weckzeit kommt (`weckzeitFuerEintrag`): beim erneuten Schlummern und beim Wiederherstellen nach
 einem Neustart vom Vorgänger-Eintrag derselben ID (VOR dem Kürzen gelesen, sonst ist er schon
 weg); beim ersten Schlummern die jüngste geklingelte Weckzeit aus `GeklingelteWeckzeiten`.
-**Bewusst kein „jetzt“ als Ersatz** - fehlt beides, bleibt der Anker leer, und der Snooze nimmt an
+Damit der Vorgänger-Eintrag dafür noch da ist, behält jedes ZURÜCKSCHREIBEN des Merkers gerade
+gefeuerte Einträge zwei Stunden lang (`kuerzeZumSchreiben`); neu armiert wird weiterhin nur
+Zukünftiges (`pruneSnoozeEntries`). Vorher konnte ein fremdes Schreiben (Abbruch eines anderen
+Snooze, Boot-Restore) die Spur wegräumen, und der Anker fiel auf die Schlummer-Zeit - um
+Mitternacht der falsche Tag. **Bewusst kein „jetzt“ als Ersatz** - fehlt beides, bleibt der Anker leer, und der Snooze nimmt an
 keiner Freigabe teil (er klingelt).
 
 **Verworfen:** die Zuordnung über `betroffene` (Abgleich der Snooze-ID mit den Weckern des Tages).

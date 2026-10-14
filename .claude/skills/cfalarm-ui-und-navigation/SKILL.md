@@ -96,7 +96,7 @@ das baut man dieselbe Falle in neuer Form nach.
   mehreren Mechanismen, sagt ihr Name welchen ("Nächster regelmäßiger Abgleich", nicht "Nächster
   Abgleich" - an Rufbereitschafts-Tagen stand sie sonst 6 h ueber der stuendlichen Abfrage).
 - **Eine Zeile, die das ZIEL eines Knopfs nennt, wird beim Tippen nachgerechnet** (1.48.0,
-  "Überspringen"): Anzeigen rechnen nur bei einer Emission, nicht mit der Uhr. Ist das genannte
+  "Überspringen", seit 1.50.0 "Nicht wecken"): Anzeigen rechnen nur bei einer Emission, nicht mit der Uhr. Ist das genannte
   Ziel inzwischen vorbei, lehnt der Knopf ab und sagt, dass NICHTS geschah - er trifft nie still
   ein anderes Ziel als das genannte.
 - **Text links, Bedienelement rechts: unter 270 dp (Zeilenbreite ÷ Schriftskalierung)
@@ -111,6 +111,14 @@ das baut man dieselbe Falle in neuer Form nach.
   Wert wie `background`, die Karte verschwindet. Dezente Karten: `surface` +
   `BorderStroke(1.dp, outline)`. Und ein Zustand wird ADDITIV gezeigt (Rand, Text), nie durch
   Wegnehmen der Fläche.
+- **Die Wecker-Tagesliste (#139, `viewmodel/WeckerTage.kt`) waehlt den naechsten klingelnden
+  Wecker ueber `AlarmSkipUseCase.naechsterKlingelnderWecker` — dieselbe Auswahl wie der Knopf**,
+  und nur dieser bekommt „Nicht wecken“ (Variante A, Eigentuemer 14.10.2026: der Skip-Merker
+  bleibt EINER; ein spaeterer Dienst geht ueber „Dienst fällt aus“ am Tag). Tagesanker = Kalendertag
+  der Weckzeit, wie bei Skip und Freigabe. Ein abgelaufener, noch nicht geraeumter Skip
+  (`SkipLage.wirktNoch`) darf die Liste nicht sperren. Die Liste rechnet beim Zurueckkehren in die
+  App und bei jedem neuen Ziel nach — sonst haengt der Knopf an einem verstrichenen Wecker
+  (Review 14.10.2026). Kaertchen kommen aus `SchichtFolgen`, keine Nachbildung.
 - **Neue Screens einmal bei 320 dp ansehen** (`adb shell wm density 540` auf 1080 px, danach
   `wm density reset`) — das Gerät des Eigentümers läuft so. Lange zusammengesetzte Hauptwörter
   brechen dort mitten im Wort um.

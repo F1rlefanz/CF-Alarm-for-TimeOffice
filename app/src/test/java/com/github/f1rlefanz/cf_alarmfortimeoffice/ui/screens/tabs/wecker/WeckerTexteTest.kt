@@ -239,6 +239,6 @@ class WeckerTexteTest {
 
     @Test
     fun `die Probe-Beschreibung verspricht den Stopp beim Verlassen`() {
-        assertTrue(PROBE_BESCHREIBUNG.contains("wenn du die App verlässt"))
+        assertTrue(PROBE_BESCHREIBUNG.contains("sobald du die App verlässt"))
     }
 }

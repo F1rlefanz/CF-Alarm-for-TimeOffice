@@ -268,8 +268,8 @@ internal fun schlummerHinweisText(hinweis: SchlummerEingabe.Hinweis, wert: Int):
 
 /** Was „Probehören“ tut - verspricht nur, was die Probe wirklich hält (Stopp bei ON_STOP). */
 internal const val PROBE_BESCHREIBUNG: String =
-    "Spielt deinen Weckton so, wie er morgens anläuft, mit deiner Alarm-Lautstärke. Hört von " +
-        "selbst auf, und sofort, wenn du die App verlässt."
+    "Spielt deinen Weckton so, wie er morgens anläuft, mit deiner Alarm-Lautstärke. Endet von " +
+        "selbst und sobald du die App verlässt."
 
 /** "Läuft · 0:12 von 0:30 · 58 %" - der Pegel relativ zur Alarm-Lautstaerke des Geraets. */
 internal fun probeLaeuftText(zustand: ProbeZustand.Laeuft): String {

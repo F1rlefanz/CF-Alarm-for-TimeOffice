@@ -26,8 +26,11 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -107,8 +110,14 @@ internal fun KlangKarte(
  *
  * Uebernommen wird beim Verlassen des Feldes und bei „Fertig“ - nicht bei jedem Tastendruck: auf
  * dem Weg von "1" zu "15" laege sonst kurz eine 1-Minuten-Schlummerzeit im Speicher. Was nicht
- * passt, korrigiert [SchlummerEingabe.pruefen] auf den naechsten gueltigen Wert, und der kurze
- * Hinweis sagt, welcher jetzt gilt.
+ * passt, korrigiert [SchlummerEingabe.pruefen]: eine leere Eingabe oder keine Zahl behaelt den
+ * bisherigen Wert, eine zu kleine oder zu grosse Zahl wird auf 1 bzw. 30 gesetzt. Der kurze
+ * Hinweis sagt, welcher Wert jetzt gilt.
+ *
+ * LAYOUT (Emulator, 14.10.2026): Bereich und Korrektur standen als `supportingText` im Feld und
+ * brachen in dessen schmaler Spalte auf zwei bis drei Zeilen. Sie stehen jetzt in voller
+ * Kartenbreite UNTER der Zeile; das Feld ist nur so breit wie drei Ziffern plus "Min" und waechst
+ * mit der Schriftgroesse.
  */
 @Composable
 private fun SchlummerFeld(snoozeMinutes: Int, onSnoozeMinutesChange: (Int) -> Unit) {
@@ -131,46 +140,57 @@ private fun SchlummerFeld(snoozeMinutes: Int, onSnoozeMinutesChange: (Int) -> Un
         if (ergebnis.wert != aktuellerWert) onSnoozeMinutesChange(ergebnis.wert)
     }
 
-    InhaltUndBedienung(
-        inhalt = { modifier ->
-            TitelUndBeschreibung(
-                titel = "Schlummer-Dauer",
-                beschreibung = "Gilt für Vollbild und Benachrichtigung",
-                modifier = modifier
+    val feldBreite = SCHLUMMER_FELD_BREITE * LocalDensity.current.fontScale.coerceAtLeast(1f)
+
+    Column(verticalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_EXTRA_SMALL)) {
+        InhaltUndBedienung(
+            inhalt = { modifier ->
+                TitelUndBeschreibung(
+                    titel = "Schlummer-Dauer",
+                    beschreibung = "Gilt für Vollbild und Benachrichtigung",
+                    modifier = modifier
+                )
+            }
+        ) {
+            OutlinedTextField(
+                value = text,
+                onValueChange = { neu ->
+                    // Nur Ziffern, hoechstens drei: mehr ergibt nie einen gueltigen Wert, und ein
+                    // Feld, das endlos waechst, sprengt die Zeile.
+                    text = neu.filter { it.isDigit() }.take(3)
+                    hinweis = null
+                },
+                singleLine = true,
+                suffix = { Text("Min") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
+                // „Fertig“ gibt nur den Fokus ab - uebernommen wird EINMAL, im Fokusverlust darunter.
+                // Ein zweites uebernehmen() hier liefe auf dem schon korrigierten Wert und loeschte
+                // den Hinweis wieder, bevor ihn jemand sieht.
+                keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+                modifier = Modifier
+                    .width(feldBreite)
+                    .semantics { contentDescription = "Schlummer-Dauer in Minuten" }
+                    .onFocusChanged { zustand ->
+                        if (fokussiert && !zustand.isFocused) uebernehmen()
+                        fokussiert = zustand.isFocused
+                    }
             )
         }
-    ) {
-        OutlinedTextField(
-            value = text,
-            onValueChange = { neu ->
-                // Nur Ziffern, hoechstens drei: mehr ergibt nie einen gueltigen Wert, und ein
-                // Feld, das endlos waechst, sprengt die Zeile.
-                text = neu.filter { it.isDigit() }.take(3)
-                hinweis = null
-            },
-            singleLine = true,
-            suffix = { Text("Min") },
-            supportingText = {
-                Text(
-                    hinweis ?: SCHLUMMER_BEREICH,
-                    color = if (hinweis != null) MaterialTheme.colorScheme.warning else MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
-            // „Fertig“ gibt nur den Fokus ab - uebernommen wird EINMAL, im Fokusverlust darunter.
-            // Ein zweites uebernehmen() hier liefe auf dem schon korrigierten Wert und loeschte
-            // den Hinweis wieder, bevor ihn jemand sieht.
-            keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
-            modifier = Modifier
-                .width(132.dp)
-                .semantics { contentDescription = "Schlummer-Dauer in Minuten" }
-                .onFocusChanged { zustand ->
-                    if (fokussiert && !zustand.isFocused) uebernehmen()
-                    fokussiert = zustand.isFocused
-                }
+        // Bereich bzw. Korrektur in voller Breite; die Korrektur wird vorgelesen, sobald sie erscheint.
+        Text(
+            hinweis ?: SCHLUMMER_BEREICH,
+            style = MaterialTheme.typography.bodySmall,
+            color = if (hinweis != null) MaterialTheme.colorScheme.warning else MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }
         )
     }
 }
+
+/**
+ * Breite des Schlummer-Felds bei Schrift 1,0: Innenabstand (2 x 16 dp) plus drei Ziffern und "Min".
+ * Mit der Schriftgroesse skaliert - bei 1,3 waeren es sonst abgeschnittene Ziffern.
+ */
+private val SCHLUMMER_FELD_BREITE = 96.dp
 
 /**
  * Der sanfte Weckton-Anstieg: Schalter plus die beiden Werte, die ihn beschreiben.
@@ -262,9 +282,10 @@ private fun Probehoeren(zustand: ProbeZustand, onStart: () -> Unit, onStopp: () 
     Column(verticalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_SMALL)) {
         InhaltUndBedienung(
             inhalt = { modifier ->
+                // bodySmall wie die Beschreibung von „Sanft lauter werden“ darueber (SwitchRow).
                 Text(
                     laeuft?.let { probeLaeuftText(it) } ?: PROBE_BESCHREIBUNG,
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = modifier
                 )

@@ -30,6 +30,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.WecktonAnstieg
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.DatePickerDialog
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.SwitchRow
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.uhrBeimFortsetzen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.wecker.ANDERER_TAG_KNOPF
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.wecker.Abschnittstitel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.wecker.KlangKarte
@@ -138,9 +139,24 @@ fun WeckerTabContent(
     val zone = ZoneId.systemDefault()
     val skipLage = skipState.alsSkipLage()
     // Die Liste rechnet bei jeder Aenderung ihrer Eingaben neu - mit der Uhr von DIESEM Moment.
-    // Einen Ticker gibt es nicht; was dadurch veralten kann, faengt die Ziel-Nachrechnung in
-    // AlarmViewModel.skipNextAlarm() ab (die Zeile reicht ihren Weckzeitpunkt mit).
-    val tage = remember(alarmState.activeAlarms, tagFreigabeState.freieTage, skipLage, wirkungen) {
+    // Einen Ticker gibt es nicht. Ein Wecker, der klingelt und beendet wird, aendert den Bestand
+    // nicht; deshalb zwei weitere Schluessel:
+    // - nextRingingAlarmTriggerTime: lehnt AlarmViewModel.skipNextAlarm() ein veraltetes Ziel ab,
+    //   erneuert es genau dieses Feld (der Bestand bleibt derselbe). Ohne den Schluessel blieb die
+    //   Zeile mit „Nicht wecken“ am verstrichenen Wecker stehen, jeder Tipp wurde erneut abgelehnt,
+    //   und der Hinweis „Die Liste zeigt jetzt den nächsten Wecker“ stimmte nicht.
+    // - uhrBeimFortsetzen(): wer nach dem Wecken in die App zurueckkehrt, sieht frisch gerechnet.
+    // Was dazwischen veralten kann, faengt die Ziel-Nachrechnung in skipNextAlarm() ab (die Zeile
+    // reicht ihren Weckzeitpunkt mit).
+    val fortgesetzt = uhrBeimFortsetzen()
+    val tage = remember(
+        alarmState.activeAlarms,
+        alarmState.nextRingingAlarmTriggerTime,
+        tagFreigabeState.freieTage,
+        skipLage,
+        wirkungen,
+        fortgesetzt
+    ) {
         baueWeckerTage(
             alarme = alarmState.activeAlarms,
             freieTage = tagFreigabeState.freieTage,

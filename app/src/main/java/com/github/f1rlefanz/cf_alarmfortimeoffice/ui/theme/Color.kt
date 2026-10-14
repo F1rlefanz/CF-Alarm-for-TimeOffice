@@ -50,3 +50,19 @@ val SuccessGreen = Color(0xFF2E7D32)       // OK (Light)
 val SuccessGreenDark = Color(0xFF7FD98A)   // OK (Dark)
 val WarningAmber = Color(0xFFB26A00)       // Hinweis/Warnung (Light)
 val WarningAmberDark = Color(0xFFF5BD6B)   // Hinweis/Warnung (Dark)
+
+// ---- Weiche Status-Flaechen fuer Etiketten (Tagesliste, #139) ----
+// Die TEXTFARBE auf der hellen Flaeche ist dunkler als SuccessGreen/WarningAmber: deren Kontrast
+// auf der weichen Flaeche laege unter 4,5:1 (WCAG AA fuer kleinen Text) - ThemeKontrastTest.
+val SuccessContainerLight = Color(0xFFE3F1E4)
+val OnSuccessContainerLight = Color(0xFF1B5E20)
+val SuccessContainerDark = Color(0xFF1E3321)
+val WarningContainerLight = Color(0xFFFBEBD3)
+val OnWarningContainerLight = Color(0xFF8A5300)
+val WarningContainerDark = Color(0xFF3A2C14)
+
+// ---- Info (ruhiges Blau): "von dir gestellt" - bewusst weder Marke noch Ampel ----
+val InfoBlue = Color(0xFF3F6587)          // Info (Light)
+val InfoBlueDark = Color(0xFF8DB4D6)      // Info (Dark)
+val InfoContainerLight = Color(0xFFE2EAF2)
+val InfoContainerDark = Color(0xFF1D2A36)

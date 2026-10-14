@@ -184,9 +184,9 @@ class TagFreigabeUseCaseTest {
         // Die Markierung steht ZUERST: faellt der Prozess danach, ist der schlimmste Zustand ein
         // freigegebener Tag mit noch stehendem Wecker - den raeumt das Gate im naechsten Sync weg.
         // Umgekehrt waere derselbe Absturz ein spurlos verschwundener Wecker.
-        // Der schwebende Snooze eines schon geklingelten Weckers faellt direkt nach der
-        // Markierung - er steht in keinem Bestand, den die Schleife danach abarbeitet.
-        assertEquals(listOf("markiere:$tag", "snooze:$tag", "cancel:1", "delete:1"), protokoll)
+        // Der schwebende Snooze eines schon geklingelten Weckers faellt ERST NACH der Schleife -
+        // scheitert dort ein Loeschen, wird die Freigabe zurueckgenommen, und der Snooze muss bleiben.
+        assertEquals(listOf("markiere:$tag", "cancel:1", "delete:1", "snooze:$tag"), protokoll)
         assertEquals(listOf(2), repo.current.map { it.id })
     }
 
@@ -232,6 +232,8 @@ class TagFreigabeUseCaseTest {
         assertEquals(listOf(1), fehler.alarmIds)
         assertTrue(fehler.freigabeZurueckgenommen)
         assertTrue("Markierung muss weg sein", tage.isEmpty())
+        // Der Tag ist NICHT freigegeben - ein schon geschlummerter Wecker muss weiter klingeln.
+        assertFalse("Snooze darf nicht abgebrochen sein", protokoll.any { it.startsWith("snooze:") })
     }
 
     @Test

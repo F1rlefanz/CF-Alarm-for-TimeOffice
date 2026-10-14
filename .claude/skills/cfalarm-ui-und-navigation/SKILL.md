@@ -149,6 +149,12 @@ das baut man dieselbe Falle in neuer Form nach.
   ist „Dienst fällt aus“ nicht mehr erreichbar. Heute bleibt, solange der Dienst laeuft; ein
   kuenftiger Tag entsteht nie aus einer Spanne allein. Dienstzeiten nur ueber
   `ui/components/Dienstzeit.kt` („ganztägig“ ueber Kalendertage, nicht ueber 24 h — Zeitumstellung).
+- **Gleichrangige Knoepfe nebeneinander ueber `KnopfZeile` (`ui/components`), nicht `Row` +
+  `weight(1f)`**: die Gewichtung kuerzte die Beschriftung mit Auslassung („Bea…“, „Neue R…“ bei
+  320 dp + Schrift 1,3, Emulator 14.10.2026). `KnopfZeile` misst die natuerlichen Breiten und
+  stellt linksbuendig untereinander, wenn sie nicht passen. Etikett neben einem Namen: `FlowRow`.
+- **Titel- und Ueberschriften-Stile tragen `Hyphens.Auto`** (`ui/theme/Type.kt`): deutsche
+  Komposita brachen dort ohne Trennstrich mitten im Wort („Benachrichtigunge|n“). Fliesstext nicht.
 - **Neue Screens einmal bei 320 dp ansehen** (`adb shell wm density 540` auf 1080 px, danach
   `wm density reset`) — das Gerät des Eigentümers läuft so. Lange zusammengesetzte Hauptwörter
   brechen dort mitten im Wort um.

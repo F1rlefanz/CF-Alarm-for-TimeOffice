@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.WbTwilight
 import androidx.compose.material.icons.filled.Work
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
@@ -43,10 +44,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.github.f1rlefanz.cf_alarmfortimeoffice.R
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.CompactButton
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.CompactOutlinedButton
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.ErrorMessage
@@ -66,7 +69,8 @@ fun SettingsTabContent(
     authViewModel: AuthViewModel,
     onShowCalendarSelection: () -> Unit,
     onShowShiftConfig: () -> Unit,
-    onShowDndSettings: () -> Unit
+    onShowDndSettings: () -> Unit,
+    onShowOrtFuerTageslicht: () -> Unit
 ) {
     val context = LocalContext.current
     // collectAsStateWithLifecycle, nicht collectAsState: Es sind reine Anzeige-Zustaende, an deren
@@ -214,6 +218,15 @@ fun SettingsTabContent(
             titel = "Nicht stören",
             text = "Schaltet Nicht-stören automatisch nach Schicht",
             onClick = onShowDndSettings
+        )
+
+        // Ort fuer Tageslicht (#140) - gemeinsam fuer Dimmer und Hue, deshalb in den
+        // Einstellungen; die beiden Regel-Editoren fuehren zusaetzlich direkt hierher.
+        WeiterKarte(
+            icon = Icons.Default.WbTwilight,
+            titel = stringResource(R.string.tageslicht_ort_titel),
+            text = stringResource(R.string.tageslicht_ort_karte_text),
+            onClick = onShowOrtFuerTageslicht
         )
 
         // Benachrichtigungen (Schicht-Aenderung + Dimmer-Korrektur)

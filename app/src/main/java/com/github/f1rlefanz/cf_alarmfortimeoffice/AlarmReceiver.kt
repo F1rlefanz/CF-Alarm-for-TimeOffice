@@ -108,6 +108,19 @@ class AlarmReceiver : BroadcastReceiver() {
         fun isSilentAlarm(alarmInfo: AlarmInfo?): Boolean = alarmInfo?.isSilent == true
 
         /**
+         * Welche Weckzeit die Tageslicht-Bedingung der Hue-Regeln (#140) zu sehen bekommt. Reine
+         * Funktion aus demselben Grund wie [isSilentAlarm].
+         *
+         * Beim SCHLUMMERN die erste Weckzeit aus dem Snooze-Merker: derselbe Wecktag, also dieselbe
+         * Entscheidung wie beim ersten Klingeln - sonst ginge nach 10 min Schlummern ploetzlich kein
+         * Licht mehr an, weil inzwischen die Sonne aufgegangen ist. Fehlt sie dort (Merker aus einer
+         * aelteren Version), bewusst KEIN Rueckgriff auf [alarmTrigger]: `null` heisst "kein
+         * Filter", im Zweifel Licht.
+         */
+        internal fun weckzeitFuerHue(istSnooze: Boolean, snoozeWeckzeit: Long?, alarmTrigger: Long?): Long? =
+            if (istSnooze) snoozeWeckzeit else alarmTrigger
+
+        /**
          * MUSS "shift_start_time_formatted" heissen - AlarmManagerService schreibt unter genau
          * diesem Schluessel. Wert ist der SCHICHTBEGINN, NICHT die Weckzeit; Hergang Skill
          * cfalarm-wecker-und-boot.
@@ -313,8 +326,10 @@ class AlarmReceiver : BroadcastReceiver() {
                 // trotzdem normal weiter - DND/Dimmer/Feature A und die AlarmInfo in
                 // getAllAlarms() sind davon unberuehrt, nur die Wecker-Instanz
                 // (AlarmSoundService) und executeHueRulesForAlarm() werden nicht angestossen.
+                // Die AlarmInfo wird unten noch fuer die Hue-Weckzeit gebraucht (#140).
+                var alarmInfo: AlarmInfo? = null
                 if (userUnlocked) {
-                    val alarmInfo = try {
+                    alarmInfo = try {
                         alarmUseCase.getAllAlarms().getOrNull()?.find { it.id == alarmId }
                     } catch (e: Exception) {
                         Logger.w(
@@ -386,10 +401,24 @@ class AlarmReceiver : BroadcastReceiver() {
                     // Sound + Full-Screen-Intent nicht verzögert.
                     // Direct Boot: Hue braucht Netz + CE/Hue-Storage - vor Entsperrung ueberspringen.
                     if (userUnlocked) {
+                        // Tageslicht-Bedingung (#140): Weckzeit dieses Weckvorgangs. Der Snooze-Merker
+                        // ist CE-Storage - deshalb erst hier, im entsperrten Zweig. Jeder Fehler =
+                        // kein Filter (im Zweifel Licht).
+                        val istSnooze = intent.action == AlarmManagerService.snoozeAlarmAction(alarmId)
+                        val hueWeckzeit = try {
+                            weckzeitFuerHue(
+                                istSnooze = istSnooze,
+                                snoozeWeckzeit = if (istSnooze) AlarmManagerService.snoozeEintrag(context, alarmId)?.weckzeit else null,
+                                alarmTrigger = alarmInfo?.triggerTime
+                            )
+                        } catch (e: Exception) {
+                            Logger.w(LogTags.ALARM_RECEIVER, "⚠️ HUE: Weckzeit fuer die Tageslicht-Bedingung nicht lesbar - kein Filter", e)
+                            null
+                        }
                         // GEDECKELT, weil `pendingResult.finish()` erst danach kommt - Begruendung an
                         // [HUE_EXECUTION_BUDGET_MS]; der Wecker selbst haengt nicht daran.
                         val hueDone = withTimeoutOrNull(HUE_EXECUTION_BUDGET_MS) {
-                            executeHueRulesForAlarm(shiftName)
+                            executeHueRulesForAlarm(shiftName, hueWeckzeit)
                             true
                         }
                         if (hueDone == null) {
@@ -460,8 +489,11 @@ class AlarmReceiver : BroadcastReceiver() {
      *
      * Creates a synthetic ShiftMatch from available alarm data and executes
      * any applicable Hue rules configured for this shift pattern.
+     *
+     * @param weckzeit Epoch-ms fuer die Tageslicht-Bedingung (#140), siehe [weckzeitFuerHue];
+     *   `null` = kein Filter.
      */
-    private suspend fun executeHueRulesForAlarm(shiftName: String) {
+    private suspend fun executeHueRulesForAlarm(shiftName: String, weckzeit: Long?) {
         try {
             Logger.business(
                 LogTags.ALARM_RECEIVER,
@@ -498,7 +530,8 @@ class AlarmReceiver : BroadcastReceiver() {
                         val currentTime = LocalTime.now()
                         val executionResult = hueRuleUseCase.executeRulesForAlarm(
                             shift = syntheticShiftMatch,
-                            alarmTime = currentTime
+                            alarmTime = currentTime,
+                            weckzeit = weckzeit
                         )
 
                         if (executionResult.isSuccess) {

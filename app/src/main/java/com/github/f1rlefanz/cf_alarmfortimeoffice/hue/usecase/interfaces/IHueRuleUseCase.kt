@@ -2,6 +2,7 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces
 
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueSchedule
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftMatch
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.TageslichtStand
 import java.time.LocalTime
 
 /**
@@ -38,10 +39,15 @@ interface IHueRuleUseCase {
     /**
      * Find applicable rules for current shift and time
      * Core business logic for alarm integration
+     *
+     * @param weckzeit Epoch-ms der Weckzeit (#140). Gesetzt, entfallen Regeln, deren Tageslicht-
+     *   Schwelle am Wecktag vor oder auf der Weckzeit liegt (`laeuftBeiTageslicht`). `null` = kein
+     *   Tageslicht-Filter (im Zweifel Licht).
      */
     suspend fun findApplicableRules(
         shift: ShiftMatch, 
-        currentTime: LocalTime
+        currentTime: LocalTime,
+        weckzeit: Long? = null
     ): Result<List<HueSchedule>>
     
     /**
@@ -50,7 +56,9 @@ interface IHueRuleUseCase {
      */
     suspend fun executeRulesForAlarm(
         shift: ShiftMatch,
-        alarmTime: LocalTime
+        alarmTime: LocalTime,
+        /** Wie bei [findApplicableRules]; beim Schlummern die ERSTE Weckzeit (Snooze-Merker). */
+        weckzeit: Long? = null
     ): Result<RuleExecutionResult>
 
     /**
@@ -65,8 +73,14 @@ interface IHueRuleUseCase {
      *   Rampe schon das Auto-Aus auf der Bridge an (`HueRuleUseCase.vorabAutoAusZiele`) - sonst
      *   bliebe das Licht an, wenn der Wecker danach geloescht wird und nie feuert. `null` (Auftrag
      *   ohne Weckzeit aus einer aelteren Version): kein Vorab-Auto-Aus.
+     * @param weckzeit Epoch-ms der Weckzeit, fuer die Tageslicht-Bedingung beim FEUERN (der Ort kann
+     *   sich seit der Planung geaendert haben). `null` = kein Tageslicht-Filter.
      */
-    suspend fun executeSunrisePreAlarm(shiftName: String, minutenBisWecker: Int?): Result<RuleExecutionResult>
+    suspend fun executeSunrisePreAlarm(
+        shiftName: String,
+        minutenBisWecker: Int?,
+        weckzeit: Long? = null
+    ): Result<RuleExecutionResult>
 
     /**
      * Lead time in minutes for pre-alarm sunrise: the longest duration among enabled
@@ -76,9 +90,18 @@ interface IHueRuleUseCase {
      * Nimmt die Regeln als Parameter und liest NICHT selbst: Der Aufrufer steht in einer
      * Schleife ueber die Alarme, ein Read pro Alarm waere ein vollstaendiger DataStore-Read
      * je Durchgang (real: 8 × "Retrieved 0 schedule rules" bei 4 Alarmen). Einmal laden,
-     * durchreichen — siehe [getAllRules].
+     * durchreichen — siehe [getAllRules]. Aus demselben Grund kommt der [stand] vom Aufrufer
+     * ([tageslichtStand], einmal je Durchgang).
+     *
+     * Mit [weckzeit] UND [stand] zaehlen nur Regeln, die bei dieser Weckzeit laufen (#140) - eine
+     * Regel, die zur Weckzeit entfiele, bekommt auch keinen Vorlauf. Fehlt eines davon: kein Filter.
      */
-    fun getPreAlarmSunriseLeadMinutes(rules: List<HueSchedule>, shiftName: String): Int?
+    fun getPreAlarmSunriseLeadMinutes(
+        rules: List<HueSchedule>,
+        shiftName: String,
+        weckzeit: Long? = null,
+        stand: TageslichtStand? = null
+    ): Int?
 
     /**
      * Validate rule configuration
@@ -105,6 +128,14 @@ interface IHueRuleUseCase {
      * nichts mehr.
      */
     suspend fun reconcileTargets(targets: LightTargets): Result<TargetReconcileResult>
+
+    /**
+     * Ort und Zone fuer die Tageslicht-Bedingung der Regeln (#140), EINMAL je Durchgang zu laden
+     * und an die reinen Pruefungen weiterzureichen (Planer-Schleife, Regel-Editor). Nie werfend:
+     * gesperrter Nutzer, Lesefehler oder kein Ort ergeben [TageslichtStand.ohneOrt] - dann laeuft
+     * jede Regel.
+     */
+    suspend fun tageslichtStand(): TageslichtStand
 }
 
 /** Warum ein Regel-Ziel auf der aktuellen Bridge nicht zuzuordnen war. */

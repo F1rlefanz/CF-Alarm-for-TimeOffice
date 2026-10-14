@@ -1,5 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.TageslichtQuelle
 import android.content.Context
 import com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPausePrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmInfo
@@ -115,7 +116,7 @@ class DimScheduleUseCaseTest {
         // Fenster-Vorschau hier immer "nicht pausiert".
         val masterPausePrefs = mock<MasterPausePrefs>()
         whenever(masterPausePrefs.pausedNow()).thenReturn(false)
-        return DimScheduleUseCase(context, alarmUseCase, spanStore, keineFreienTage(), ruleUseCase(rules), prefs, notifier, masterPausePrefs)
+        return DimScheduleUseCase(context, alarmUseCase, spanStore, keineFreienTage(), ruleUseCase(rules), prefs, notifier, masterPausePrefs, TageslichtQuelle.OHNE)
     }
 
     @Test

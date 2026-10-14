@@ -1,0 +1,18 @@
+Postleitzahl-Daten fuer "Ort für Tageslicht"
+============================================
+
+Quelle:   GeoNames, www.geonames.org
+          Postleitzahlen DE, AT, CH (https://download.geonames.org/export/zip/)
+Lizenz:   Creative Commons Attribution 4.0 International (CC BY 4.0)
+          https://creativecommons.org/licenses/by/4.0/
+          Rechtstext: https://creativecommons.org/licenses/by/4.0/legalcode
+
+Aenderungen: Die Daten wurden aggregiert zu Regions-Schwerpunkten. Je Postleitzahl-Praefix
+(zwei Stellen, fuer DE zusaetzlich drei Stellen) enthaelt die App nur noch den Mittelpunkt der
+zugehoerigen Zustell-Postleitzahlen (auf zwei Nachkommastellen gerundet) und den Namen des
+naechstgelegenen Ortes. Grosskunden- und Postfach-Postleitzahlen ohne Genauigkeitsangabe sowie
+geografische Ausreisser sind nicht beruecksichtigt. Erzeugt von
+tools/tageslicht/baue_plz_tabelle.py; Ergebnis unter app/src/main/assets/tageslicht/plz_*.tsv.
+
+Die Daten werden ohne Gewaehr bereitgestellt ("as is"); GeoNames uebernimmt keine Haftung fuer
+ihre Richtigkeit.

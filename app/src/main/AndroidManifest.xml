@@ -70,6 +70,11 @@
          permissionspflichtigen APIs (setMode/setRingerMode/adjust*Volume/setStreamVolume/
          setSpeakerphoneOn/setMicrophoneMute/startBluetoothSco) kommen im Code nicht vor. -->
 
+    <!-- ACCESS_COARSE_LOCATION (#140): EINMALIGE Ortsbestimmung NUR auf Knopfdruck im Vordergrund
+         ("Standort übernehmen" im Ort-Bildschirm), fuer selbst gerechnete Sonnenzeiten. Gespeichert
+         nur auf 0,1° gerundet, ausserhalb des Backups. KEIN FINE, KEIN BACKGROUND - nicht erweitern. -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+
     <!-- Package-Sichtbarkeit fuer TimeOffice (Android 11+): CFAlarms Alarme haengen an einem
          Kalender, den die TimeOffice-App lokal befuellt (siehe TimeOfficeHealthHelper) - ohne
          diese Deklaration liefert getPackageInfo() fuer das fremde Package immer

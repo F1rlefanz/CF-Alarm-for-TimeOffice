@@ -147,6 +147,13 @@ fun TageslichtKarte(
                 }
             }
             if (wahl != HellAb.IMMER) {
+                // Textehrlichkeit (Plan §0.9): verglichen wird mit dem Morgen des Wecktags, ein
+                // Abendwecker entfaellt deshalb auch bei Dunkelheit - das muss hier stehen.
+                Text(
+                    stringResource(R.string.tageslicht_hue_hinweis_abend),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
                 if (ortText == null) {
                     OhneOrtHinweis(stringResource(R.string.tageslicht_ohne_ort_hue), onOrtAendern)
                 } else {

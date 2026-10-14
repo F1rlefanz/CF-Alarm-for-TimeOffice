@@ -106,7 +106,8 @@ fun MainContentScreen(
     onShowHueSettings: () -> Unit,
     onShowDimmerSettings: () -> Unit,
     onShowDimmerPreview: () -> Unit,
-    onShowDndSettings: () -> Unit
+    onShowDndSettings: () -> Unit,
+    onShowOrtFuerTageslicht: () -> Unit
 ) {
     val context = LocalContext.current
     // collectAsStateWithLifecycle, nicht collectAsState: Alles hier ist reiner Bildschirm-
@@ -397,7 +398,8 @@ fun MainContentScreen(
                         // Zurueck fuehrt in die Einstellungen: MainScreen reicht den aktuellen
                         // Tab als returnToTab durch.
                         onShowShiftConfig = onShowShiftConfig,
-                        onShowDndSettings = onShowDndSettings
+                        onShowDndSettings = onShowDndSettings,
+                        onShowOrtFuerTageslicht = onShowOrtFuerTageslicht
                     )
                 }
                 MainTab.HUE -> {

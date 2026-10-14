@@ -11,8 +11,15 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.SunriseConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.TargetType
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.modus
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.util.HueColorConverter
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.HellAb
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.TageslichtStand
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.time.format.TextStyle
+import java.util.Locale
 
 /**
  * Der gesamte Zustand des Regel-Editors in EINEM Objekt - und bewusst ohne jede
@@ -51,6 +58,9 @@ internal data class HueRuleFormState(
     // Querschnittlich: betrifft, was auch immer das Licht angeschaltet hat
     val autoOffEnabled: Boolean = false,
     val autoOffMinutes: Int = 30,
+
+    // Querschnittlich wie Auto-Aus: gilt fuer alle drei Modi (#140). Default IMMER = wie bisher.
+    val hellAb: HellAb = HellAb.IMMER,
 
     val showValidationErrors: Boolean = false
 ) {
@@ -177,7 +187,8 @@ internal fun HueRuleFormState.toRule(
         shiftPattern = shiftPattern,
         enabled = enabled,
         timeRanges = listOf(HueTimeRange(actions = aktionen)),
-        sunrise = if (modus == HueRuleModus.SONNENAUFGANG) sunrise.copy(enabled = true) else null
+        sunrise = if (modus == HueRuleModus.SONNENAUFGANG) sunrise.copy(enabled = true) else null,
+        hellAb = hellAb
     )
 }
 
@@ -223,7 +234,8 @@ internal fun HueScheduleRule.toFormState(): HueRuleFormState {
             ?: HueColorConverter.ColorPreset.RED,
         sunrise = sunrise ?: SunriseConfig(),
         autoOffEnabled = autoOff != null,
-        autoOffMinutes = autoOff ?: 30
+        autoOffMinutes = autoOff ?: 30,
+        hellAb = hellAb
     )
 }
 
@@ -241,6 +253,66 @@ internal val HueRuleFormStateSaver: Saver<HueRuleFormState, String> = Saver(
 )
 
 internal val formStateJson = Json { ignoreUnknownKeys = true; encodeDefaults = true }
+
+// --- Tageslicht (#140) -----------------------------------------------------------------------
+
+/**
+ * Was die Tageslicht-Bedingung beim naechsten Wecker bewirkt - Grundlage der Urteilszeile im
+ * Editor ("Nächster Wecker … → Licht geht an / entfällt").
+ *
+ * @property ereignis die gewaehlte Schwelle (nie [HellAb.IMMER]), fuer den Ereignisnamen der Zeile.
+ * @property laeuft `true` = die Regel laeuft bei [weckzeit].
+ */
+internal data class TageslichtUrteil(
+    val weckzeit: Long,
+    val ereignis: HellAb,
+    val hellZeitpunkt: Long,
+    val laeuft: Boolean,
+    /** Zone, in der beide Zeitpunkte angezeigt werden - die des Stands, wie bei der Rechnung. */
+    val zone: ZoneId
+)
+
+/**
+ * PURE: das Urteil fuer [weckzeit], oder `null`, wenn es nichts Wahres zu sagen gibt.
+ *
+ * Derselbe Massstab wie die Laufzeit (`HueSchedule.laeuftBeiTageslicht` im `HueRuleUseCase`):
+ * die Regel laeuft nur, wenn die WECKZEIT VOR dem Hell-Zeitpunkt des WECKTAGS liegt (Kalendertag der
+ * Weckzeit in der Zone des [stand]). Genau zum Hell-Zeitpunkt entfaellt sie. Ein Wecker am Abend
+ * liegt damit nach dem Morgen des Wecktags und entfaellt (Plan §0.9) - die Zeile zeigt das ehrlich.
+ *
+ * `null` bei JEDER Luecke: [HellAb.IMMER], keine Weckzeit, Stand noch nicht geladen, kein Ort,
+ * kein solches Ereignis an diesem Tag (Polarnacht). Die Laufzeit laesst die Regel dann laufen
+ * (fail-safe); ein "entfällt" ohne echten Hell-Zeitpunkt waere eine Behauptung, die sie nicht
+ * einloest - deshalb lieber keine Zeile als eine geratene.
+ */
+internal fun tageslichtUrteil(weckzeit: Long?, stand: TageslichtStand?, hellAb: HellAb): TageslichtUrteil? {
+    if (hellAb == HellAb.IMMER || weckzeit == null || stand == null || stand.ort == null) return null
+    val wecktag = Instant.ofEpochMilli(weckzeit).atZone(stand.zone).toLocalDate()
+    val hell = stand.hellZeitpunkt(wecktag, hellAb) ?: return null
+    return TageslichtUrteil(
+        weckzeit = weckzeit,
+        ereignis = hellAb,
+        hellZeitpunkt = hell,
+        laeuft = weckzeit < hell,
+        zone = stand.zone
+    )
+}
+
+/** Geschuetztes Leerzeichen: haelt "Mi 05:30" zusammen (wie `Dienstzeit.kt`). */
+private const val NBSP = '\u00A0'
+
+private val UHRZEIT_KURZ: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm", Locale.GERMAN)
+
+/** "Mi 05:30" - Wochentag ohne Punkt (wie `kurzesDatum`), Uhrzeit in [zone]. */
+internal fun weckzeitKurz(epochMs: Long, zone: ZoneId): String {
+    val zeit = Instant.ofEpochMilli(epochMs).atZone(zone)
+    return zeit.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.GERMAN).removeSuffix(".") +
+        NBSP + zeit.format(UHRZEIT_KURZ)
+}
+
+/** "07:31" in [zone]. */
+internal fun uhrzeitKurz(epochMs: Long, zone: ZoneId): String =
+    Instant.ofEpochMilli(epochMs).atZone(zone).format(UHRZEIT_KURZ)
 
 // --- interne Helfer --------------------------------------------------------------------------
 

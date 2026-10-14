@@ -75,6 +75,7 @@ object LogTags {
     const val DIMMER = "CFAlarm.Dimmer" // Schicht-basiertes Screen-Dimming
     const val DND = "CFAlarm.Dnd" // Schicht-basierte "Nicht stoeren"-Steuerung
     const val MASTER_PAUSE = "CFAlarm.MasterPause" // Globaler Pause-Schalter fuer alle Hintergrunddienste
+    const val TAGESLICHT = "CFAlarm.Tageslicht" // Ort und Sonnenzeiten fuer "nur solange es dunkel ist" (#140)
     const val MAINTENANCE_L4 = "CFAlarm.Maintenance.L4"
 
     // === ERROR & RECOVERY ===

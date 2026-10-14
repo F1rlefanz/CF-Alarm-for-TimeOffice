@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -39,6 +40,8 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueRuleModus
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueSchedule
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.modus
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.UnresolvedRuleTarget
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.HellAb
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tageslicht.DunkelheitEtikett
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.CompactOutlinedButton
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.hueRuleModusLabel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.hueShiftPatternLabel
@@ -110,6 +113,12 @@ internal fun HueRuleCard(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                    // Tageslicht-Bedingung (#140). Eigene Zeile statt neben dem Modus-Abzeichen:
+                    // Name + Abzeichen + Etikett liefen bei 320 dp neben dem Schalter aus der Zeile.
+                    if (rule.hellAb != HellAb.IMMER) {
+                        Spacer(Modifier.height(4.dp))
+                        DunkelheitEtikett()
+                    }
                     Text(
                         stringResource(if (rule.enabled) R.string.hue_rulecard_active else R.string.hue_rulecard_inactive),
                         style = MaterialTheme.typography.bodySmall,

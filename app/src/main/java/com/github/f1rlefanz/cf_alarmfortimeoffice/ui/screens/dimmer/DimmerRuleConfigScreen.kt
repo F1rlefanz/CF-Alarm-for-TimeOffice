@@ -29,15 +29,20 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -50,27 +55,48 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimOverlayPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimRule
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimWindow
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimWindowResolver
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.HellAb
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.SimpleBackTopAppBar
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.hilfe.HilfeThema
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tageslicht.NachlaufBisHellWahl
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.DateTimeFormats
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.DimmerRulesViewModel
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.json.Json
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 @Composable
 fun DimmerRuleConfigScreen(
     ruleId: String?,
     onNavigateBack: () -> Unit,
     onSaveComplete: () -> Unit,
+    /** "Ort einstellen" aus dem Hinweis unter "Nachlauf nur, solange es dunkel ist" (#140). */
+    onOrtEinstellen: () -> Unit,
     viewModel: DimmerRulesViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
     val shiftNames by viewModel.shiftNames.collectAsStateWithLifecycle()
+    val ortBekannt by viewModel.ortBekannt.collectAsStateWithLifecycle()
+    val tageslichtGeladen by viewModel.tageslichtGeladen.collectAsStateWithLifecycle()
     val existing = remember(ruleId) { viewModel.ruleById(ruleId) }
 
-    var name by remember { mutableStateOf(existing?.name ?: "") }
-    var shiftPattern by remember { mutableStateOf(existing?.shiftPattern ?: DimRule.SHIFT_UNIVERSAL) }
-    var enabled by remember { mutableStateOf(existing?.enabled ?: true) }
-    var strength by remember { mutableIntStateOf(existing?.strength ?: DimOverlayPrefs.DEFAULT_STRENGTH) }
-    var warmth by remember { mutableIntStateOf(existing?.warmth ?: DimOverlayPrefs.DEFAULT_WARMTH) }
-    val windows = remember { mutableStateListOf<DimWindow>().apply { existing?.windows?.let { addAll(it) } } }
+    // Auch beim Zurueckkommen vom Ort-Bildschirm: dort kann sich der Ort gerade geaendert haben.
+    LaunchedEffect(Unit) { viewModel.ladeTageslicht() }
+
+    // rememberSaveable statt remember: das Formular muss den Umweg ueber "Ort einstellen" (der
+    // Editor verlaesst dabei die Komposition) und eine Drehung ueberstehen - sonst sind
+    // ungespeicherte Eingaben weg. Die Fensterliste reist als JSON ([FensterListeSaver]).
+    var name by rememberSaveable { mutableStateOf(existing?.name ?: "") }
+    var shiftPattern by rememberSaveable { mutableStateOf(existing?.shiftPattern ?: DimRule.SHIFT_UNIVERSAL) }
+    var enabled by rememberSaveable { mutableStateOf(existing?.enabled ?: true) }
+    var strength by rememberSaveable { mutableIntStateOf(existing?.strength ?: DimOverlayPrefs.DEFAULT_STRENGTH) }
+    var warmth by rememberSaveable { mutableIntStateOf(existing?.warmth ?: DimOverlayPrefs.DEFAULT_WARMTH) }
+    val windows = rememberSaveable(saver = FensterListeSaver) {
+        mutableStateListOf<DimWindow>().apply { existing?.windows?.let { addAll(it) } }
+    }
 
     Scaffold(
         topBar = {
@@ -191,8 +217,13 @@ fun DimmerRuleConfigScreen(
             }
 
             itemsIndexed(windows) { index, w ->
+                // Neu gerechnet, sobald sich das Fenster aendert oder Ort/Wecker frisch geladen sind.
+                val beispiel = remember(w, tageslichtGeladen) { viewModel.nachlaufBeispiel(w) }
                 WindowEditor(
                     window = w,
+                    ohneOrt = !ortBekannt,
+                    beispiel = nachlaufBeispielText(beispiel, w.nachlaufBisHell),
+                    onOrtEinstellen = onOrtEinstellen,
                     // Die Blockposition gibt es nur fuer eine benannte Schicht: FREI-Tage haben
                     // keine Schicht (der Resolver ignoriert das Feld dort), und fuer UNIVERSAL
                     // waere "Folge gleicher Dienste" nicht erklaerbar - die Regel gilt ja an allen.
@@ -284,6 +315,68 @@ private fun ShiftDropdown(
     }
 }
 
+/** kotlinx wie im Regel-Speicher: unbekannte Felder ueberlesen, Defaults mitschreiben. */
+private val fensterJson = Json {
+    ignoreUnknownKeys = true
+    encodeDefaults = true
+}
+
+/** Fensterliste des Formulars als Text fuer den Saveable-Speicher - getestet in `DimWindowTageslichtTest`. */
+internal fun fensterListeAlsJson(liste: List<DimWindow>): String =
+    fensterJson.encodeToString(ListSerializer(DimWindow.serializer()), liste)
+
+internal fun fensterListeAusJson(text: String): List<DimWindow> =
+    fensterJson.decodeFromString(ListSerializer(DimWindow.serializer()), text)
+
+/**
+ * Hebt die Fensterliste des Editors ueber das Verlassen der Komposition hinweg auf (Muster wie
+ * `HueRuleFormStateSaver`). Ein unlesbarer Stand liefert `null` - dann baut der Editor die Liste
+ * wie beim ersten Oeffnen aus der gespeicherten Regel, statt abzustuerzen.
+ */
+private val FensterListeSaver = Saver<SnapshotStateList<DimWindow>, String>(
+    save = { fensterListeAlsJson(it.toList()) },
+    restore = { text ->
+        runCatching { fensterListeAusJson(text) }.getOrNull()
+            ?.let { mutableStateListOf<DimWindow>().apply { addAll(it) } }
+    }
+)
+
+// Locale.GERMAN bleibt zwingend: ohne das Argument haengt der Wochentagsname an der Systemsprache.
+private val BEISPIEL_TAG_ZEIT = DateTimeFormatter.ofPattern(DateTimeFormats.DAY_TIME, Locale.GERMAN)
+private val BEISPIEL_ZEIT = DateTimeFormatter.ofPattern(DateTimeFormats.TIME_ONLY, Locale.GERMAN)
+
+private fun fmt(epoch: Long, format: DateTimeFormatter): String =
+    Instant.ofEpochMilli(epoch).atZone(ZoneId.systemDefault()).format(format)
+
+/**
+ * "Nächster Wecker Do 15.10. 05:30 → gedimmt bis 06:30 (volle 60 Minuten, Sonnenaufgang ist erst
+ * um 07:31)". Die Begruendung entfaellt, wenn die Rechnung keine ehrliche hergibt (siehe
+ * [DimmerRulesViewModel.NachlaufBeispiel.grundArt]).
+ */
+@Composable
+private fun nachlaufBeispielText(b: DimmerRulesViewModel.NachlaufBeispiel?, hellAb: HellAb): String? {
+    if (b == null) return null
+    val basis = stringResource(
+        R.string.tageslicht_dimmer_beispiel,
+        fmt(b.weckzeit, BEISPIEL_TAG_ZEIT),
+        fmt(b.ende, BEISPIEL_ZEIT)
+    )
+    val ereignis = tageslichtEreignisName(hellAb)
+    val grund = when (b.grundArt) {
+        DimmerRulesViewModel.BeispielGrund.NACHLAUF_VOLL -> b.hellZeitpunkt?.let {
+            pluralStringResource(R.plurals.tageslicht_dimmer_grund_nachlauf, b.nachlaufMin, b.nachlaufMin, ereignis, fmt(it, BEISPIEL_ZEIT))
+        }
+        DimmerRulesViewModel.BeispielGrund.HELL -> b.grund?.let {
+            stringResource(R.string.tageslicht_dimmer_grund_hell, ereignis, fmt(it.hellZeitpunkt, BEISPIEL_ZEIT))
+        }
+        DimmerRulesViewModel.BeispielGrund.WECKZEIT -> b.grund?.let {
+            stringResource(R.string.tageslicht_dimmer_grund_weckzeit, ereignis, fmt(it.hellZeitpunkt, BEISPIEL_ZEIT))
+        }
+        null -> null
+    }
+    return if (grund == null) basis else "$basis ($grund)"
+}
+
 /** Welches Eingabefeld ein Fenster-Rand braucht - eine Uhrzeit oder einen Minuten-Offset. */
 internal enum class AnkerFeld { UHRZEIT, OFFSET }
 
@@ -362,6 +455,9 @@ private fun ankerLabel(anker: DimAnchor): String = when (anker) {
 @Composable
 private fun WindowEditor(
     window: DimWindow,
+    ohneOrt: Boolean,
+    beispiel: String?,
+    onOrtEinstellen: () -> Unit,
     schichtbezogen: Boolean,
     onChange: (DimWindow) -> Unit,
     onRemove: () -> Unit,
@@ -463,6 +559,18 @@ private fun WindowEditor(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                    // #140: nur mit Nachlauf - ohne gibt es nichts zu kuerzen. Ein auf 0
+                    // gesetzter Nachlauf laesst die Wahl im Fenster stehen; sie wirkt dann nicht
+                    // (Resolver: Nachlauf 0 kehrt vor jeder Tageslicht-Frage zurueck).
+                    if (window.weckzeitNachlaufMinuten > 0) {
+                        NachlaufBisHellWahl(
+                            wahl = window.nachlaufBisHell,
+                            onWahl = { onChange(window.copy(nachlaufBisHell = it)) },
+                            ohneOrt = ohneOrt,
+                            beispiel = beispiel,
+                            onOrtEinstellen = onOrtEinstellen
+                        )
+                    }
                 }
             }
 

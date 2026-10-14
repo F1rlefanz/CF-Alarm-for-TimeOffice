@@ -1,5 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.TageslichtQuelle
 import android.content.Context
 import com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPausePrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmInfo
@@ -53,7 +54,8 @@ class DimSchedulePreviewStatusTest {
             DimRuleUseCase(ruleRepo),
             prefs,
             mock<DimCorrectionNotifier>(),
-            masterPausePrefs
+            masterPausePrefs,
+            TageslichtQuelle.OHNE
         )
     }
 

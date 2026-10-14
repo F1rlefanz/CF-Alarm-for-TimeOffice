@@ -1,5 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.TageslichtQuelle
 import android.content.Context
 import com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPausePrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpanStore
@@ -47,7 +48,7 @@ class DimScheduleMasterPauseTest {
         val ruleUseCase = DimRuleUseCase(ruleRepo)
         val spanStore = mock<ShiftSpanStore>()
         whenever(spanStore.spansNow()).thenReturn(Result.success(emptyList()))
-        return DimScheduleUseCase(mock<Context>(), alarmUseCase, spanStore, keineFreienTage(), ruleUseCase, prefs, notifier, masterPausePrefs)
+        return DimScheduleUseCase(mock<Context>(), alarmUseCase, spanStore, keineFreienTage(), ruleUseCase, prefs, notifier, masterPausePrefs, TageslichtQuelle.OHNE)
     }
 
     private suspend fun pausedPrefs(): DimOverlayPrefs {

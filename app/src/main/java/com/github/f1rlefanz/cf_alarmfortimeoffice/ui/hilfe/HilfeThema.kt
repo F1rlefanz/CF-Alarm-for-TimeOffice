@@ -38,6 +38,7 @@ enum class HilfeThema(val seite: HilfeSeite, val anker: String?) {
     ANLEITUNG_DIMMER(HilfeSeite.ANLEITUNG, "dimmer"),
     ANLEITUNG_NICHT_STOEREN(HilfeSeite.ANLEITUNG, "nicht-stoeren"),
     ANLEITUNG_HUE(HilfeSeite.ANLEITUNG, "hue"),
+    ANLEITUNG_TAGESLICHT(HilfeSeite.ANLEITUNG, "tageslicht"),
 
     PROBLEME(HilfeSeite.PROBLEME, null),
     PROBLEME_AKKU(HilfeSeite.PROBLEME, "akku"),

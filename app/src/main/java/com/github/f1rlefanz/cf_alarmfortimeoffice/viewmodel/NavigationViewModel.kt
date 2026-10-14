@@ -27,6 +27,14 @@ class NavigationViewModel @Inject constructor() : ViewModel() {
         NavigationState.MainContent(MainTab.HOME)
     )
     val navigationState: StateFlow<NavigationState> = _navigationState.asStateFlow()
+
+    // Letzte vergebene Editor-Sitzung (siehe NavigationState.HueRuleConfig.sitzung). nanoTime
+    // als Basis, damit eine nach Prozess-Neustart wiederhergestellte Formular-Ablage keinen
+    // gleichen Schluessel trifft; das +1 garantiert Eindeutigkeit auch bei grober Uhraufloesung.
+    private var letzteSitzung = 0L
+
+    private fun neueSitzung(): Long =
+        maxOf(System.nanoTime(), letzteSitzung + 1).also { letzteSitzung = it }
     
     fun handleNavigationAction(action: NavigationAction) {
         val currentState = _navigationState.value
@@ -69,7 +77,7 @@ class NavigationViewModel @Inject constructor() : ViewModel() {
             
             is NavigationAction.NavigateToHueRuleConfig -> {
                 Logger.d(LogTags.NAVIGATION, "Main -> Hue Rule Config (from ${action.fromTab}, rule: ${action.ruleId}, viaSettingsList: ${action.cameFromSettingsList})")
-                NavigationState.HueRuleConfig(action.ruleId, action.fromTab, action.cameFromSettingsList)
+                NavigationState.HueRuleConfig(action.ruleId, action.fromTab, action.cameFromSettingsList, neueSitzung())
             }
             
             is NavigationAction.NavigateToHueSettings -> {
@@ -84,7 +92,7 @@ class NavigationViewModel @Inject constructor() : ViewModel() {
 
             is NavigationAction.NavigateToDimmerRuleConfig -> {
                 Logger.d(LogTags.NAVIGATION, "Main -> Dimmer Rule Config (from ${action.fromTab}, rule: ${action.ruleId}, viaSettingsList: ${action.cameFromSettingsList})")
-                NavigationState.DimmerRuleConfig(action.ruleId, action.fromTab, action.cameFromSettingsList)
+                NavigationState.DimmerRuleConfig(action.ruleId, action.fromTab, action.cameFromSettingsList, neueSitzung())
             }
 
             is NavigationAction.NavigateToDimmerPreview -> {
@@ -95,6 +103,11 @@ class NavigationViewModel @Inject constructor() : ViewModel() {
             is NavigationAction.NavigateToDndSettings -> {
                 Logger.d(LogTags.NAVIGATION, "Main -> DND Settings (from ${action.fromTab})")
                 NavigationState.DndSettings(action.fromTab)
+            }
+
+            is NavigationAction.NavigateToOrtFuerTageslicht -> {
+                Logger.d(LogTags.NAVIGATION, "-> Ort fuer Tageslicht (zurueck zu ${action.zurueckZu::class.simpleName})")
+                NavigationState.OrtFuerTageslicht(action.zurueckZu)
             }
 
             is NavigationAction.NavigateBackToMain -> rueckwegZiel(currentState)
@@ -168,6 +181,11 @@ class NavigationViewModel @Inject constructor() : ViewModel() {
     fun navigateToDndSettings(fromTab: MainTab = MainTab.SETTINGS) =
         handleNavigationAction(NavigationAction.NavigateToDndSettings(fromTab))
 
+    /** Ort fuer Tageslicht; [zurueckZu] ist der GERENDERTE Herkunftszustand (bei einem Editor
+     *  samt sitzung), Zurueck fuehrt genau dorthin. */
+    fun navigateToOrtFuerTageslicht(zurueckZu: NavigationState) =
+        handleNavigationAction(NavigationAction.NavigateToOrtFuerTageslicht(zurueckZu))
+
     fun navigateBackToMain() =
         handleNavigationAction(NavigationAction.NavigateBackToMain)
 
@@ -189,6 +207,12 @@ class NavigationViewModel @Inject constructor() : ViewModel() {
     }
 
     private fun rueckwegZiel(state: NavigationState): NavigationState {
+        // Ort fuer Tageslicht: ausdruecklich VOR allem anderen - der else-Zweig unten fuehrte
+        // still auf HOME, und aus einem Editor ginge dessen ungespeicherte Eingabe verloren.
+        if (state is NavigationState.OrtFuerTageslicht) {
+            Logger.d(LogTags.NAVIGATION, "-> zurueck aus Ort fuer Tageslicht (${state.zurueckZu::class.simpleName})")
+            return state.zurueckZu
+        }
         // HueRuleConfig/DimmerRuleConfig haben zwei Einstiegspfade (siehe cameFromSettingsList) -
         // ein Zurueck darf hier NICHT blind zu MainContent aufloesen, sonst ueberspringt der
         // Listen-Pfad HueSettings/DimmerSettings.

@@ -1,5 +1,9 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tageslicht
 
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -21,23 +25,32 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.github.f1rlefanz.cf_alarmfortimeoffice.R
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.OrtQuelle
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.PlzLand
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.CompactButton
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.CompactOutlinedButton
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.SimpleBackTopAppBar
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.hilfe.HilfeThema
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.wecker.Etikett
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.wecker.EtikettTon
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
-
-/** Laender mit eingebauter PLZ-Tabelle (#140). Unbekannte Laender fallen auf die Zeitzone zurueck. */
-enum class PlzLand { DE, AT, CH }
+import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.TageslichtViewModel
 
 /**
  * Alles, was der Ort-Bildschirm zeigt - fertig aufbereitet, damit der Bildschirm nichts rechnet.
@@ -57,8 +70,76 @@ data class OrtBildschirmZustand(
     val plzUnbekannt: Boolean,
     val zeitzone: String,
     /** `null`: fuer diese Zeitzone kennt die App keinen Ort. */
-    val zeitzoneOrt: String?
+    val zeitzoneOrt: String?,
+    /** Die Standortabfrage laeuft gerade (Knopf gesperrt, Hinweis darunter). */
+    val standortLaeuft: Boolean = false,
+    /** Warum der letzte Versuch nichts uebernommen hat; `null` = kein Fehler. */
+    val standortFehler: StandortFehler? = null,
+    /**
+     * Die GESPEICHERTE PLZ, wenn sie gerade gilt. Kann von [plzEingabe] abweichen: eine unbekannte
+     * Eingabe wird nicht gespeichert, es gilt weiter die alte - und die Aktuell-Karte nennt, was
+     * gilt. `null` = wie [plzEingabe] (Vorschau ohne ViewModel).
+     */
+    val genutztPlz: String? = null,
+    /** Regionsname zu [genutztPlz]; `null` = wie [plzRegion]. */
+    val genutztName: String? = null
 )
+
+/** Warum "Standort übernehmen" nichts uebernommen hat - jeder Fall nennt den Ausweg PLZ. */
+enum class StandortFehler {
+    /** Berechtigung im Systemdialog abgelehnt oder entzogen. */
+    ABGELEHNT,
+
+    /** Standortermittlung in den Android-Einstellungen ausgeschaltet. */
+    ABGESCHALTET,
+
+    /** Kein Ergebnis in der Wartezeit, oder Speichern gescheitert. */
+    FEHLGESCHLAGEN
+}
+
+/**
+ * Einstieg mit ViewModel und Berechtigungsdialog (#140).
+ *
+ * Die Berechtigung (nur `ACCESS_COARSE_LOCATION`) wird AUSSCHLIESSLICH auf den Knopfdruck
+ * angefragt, und der Begruendungssatz steht direkt ueber dem Knopf - Play verlangt die Begruendung
+ * im Zusammenhang VOR dem Systemdialog. Ist sie schon erteilt, wird sofort abgefragt.
+ */
+@Composable
+fun OrtFuerTageslichtRoute(
+    onNavigateBack: () -> Unit,
+    viewModel: TageslichtViewModel = hiltViewModel()
+) {
+    val zustand by viewModel.zustand.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    // Einmal je Besuch (nicht je Drehung): das ViewModel haengt an der Activity und traegt sonst
+    // Fehler und Eingaben des letzten Besuchs mit (siehe TageslichtViewModel.beimOeffnen)
+    var geoeffnet by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        if (!geoeffnet) {
+            viewModel.beimOeffnen()
+            geoeffnet = true
+        }
+    }
+    val berechtigung = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { erteilt ->
+        if (erteilt) viewModel.standortUebernehmen() else viewModel.standortAbgelehnt()
+    }
+    OrtFuerTageslichtScreen(
+        zustand = zustand,
+        onNavigateBack = onNavigateBack,
+        onStandortUebernehmen = {
+            val erteilt = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) ==
+                PackageManager.PERMISSION_GRANTED
+            if (erteilt) {
+                viewModel.standortUebernehmen()
+            } else {
+                berechtigung.launch(Manifest.permission.ACCESS_COARSE_LOCATION)
+            }
+        },
+        onStandortEntfernen = viewModel::standortEntfernen,
+        onLandWahl = viewModel::landWahl,
+        onPlzEingabe = viewModel::plzEingabe
+    )
+}
 
 @Composable
 fun OrtFuerTageslichtScreen(
@@ -70,7 +151,13 @@ fun OrtFuerTageslichtScreen(
     onPlzEingabe: (String) -> Unit
 ) {
     Scaffold(
-        topBar = { SimpleBackTopAppBar(stringResource(R.string.tageslicht_ort_titel), onNavigateBack) }
+        topBar = {
+            SimpleBackTopAppBar(
+                stringResource(R.string.tageslicht_ort_titel),
+                onNavigateBack,
+                hilfe = HilfeThema.ANLEITUNG_TAGESLICHT
+            )
+        }
     ) { innen ->
         LazyColumn(
             modifier = Modifier
@@ -94,31 +181,40 @@ fun OrtFuerTageslichtScreen(
                     genutzt = zustand.genutzt == OrtQuelle.STANDORT,
                     vonGenauererVerdeckt = false
                 ) {
+                    zustand.standortUebernommenAm?.let {
+                        Text(stringResource(R.string.tageslicht_standort_uebernommen, it), style = MaterialTheme.typography.bodyMedium)
+                    }
+                    // Der Begruendungssatz steht DIREKT ueber dem Knopf, der den Systemdialog
+                    // ausloest (Play: Begruendung im Zusammenhang, vor der Anfrage). Nichts dazwischen.
                     Text(
                         stringResource(R.string.tageslicht_stufe_standort_text),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    zustand.standortUebernommenAm?.let {
-                        Text(stringResource(R.string.tageslicht_standort_uebernommen, it), style = MaterialTheme.typography.bodyMedium)
-                    }
                     // Untereinander, linksbuendig (Skill UI: Knoepfe an Listenzeilen)
                     Column(verticalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_SMALL)) {
                         if (zustand.standortUebernommenAm == null) {
                             CompactButton(
                                 onClick = onStandortUebernehmen,
                                 text = stringResource(R.string.tageslicht_standort_uebernehmen),
-                                icon = Icons.Default.LocationOn
+                                icon = Icons.Default.LocationOn,
+                                enabled = !zustand.standortLaeuft
                             )
                         } else {
                             CompactOutlinedButton(
                                 onClick = onStandortUebernehmen,
                                 text = stringResource(R.string.tageslicht_standort_uebernehmen),
-                                icon = Icons.Default.LocationOn
+                                icon = Icons.Default.LocationOn,
+                                enabled = !zustand.standortLaeuft
                             )
+                        }
+                        // Status und Fehler direkt unter DEM Knopf, den sie betreffen (Skill UI)
+                        StandortHinweis(zustand)
+                        if (zustand.standortUebernommenAm != null) {
                             CompactOutlinedButton(
                                 onClick = onStandortEntfernen,
-                                text = stringResource(R.string.tageslicht_standort_entfernen)
+                                text = stringResource(R.string.tageslicht_standort_entfernen),
+                                enabled = !zustand.standortLaeuft
                             )
                         }
                     }
@@ -162,6 +258,12 @@ fun OrtFuerTageslichtScreen(
                             else -> null
                         }
                     )
+                    // Namensnennung CC BY 4.0 (GeoNames) - an der Stelle, die die Daten nutzt
+                    Text(
+                        stringResource(R.string.tageslicht_plz_quelle),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
             item {
@@ -202,7 +304,11 @@ private fun AktuellKarte(zustand: OrtBildschirmZustand) {
             Text(
                 when (zustand.genutzt) {
                     OrtQuelle.STANDORT -> stringResource(R.string.tageslicht_quelle_standort)
-                    OrtQuelle.PLZ -> stringResource(R.string.tageslicht_quelle_plz, zustand.plzEingabe, zustand.plzRegion.orEmpty())
+                    OrtQuelle.PLZ -> stringResource(
+                        R.string.tageslicht_quelle_plz,
+                        zustand.genutztPlz ?: zustand.plzEingabe,
+                        (zustand.genutztName ?: zustand.plzRegion).orEmpty()
+                    )
                     OrtQuelle.ZEITZONE -> stringResource(R.string.tageslicht_quelle_zeitzone, zustand.zeitzone, zustand.zeitzoneOrt.orEmpty())
                     null -> stringResource(R.string.tageslicht_quelle_keine)
                 },
@@ -219,6 +325,24 @@ private fun AktuellKarte(zustand: OrtBildschirmZustand) {
             }
         }
     }
+}
+
+/** Laufende Abfrage oder der Grund, warum nichts uebernommen wurde - jeweils mit Ausweg. */
+@Composable
+private fun StandortHinweis(zustand: OrtBildschirmZustand) {
+    val fehler = zustand.standortFehler.takeUnless { zustand.standortLaeuft }
+    val text = when {
+        zustand.standortLaeuft -> stringResource(R.string.tageslicht_standort_laeuft)
+        fehler == StandortFehler.ABGELEHNT -> stringResource(R.string.tageslicht_standort_abgelehnt)
+        fehler == StandortFehler.ABGESCHALTET -> stringResource(R.string.tageslicht_standort_abgeschaltet)
+        fehler == StandortFehler.FEHLGESCHLAGEN -> stringResource(R.string.tageslicht_standort_fehlgeschlagen)
+        else -> return
+    }
+    Text(
+        text,
+        style = MaterialTheme.typography.bodySmall,
+        color = if (fehler != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+    )
 }
 
 /**

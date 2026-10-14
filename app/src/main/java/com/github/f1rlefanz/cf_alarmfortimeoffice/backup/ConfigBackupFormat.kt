@@ -234,6 +234,13 @@ object ConfigBackupFilter {
         // "Restore-Schluessel fuer diese Anmeldung angelegt" (#55, auth_prefs): mitgereist hiesse
         // er auf dem neuen Geraet "schon erledigt", und dort entstuende nie ein eigener Schluessel.
         "restore_key_angelegt",
+        // Der auf DIESEM Geraet uebernommene Standort (#140). Liegt in der eigenen Datei
+        // tageslicht_standort.xml, die diese Klasse nicht liest und das Android-Backup ausnimmt -
+        // hier trotzdem benannt, aus demselben Grund wie die Token-Schluessel darueber. Land und
+        // PLZ (tageslicht_land/tageslicht_plz) hat der Nutzer eingetippt; sie reisen mit.
+        "breite_zehntel",
+        "laenge_zehntel",
+        "uebernommen_am",
         // Die Kalenderauswahl ist an das Google-Konto gebunden: die IDs einer Kollegin zeigen auf
         // Kalender, die es auf diesem Geraet nicht gibt. Der Nutzer waehlt seinen Dienstplan selbst -
         // dafuer gibt es ein eigenes Gate im Onboarding.

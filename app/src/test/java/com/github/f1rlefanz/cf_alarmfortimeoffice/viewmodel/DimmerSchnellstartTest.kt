@@ -1,5 +1,7 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.TageslichtQuelle
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.Blockposition
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimAnchor
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimOverlayPrefs
@@ -93,7 +95,8 @@ class DimmerSchnellstartTest {
 
         return Fixture(
             vm = DimmerRulesViewModel(
-                ruleUseCase, shiftUseCase, dimSchedule, armierer, prefs, mock<ShiftSpanStore>()
+                ruleUseCase, shiftUseCase, dimSchedule, armierer, prefs, mock<ShiftSpanStore>(),
+                mock<IAlarmUseCase>(), TageslichtQuelle.OHNE
             ),
             ruleUseCase = ruleUseCase,
             dimSchedule = dimSchedule,

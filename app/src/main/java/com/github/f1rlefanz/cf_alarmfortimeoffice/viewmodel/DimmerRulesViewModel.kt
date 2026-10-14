@@ -10,8 +10,14 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimRuleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimScheduleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimWindow
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimWindowResolver
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.HellZeitpunkt
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.TageslichtEnde
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.ZeitkettenArmierer
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpanStore
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.HellAb
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.TageslichtQuelle
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.TageslichtStand
+import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IShiftUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
@@ -32,6 +38,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import javax.inject.Inject
@@ -49,7 +56,10 @@ class DimmerRulesViewModel @Inject constructor(
     private val dimSchedule: DimScheduleUseCase,
     private val armierer: ZeitkettenArmierer,
     private val prefs: DimOverlayPrefs,
-    private val shiftSpanStore: ShiftSpanStore
+    private val shiftSpanStore: ShiftSpanStore,
+    /** Naechste Weckzeiten fuer die Beispielzeile unter "Nachlauf nur, solange es dunkel ist" (#140). */
+    private val alarmUseCase: IAlarmUseCase,
+    private val tageslicht: TageslichtQuelle
 ) : ViewModel() {
 
     /**
@@ -176,6 +186,94 @@ class DimmerRulesViewModel @Inject constructor(
         }
         previewJob = job
         return job
+    }
+
+    // --- Tageslicht (#140) ---------------------------------------------------------------------
+
+    /**
+     * Was die Beispielzeile braucht: Ort/Zone und die aktiven Weckzeiten. Ein Schnappschuss, den
+     * [ladeTageslicht] beim Oeffnen des Editors holt - auch beim Zurueckkommen vom Ort-Bildschirm,
+     * damit ein dort eingestellter Ort sofort im Editor steht.
+     */
+    private var tageslichtLage = TageslichtLage(TageslichtStand.ohneOrt(), emptyList())
+
+    private data class TageslichtLage(val stand: TageslichtStand, val weckzeiten: List<Long>)
+
+    private val _ortBekannt = MutableStateFlow(false)
+
+    /**
+     * Ist ein Ort bekannt (Standort, PLZ oder Zeitzone)? `false`, bis [ladeTageslicht] es weiss -
+     * der Editor zeigt dann "Kein Ort eingestellt - der Nachlauf gilt immer", und genau so wirkt
+     * es auch (fail-safe: voller Nachlauf).
+     */
+    val ortBekannt: StateFlow<Boolean> = _ortBekannt.asStateFlow()
+
+    private val _tageslichtGeladen = MutableStateFlow(0)
+
+    /** Zaehlt jeden abgeschlossenen [ladeTageslicht] - der Editor rechnet daran die Beispielzeile neu. */
+    val tageslichtGeladen: StateFlow<Int> = _tageslichtGeladen.asStateFlow()
+
+    /**
+     * Holt Ort und Weckzeiten fuer die Beispielzeile. Beides ist fail-safe: [TageslichtQuelle.stand]
+     * wirft nicht (gesperrt/Lesefehler = kein Ort), und ein unlesbarer Alarm-Bestand heisst nur
+     * "kein Beispiel" - nie eine erfundene Weckzeit.
+     */
+    fun ladeTageslicht() = viewModelScope.launch {
+        val stand = tageslicht.stand()
+        val weckzeiten = alarmUseCase.getAllAlarms().getOrNull()
+            ?.filter { it.isActive }
+            ?.map { it.triggerTime }
+            .orEmpty()
+        tageslichtLage = TageslichtLage(stand, weckzeiten)
+        _ortBekannt.value = stand.ort != null
+        _tageslichtGeladen.value += 1
+    }
+
+    /**
+     * Beispiel fuer [w] am naechsten Wecker, den dieses Fenster faengt - oder `null` (kein Ort,
+     * kein passender Wecker, kein Nachlauf, [HellAb.IMMER]). Siehe [nachlaufBeispiel] im Companion.
+     */
+    fun nachlaufBeispiel(w: DimWindow): NachlaufBeispiel? {
+        val lage = tageslichtLage
+        if (lage.stand.ort == null) return null
+        return nachlaufBeispiel(w, lage.stand::hellZeitpunkt, lage.weckzeiten, System.currentTimeMillis(), lage.stand.zone)
+    }
+
+    /** Welche der drei Begruendungen (`tageslicht_dimmer_grund_*`) die Beispielzeile traegt. */
+    enum class BeispielGrund {
+        /** Der Nachlauf laeuft voll, es wird erst danach hell. */
+        NACHLAUF_VOLL,
+
+        /** Es wird im Nachlauf hell, dort endet das Fenster. */
+        HELL,
+
+        /** Es war schon vor dem Wecken hell - Ende an der Weckzeit. */
+        WECKZEIT
+    }
+
+    /**
+     * Die Rechnung hinter "Nächster Wecker [weckzeit] → gedimmt bis [ende]". [grund] ist derselbe
+     * Wert, den die Vorschau zeigt; [hellZeitpunkt] fehlt nur, wenn es an dem Tag kein solches
+     * Ereignis gibt.
+     */
+    data class NachlaufBeispiel(
+        val weckzeit: Long,
+        val ende: Long,
+        val grund: TageslichtEnde?,
+        val nachlaufMin: Int,
+        val hellZeitpunkt: Long?
+    ) {
+        /**
+         * `null` = keine Begruendung zeigen. Insbesondere dann, wenn die Uhrzeit-Schranke den
+         * Nachlauf gekappt hat: "volle 60 Minuten" waere dort gelogen.
+         */
+        val grundArt: BeispielGrund?
+            get() = when {
+                grund?.vorWeckzeit == true -> BeispielGrund.WECKZEIT
+                grund != null -> BeispielGrund.HELL
+                hellZeitpunkt != null && ende == weckzeit + nachlaufMin * 60_000L -> BeispielGrund.NACHLAUF_VOLL
+                else -> null
+            }
     }
 
     // --- Schnellstart -------------------------------------------------------------------------
@@ -402,6 +500,61 @@ class DimmerRulesViewModel @Inject constructor(
     }
 
     companion object {
+        /**
+         * Reine Rechnung zu [nachlaufBeispiel] - ueber [DimWindowResolver.nachlaufEnde], also
+         * DIESELBE Formel wie die Wirkung.
+         *
+         * Gewaehlt wird die frueheste aktive Weckzeit nach [jetzt], die dieses Fenster faengt. Das
+         * laesst sich nur fuer einen CLOCK-Start allein aus dem Fenster beantworten (die Nacht
+         * beginnt am letzten Start vor dem Wecker und endet an der naechsten Schranke danach); fuer
+         * ALARM-/SHIFT_END-Starts haengt es an der Schicht - dort lieber kein Beispiel als ein
+         * falsches.
+         */
+        internal fun nachlaufBeispiel(
+            w: DimWindow,
+            hell: HellZeitpunkt,
+            weckzeiten: List<Long>,
+            jetzt: Long,
+            zone: ZoneId
+        ): NachlaufBeispiel? {
+            if (w.endAnchor != DimAnchor.ALARM_SONST_CLOCK) return null
+            if (w.weckzeitNachlaufMinuten <= 0 || w.nachlaufBisHell == HellAb.IMMER) return null
+            if (w.startAnchor != DimAnchor.CLOCK) return null
+            val weckzeit = weckzeiten.sorted().firstOrNull { it > jetzt && clockFensterFaengt(w, it, zone) }
+                ?: return null
+            val ende = DimWindowResolver.nachlaufEnde(
+                weckzeit, w.endClockMinutes, w.weckzeitNachlaufMinuten, w.nachlaufBisHell, zone, hell
+            )
+            val tag = Instant.ofEpochMilli(weckzeit).atZone(zone).toLocalDate()
+            return NachlaufBeispiel(
+                weckzeit = weckzeit,
+                ende = ende.zeit,
+                grund = ende.tageslicht,
+                nachlaufMin = w.weckzeitNachlaufMinuten.coerceIn(0, DimWindowResolver.NACHLAUF_MAX_MINUTEN),
+                hellZeitpunkt = hell(tag, w.nachlaufBisHell)
+            )
+        }
+
+        /**
+         * Faengt ein Fenster mit CLOCK-Start die [weckzeit]? Start = die letzte Start-Uhrzeit ECHT
+         * vor dem Wecker, Schranke = die erste Ende-Uhrzeit ECHT nach dem Start - dieselben
+         * Vergleiche wie in der Fensteraufloesung (Wanduhrzeit auf Kalendertagen, keine 24-h-Millis).
+         */
+        private fun clockFensterFaengt(w: DimWindow, weckzeit: Long, zone: ZoneId): Boolean {
+            fun wand(d: LocalDate, minuten: Int) =
+                d.atStartOfDay().plusMinutes(minuten.toLong()).atZone(zone).toInstant().toEpochMilli()
+            val tag = Instant.ofEpochMilli(weckzeit).atZone(zone).toLocalDate()
+            val start = wand(tag, w.startClockMinutes).let { if (it >= weckzeit) wand(tag.minusDays(1), w.startClockMinutes) else it }
+            val startTag = Instant.ofEpochMilli(start).atZone(zone).toLocalDate()
+            var schranke = wand(startTag, w.endClockMinutes)
+            var d = startTag
+            while (schranke <= start) {
+                d = d.plusDays(1)
+                schranke = wand(d, w.endClockMinutes)
+            }
+            return weckzeit < schranke
+        }
+
         /**
          * Die bereits vorhandene, AKTIVE Regel auf demselben Muster - oder `null`, wenn die
          * Vorlage angelegt werden darf.

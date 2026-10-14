@@ -42,4 +42,8 @@
 
     <!-- Eigenschaft der Hardware (Weckbildschirm-Verdraengung), nicht der Nutzerkonfiguration. -->
     <exclude domain="sharedpref" path="weckbildschirm_verdraengung.xml"/>
+
+    <!-- Auf diesem Geraet ermittelter Standort (#140, auf 0,1° gerundet); reist nicht mit.
+         Land und PLZ liegen im settings-Store und werden gesichert. -->
+    <exclude domain="sharedpref" path="tageslicht_standort.xml"/>
 </full-backup-content>

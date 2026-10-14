@@ -7,6 +7,8 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.LightAc
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.RuleExecutionResult
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.util.HueColorConverter
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.util.HueConstants
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.HellAb
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.TageslichtStand
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 
@@ -16,15 +18,17 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
  * RECHNUNG bleiben in [HueRuleUseCase] - auch fuer das Vorab-Auto-Aus der Rampe
  * ([HueRuleUseCase.vorabAutoAusZiele]).
  *
- * ABSICHTLICH KEIN HILT-BINDING: [HueRuleUseCase] erzeugt diese Klasse selbst und behaelt damit
- * seinen zweiparametrigen Konstruktor. Es gibt keinen zweiten Besitzer der Sonnenaufgangs-Rampe.
+ * ABSICHTLICH KEIN HILT-BINDING: [HueRuleUseCase] erzeugt diese Klasse selbst. Es gibt keinen
+ * zweiten Besitzer der Sonnenaufgangs-Rampe.
  *
  * [loadRules] ist bewusst der Lade-Weg von [HueRuleUseCase.getAllRules] (inkl. dessen Logging und
  * Fehlerverpackung) und NICHT ein direkter Repository-Zugriff - ein zweiter Ladeweg waere eine
- * zweite Wahrheit.
+ * zweite Wahrheit. Dasselbe gilt fuer [ladeStand] = [HueRuleUseCase.tageslichtStand] (nie werfend,
+ * Entsperr-Gate in der Quelle).
  */
 internal class HueSunriseExecutor(
     private val lightUseCase: IHueLightUseCaseAdvanced,
+    private val ladeStand: suspend () -> TageslichtStand,
     private val loadRules: suspend () -> Result<List<HueSchedule>>
 ) {
 
@@ -32,8 +36,16 @@ internal class HueSunriseExecutor(
      * Fuehrt NUR die Vorab-Rampen aus (Regeln mit aktivem Sonnenaufgang, der vor dem Wecker
      * startet). Aufgerufen vom Pre-Alarm-Worker; der Pfad zur Weckzeit ueberspringt diese Regeln
      * dann bzw. schnappt sie ueber [finalizeSunriseForRule] auf den Endzustand.
+     *
+     * Mit [weckzeit] wird die Tageslicht-Bedingung (#140) HIER, beim Feuern, noch einmal geprueft -
+     * der Ort kann sich seit der Planung geaendert haben. Das Vorab-Auto-Aus bekommt dieselbe,
+     * bereits gefilterte Liste.
      */
-    suspend fun executeSunrisePreAlarm(shiftName: String, minutenBisWecker: Int?): Result<RuleExecutionResult> {
+    suspend fun executeSunrisePreAlarm(
+        shiftName: String,
+        minutenBisWecker: Int?,
+        weckzeit: Long?
+    ): Result<RuleExecutionResult> {
         Logger.i(LogTags.HUE_USECASE, "🌅 Executing PRE-ALARM sunrise ramps for shift: $shiftName")
 
         return try {
@@ -41,7 +53,14 @@ internal class HueSunriseExecutor(
                 Logger.e(LogTags.HUE_USECASE, "Failed to load rules for pre-alarm sunrise", error)
                 return Result.failure(error)
             }
-            val sunriseRules = matchingPreAlarmSunriseRules(rules, shiftName)
+            val kandidaten = matchingPreAlarmSunriseRules(rules, shiftName, weckzeit = null, stand = null)
+            // Den Ort nur lesen, wenn eine Kandidatin ueberhaupt eine Schwelle traegt.
+            val sunriseRules = if (weckzeit != null && kandidaten.any { it.hellAb != HellAb.IMMER }) {
+                val stand = ladeStand()
+                kandidaten.filter { it.laeuftBeiTageslichtMitLog(weckzeit, stand) }
+            } else {
+                kandidaten
+            }
 
             val errors = mutableListOf<String>()
             var attempted = 0
@@ -94,9 +113,14 @@ internal class HueSunriseExecutor(
      * Nimmt die Regeln als Parameter und liest NICHT selbst - siehe KDoc in
      * [com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.IHueRuleUseCase].
      */
-    fun getPreAlarmSunriseLeadMinutes(rules: List<HueSchedule>, shiftName: String): Int? {
+    fun getPreAlarmSunriseLeadMinutes(
+        rules: List<HueSchedule>,
+        shiftName: String,
+        weckzeit: Long?,
+        stand: TageslichtStand?
+    ): Int? {
         return try {
-            matchingPreAlarmSunriseRules(rules, shiftName)
+            matchingPreAlarmSunriseRules(rules, shiftName, weckzeit, stand)
                 .mapNotNull { it.sunrise?.durationMinutes }
                 .maxOrNull()
         } catch (e: Exception) {
@@ -111,15 +135,25 @@ internal class HueSunriseExecutor(
      *
      * [shiftName] ist hier der Definitionsname, den der Alarm traegt - derselbe Massstab wie in
      * [HueRuleUseCase.findApplicableRules]. Kein Keyword-Vergleich, keine Teiltreffer.
+     *
+     * Tageslicht (#140): mit [weckzeit] UND [stand] faellt eine Regel heraus, die zur Weckzeit
+     * entfiele - ohne Vorlauf kein Worker, ohne Worker keine halbe Rampe. Fehlt eines: kein Filter.
+     * Bewusst still (laeuft in der Planer-Schleife je Wecker); geloggt wird beim Feuern.
      */
-    private fun matchingPreAlarmSunriseRules(rules: List<HueSchedule>, shiftName: String): List<HueSchedule> {
+    private fun matchingPreAlarmSunriseRules(
+        rules: List<HueSchedule>,
+        shiftName: String,
+        weckzeit: Long?,
+        stand: TageslichtStand?
+    ): List<HueSchedule> {
         return rules.filter { rule ->
             val sunrise = rule.sunrise
             rule.enabled &&
                 sunrise != null &&
                 sunrise.enabled &&
                 sunrise.startBeforeAlarm &&
-                rule.passtAufSchicht(shiftName)
+                rule.passtAufSchicht(shiftName) &&
+                (weckzeit == null || stand == null || rule.laeuftBeiTageslicht(weckzeit, stand))
         }
     }
 

@@ -13,6 +13,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -23,10 +24,13 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.GateLage
 import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.GateSchritt
 import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.MainTab
 import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.NavigationState
+import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.editorFormularSchluessel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.einstiegNachSpaeter
 import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.naechsterGateSchritt
+import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.verworfenesEditorFormular
 import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.wirdAngezeigtIn
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmMaintenanceService
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tageslicht.OrtFuerTageslichtRoute
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.BatteryOptimizationHelper
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
@@ -376,9 +380,25 @@ fun MainScreen(
             // Alle uebrigen Unterscreens, auch HueRuleConfig/DimmerRuleConfig mit ihren zwei
             // Einstiegspfaden (cameFromSettingsList): der Rueckweg ist in navigateBackFrom()
             // EINMAL aufgeloest - dieselbe Aufloesung, die auch Zurueck-Pfeil und Speichern der
-            // Regel-Editoren unten nehmen.
+            // Regel-Editoren unten nehmen. Ebenso OrtFuerTageslicht: zurueck zu zurueckZu (dem
+            // genauen Herkunftszustand, bei einem Editor samt sitzung - das Formular bleibt).
             else -> navigationViewModel.navigateBackFrom(state)
         }
+    }
+
+    // FORMULARE DER REGEL-EDITOREN (#140): "Ort einstellen" aus einem Editor ersetzt ihn im
+    // when unten, seine Komposition endet - und ein rememberSaveable ueberlebt das NUR unter
+    // einem SaveableStateHolder. Schluessel ist die sitzung des Editors (frisch je Oeffnen),
+    // siehe editorFormularSchluessel(). Verlaesst der Nutzer die Bearbeitung endgueltig (Liste,
+    // Tab, neuer Editor), wird der Eintrag geraeumt - sonst sammelte die Ablage jedes je
+    // geoeffnete Formular bis zum Prozessende.
+    val editorFormulare = rememberSaveableStateHolder()
+    var vorherigerZustand by remember { mutableStateOf<NavigationState?>(null) }
+    LaunchedEffect(navigationState) {
+        verworfenesEditorFormular(vorherigerZustand, navigationState)?.let { schluessel ->
+            editorFormulare.removeState(schluessel)
+        }
+        vorherigerZustand = navigationState
     }
 
     Surface(
@@ -563,13 +583,17 @@ fun MainScreen(
                 // derselben Stelle wie der BackHandler oben. Der gerenderte Zustand wird
                 // uebergeben, damit ein zweiter Tipp auf Speichern zum selben Ziel fuehrt.
                 val zurueckZumEinstieg: () -> Unit = { navigationViewModel.navigateBackFrom(state) }
-                com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.HueRuleConfigScreen(
-                    ruleId = state.ruleId,
-                    hueViewModel = hueViewModel,
-                    shiftViewModel = shiftViewModel,
-                    onNavigateBack = zurueckZumEinstieg,
-                    onSaveComplete = zurueckZumEinstieg
-                )
+                editorFormulare.SaveableStateProvider(checkNotNull(state.editorFormularSchluessel())) {
+                    com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.HueRuleConfigScreen(
+                        ruleId = state.ruleId,
+                        hueViewModel = hueViewModel,
+                        shiftViewModel = shiftViewModel,
+                        onNavigateBack = zurueckZumEinstieg,
+                        onSaveComplete = zurueckZumEinstieg,
+                        // Der GERENDERTE Zustand (samt sitzung) ist der Rueckweg aus dem Ort.
+                        onOrtAendern = { navigationViewModel.navigateToOrtFuerTageslicht(state) }
+                    )
+                }
             }
 
             is NavigationState.HueSettings -> {
@@ -616,11 +640,14 @@ fun MainScreen(
                 // DimmerSettings hierher (cameFromSettingsList defaultet auf true), aber
                 // navigateBackFrom() deckt auch einen kuenftigen Direktpfad korrekt ab.
                 val zurueckZumEinstieg: () -> Unit = { navigationViewModel.navigateBackFrom(state) }
-                com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.dimmer.DimmerRuleConfigScreen(
-                    ruleId = state.ruleId,
-                    onNavigateBack = zurueckZumEinstieg,
-                    onSaveComplete = zurueckZumEinstieg
-                )
+                editorFormulare.SaveableStateProvider(checkNotNull(state.editorFormularSchluessel())) {
+                    com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.dimmer.DimmerRuleConfigScreen(
+                        ruleId = state.ruleId,
+                        onNavigateBack = zurueckZumEinstieg,
+                        onSaveComplete = zurueckZumEinstieg,
+                        onOrtEinstellen = { navigationViewModel.navigateToOrtFuerTageslicht(state) }
+                    )
+                }
             }
 
             is NavigationState.MainContent -> {
@@ -678,7 +705,12 @@ fun MainScreen(
                     onShowHueSettings = { navigationViewModel.navigateToHueSettings() },
                     onShowDimmerSettings = { navigationViewModel.navigateToDimmerSettings() },
                     onShowDimmerPreview = { navigationViewModel.navigateToDimmerPreview() },
-                    onShowDndSettings = { navigationViewModel.navigateToDndSettings() }
+                    onShowDndSettings = { navigationViewModel.navigateToDndSettings() },
+                    onShowOrtFuerTageslicht = {
+                        navigationViewModel.navigateToOrtFuerTageslicht(
+                            NavigationState.MainContent(state.selectedTab)
+                        )
+                    }
                 )
             }
 
@@ -691,6 +723,14 @@ fun MainScreen(
             is NavigationState.DndSettings -> {
                 com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.dnd.DndSettingsScreen(
                     onNavigateBack = { navigationViewModel.navigateBackToMain() }
+                )
+            }
+
+            is NavigationState.OrtFuerTageslicht -> {
+                // Drei Einstiege, ein Rueckweg: navigateBackFrom() fuehrt zu state.zurueckZu -
+                // dieselbe Aufloesung wie System-Zurueck im BackHandler oben.
+                OrtFuerTageslichtRoute(
+                    onNavigateBack = { navigationViewModel.navigateBackFrom(state) }
                 )
             }
         }

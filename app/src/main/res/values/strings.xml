@@ -35,7 +35,7 @@
     <!-- Dimmer-Vorschau-Zeitleiste -->
     <string name="dimmer_preview_title">Dimm-Vorschau</string>
     <string name="dimmer_preview_empty">Kein Dimmen in den nächsten Tagen geplant.</string>
-    <string name="dimmer_preview_row">%1$s · Verdunkelung %2$d %%</string>
+    <string name="dimmer_preview_row">%1$s · Verdunkelung %2$d\u00A0%%</string>
 
     <!-- Dimm-Regeln: Liste + Editor -->
     <string name="dimmer_rules_title">Dimm-Regeln</string>
@@ -449,7 +449,7 @@
     <!-- Tageslicht (#140): Ort, Sonnenzeiten, "nur solange es dunkel ist" -->
     <string name="tageslicht_ort_titel">Ort für Tageslicht</string>
     <string name="tageslicht_ort_karte_text">Damit Dimmer und Hue wissen, wann es bei dir hell wird</string>
-    <string name="tageslicht_ort_intro">Dimmer und Hue-Regeln können sich danach richten, ob es draußen schon hell ist. Dafür braucht die App deinen ungefähren Ort. Er bleibt auf dem Gerät, die Sonnenzeiten rechnet die App selbst aus.</string>
+    <string name="tageslicht_ort_intro">Dimmer und Hue-Regeln können sich danach richten, ob es morgens beim Wecken draußen schon hell ist. Dafür braucht die App deinen ungefähren Ort. Er bleibt auf dem Gerät, die Sonnenzeiten rechnet die App selbst aus.</string>
     <string name="tageslicht_aktuell">Wird gerade genutzt</string>
     <string name="tageslicht_aktiv">genutzt</string>
     <string name="tageslicht_quelle_standort">Standort, auf etwa 10 km gerundet</string>
@@ -476,26 +476,35 @@
     <string name="tageslicht_stufe_zeitzone_unbekannt">Für die Zeitzone %1$s kennt die App keinen Ort.</string>
     <string name="tageslicht_genauer_oben">Wird nicht genutzt, weil oben ein genauerer Ort eingestellt ist.</string>
     <string name="tageslicht_ort_einstellen">Ort einstellen</string>
+    <string name="tageslicht_standort_laeuft">Standort wird ermittelt …</string>
+    <string name="tageslicht_standort_abgelehnt">Ohne Standort-Berechtigung geht es auch: nutze die Postleitzahl.</string>
+    <string name="tageslicht_standort_fehlgeschlagen">Der Standort ließ sich nicht ermitteln. Versuch es später noch einmal oder nutze die Postleitzahl.</string>
+    <string name="tageslicht_standort_abgeschaltet">Die Standortermittlung ist in den Android-Einstellungen ausgeschaltet. Schalte sie dort ein oder nutze die Postleitzahl.</string>
+    <string name="tageslicht_plz_quelle">Postleitzahl-Orte: GeoNames, CC BY 4.0</string>
 
     <string name="tageslicht_dimmer_titel">Nachlauf nur, solange es dunkel ist</string>
     <string name="tageslicht_wahl_immer">Immer</string>
     <string name="tageslicht_dimmer_bis_daemmerung">Bis Dämmerung</string>
     <string name="tageslicht_dimmer_bis_sonnenaufgang">Bis Sonnenaufgang</string>
-    <string name="tageslicht_dimmer_hinweis">Wird es nach dem Wecken hell, endet der Nachlauf dort. Wird es schon vor dem Wecken hell, endet das Fenster an der Weckzeit. Vor dem Wecken bleibt es immer gedimmt.</string>
+    <string name="tageslicht_dimmer_hinweis">Maßgeblich ist der Morgen des Wecktags. Wird es nach dem Wecken hell, endet der Nachlauf dort. Wird es schon vor dem Wecken hell – oder liegt der Wecker am Abend –, endet das Fenster an der Weckzeit. Vor dem Wecken bleibt es immer gedimmt.</string>
     <string name="tageslicht_dimmer_beispiel">Nächster Wecker %1$s → gedimmt bis %2$s</string>
-    <string name="tageslicht_dimmer_grund_nachlauf">volle %1$d Minuten, %2$s ist erst um %3$s</string>
+    <plurals name="tageslicht_dimmer_grund_nachlauf">
+        <item quantity="one">volle %1$d Minute, %2$s ist erst um %3$s</item>
+        <item quantity="other">volle %1$d Minuten, %2$s ist erst um %3$s</item>
+    </plurals>
     <string name="tageslicht_dimmer_grund_hell">%1$s um %2$s</string>
     <string name="tageslicht_dimmer_grund_weckzeit">an der Weckzeit, %1$s war schon um %2$s</string>
     <string name="tageslicht_ohne_ort_dimmer">Kein Ort eingestellt – der Nachlauf gilt immer.</string>
     <string name="tageslicht_vorschau_endet">endet bei %1$s %2$s</string>
 
     <string name="tageslicht_hue_titel">Tageslicht</string>
-    <string name="tageslicht_hue_intro">Regel nur ausführen, wenn es beim Wecken draußen noch dunkel ist:</string>
+    <string name="tageslicht_hue_intro">Regel nur ausführen, wenn es beim Wecken morgens draußen noch dunkel ist:</string>
     <string name="tageslicht_hue_immer_text">Unabhängig davon, ob es draußen hell ist</string>
     <string name="tageslicht_hue_vor_daemmerung">Nur vor der Dämmerung</string>
-    <string name="tageslicht_hue_vor_daemmerung_text">Weckzeit liegt vor der bürgerlichen Dämmerung – bis dahin kann man draußen ohne Licht kaum lesen</string>
+    <string name="tageslicht_hue_vor_daemmerung_text">Weckzeit liegt vor der bürgerlichen Dämmerung des Wecktags – bis dahin kann man draußen ohne Licht kaum lesen</string>
     <string name="tageslicht_hue_vor_sonnenaufgang">Nur vor Sonnenaufgang</string>
-    <string name="tageslicht_hue_vor_sonnenaufgang_text">Weckzeit liegt vor dem Sonnenaufgang</string>
+    <string name="tageslicht_hue_vor_sonnenaufgang_text">Weckzeit liegt vor dem Sonnenaufgang des Wecktags</string>
+    <string name="tageslicht_hue_hinweis_abend">Verglichen wird mit dem Morgen des Wecktags. Ein Wecker am Abend, etwa vor einem Nachtdienst, liegt danach – die Regel entfällt dann, auch wenn es draußen dunkel ist.</string>
     <string name="tageslicht_hue_ort">Ort: %1$s</string>
     <string name="tageslicht_hue_ort_aendern">Ändern</string>
     <string name="tageslicht_ohne_ort_hue">Kein Ort eingestellt – die Regel läuft immer.</string>

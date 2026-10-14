@@ -1,10 +1,30 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.HellAb
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
+
+/**
+ * Woran ein Fenster-Ende durch Tageslicht gekuerzt wurde (#140) - fuer die Vorschau, damit dort
+ * steht, WARUM das Fenster frueher endet als "Weckzeit + Nachlauf".
+ *
+ * [hellZeitpunkt] ist der Zeitpunkt von Daemmerung/Sonnenaufgang des WECKTAGS. [vorWeckzeit] =
+ * es war schon vor dem Wecken hell; das Fenster endet dann an der Weckzeit (nie davor).
+ */
+data class TageslichtEnde(val hellAb: HellAb, val hellZeitpunkt: Long, val vorWeckzeit: Boolean)
+
+/**
+ * Ab wann es am Kalendertag als hell gilt (Epoch-ms), `null` = keine Einschraenkung. In der
+ * Laufzeit `TageslichtStand::hellZeitpunkt`; als Lambda hereingereicht, damit der Resolver ohne
+ * Android und ohne Speicherzugriff bleibt.
+ */
+typealias HellZeitpunkt = (LocalDate, HellAb) -> Long?
+
+/** Kein Tageslicht-Wissen: jeder Nachlauf gilt voll - der Default aller bisherigen Aufrufer. */
+val OHNE_TAGESLICHT: HellZeitpunkt = { _, _ -> null }
 
 /**
  * Reine Zeitmathematik der Dimm-Fenster – bewusst OHNE Android-Abhängigkeiten (Context/AlarmManager),
@@ -48,8 +68,23 @@ object DimWindowResolver {
     /** Obergrenze für [DimWindow.weckzeitNachlaufMinuten]; der Editor klemmt auf denselben Wert. */
     const val NACHLAUF_MAX_MINUTEN = 120
 
-    /** Ein aufgelöstes Dimm-Fenster samt Intensität der Regel, aus der es stammt. */
-    data class DimSpan(val range: LongRange, val strength: Int, val warmth: Int)
+    /**
+     * Ein aufgelöstes Dimm-Fenster samt Intensität der Regel, aus der es stammt. [tageslicht] ist
+     * gesetzt, wenn das Ende durch Tageslicht gekuerzt wurde (#140) - reine Auskunft fuer die
+     * Vorschau, KEIN Teil der Fenster-Identitaet ([isOverrideStale] liest es nicht).
+     */
+    data class DimSpan(
+        val range: LongRange,
+        val strength: Int,
+        val warmth: Int,
+        val tageslicht: TageslichtEnde? = null
+    )
+
+    /** Spanne samt Kuerzungs-Grund - intern, damit die oeffentlichen Aufloeser bei `LongRange?` bleiben. */
+    private data class Aufgeloest(val range: LongRange, val tageslicht: TageslichtEnde?)
+
+    /** Ende eines Fensters samt Kuerzungs-Grund ([nachlaufEnde]). */
+    internal data class Ende(val zeit: Long, val tageslicht: TageslichtEnde?)
 
     /**
      * Fenster eines Schicht-Tags. [alarmEpoch] = Weckzeit, [shiftEndEpoch] = Schichtende
@@ -61,8 +96,19 @@ object DimWindowResolver {
         alarmEpoch: Long,
         shiftEndEpoch: Long,
         zone: ZoneId,
-        weckzeiten: List<Long> = emptyList()
-    ): LongRange? {
+        weckzeiten: List<Long> = emptyList(),
+        hellZeitpunkt: HellZeitpunkt = OHNE_TAGESLICHT
+    ): LongRange? = loeseSchichtFenster(w, alarmEpoch, shiftEndEpoch, zone, weckzeiten, hellZeitpunkt)?.range
+
+    private fun loeseSchichtFenster(
+        w: DimWindow,
+        alarmEpoch: Long,
+        shiftEndEpoch: Long,
+        zone: ZoneId,
+        weckzeiten: List<Long>,
+        hellZeitpunkt: HellZeitpunkt
+    ): Aufgeloest? {
+        var grund: TageslichtEnde? = null
         val start = when (w.startAnchor) {
             DimAnchor.ALARM -> alarmEpoch + w.startOffsetMinutes * MIN_MS
             // ALARM_SONST_CLOCK ist kein START-Anker (siehe DimAnchor-KDoc) - am Start verhaelt er
@@ -82,7 +128,9 @@ object DimWindowResolver {
                 shiftEndEpoch + w.endOffsetMinutes * MIN_MS
             }
             DimAnchor.ALARM_SONST_CLOCK ->
-                endeAnWeckzeitSonstUhrzeit(start, w.endClockMinutes, zone, weckzeiten, w.weckzeitNachlaufMinuten)
+                endeAnWeckzeitSonstUhrzeit(
+                    start, w.endClockMinutes, zone, weckzeiten, w.weckzeitNachlaufMinuten, w.nachlaufBisHell, hellZeitpunkt
+                ).also { grund = it.tageslicht }.zeit
             DimAnchor.CLOCK -> {
                 // Roll-forward ueber KALENDERTAGE, nicht ueber +24h-Millis: an einem
                 // DST-Umstellungstag ist ein Tag 23 h bzw. 25 h lang, ein fixer Millis-Sprung
@@ -96,7 +144,7 @@ object DimWindowResolver {
                 e
             }
         }
-        return if (end > start) start..end else null
+        return if (end > start) Aufgeloest(start..end, grund) else null
     }
 
     /**
@@ -111,8 +159,17 @@ object DimWindowResolver {
         w: DimWindow,
         date: LocalDate,
         zone: ZoneId,
-        weckzeiten: List<Long> = emptyList()
-    ): LongRange? {
+        weckzeiten: List<Long> = emptyList(),
+        hellZeitpunkt: HellZeitpunkt = OHNE_TAGESLICHT
+    ): LongRange? = loeseNachtFenster(w, date, zone, weckzeiten, hellZeitpunkt)?.range
+
+    private fun loeseNachtFenster(
+        w: DimWindow,
+        date: LocalDate,
+        zone: ZoneId,
+        weckzeiten: List<Long>,
+        hellZeitpunkt: HellZeitpunkt
+    ): Aufgeloest? {
         if (w.startAnchor != DimAnchor.CLOCK) return null
         val start = wallClock(date, w.startClockMinutes, zone)
         return when (w.endAnchor) {
@@ -122,12 +179,14 @@ object DimWindowResolver {
                 val end = wallClock(date, w.endClockMinutes, zone).let {
                     if (it <= start) wallClock(date.plusDays(1), w.endClockMinutes, zone) else it
                 }
-                start..end
+                Aufgeloest(start..end, null)
             }
 
             DimAnchor.ALARM_SONST_CLOCK -> {
-                val end = endeAnWeckzeitSonstUhrzeit(start, w.endClockMinutes, zone, weckzeiten, w.weckzeitNachlaufMinuten)
-                if (end > start) start..end else null
+                val ende = endeAnWeckzeitSonstUhrzeit(
+                    start, w.endClockMinutes, zone, weckzeiten, w.weckzeitNachlaufMinuten, w.nachlaufBisHell, hellZeitpunkt
+                )
+                if (ende.zeit > start) Aufgeloest(start..ende.zeit, ende.tageslicht) else null
             }
 
             else -> null
@@ -152,23 +211,87 @@ object DimWindowResolver {
      * [nachlaufMinuten] ([DimWindow.weckzeitNachlaufMinuten]) verlängert nur ein an einer WECKZEIT
      * gefundenes Ende, und die Schranke deckelt auch das: „bis Weckzeit + X, spätestens um die
      * Uhrzeit". Welche Weckzeit zur Nacht gehört, entscheidet weiterhin allein die Schranke.
+     *
+     * [hellAb] ([DimWindow.nachlaufBisHell]) kuerzt nur diesen Nachlauf - Formel bei
+     * [nachlaufEndeVorSchranke]. Ohne gefundene Weckzeit bleibt alles wie bisher.
      */
     private fun endeAnWeckzeitSonstUhrzeit(
         start: Long,
         endClockMinutes: Int,
         zone: ZoneId,
         weckzeiten: List<Long>,
-        nachlaufMinuten: Int = 0
-    ): Long {
-        var date = dateOf(start, zone)
-        var schranke = wallClock(date, endClockMinutes, zone)
-        while (schranke <= start) {
-            date = date.plusDays(1)
-            schranke = wallClock(date, endClockMinutes, zone)
-        }
-        val weckzeit = weckzeiten.firstOrNull { it > start && it < schranke } ?: return schranke
+        nachlaufMinuten: Int,
+        hellAb: HellAb,
+        hell: HellZeitpunkt
+    ): Ende {
+        val schranke = schrankeNach(start, endClockMinutes, zone)
+        val weckzeit = weckzeiten.firstOrNull { it > start && it < schranke } ?: return Ende(schranke, null)
+        return nachlaufEndeVorSchranke(weckzeit, schranke, nachlaufMinuten, hellAb, zone, hell)
+    }
+
+    /**
+     * Ende eines „Weckzeit, spätestens"-Fensters für eine BEKANNTE [weckzeit] - für die
+     * Beispielzeile im Editor (`DimmerRulesViewModel.nachlaufBeispiel`), damit sie über DIESELBE
+     * Rechnung läuft wie die Wirkung und keine zweite Wahrheit aufmacht.
+     *
+     * Die Schranke ist die erste Uhrzeit [endClockMinutes] ECHT nach der Weckzeit - für eine
+     * Weckzeit, die ein Fenster gefunden hat, ist das genau dessen Schranke (zwischen Fensterstart
+     * und Schranke liegt per Konstruktion keine weitere). Ob das Fenster die Weckzeit überhaupt
+     * fängt, entscheidet der Aufrufer.
+     */
+    internal fun nachlaufEnde(
+        weckzeit: Long,
+        endClockMinutes: Int,
+        nachlaufMinuten: Int,
+        hellAb: HellAb,
+        zone: ZoneId,
+        hell: HellZeitpunkt
+    ): Ende = nachlaufEndeVorSchranke(
+        weckzeit, schrankeNach(weckzeit, endClockMinutes, zone), nachlaufMinuten, hellAb, zone, hell
+    )
+
+    /**
+     * DIE VERBINDLICHE FORMEL (#140, mit dem Eigentuemer abgestimmt):
+     * - `normal = min(weckzeit + nachlauf, schranke)` - wie bisher.
+     * - Kein Nachlauf, [HellAb.IMMER] oder kein Hell-Zeitpunkt (kein Ort, kein solches Ereignis an
+     *   dem Tag) = `normal`. Fail-safe heisst hier: voller Nachlauf, nie "aus".
+     * - Wird es erst bei/nach `normal` hell: `normal`.
+     * - War es schon vor/bei der Weckzeit hell: Ende AN der Weckzeit - NIE davor. Vor dem Wecken
+     *   bleibt gedimmt, gekuerzt wird ausschliesslich der Nachlauf.
+     * - Sonst: Ende am Hell-Zeitpunkt.
+     *
+     * Gefragt wird der Kalendertag der WECKZEIT (ein 00:30-Wecker nach einem 22:00-Start gehoert
+     * zum Folgetag), nicht der des Fensterstarts.
+     *
+     * "Nicht stoeren" ist per Konstruktion unberuehrt: es bekommt `nachlauf = 0`
+     * ([ohneNachlaufFalls]) und kehrt in der ersten Pruefung zurueck. Keinen DND-Zweig ergaenzen.
+     */
+    private fun nachlaufEndeVorSchranke(
+        weckzeit: Long,
+        schranke: Long,
+        nachlaufMinuten: Int,
+        hellAb: HellAb,
+        zone: ZoneId,
+        hell: HellZeitpunkt
+    ): Ende {
         val nachlauf = nachlaufMinuten.coerceIn(0, NACHLAUF_MAX_MINUTEN) * MIN_MS
-        return minOf(weckzeit + nachlauf, schranke)
+        val normal = minOf(weckzeit + nachlauf, schranke)
+        if (nachlauf == 0L || hellAb == HellAb.IMMER) return Ende(normal, null)
+        val h = hell(dateOf(weckzeit, zone), hellAb) ?: return Ende(normal, null)
+        if (h >= normal) return Ende(normal, null)
+        if (h <= weckzeit) return Ende(weckzeit, TageslichtEnde(hellAb, h, vorWeckzeit = true))
+        return Ende(h, TageslichtEnde(hellAb, h, vorWeckzeit = false))
+    }
+
+    /** Erste Uhrzeit [clockMinutes] ECHT nach [nach] - ueber Kalendertage gerollt, nie ueber 24-h-Millis. */
+    private fun schrankeNach(nach: Long, clockMinutes: Int, zone: ZoneId): Long {
+        var date = dateOf(nach, zone)
+        var schranke = wallClock(date, clockMinutes, zone)
+        while (schranke <= nach) {
+            date = date.plusDays(1)
+            schranke = wallClock(date, clockMinutes, zone)
+        }
+        return schranke
     }
 
     /**
@@ -241,6 +364,7 @@ object DimWindowResolver {
         ruleForFreeDay: () -> DimRule?,
         weckzeiten: List<Long> = emptyList(),
         mitWeckzeitNachlauf: Boolean = true,
+        hellZeitpunkt: HellZeitpunkt = OHNE_TAGESLICHT,
     ): List<DimSpan> {
         val byDate = slotsByDate(alarms, zone)
         // Aufsteigend sortiert, weil [endeAnWeckzeitSonstUhrzeit] die FRUEHESTE passende Weckzeit
@@ -258,8 +382,8 @@ object DimWindowResolver {
                 // Freier Tag - unveraendert: FREI schlaegt UNIVERSAL, sonst nichts.
                 val freeRule = ruleForFreeDay() ?: continue
                 for (w in freeRule.windows) {
-                    resolveWindowForDate(ohneNachlaufFalls(w, mitWeckzeitNachlauf), date, null, zone, sortierteWeckzeiten)
-                        ?.let { out += DimSpan(it, freeRule.strength, freeRule.warmth) }
+                    resolveWindowForDate(ohneNachlaufFalls(w, mitWeckzeitNachlauf), date, null, zone, sortierteWeckzeiten, hellZeitpunkt)
+                        ?.let { out += DimSpan(it.range, freeRule.strength, freeRule.warmth, it.tageslicht) }
                 }
                 continue
             }
@@ -284,8 +408,8 @@ object DimWindowResolver {
             val position = blockpositionFuerTag(date, wahl.anker.shiftName, byDate)
             for (w in wahl.rule.windows) {
                 if (position !in w.blockPositionen) continue
-                resolveWindowForDate(ohneNachlaufFalls(w, mitWeckzeitNachlauf), date, wahl.anker, zone, sortierteWeckzeiten)
-                    ?.let { out += DimSpan(it, wahl.rule.strength, wahl.rule.warmth) }
+                resolveWindowForDate(ohneNachlaufFalls(w, mitWeckzeitNachlauf), date, wahl.anker, zone, sortierteWeckzeiten, hellZeitpunkt)
+                    ?.let { out += DimSpan(it.range, wahl.rule.strength, wahl.rule.warmth, it.tageslicht) }
             }
         }
         if (konflikte.isNotEmpty()) {
@@ -414,8 +538,16 @@ object DimWindowResolver {
     /** Wendet das Heller/Dunkler-Delta der Korrektur-Notification an - wirkt NUR auf strength, geklemmt auf [0, max]. */
     fun applyStrengthDelta(base: Int, delta: Int, max: Int): Int = (base + delta).coerceIn(0, max)
 
-    /** Ein zusammenhaengender, nicht ueberlappender Abschnitt der resultierenden Dimm-Vorschau. */
-    data class ResolvedInterval(val range: LongRange, val strength: Int, val warmth: Int)
+    /**
+     * Ein zusammenhaengender, nicht ueberlappender Abschnitt der resultierenden Dimm-Vorschau.
+     * [tageslicht] = dieser Abschnitt endet, weil es hell wird (siehe [mergeToTimeline]).
+     */
+    data class ResolvedInterval(
+        val range: LongRange,
+        val strength: Int,
+        val warmth: Int,
+        val tageslicht: TageslichtEnde? = null
+    )
 
     /**
      * Fasst (moeglicherweise ueberlappende) Regel-Spannen zu einer chronologischen, nicht
@@ -423,6 +555,10 @@ object DimWindowResolver {
      * Ueberlappung gewinnt an jeder Stelle dieselbe "dunkelste zuerst"-Regel wie [activeSpan], nur
      * ueber die Zeit hinweg statt fuer einen einzelnen Zeitpunkt. Reine Vorschau-Funktion, ohne
      * Seiteneffekt auf den echten Scheduler.
+     *
+     * Der Tageslicht-Grund einer Spanne wandert nur auf den Abschnitt, der an IHREM Ende endet -
+     * ein frueherer Abschnitt derselben Spanne (vor einer staerkeren Ueberlappung) endet nicht
+     * wegen des Sonnenaufgangs. Verschmelzen zwei Nachbarn, zaehlt der Grund des spaeteren.
      */
     fun mergeToTimeline(spans: List<DimSpan>): List<ResolvedInterval> {
         if (spans.isEmpty()) return emptyList()
@@ -433,11 +569,12 @@ object DimWindowResolver {
             val segEnd = boundaries[i + 1]
             if (segStart >= segEnd) continue
             val active = activeSpan(spans, segStart + (segEnd - segStart) / 2) ?: continue
+            val grund = active.tageslicht?.takeIf { segEnd == active.range.last }
             val last = out.lastOrNull()
             if (last != null && last.strength == active.strength && last.warmth == active.warmth && last.range.last == segStart) {
-                out[out.lastIndex] = ResolvedInterval(last.range.first..segEnd, active.strength, active.warmth)
+                out[out.lastIndex] = ResolvedInterval(last.range.first..segEnd, active.strength, active.warmth, grund)
             } else {
-                out += ResolvedInterval(segStart..segEnd, active.strength, active.warmth)
+                out += ResolvedInterval(segStart..segEnd, active.strength, active.warmth, grund)
             }
         }
         return out
@@ -507,14 +644,15 @@ object DimWindowResolver {
         date: LocalDate,
         alarm: AlarmSlot?,
         zone: ZoneId,
-        weckzeiten: List<Long>
-    ): LongRange? =
+        weckzeiten: List<Long>,
+        hellZeitpunkt: HellZeitpunkt
+    ): Aufgeloest? =
         if (w.startAnchor == DimAnchor.CLOCK &&
             (w.endAnchor == DimAnchor.CLOCK || w.endAnchor == DimAnchor.ALARM_SONST_CLOCK)
         ) {
-            resolveFreeWindow(w, date, zone, weckzeiten)
+            loeseNachtFenster(w, date, zone, weckzeiten, hellZeitpunkt)
         } else if (alarm != null) {
-            resolveShiftWindow(w, alarm.triggerTime, alarm.shiftEndTime, zone, weckzeiten)
+            loeseSchichtFenster(w, alarm.triggerTime, alarm.shiftEndTime, zone, weckzeiten, hellZeitpunkt)
         } else {
             null
         }

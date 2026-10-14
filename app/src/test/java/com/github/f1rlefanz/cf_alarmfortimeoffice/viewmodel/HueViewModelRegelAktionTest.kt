@@ -8,6 +8,8 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.scheduling.HueSmartSchedul
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.IHueBridgeUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.IHueLightUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.IHueRuleUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmInfo
+import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -98,7 +100,11 @@ class HueViewModelRegelAktionTest {
             hueLightUseCase = mock<IHueLightUseCase>(),
             hueRuleUseCase = ruleUseCase,
             hueBridgeConnectionManager = connectionManager,
-            hueSmartScheduler = scheduler
+            hueSmartScheduler = scheduler,
+            // Unbestueckt lieferte der Mock fuer den Flow null - der Konstruktor braucht ihn.
+            alarmUseCase = mock<IAlarmUseCase> {
+                on { activeAlarms } doReturn MutableStateFlow(emptyList<AlarmInfo>())
+            }
         )
         return Fixture(viewModel, ruleUseCase, scheduler)
     }

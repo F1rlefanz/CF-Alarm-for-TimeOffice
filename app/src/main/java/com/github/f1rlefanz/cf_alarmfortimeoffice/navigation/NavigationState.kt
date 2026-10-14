@@ -31,10 +31,15 @@ sealed class NavigationState {
     // ueberspringt die Liste beim Zurueckgehen. Ausgewertet wird der Flag an genau EINER Stelle,
     // NavigationViewModel.navigateBackFrom() - System-Zurueck (MainScreen-BackHandler),
     // Zurueck-Pfeil und Speichern laufen alle darueber.
+    //
+    // sitzung (#140): Schluessel des SaveableStateProvider in MainScreen. Jedes frische Oeffnen
+    // bekommt vom NavigationViewModel eine neue (frisches Formular); der Umweg ueber
+    // OrtFuerTageslicht kehrt mit DERSELBEN zurueck (Eingabe bleibt). Siehe editorFormularSchluessel.
     data class HueRuleConfig(
         val ruleId: String? = null,
         val returnToTab: MainTab = MainTab.HUE,
-        val cameFromSettingsList: Boolean = false
+        val cameFromSettingsList: Boolean = false,
+        val sitzung: Long = 0
     ) : NavigationState()
     data class HueSettings(val returnToTab: MainTab = MainTab.HUE) : NavigationState()
 
@@ -42,15 +47,49 @@ sealed class NavigationState {
     data class DimmerSettings(val returnToTab: MainTab = MainTab.DIMMER) : NavigationState()
     // Gleiches Muster wie HueRuleConfig.cameFromSettingsList - aktuell gibt es nur den Pfad ueber
     // DimmerSettingsScreen, deshalb Default true, aber explizit gesetzt an der einzigen Aufrufstelle.
+    // sitzung: wie bei HueRuleConfig.
     data class DimmerRuleConfig(
         val ruleId: String? = null,
         val returnToTab: MainTab = MainTab.DIMMER,
-        val cameFromSettingsList: Boolean = true
+        val cameFromSettingsList: Boolean = true,
+        val sitzung: Long = 0
     ) : NavigationState()
     data class DimmerPreview(val returnToTab: MainTab = MainTab.DIMMER) : NavigationState()
 
     // DND-Screen (kein eigener Bottom-Tab, erreichbar ueber Settings)
     data class DndSettings(val returnToTab: MainTab = MainTab.SETTINGS) : NavigationState()
+
+    /** Ort fuer Tageslicht - drei Einstiege (Einstellungen, Dimm-Fenster-Editor, Hue-Regel-Editor).
+     *  Der Rueckweg traegt den GENAUEN Herkunftszustand statt eines dritten Booleans (siehe
+     *  cameFromSettingsList): aus einem Editor fuehrt Zurueck in DENSELBEN Editor, samt
+     *  `sitzung` - nur so findet MainScreen dessen ungespeichertes Formular wieder. */
+    data class OrtFuerTageslicht(
+        val zurueckZu: NavigationState = MainContent(MainTab.SETTINGS)
+    ) : NavigationState()
+}
+
+/**
+ * Schluessel, unter dem MainScreen das Formular eines Regel-Editors im SaveableStateHolder
+ * ablegt - oder `null`, wenn [this] kein Editor ist. Der Ort-Bildschirm traegt den Schluessel
+ * des Editors, aus dem er geoeffnet wurde: solange der Nutzer dort ist, gehoert das Formular
+ * noch zur laufenden Bearbeitung.
+ */
+fun NavigationState.editorFormularSchluessel(): String? = when (this) {
+    is NavigationState.HueRuleConfig -> "hue-$sitzung"
+    is NavigationState.DimmerRuleConfig -> "dim-$sitzung"
+    is NavigationState.OrtFuerTageslicht -> zurueckZu.editorFormularSchluessel()
+    else -> null
+}
+
+/**
+ * Der Formular-Schluessel, den der Wechsel [vorher] -> [jetzt] endgueltig verwaist, oder `null`.
+ * Verwaist ist er, sobald der neue Zustand nicht mehr zu derselben Bearbeitung gehoert: Editor
+ * -> Liste/Tab, Ort -> irgendwo anders als zurueck in seinen Editor, oder ein frisch geoeffneter
+ * Editor (neue sitzung). Der Umweg Editor -> Ort -> Editor behaelt ihn.
+ */
+fun verworfenesEditorFormular(vorher: NavigationState?, jetzt: NavigationState): String? {
+    val alt = vorher?.editorFormularSchluessel() ?: return null
+    return if (alt == jetzt.editorFormularSchluessel()) null else alt
 }
 
 enum class MainTab {
@@ -96,6 +135,9 @@ sealed class NavigationAction {
 
     // DND Navigation Action
     data class NavigateToDndSettings(val fromTab: MainTab = MainTab.SETTINGS) : NavigationAction()
+
+    // Ort fuer Tageslicht (#140): zurueckZu ist der genaue Herkunftszustand
+    data class NavigateToOrtFuerTageslicht(val zurueckZu: NavigationState) : NavigationAction()
 
     object NavigateBackToMain : NavigationAction()
     data class NavigateToMainWithTab(val tab: MainTab) : NavigationAction()

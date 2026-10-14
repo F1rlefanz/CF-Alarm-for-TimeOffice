@@ -12,9 +12,15 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.TargetR
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.RuleValidationResult
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.util.HueConstants
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftMatch
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.HellAb
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.TageslichtQuelle
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.TageslichtStand
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
+import kotlinx.coroutines.CancellationException
+import java.time.Instant
 import java.time.LocalTime
+import java.time.format.DateTimeFormatter
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -27,15 +33,22 @@ import kotlin.time.Duration.Companion.seconds
 @Singleton
 class HueRuleUseCase @Inject constructor(
     private val configRepository: IHueConfigRepository,
-    private val lightUseCase: IHueLightUseCaseAdvanced
+    private val lightUseCase: IHueLightUseCaseAdvanced,
+    /**
+     * Ort und Zone fuer die Tageslicht-Bedingung (#140). Hilt bindet die echte Quelle (das
+     * Tageslicht-Repository, mit Entsperr-Gate VOR jedem Lesen); der Kotlin-Default haelt die
+     * Tests, die diesen UseCase direkt bauen, ohne Ort - dann laeuft jede Regel.
+     */
+    private val tageslicht: TageslichtQuelle = TageslichtQuelle.OHNE
 ) : IHueRuleUseCase {
 
     /**
      * Die Sonnenaufgangs-Ausfuehrung liegt in einer eigenen Klasse, wird hier aber INTERN
-     * erzeugt: kein Hilt-Binding, kein zusaetzlicher Konstruktor-Parameter. Es gibt genau einen
-     * Besitzer der Rampe, und das ist dieser UseCase.
+     * erzeugt: kein Hilt-Binding. Es gibt genau einen Besitzer der Rampe, und das ist dieser
+     * UseCase. Den Tageslicht-Stand holt sie ueber [tageslichtStand] - denselben, nie werfenden
+     * Weg wie alle anderen Aufrufer.
      */
-    private val sunriseExecutor = HueSunriseExecutor(lightUseCase) { getAllRules() }
+    private val sunriseExecutor = HueSunriseExecutor(lightUseCase, ladeStand = { tageslichtStand() }) { getAllRules() }
 
     companion object {
         private const val MAX_RULES_PER_SHIFT = 10
@@ -165,9 +178,13 @@ class HueRuleUseCase @Inject constructor(
         }
     }
     
-    override suspend fun findApplicableRules(shift: ShiftMatch, currentTime: LocalTime): Result<List<HueSchedule>> {
+    override suspend fun findApplicableRules(
+        shift: ShiftMatch,
+        currentTime: LocalTime,
+        weckzeit: Long?
+    ): Result<List<HueSchedule>> {
         Logger.d(LogTags.HUE_USECASE, "Finding applicable rules for shift: ${shift.shiftDefinition.name} at ${currentTime}")
-        
+
         return try {
             val allRules = getAllRules().getOrElse { return Result.failure(it) }
 
@@ -181,7 +198,16 @@ class HueRuleUseCase @Inject constructor(
             }
 
             Logger.i(LogTags.HUE_USECASE, "Found ${matchingRules.size} rules matching shift '$shiftName'")
-            Result.success(matchingRules)
+
+            // TAGESLICHT (#140): erst NACH der Schicht-Auswahl, und der Ort wird nur gelesen, wenn
+            // eine passende Regel ueberhaupt eine Schwelle traegt. Ohne Weckzeit kein Filter -
+            // im Zweifel Licht. Weil der Weckzeit-Pfad dieselbe Liste an Finalisieren und
+            // autoOffTargetsOf() weitergibt, entfaellt eine Regel dort ganz oder gar nicht.
+            if (weckzeit == null || matchingRules.none { it.hellAb != HellAb.IMMER }) {
+                return Result.success(matchingRules)
+            }
+            val stand = tageslichtStand()
+            Result.success(matchingRules.filter { it.laeuftBeiTageslichtMitLog(weckzeit, stand) })
             
         } catch (e: Exception) {
             Logger.e(LogTags.HUE_USECASE, "Failed to find applicable rules", e)
@@ -189,11 +215,15 @@ class HueRuleUseCase @Inject constructor(
         }
     }
     
-    override suspend fun executeRulesForAlarm(shift: ShiftMatch, alarmTime: LocalTime): Result<RuleExecutionResult> {
+    override suspend fun executeRulesForAlarm(
+        shift: ShiftMatch,
+        alarmTime: LocalTime,
+        weckzeit: Long?
+    ): Result<RuleExecutionResult> {
         Logger.i(LogTags.HUE_USECASE, "Executing rules for alarm at ${alarmTime}")
-        
+
         return try {
-            val applicableRulesResult = findApplicableRules(shift, alarmTime)
+            val applicableRulesResult = findApplicableRules(shift, alarmTime, weckzeit)
             
             if (applicableRulesResult.isFailure) {
                 return Result.failure(applicableRulesResult.exceptionOrNull() ?: Exception("Failed to find rules"))
@@ -302,11 +332,41 @@ class HueRuleUseCase @Inject constructor(
         }
     }
 
-    override suspend fun executeSunrisePreAlarm(shiftName: String, minutenBisWecker: Int?): Result<RuleExecutionResult> =
-        sunriseExecutor.executeSunrisePreAlarm(shiftName, minutenBisWecker)
+    /**
+     * Der eine, nie werfende Weg zum [TageslichtStand] fuer alle Hue-Pfade (#140). Die Quelle
+     * sagt "nie werfend" zu; diese Huelle haelt das auch dann, wenn eine Implementierung es
+     * bricht - im Weckpfad darf hier nichts hochkommen. Fehler = kein Ort = jede Regel laeuft.
+     * Der Ort selbst steht nur im Debug-Log, nie im Release-Log.
+     */
+    override suspend fun tageslichtStand(): TageslichtStand {
+        val stand = try {
+            tageslicht.stand()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Logger.w(LogTags.HUE_USECASE, "Tageslicht-Ort nicht lesbar - Regeln laufen ohne Einschraenkung", e)
+            return TageslichtStand.ohneOrt()
+        }
+        Logger.d(
+            LogTags.HUE_USECASE,
+            "Tageslicht-Ort: ${stand.ort?.let { "${it.quelle} ${it.bezeichnung ?: ""} (${it.breite}, ${it.laenge})" } ?: "keiner"}, Zone ${stand.zone}"
+        )
+        return stand
+    }
 
-    override fun getPreAlarmSunriseLeadMinutes(rules: List<HueSchedule>, shiftName: String): Int? =
-        sunriseExecutor.getPreAlarmSunriseLeadMinutes(rules, shiftName)
+    override suspend fun executeSunrisePreAlarm(
+        shiftName: String,
+        minutenBisWecker: Int?,
+        weckzeit: Long?
+    ): Result<RuleExecutionResult> =
+        sunriseExecutor.executeSunrisePreAlarm(shiftName, minutenBisWecker, weckzeit)
+
+    override fun getPreAlarmSunriseLeadMinutes(
+        rules: List<HueSchedule>,
+        shiftName: String,
+        weckzeit: Long?,
+        stand: TageslichtStand?
+    ): Int? = sunriseExecutor.getPreAlarmSunriseLeadMinutes(rules, shiftName, weckzeit, stand)
 
     /**
      * Converts a HueSchedule rule to executable LightAction list
@@ -791,3 +851,45 @@ class HueRuleUseCase @Inject constructor(
 internal fun HueSchedule.passtAufSchicht(shiftName: String): Boolean =
     shiftPattern.equals(shiftName, ignoreCase = true) ||
         shiftPattern.equals(HueRuleUseCase.UNIVERSAL_SHIFT_PATTERN, ignoreCase = true)
+
+/**
+ * Laeuft die Regel bei Weckzeit [weckzeit] (Epoch-ms)? Nur wenn die WECKZEIT vor dem gewaehlten
+ * Hell-Zeitpunkt des WECKTAGS liegt (#140) - genau dort, nicht erst eine Minute spaeter: wer ab
+ * Sonnenaufgang geweckt wird, steht im Hellen.
+ *
+ * Kein Ort, kein Ereignis an diesem Tag (Polarnacht/-tag), [HellAb.IMMER] oder ein Rechenfehler
+ * -> true (fail-safe: Licht). Gilt auch fuer den Sonnenaufgangs-Modus: die Rampe laeuft ganz oder
+ * gar nicht, weil Vorlauf, Vorab-Rampe und Finalisieren zur Weckzeit dieselbe Weckzeit pruefen.
+ *
+ * ALLE Hue-Pfade, die eine Regel ueber [passtAufSchicht] auswaehlen und dann SCHALTEN, muessen
+ * diese Bedingung ebenfalls anwenden (Weckzeit-Pfad, Vorab-Rampe, Planung des Vorlaufs). Nur die
+ * Statuszeile (`SchichtFolgen`) zaehlt ohne sie - sie kennt keinen Wecktag.
+ */
+internal fun HueSchedule.laeuftBeiTageslicht(weckzeit: Long, stand: TageslichtStand): Boolean =
+    hellZeitpunktFuer(weckzeit, stand)?.let { weckzeit < it } ?: true
+
+/** Hell-Zeitpunkt des Wecktags fuer diese Regel, `null` = keine Einschraenkung. Wirft nie. */
+private fun HueSchedule.hellZeitpunktFuer(weckzeit: Long, stand: TageslichtStand): Long? {
+    if (hellAb == HellAb.IMMER) return null
+    return try {
+        val wecktag = Instant.ofEpochMilli(weckzeit).atZone(stand.zone).toLocalDate()
+        stand.hellZeitpunkt(wecktag, hellAb)
+    } catch (e: Exception) {
+        Logger.w(LogTags.HUE_USECASE, "Hell-Zeitpunkt fuer Regel $id nicht berechenbar - Regel laeuft", e)
+        null
+    }
+}
+
+/**
+ * [laeuftBeiTageslicht] plus die INFO-Zeile, wenn die Regel entfaellt - fuer die Pfade, die
+ * tatsaechlich schalten wuerden. Im Release-Log stehen nur Regel, Schwelle und Uhrzeit, nie der
+ * Ort (der steht allein im Debug-Log, siehe [HueRuleUseCase.tageslichtStand]).
+ */
+internal fun HueSchedule.laeuftBeiTageslichtMitLog(weckzeit: Long, stand: TageslichtStand): Boolean {
+    val hell = hellZeitpunktFuer(weckzeit, stand) ?: return true
+    if (weckzeit < hell) return true
+    val uhrzeit = Instant.ofEpochMilli(hell).atZone(stand.zone).toLocalTime()
+        .format(DateTimeFormatter.ofPattern("HH:mm"))
+    Logger.i(LogTags.HUE_USECASE, "Regel $id entfaellt: Weckzeit nach $hellAb ($uhrzeit)")
+    return false
+}

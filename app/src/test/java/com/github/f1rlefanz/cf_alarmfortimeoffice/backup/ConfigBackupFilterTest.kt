@@ -173,6 +173,23 @@ class ConfigBackupFilterTest {
     }
 
     /**
+     * Ort fuer Tageslicht (#140): Land und PLZ hat der Nutzer eingetippt - sie reisen mit. Der
+     * uebernommene STANDORT beschreibt dieses Geraet; er liegt in einer eigenen Datei, die der
+     * Export nie liest, und ist hier trotzdem benannt, damit ein kuenftiges Zusammenlegen mit dem
+     * settings-Store nicht still ein Leck oeffnet.
+     */
+    @Test
+    fun `Tageslicht - Land und PLZ reisen mit, der Standort nie`() {
+        listOf("tageslicht_land", "tageslicht_plz").forEach { key ->
+            assertTrue("'$key' ist Nutzereingabe und MUSS exportiert werden", ConfigBackupFilter.isExportable(key))
+        }
+        listOf("breite_zehntel", "laenge_zehntel", "uebernommen_am").forEach { key ->
+            assertFalse("'$key' ist ein Geraete-Standort und darf nicht exportiert werden", ConfigBackupFilter.isExportable(key))
+            assertEquals("Geraetebezug oder Zugangsdaten", ConfigBackupFilter.exclusionReason(key))
+        }
+    }
+
+    /**
      * Die Richtung ist Absicht: unbekannte Schluessel werden EXPORTIERT. Eine neue Einstellung ist
      * damit automatisch dabei, statt beim naechsten Feature stillschweigend zu fehlen. Wer eine neue
      * LAUFZEIT-Groesse einfuehrt, muss sie in den Filter eintragen - dieser Test haelt die

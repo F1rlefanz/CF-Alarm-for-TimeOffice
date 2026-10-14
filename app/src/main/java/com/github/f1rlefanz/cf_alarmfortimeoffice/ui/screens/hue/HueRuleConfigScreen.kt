@@ -29,6 +29,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.github.f1rlefanz.cf_alarmfortimeoffice.R
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueRuleModus
@@ -44,6 +45,10 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.cards.Sonnenauf
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.cards.RulePreviewCard
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.cards.SceneSelectionCard
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.cards.ShiftPatternCard
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.cards.tageslichtUrteilText
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tageslicht.TageslichtKarte
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.OrtQuelle
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.TageslichtStand
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.HueViewModel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.ShiftViewModel
 
@@ -73,6 +78,8 @@ fun HueRuleConfigScreen(
     shiftViewModel: ShiftViewModel,
     onNavigateBack: () -> Unit,
     onSaveComplete: () -> Unit,
+    // Fuehrt zum Bildschirm "Ort für Tageslicht" (#140).
+    onOrtAendern: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val uiState by hueViewModel.uiState.collectAsStateWithLifecycle()
@@ -128,6 +135,25 @@ fun HueRuleConfigScreen(
     DisposableEffect(Unit) {
         onDispose { hueViewModel.clearEditingRule() }
     }
+
+    // Tageslicht (#140): Ort beim Oeffnen UND bei jedem Fortsetzen neu lesen - er kann sich auf dem
+    // Ort-Bildschirm oder in den Einstellungen geaendert haben. Der Wecker-Bestand wird nur
+    // gelesen, solange dieser Editor ihn abonniert.
+    LifecycleResumeEffect(Unit) {
+        hueViewModel.ladeTageslichtStand()
+        onPauseOrDispose { }
+    }
+    val tageslichtStand by hueViewModel.tageslichtStand.collectAsStateWithLifecycle()
+    val wecker by hueViewModel.weckerFuerTageslicht.collectAsStateWithLifecycle()
+    // tageslichtStand als Schluessel: er wird bei jedem Fortsetzen neu geladen, damit rechnet auch
+    // "jetzt" neu - sonst nennte die Zeile nach langer Pause einen schon verstrichenen Wecker.
+    val naechsteWeckzeit = remember(wecker, form.shiftPattern, tageslichtStand) {
+        hueViewModel.naechsteWeckzeitFuer(form.shiftPattern)
+    }
+    // EINMAL hergeleitet, an Tageslicht-Karte und Zusammenfassung gereicht.
+    val tageslichtZeile = tageslichtUrteil(naechsteWeckzeit, tageslichtStand, form.hellAb)
+        ?.let { tageslichtUrteilText(it) }
+    val ortText = ortBeschreibung(tageslichtStand)
 
     val availableShiftPatterns = remember(shiftState.currentShiftConfig) {
         shiftState.currentShiftConfig?.definitions?.filter { it.isEnabled }?.map { it.name } ?: emptyList()
@@ -231,6 +257,17 @@ fun HueRuleConfigScreen(
                 )
             }
 
+            // Direkt nach der Schicht: die Bedingung gehoert zum "Wann", nicht zum "Was".
+            item {
+                TageslichtKarte(
+                    wahl = form.hellAb,
+                    onWahl = { form = form.copy(hellAb = it) },
+                    ortText = ortText,
+                    naechster = tageslichtZeile,
+                    onOrtAendern = onOrtAendern
+                )
+            }
+
             item {
                 RuleModeCard(
                     modus = form.modus,
@@ -322,6 +359,7 @@ fun HueRuleConfigScreen(
             item {
                 RulePreviewCard(
                     form = form,
+                    tageslichtZeile = tageslichtZeile,
                     onTestRule = { gate(HueRuleConfigNetzAktion.RULE_TEST) }
                 )
             }
@@ -330,5 +368,29 @@ fun HueRuleConfigScreen(
         if (uiState.isLoading) {
             LoadingScreen()
         }
+    }
+}
+
+/**
+ * Welche Ort-Stufe gerade gilt, als kurzer Text fuer die Tageslicht-Karte; `null` = kein Ort (die
+ * Karte zeigt dann "Kein Ort eingestellt – die Regel läuft immer", wie es die Laufzeit auch tut).
+ *
+ * Solange der Stand noch laedt, ein Auslassungszeichen statt `null`: sonst blitzte fuer einen
+ * Moment der rote Kein-Ort-Hinweis auf, der nicht stimmt.
+ *
+ * PLZ-Stufe: [com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.Ort] traegt die Postleitzahl
+ * nicht, nur den Regionsnamen - deshalb "Region München" statt "Postleitzahl 80 · München".
+ */
+@Composable
+private fun ortBeschreibung(stand: TageslichtStand?): String? {
+    if (stand == null) return "…"
+    val ort = stand.ort ?: return null
+    val name = ort.bezeichnung?.takeIf { it.isNotBlank() }
+    return when (ort.quelle) {
+        OrtQuelle.STANDORT -> stringResource(R.string.tageslicht_quelle_standort)
+        OrtQuelle.PLZ -> name?.let { stringResource(R.string.tageslicht_plz_region, it) }
+            ?: stringResource(R.string.tageslicht_plz)
+        OrtQuelle.ZEITZONE -> name?.let { stringResource(R.string.tageslicht_quelle_zeitzone, stand.zone.id, it) }
+            ?: (stringResource(R.string.tageslicht_stufe_zeitzone) + " " + stand.zone.id)
     }
 }

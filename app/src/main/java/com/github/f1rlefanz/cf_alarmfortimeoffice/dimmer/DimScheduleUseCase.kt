@@ -9,6 +9,8 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.GeklingelteWeckzeiten
 import com.github.f1rlefanz.cf_alarmfortimeoffice.freietage.FreieTageStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPausePrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpanStore
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.HellAb
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.TageslichtQuelle
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.ExakteAlarme
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
@@ -18,6 +20,7 @@ import java.time.LocalDate
 import java.time.ZoneId
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlin.coroutines.cancellation.CancellationException
 
 /**
  * Berechnet die Dimm-Zeitfenster aus EINER Quelle und steuert EINEN rollenden, exakten Alarm auf
@@ -42,7 +45,13 @@ class DimScheduleUseCase @Inject constructor(
     private val dimRuleUseCase: DimRuleUseCase,
     private val prefs: DimOverlayPrefs,
     private val correctionNotifier: DimCorrectionNotifier,
-    private val masterPausePrefs: MasterPausePrefs
+    private val masterPausePrefs: MasterPausePrefs,
+    /**
+     * Ort/Zone fuer "Nachlauf nur, solange es dunkel ist" (#140). Gelesen NUR, wenn ein Fenster
+     * das braucht; das Entsperr-Gate sitzt in der Implementierung (`stand()` liest vor der ersten
+     * Entsperrung nichts).
+     */
+    private val tageslicht: TageslichtQuelle
 ) {
     companion object {
         const val ACTION_TICK = "com.github.f1rlefanz.cf_alarmfortimeoffice.DIM_SCHED_TICK"
@@ -465,6 +474,7 @@ class DimScheduleUseCase @Inject constructor(
             .sorted()
 
         if (rules.any { it.enabled }) {
+            val hell = hellZeitpunktFuer(rules, mitWeckzeitNachlauf)
             out += DimWindowResolver.buildRuleSpans(
                 alarms = slots,
                 horizonDays = HORIZON_DAYS,
@@ -474,10 +484,41 @@ class DimScheduleUseCase @Inject constructor(
                 ruleForFreeDay = { dimRuleUseCase.findRuleForFreeDay(rules) },
                 weckzeiten = weckzeiten,
                 mitWeckzeitNachlauf = mitWeckzeitNachlauf,
+                hellZeitpunkt = hell,
             )
         }
 
         return Windows(out, alarmReadFailed = false, anySourceEnabled = true, regelnVorhanden = rules.any { it.enabled })
+    }
+
+    /**
+     * Der Tageslicht-Schnappschuss fuer [DimWindowResolver.buildRuleSpans] - aber NUR, wenn eine
+     * aktivierte Regel ein Fenster hat, dessen Nachlauf am Tageslicht endet (#140). Sonst wird
+     * nichts gelesen: der Tick laeuft auch im Direct-Boot-Prozess, und ein unnoetiger Read ist
+     * dort genau die Flaeche, die wir nicht wollen. Die DND-Sicht (ohne Nachlauf) braucht ihn nie.
+     *
+     * Fail-safe: [TageslichtQuelle.stand] wirft laut Vertrag nicht; falls doch, gilt der volle
+     * Nachlauf (WARN, ohne Ort) - in die Tick-Kette darf hier nichts durchschlagen.
+     */
+    private suspend fun hellZeitpunktFuer(rules: List<DimRule>, mitWeckzeitNachlauf: Boolean): HellZeitpunkt {
+        if (!mitWeckzeitNachlauf) return OHNE_TAGESLICHT
+        val gebraucht = rules.any { r ->
+            r.enabled && r.windows.any { w ->
+                w.endAnchor == DimAnchor.ALARM_SONST_CLOCK &&
+                    w.weckzeitNachlaufMinuten > 0 &&
+                    w.nachlaufBisHell != HellAb.IMMER
+            }
+        }
+        if (!gebraucht) return OHNE_TAGESLICHT
+        val stand = try {
+            tageslicht.stand()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Logger.w(LogTags.DIMMER, "Tageslicht nicht lesbar - Nachlauf gilt voll (${e.javaClass.simpleName})")
+            return OHNE_TAGESLICHT
+        }
+        return stand::hellZeitpunkt
     }
 
     private suspend fun computeNextTransition(now: Long, vorberechnet: Windows? = null): Long? {

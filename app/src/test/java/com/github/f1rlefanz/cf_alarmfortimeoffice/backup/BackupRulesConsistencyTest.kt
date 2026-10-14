@@ -49,12 +49,15 @@ class BackupRulesConsistencyTest {
      * - auth_prefs: Anmeldezustand (login_status ohne Token = unbekannter Zustand)
      * - token_encryption_prefs.xml: das GERAETEGEBUNDENE Tink-Keyset (Anmeldeschleife)
      * - hue_trust_pinning.xml: Bridge-ID-Pin einer bestimmten physischen Bridge
+     * - tageslicht_standort.xml: der auf DIESEM Geraet uebernommene Standort (#140) - ein
+     *   Standort gehoert nicht in die Cloud und nicht auf ein anderes Geraet
      */
     private val mustBeExcluded = listOf(
         "file" to "datastore/token_data_v2_encrypted.preferences_pb",
         "file" to "datastore/auth_prefs.preferences_pb",
         "sharedpref" to "token_encryption_prefs.xml",
-        "sharedpref" to "hue_trust_pinning.xml"
+        "sharedpref" to "hue_trust_pinning.xml",
+        "sharedpref" to "tageslicht_standort.xml"
     )
 
     @Test

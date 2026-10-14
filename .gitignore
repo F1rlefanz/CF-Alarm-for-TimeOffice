@@ -68,6 +68,10 @@ EMERGENCY_SECURITY_BREACH.md
 __pycache__/
 *.pyc
 
+# GeoNames-Rohdaten (#140): Eingabe von tools/tageslicht/baue_plz_tabelle.py. Committet wird nur
+# das erzeugte Asset unter app/src/main/assets/tageslicht/ - die Zips laedt man bei Bedarf neu.
+/tools/tageslicht/*.zip
+
 # Backup and temp directories (lokaler Krempel, nie committen)
 /Logcatexporte/
 /Project*Problems*/

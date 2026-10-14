@@ -7,6 +7,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueSchedule
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.HueRuleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.passtAufSchicht
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.HellAb
 
 /**
  * Was eine Schicht AUSSERHALB des Weckers ausloest - rein lesend, fuer die Statuszeile
@@ -76,8 +77,12 @@ sealed interface LichtStatus {
     /** Keine Bridge eingerichtet - es geht kein Licht an, egal wie viele Regeln es gibt. */
     data object KeineBridge : LichtStatus
 
-    /** [eigene] und [allgemeine] feuern GEMEINSAM; beide 0 heisst "keine". */
-    data class Regeln(val eigene: Int, val allgemeine: Int) : LichtStatus
+    /**
+     * [eigene] und [allgemeine] feuern GEMEINSAM; beide 0 heisst "keine". [nurBeiDunkelheit]
+     * zaehlt, wie viele davon eine Tageslicht-Schwelle tragen (#140) - sie sind MITGEZAEHLT,
+     * nicht abgezogen: ob eine solche Regel an einem Morgen entfaellt, haengt an der Weckzeit.
+     */
+    data class Regeln(val eigene: Int, val allgemeine: Int, val nurBeiDunkelheit: Int = 0) : LichtStatus
 }
 
 /** Die Dienstzeit-Quelle von "Nicht stoeren" aus Sicht EINER Schicht. */
@@ -152,11 +157,21 @@ private fun lichtStatus(
     if (definition.isSilent) return LichtStatus.StilleSchicht
     if (!hueKonfiguriert) return LichtStatus.KeineBridge
     // Dieselbe Auswahl wie `HueRuleUseCase.findApplicableRules`: aktiv UND passtAufSchicht.
+    //
+    // Die Tageslicht-Bedingung (#140, `laeuftBeiTageslicht`) wird hier bewusst NICHT angewendet,
+    // nur GEZAEHLT: sie vergleicht die Weckzeit mit dem Morgen des WECKTAGS, und diese Zeile
+    // beschreibt eine Schichtdefinition, keinen Tag - es gibt keine Weckzeit, mit der man
+    // vergleichen koennte. Ein Filter mit "heute" wuerde je nach Uhrzeit des Hinschauens
+    // wechseln und die Regel als "keine" ausweisen, obwohl sie am naechsten dunklen Morgen laeuft.
     val treffer = regeln.filter { it.enabled && it.passtAufSchicht(definition.name) }
     val allgemeine = treffer.count {
         it.shiftPattern.equals(HueRuleUseCase.UNIVERSAL_SHIFT_PATTERN, ignoreCase = true)
     }
-    return LichtStatus.Regeln(eigene = treffer.size - allgemeine, allgemeine = allgemeine)
+    return LichtStatus.Regeln(
+        eigene = treffer.size - allgemeine,
+        allgemeine = allgemeine,
+        nurBeiDunkelheit = treffer.count { it.hellAb != HellAb.IMMER }
+    )
 }
 
 private fun dndStatus(
@@ -186,8 +201,8 @@ private fun dndStatus(
  * geschuetzte Leerzeichen, damit "Dimmen: eigene Regel" nie in "Dimmen:" / "eigene Regel"
  * zerfaellt. Umbrochen wird regulaer nur HINTER einem " · " (davor steht ebenfalls ein
  * geschuetztes Leerzeichen, damit der Punkt nicht an den Zeilenanfang rutscht). Die einzigen
- * weiteren Bruchstellen liegen VOR den Zusaetzen "(+N ohne Wirkung)" und "(Dienstzeit
- * ausgenommen)" sowie HINTER dem Komma vor "Rufbereitschaft": ein Abschnitt mit Zusatz ist
+ * weiteren Bruchstellen liegen VOR den Zusaetzen "(+N ohne Wirkung)", "(N nur bei Dunkelheit)"
+ * und "(Dienstzeit ausgenommen)" sowie HINTER dem Komma vor "Rufbereitschaft": ein Abschnitt mit Zusatz ist
  * laenger als eine Kartenzeile bei 320 dp, und ein durchgehend geschuetzter Abschnitt wuerde
  * dann mitten im Wort umbrechen.
  */
@@ -223,20 +238,24 @@ private fun DimmStatus.teile(): List<String> = when (this) {
     }
 }
 
-private fun LichtStatus.teile(): List<String> = listOf(
-    when (this) {
-        LichtStatus.NichtLesbar -> Texte.NICHT_LESBAR
-        LichtStatus.StilleSchicht -> Texte.STILLE_SCHICHT
-        LichtStatus.KeineBridge -> Texte.KEINE_BRIDGE
-        is LichtStatus.Regeln -> when {
-            eigene > 0 && allgemeine > 0 -> "${regelAnzahl(eigene)} + allgemeine"
-            eigene > 0 -> regelAnzahl(eigene)
-            allgemeine == 1 -> Texte.ALLGEMEINE_REGEL
-            allgemeine > 1 -> "$allgemeine allgemeine Regeln"
-            else -> Texte.KEINE
-        }
+private fun LichtStatus.teile(): List<String> = when (this) {
+    LichtStatus.NichtLesbar -> listOf(Texte.NICHT_LESBAR)
+    LichtStatus.StilleSchicht -> listOf(Texte.STILLE_SCHICHT)
+    LichtStatus.KeineBridge -> listOf(Texte.KEINE_BRIDGE)
+    is LichtStatus.Regeln -> buildList {
+        add(
+            when {
+                eigene > 0 && allgemeine > 0 -> "${regelAnzahl(eigene)} + allgemeine"
+                eigene > 0 -> regelAnzahl(eigene)
+                allgemeine == 1 -> Texte.ALLGEMEINE_REGEL
+                allgemeine > 1 -> "$allgemeine allgemeine Regeln"
+                else -> Texte.KEINE
+            }
+        )
+        // Eigenes Stueck, damit davor umbrochen werden darf (wie "(+N ohne Wirkung)").
+        if (nurBeiDunkelheit > 0) add("($nurBeiDunkelheit ${Texte.NUR_BEI_DUNKELHEIT})")
     }
-)
+}
 
 private fun regelAnzahl(n: Int): String = if (n == 1) "1 Regel" else "$n Regeln"
 
@@ -274,6 +293,8 @@ private object Texte {
     const val NICHT_LESBAR = "nicht lesbar"
     const val STILLE_SCHICHT = "aus (stille Schicht)"
     const val KEINE_BRIDGE = "keine Bridge"
+    /** Gleicher Wortlaut wie das Etikett `tageslicht_etikett_dunkel` in der Hue-Regelliste. */
+    const val NUR_BEI_DUNKELHEIT = "nur bei Dunkelheit"
     const val DIENSTZEIT = "Dienstzeit"
     const val NACH_DIMMER = "nach Dimmer"
     const val AUSGENOMMEN = "ausgenommen"

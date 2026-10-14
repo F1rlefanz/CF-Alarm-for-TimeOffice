@@ -231,10 +231,11 @@ class ConfigBackupFilterTest {
     fun `unsinnige Zahlenwerte werden beim Import abgelehnt`() {
         assertNull(ConfigBackupFilter.rangeRejection("snooze_minutes", 5))
         assertNull(ConfigBackupFilter.rangeRejection("snooze_minutes", 1))
-        assertNull(ConfigBackupFilter.rangeRejection("snooze_minutes", 120))
+        assertNull(ConfigBackupFilter.rangeRejection("snooze_minutes", 30))
         assertNotNull(ConfigBackupFilter.rangeRejection("snooze_minutes", 0))
         assertNotNull(ConfigBackupFilter.rangeRejection("snooze_minutes", -5))
-        assertNotNull(ConfigBackupFilter.rangeRejection("snooze_minutes", 121))
+        // Oben dieselbe Grenze wie das Zahlenfeld (#139): 31 kann man in der App nicht einstellen.
+        assertNotNull(ConfigBackupFilter.rangeRejection("snooze_minutes", 31))
 
         assertNull(ConfigBackupFilter.rangeRejection("dnd_oncall_cutoff_min", 0))
         assertNull(ConfigBackupFilter.rangeRejection("dnd_oncall_cutoff_min", 1439))

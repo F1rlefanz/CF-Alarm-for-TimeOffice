@@ -258,7 +258,9 @@ object ConfigBackupFilter {
      * WERT verwertbar ist. Eine Datei ist aber eine Textdatei: sie kann von Hand bearbeitet, von
      * einer aelteren Version geschrieben oder unterwegs beschaedigt worden sein. Geprueft werden:
      *
-     *   - `snooze_minutes`: <= 0 laesst den Schlummer-Alarm SOFORT wieder feuern.
+     *   - `snooze_minutes`: <= 0 laesst den Schlummer-Alarm SOFORT wieder feuern. Oben begrenzt auf
+     *     dieselben Grenzen wie das Zahlenfeld (1 bis 30, seit #139) - der Lesepfad klemmt einen
+     *     groesseren Wert zwar, der Import sagt es aber, statt ihn still zu kuerzen.
      *   - `dnd_oncall_cutoff_min`: ausserhalb 0..1439 wirft `LocalTime.ofSecondOfDay` - der DND-Tick stirbt.
      *   - `weckton_anstieg_sekunden` / `weckton_anstieg_start_prozent`: beide bestimmen, WIE LEISE
      *     und WIE LANGE der Wecker anlaeuft. Eine Datei mit `3600` Sekunden oder `1` Prozent
@@ -277,7 +279,7 @@ object ConfigBackupFilter {
      * sondern der Schutz an der Stelle, an der FREMDE Daten hereinkommen.
      */
     private val PLAUSIBLE_INT_RANGES: Map<String, IntRange> = mapOf(
-        "snooze_minutes" to 1..120,
+        "snooze_minutes" to AlarmPrefs.MIN_SNOOZE_MINUTES..AlarmPrefs.MAX_SNOOZE_MINUTES,
         "dnd_oncall_cutoff_min" to 0..(24 * 60 - 1),
         // Die Grenzen kommen aus AlarmPrefs statt als Zahlen hierher: `const val` wird beim
         // Uebersetzen eingesetzt, kostet also nichts - aber eine spaetere Aenderung dort kann

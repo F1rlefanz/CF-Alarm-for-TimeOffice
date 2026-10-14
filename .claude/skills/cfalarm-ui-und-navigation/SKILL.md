@@ -119,6 +119,13 @@ das baut man dieselbe Falle in neuer Form nach.
   (`SkipLage.wirktNoch`) darf die Liste nicht sperren. Die Liste rechnet beim Zurueckkehren in die
   App und bei jedem neuen Ziel nach — sonst haengt der Knopf an einem verstrichenen Wecker
   (Review 14.10.2026). Kaertchen kommen aus `SchichtFolgen`, keine Nachbildung.
+  **Die Dienste eines Tages kommen zusaetzlich aus dem `ShiftSpanStore`** (ROH, ueber
+  `ShiftUiState.letzterSchichtStand`, bewusst NICHT durch `filtereSpannen` — die Liste will am
+  freigegebenen Tag nennen, welcher Dienst ausfaellt; Kaertchen gibt es dort trotzdem keine): sonst
+  verliert der Tag nach „Nicht wecken“ und nach dem Klingeln seinen Dienst, und am Krankheitsmorgen
+  ist „Dienst fällt aus“ nicht mehr erreichbar. Heute bleibt, solange der Dienst laeuft; ein
+  kuenftiger Tag entsteht nie aus einer Spanne allein. Dienstzeiten nur ueber
+  `ui/components/Dienstzeit.kt` („ganztägig“ ueber Kalendertage, nicht ueber 24 h — Zeitumstellung).
 - **Neue Screens einmal bei 320 dp ansehen** (`adb shell wm density 540` auf 1080 px, danach
   `wm density reset`) — das Gerät des Eigentümers läuft so. Lange zusammengesetzte Hauptwörter
   brechen dort mitten im Wort um.

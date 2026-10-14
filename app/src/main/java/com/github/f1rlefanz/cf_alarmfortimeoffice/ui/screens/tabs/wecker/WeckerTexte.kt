@@ -6,6 +6,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.ProbeZustand
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.SchlummerEingabe
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.reinerSchichtname
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.kurzesDatum
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.AlarmSkipUiState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.Kaertchen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.SchichtFolgen
@@ -17,7 +18,6 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.WeckerTag
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
-import java.time.format.TextStyle
 import java.util.Locale
 import kotlin.math.roundToInt
 
@@ -30,7 +30,6 @@ import kotlin.math.roundToInt
 private const val NBSP = ' '
 
 private val UHRZEIT: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm", Locale.GERMAN)
-private val TAG_MONAT: DateTimeFormatter = DateTimeFormatter.ofPattern("dd.MM.", Locale.GERMAN)
 
 // ---- Zustandshinweis oben ---------------------------------------------------------------
 
@@ -107,10 +106,8 @@ internal fun weckerWirkungen(
         }
         .toMap()
 
-/** "Mi 14.10." - Wochentag ohne Punkt, damit er nicht wie ein Satzende aussieht. */
-internal fun tagUeberschrift(datum: LocalDate): String =
-    datum.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.GERMAN).removeSuffix(".") +
-        " " + datum.format(TAG_MONAT)
+/** "Mi 14.10." - dieselbe Datumsform wie in der Dienstzeit („ganztägig bis So 18.10.“). */
+internal fun tagUeberschrift(datum: LocalDate): String = kurzesDatum(datum)
 
 /** "heute"/"morgen" neben dem Datum - ein Wecker-Tag liest sich so ohne Kalender im Kopf. */
 internal fun relativerTag(datum: LocalDate, heute: LocalDate): String? = when (datum) {

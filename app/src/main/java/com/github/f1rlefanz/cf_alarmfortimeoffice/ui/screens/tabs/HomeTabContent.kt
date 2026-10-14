@@ -35,6 +35,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.KalenderVorausschauPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.LetzterSchichtStand
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpan
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.NaechsterWeckerKarte
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.schichtTerminText
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.DateTimeFormats
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.AlarmSkipUiState
@@ -371,9 +372,15 @@ fun HomeTabContent(
                             shiftState.upcomingShift.shiftType.displayName,
                             style = MaterialTheme.typography.bodyLarge
                         )
+                        // Datum und Dienstzeit - dieselbe Formatierung wie im Wecker-Tab
+                        // („ganztägig“ statt einer Uhrzeit 00:00, die es nicht gibt).
+                        val zone = ZoneId.systemDefault()
                         Text(
-                            DateTimeFormatter.ofPattern(DateTimeFormats.STANDARD_DATETIME)
-                                .format(shiftState.upcomingShift.startTime),
+                            schichtTerminText(
+                                beginn = shiftState.upcomingShift.startTime.atZone(zone).toInstant().toEpochMilli(),
+                                ende = shiftState.upcomingShift.endTime.atZone(zone).toInstant().toEpochMilli(),
+                                zone = zone
+                            ),
                             style = MaterialTheme.typography.bodyMedium
                         )
                     } else if (calendarState.isLoading || shiftState.isLoading) {
@@ -414,8 +421,7 @@ fun HomeTabContent(
                                 style = MaterialTheme.typography.bodyLarge
                             )
                             Text(
-                                DateTimeFormatter.ofPattern(DateTimeFormats.STANDARD_DATETIME)
-                                    .format(Instant.ofEpochMilli(offlineSchicht.startTime).atZone(ZoneId.systemDefault())),
+                                schichtTerminText(offlineSchicht.startTime, offlineSchicht.endTime, ZoneId.systemDefault()),
                                 style = MaterialTheme.typography.bodyMedium
                             )
                             Text(

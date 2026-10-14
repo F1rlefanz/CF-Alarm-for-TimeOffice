@@ -206,14 +206,8 @@ internal fun weckerTagText(datum: LocalDate, heute: LocalDate): String {
  * manuellen Weckern der Normalfall) - eine erfundene Zeit waere schlechter als keine.
  */
 internal fun schichtZeile(alarm: AlarmInfo, zone: ZoneId): String? {
-    val uhr = DateTimeFormatter.ofPattern(DateTimeFormats.TIME_ONLY)
-    fun zeit(millis: Long) = uhr.format(Instant.ofEpochMilli(millis).atZone(zone))
-    val dienstzeit = when {
-        alarm.shiftStartTime != 0L && alarm.shiftEndTime != 0L ->
-            "${zeit(alarm.shiftStartTime)}–${zeit(alarm.shiftEndTime)}"
-        alarm.shiftStartTime != 0L -> "ab$NBSP${zeit(alarm.shiftStartTime)}"
-        else -> null
-    }
+    // Dieselbe Formatierung wie die Tagesliste im Wecker-Tab - „ganztägig“ statt „00:00–00:00“.
+    val dienstzeit = dienstzeitText(alarm.shiftStartTime, alarm.shiftEndTime, zone)
     val teile = listOfNotNull(
         reinerSchichtname(alarm.shiftName).trim().takeIf { it.isNotEmpty() },
         dienstzeit,

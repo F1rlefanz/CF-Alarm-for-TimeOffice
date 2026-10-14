@@ -1,9 +1,13 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.service
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.ZoneId
 
 /**
  * Tests fuer den Merker schwebender Snooze-Alarme in [AlarmManagerService].
@@ -90,7 +94,8 @@ class AlarmManagerServiceSnoozeRegistryTest {
         assertNull(AlarmManagerService.parseSnoozeEntry("42|nicht-numerisch"))
         assertNull(AlarmManagerService.parseSnoozeEntry("keine-zahl|1000"))
         assertNull(AlarmManagerService.parseSnoozeEntry("1|2|3"))
-        assertNull(AlarmManagerService.parseSnoozeEntry("1|2|3|4|5"))
+        // Fuenf Teile sind seit 1.50.3 gueltig (Weckzeit), sechs nicht.
+        assertNull(AlarmManagerService.parseSnoozeEntry("1|2|3|4|5|6"))
     }
 
     @Test
@@ -121,5 +126,107 @@ class AlarmManagerServiceSnoozeRegistryTest {
 
         assertEquals(2, ids.size)
         assertTrue(ids.containsAll(listOf(7, 8)))
+    }
+
+    // --- Weckzeit-Anker fuer "Dienst faellt aus" (1.50.3) ---------------------------------------
+
+    private val zone = ZoneId.of("Europe/Berlin")
+    private fun ms(text: String): Long = LocalDateTime.parse(text).atZone(zone).toInstant().toEpochMilli()
+
+    @Test
+    fun `fuenftes Feld Weckzeit ueberlebt Kodieren und Parsen`() {
+        val weckzeit = ms("2026-10-15T05:30")
+        val entry = AlarmManagerService.encodeSnoozeEntry(7, ms("2026-10-15T05:39"), "Fruehschicht", "06:00", weckzeit)
+
+        assertEquals(weckzeit, AlarmManagerService.parseSnoozeEntry(entry)?.weckzeit)
+    }
+
+    @Test
+    fun `ohne Weckzeit bleibt der Eintrag vierteilig und der Anker unbekannt`() {
+        val entry = AlarmManagerService.encodeSnoozeEntry(7, 1L, "Fruehschicht", "06:00")
+
+        assertEquals(4, entry.split("|").size)
+        assertNull(AlarmManagerService.parseSnoozeEntry(entry)?.weckzeit)
+    }
+
+    @Test
+    fun `erstes Schlummern nimmt die juengste geklingelte Weckzeit`() {
+        val anker = AlarmManagerService.weckzeitFuerEintrag(
+            vorgaenger = null,
+            geklingelt = listOf(ms("2026-10-14T05:30"), ms("2026-10-15T05:30")),
+            jetzt = ms("2026-10-15T05:31")
+        )
+
+        assertEquals(ms("2026-10-15T05:30"), anker)
+    }
+
+    @Test
+    fun `erneutes Schlummern erbt die Weckzeit, auch ueber Mitternacht`() {
+        // 23:50 geweckt, um 00:05 zum zweiten Mal geschlummert: der Anker bleibt am ALTEN Tag.
+        // Die juengste geklingelte Zeit (das Schlummer-Klingeln 00:05) darf ihn nicht ersetzen.
+        val vorgaenger = AlarmManagerService.Companion.SnoozeEntry(7, ms("2026-10-16T00:05"), "Spaet", "", ms("2026-10-15T23:50"))
+
+        val anker = AlarmManagerService.weckzeitFuerEintrag(
+            vorgaenger = vorgaenger,
+            geklingelt = listOf(ms("2026-10-15T23:50"), ms("2026-10-16T00:05")),
+            jetzt = ms("2026-10-16T00:05")
+        )
+
+        assertEquals(ms("2026-10-15T23:50"), anker)
+    }
+
+    @Test
+    fun `Vorgaenger aus dem Altbestand ohne Weckzeit vererbt null statt zu raten`() {
+        val vorgaenger = AlarmManagerService.Companion.SnoozeEntry(7, ms("2026-10-15T05:39"), "Frueh", "")
+
+        val anker = AlarmManagerService.weckzeitFuerEintrag(vorgaenger, listOf(ms("2026-10-15T05:30")), ms("2026-10-15T05:40"))
+
+        assertNull(anker)
+    }
+
+    @Test
+    fun `alter Eintrag derselben ID zaehlt nicht als Vorgaenger`() {
+        val gestern = AlarmManagerService.Companion.SnoozeEntry(7, ms("2026-10-14T05:39"), "Frueh", "", ms("2026-10-14T05:30"))
+
+        val anker = AlarmManagerService.weckzeitFuerEintrag(gestern, listOf(ms("2026-10-15T05:30")), ms("2026-10-15T05:31"))
+
+        assertEquals(ms("2026-10-15T05:30"), anker)
+    }
+
+    @Test
+    fun `ohne gemerkte Weckzeit kein Anker - nie jetzt als Ersatz`() {
+        assertNull(AlarmManagerService.weckzeitFuerEintrag(null, emptyList(), ms("2026-10-15T05:31")))
+        // Eine Weckzeit von vor drei Stunden gehoert nicht zu diesem Schlummern.
+        assertNull(AlarmManagerService.weckzeitFuerEintrag(null, listOf(ms("2026-10-15T02:00")), ms("2026-10-15T05:31")))
+    }
+
+    @Test
+    fun `Freigabe trifft den Snooze ihres Tages, nicht den des Nachbartags`() {
+        val heute = AlarmManagerService.encodeSnoozeEntry(1, ms("2026-10-15T05:39"), "Frueh", "06:00", ms("2026-10-15T05:30"))
+        val morgen = AlarmManagerService.encodeSnoozeEntry(2, ms("2026-10-16T00:09"), "Nacht", "", ms("2026-10-16T00:00"))
+        val gesternSpaet = AlarmManagerService.encodeSnoozeEntry(3, ms("2026-10-15T00:04"), "Spaet", "", ms("2026-10-14T23:55"))
+
+        val ids = AlarmManagerService.snoozesFuerFreigabe(setOf(heute, morgen, gesternSpaet), LocalDate.parse("2026-10-15"), zone)
+
+        assertEquals(listOf(1), ids)
+    }
+
+    @Test
+    fun `Freigabe laesst manuelle Wecker und Eintraege ohne Anker klingeln`() {
+        val manuell = AlarmManagerService.encodeSnoozeEntry(1, ms("2026-10-15T05:39"), "Frueh (Manuell)", "", ms("2026-10-15T05:30"))
+        val ohneAnker = AlarmManagerService.encodeSnoozeEntry(2, ms("2026-10-15T05:39"), "Frueh", "06:00")
+        val altZweiteilig = "3|${ms("2026-10-15T05:39")}"
+
+        val ids = AlarmManagerService.snoozesFuerFreigabe(setOf(manuell, ohneAnker, altZweiteilig), LocalDate.parse("2026-10-15"), zone)
+
+        assertTrue(ids.isEmpty())
+    }
+
+    @Test
+    fun `Backstop-Pruefung - leere Freigaben heissen klingeln`() {
+        val eintrag = AlarmManagerService.Companion.SnoozeEntry(1, ms("2026-10-15T05:39"), "Frueh", "", ms("2026-10-15T05:30"))
+
+        assertFalse(AlarmManagerService.gehoertSnoozeZuFreiemTag(eintrag, emptySet(), zone))
+        assertTrue(AlarmManagerService.gehoertSnoozeZuFreiemTag(eintrag, setOf(LocalDate.parse("2026-10-15")), zone))
     }
 }

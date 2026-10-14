@@ -10,11 +10,15 @@ import android.os.Build
 import androidx.core.content.edit
 import com.github.f1rlefanz.cf_alarmfortimeoffice.AlarmReceiver
 import com.github.f1rlefanz.cf_alarmfortimeoffice.MainActivity
+import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.GeklingelteWeckzeiten
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.MANUELLER_ALARM_SUFFIX
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftMatch
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.DateTimeFormats
 import dagger.hilt.android.EntryPointAccessors
+import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
@@ -316,6 +320,10 @@ class AlarmManagerService(
 ) {
 
     private val alarmManager = application.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+
+    /** Instanz-Zugang fuer `TagFreigabeUseCase` - Begruendung an [Companion.cancelSnoozesFuerFreigabe]. */
+    fun cancelSnoozesFuerFreigabe(datum: LocalDate, zone: ZoneId): Int =
+        cancelSnoozesFuerFreigabe(application, datum, zone)
 
     /**
      * @param fehlgeschlagen der AlarmManager hat den Vorgang ABGELEHNT (Ausnahme beim Stellen oder
@@ -943,13 +951,135 @@ class AlarmManagerService(
         /**
          * Ein vorgemerkter Snooze. [shiftName]/[shiftStartTimeFormatted] koennen leer sein - dann
          * stammt der Eintrag aus einem Merker vor v1.23.0, der nur ID und Zeit kannte.
+         *
+         * [weckzeit] ist die WECKZEIT des geschlummerten Weckers (seit 1.50.3), nicht die
+         * Schlummer-Zeit. Sie ist der Anker, an dem "Dienst faellt aus" einen schwebenden Snooze
+         * seinem Tag zuordnet - derselbe Anker wie `TagFreigabeUseCase.gehoertZuTag` und
+         * `FreieTageStore.tagVon`. null = unbekannt (Altbestand, Merker der Weckzeit fehlte); ein
+         * solcher Snooze wird NIE einer Freigabe zugeordnet, er klingelt (im Zweifel wecken).
+         * Warum er gebraucht wird: [snoozesFuerFreigabe].
          */
         internal data class SnoozeEntry(
             val id: Int,
             val triggerTime: Long,
             val shiftName: String,
-            val shiftStartTimeFormatted: String
+            val shiftStartTimeFormatted: String,
+            val weckzeit: Long? = null
         )
+
+        /**
+         * Wie lange nach seiner Schlummer-Zeit ein Eintrag noch als VORGAENGER desselben Weckers
+         * gilt (erneutes Schlummern traegt dessen Weckzeit weiter), und wie alt eine geklingelte
+         * Weckzeit hoechstens sein darf, um als die des ersten Schlummerns zu gelten. Ein
+         * Schlummer-Klingeln dauert Minuten; zwei Stunden schliessen nur Alt-Eintraege aus.
+         */
+        private const val VORGAENGER_HOECHSTALTER_MS = 2 * 60 * 60 * 1000L
+
+        /**
+         * Die Weckzeit, die ein neuer Snooze-Eintrag traegt - reine Funktion.
+         *
+         * 1. Gibt es einen frischen Eintrag DESSELBEN Weckers ([vorgaenger]), erbt der neue dessen
+         *    Weckzeit: erneutes Schlummern und das Wiederherstellen nach einem Neustart schreiben
+         *    den Eintrag neu, die Weckzeit darf dabei nicht zur Schlummer-Zeit wandern. Hat der
+         *    Vorgaenger keine (Altbestand), bleibt es bei null.
+         * 2. Sonst ist es das erste Schlummern: die juengste geklingelte Weckzeit
+         *    ([GeklingelteWeckzeiten], vom `AlarmReceiver` beim Ausloesen geschrieben, auf die
+         *    Minute gerundet) - das IST die Weckzeit dieses Weckers.
+         * 3. Fehlt auch die (Merker nicht schreibbar): null. Bewusst KEIN "jetzt" als Ersatz -
+         *    um Mitternacht laege das auf dem falschen Tag, und eine falsche Zuordnung hiesse ein
+         *    abgebrochener Wecker an einem Tag, den niemand freigegeben hat.
+         */
+        internal fun weckzeitFuerEintrag(
+            vorgaenger: SnoozeEntry?,
+            geklingelt: List<Long>,
+            jetzt: Long
+        ): Long? {
+            if (vorgaenger != null && jetzt - vorgaenger.triggerTime <= VORGAENGER_HOECHSTALTER_MS) {
+                return vorgaenger.weckzeit
+            }
+            return geklingelt.filter { it <= jetzt && jetzt - it <= VORGAENGER_HOECHSTALTER_MS }.maxOrNull()
+        }
+
+        /**
+         * Gehoert dieser schwebende Snooze zu einem freigegebenen Tag aus [freieTage]?
+         *
+         * Dieselben zwei Regeln wie bei den Weckern selbst: Anker ist die WECKZEIT, und MANUELLE
+         * Wecker nehmen nicht teil ("Dienst faellt aus" streicht den Dienst, nicht den eigenen
+         * Wecker). Manuell erkennt man hier am Namensanhaengsel [MANUELLER_ALARM_SUFFIX] - der
+         * Merker kennt keine Kalender-Kennung. Die Richtung ist sicher: ein Schichtwecker, der
+         * faelschlich als manuell gilt, klingelt; umgekehrt kann es nicht passieren, jeder
+         * manuelle Wecker traegt das Anhaengsel.
+         */
+        internal fun gehoertSnoozeZuFreiemTag(
+            eintrag: SnoozeEntry,
+            freieTage: Set<LocalDate>,
+            zone: ZoneId
+        ): Boolean {
+            if (freieTage.isEmpty()) return false
+            if (eintrag.shiftName.endsWith(MANUELLER_ALARM_SUFFIX)) return false
+            val weckzeit = eintrag.weckzeit ?: return false
+            return Instant.ofEpochMilli(weckzeit).atZone(zone).toLocalDate() in freieTage
+        }
+
+        /**
+         * Die IDs der schwebenden Snoozes, die zum freigegebenen [datum] gehoeren - reine Funktion.
+         *
+         * WARUM: "Dienst faellt aus" raeumt die Wecker des Tages aus dem Bestand. Ein Wecker, der
+         * schon geklingelt hat und geschlummert wird, steht dort aber nicht mehr (der Bestand
+         * wirft Verstrichenes beim Laden weg), und sein Snooze liegt in einem EIGENEN Slot, den
+         * `cancelSystemAlarm` nie trifft. Ablauf vor 1.50.3: Wecker klingelt 05:30, schlummern,
+         * "Dienst faellt aus" fuer heute - und um 05:39 klingelte er trotzdem.
+         */
+        internal fun snoozesFuerFreigabe(entries: Set<String>, datum: LocalDate, zone: ZoneId): List<Int> =
+            entries.mapNotNull { parseSnoozeEntry(it) }
+                .filter { gehoertSnoozeZuFreiemTag(it, setOf(datum), zone) }
+                .map { it.id }
+                .distinct()
+
+        /**
+         * Bricht jeden schwebenden Snooze ab, der zum freigegebenen [datum] gehoert
+         * ([snoozesFuerFreigabe]). Ueber [cancelSnooze], also samt Merker - ein Neustart holt ihn
+         * damit nicht zurueck. Wirft nie; Rueckgabe = Zahl der abgebrochenen.
+         */
+        fun cancelSnoozesFuerFreigabe(context: Context, datum: LocalDate, zone: ZoneId): Int {
+            val ids = try {
+                snoozesFuerFreigabe(
+                    pruneSnoozeEntries(
+                        snoozePrefs(context).getStringSet(KEY_SNOOZE_ENTRIES, emptySet()) ?: emptySet(),
+                        System.currentTimeMillis()
+                    ),
+                    datum,
+                    zone
+                )
+            } catch (e: Exception) {
+                Logger.e(
+                    LogTags.ALARM_MANAGER,
+                    "❌ FREIGABE: Snooze-Merker nicht lesbar - ein geschlummerter Wecker kann noch klingeln",
+                    e
+                )
+                return 0
+            }
+            ids.forEach { id ->
+                Logger.business(LogTags.ALARM_MANAGER, "🚫 FREIGABE: schwebender Snooze $id gehoert zum freigegebenen $datum")
+                cancelSnooze(context, id)
+            }
+            return ids.size
+        }
+
+        /**
+         * Der Merker-Eintrag zu [alarmId], OHNE Selbstreinigung gelesen - fuer den Backstop im
+         * `AlarmReceiver`: beim Feuern ist die Schlummer-Zeit gerade verstrichen, ein gekuerzter
+         * Read faende ihn nicht mehr. Synchron (Device-Protected), wirft nie; null = keiner.
+         */
+        internal fun snoozeEintrag(context: Context, alarmId: Int): SnoozeEntry? =
+            try {
+                (snoozePrefs(context).getStringSet(KEY_SNOOZE_ENTRIES, emptySet()) ?: emptySet())
+                    .mapNotNull { parseSnoozeEntry(it) }
+                    .lastOrNull { it.id == alarmId }
+            } catch (e: Exception) {
+                Logger.w(LogTags.ALARM_MANAGER, "Snooze-Merker nicht lesbar (id=$alarmId)", e)
+                null
+            }
 
         /**
          * "id|triggerTime|shiftName|shiftStart" - reine Funktion, damit das Format testbar bleibt.
@@ -966,12 +1096,15 @@ class AlarmManagerService(
             alarmId: Int,
             triggerTime: Long,
             shiftName: String = "",
-            shiftStartTimeFormatted: String = ""
-        ): String = listOf(
+            shiftStartTimeFormatted: String = "",
+            weckzeit: Long? = null
+        ): String = listOfNotNull(
             alarmId.toString(),
             triggerTime.toString(),
             shiftName.replace(SNOOZE_ENTRY_SEPARATOR, "/"),
-            shiftStartTimeFormatted.replace(SNOOZE_ENTRY_SEPARATOR, "/")
+            shiftStartTimeFormatted.replace(SNOOZE_ENTRY_SEPARATOR, "/"),
+            // Fuenftes Feld seit 1.50.3, nur wenn bekannt - ohne bleibt der Eintrag vierteilig.
+            weckzeit?.toString()
         ).joinToString(SNOOZE_ENTRY_SEPARATOR)
 
         /**
@@ -983,14 +1116,17 @@ class AlarmManagerService(
          */
         internal fun parseSnoozeEntry(entry: String): SnoozeEntry? {
             val parts = entry.split(SNOOZE_ENTRY_SEPARATOR)
-            if (parts.size != 2 && parts.size != 4) return null
+            if (parts.size != 2 && parts.size != 4 && parts.size != 5) return null
             val id = parts[0].toIntOrNull() ?: return null
             val triggerTime = parts[1].toLongOrNull() ?: return null
             return SnoozeEntry(
                 id = id,
                 triggerTime = triggerTime,
                 shiftName = parts.getOrNull(2) ?: "",
-                shiftStartTimeFormatted = parts.getOrNull(3) ?: ""
+                shiftStartTimeFormatted = parts.getOrNull(3) ?: "",
+                // Unlesbar = unbekannt, nicht kaputt: der Eintrag bleibt abbrech- und
+                // wiederherstellbar, er nimmt nur an keiner Freigabe teil.
+                weckzeit = parts.getOrNull(4)?.toLongOrNull()
             )
         }
 
@@ -998,6 +1134,23 @@ class AlarmManagerService(
          * Selbstreinigung: Eintraege, deren Snooze-Zeit verstrichen ist, sind erledigt (der Alarm
          * ist gefeuert oder wurde gestoppt) und wuerden den Merker sonst unbegrenzt wachsen lassen.
          */
+        /**
+         * Kuerzen fuer das ZURUECKSCHREIBEN des Merkers: wie [pruneSnoozeEntries], behaelt aber
+         * gerade gefeuerte Eintraege noch [VORGAENGER_HOECHSTALTER_MS] lang. Sie sind die einzige
+         * Spur der urspruenglichen Weckzeit, falls derselbe Wecker gleich noch einmal geschlummert
+         * wird ([weckzeitFuerEintrag]). Ohne diese Frist konnte ein beliebiges anderes Schreiben
+         * (Abbruch eines anderen Snooze, Boot-Restore) sie wegraeumen, und der Anker fiel auf die
+         * Schlummer-Zeit zurueck - um Mitternacht der falsche Tag (Review 14.10.2026).
+         *
+         * NIE zum Neu-Armieren benutzen: dafuer gilt allein [pruneSnoozeEntries] (nur Zukuenftiges).
+         * Ein verstrichener Eintrag schadet sonst nirgends - Abbrechen ist fuer ihn ein Leerlauf.
+         */
+        internal fun kuerzeZumSchreiben(entries: Set<String>, now: Long): Set<String> =
+            entries.filter { raw ->
+                val parsed = parseSnoozeEntry(raw)
+                parsed != null && parsed.triggerTime > now - VORGAENGER_HOECHSTALTER_MS
+            }.toSet()
+
         internal fun pruneSnoozeEntries(entries: Set<String>, now: Long): Set<String> =
             entries.filter { raw ->
                 val parsed = parseSnoozeEntry(raw)
@@ -1027,7 +1180,16 @@ class AlarmManagerService(
             try {
                 val prefs = snoozePrefs(context)
                 val existing = prefs.getStringSet(KEY_SNOOZE_ENTRIES, emptySet()) ?: emptySet()
-                val kept = pruneSnoozeEntries(existing, System.currentTimeMillis())
+                val jetzt = System.currentTimeMillis()
+                // Die Weckzeit VOR dem Kuerzen lesen: beim erneuten Schlummern ist der Eintrag des
+                // gerade gefeuerten Snooze schon verstrichen und fiele dem Kuerzen zum Opfer - mit
+                // ihm die einzige Spur der urspruenglichen Weckzeit ([weckzeitFuerEintrag]).
+                val weckzeit = weckzeitFuerEintrag(
+                    vorgaenger = existing.mapNotNull { parseSnoozeEntry(it) }.lastOrNull { it.id == alarmId },
+                    geklingelt = GeklingelteWeckzeiten.lies(context, jetzt),
+                    jetzt = jetzt
+                )
+                val kept = kuerzeZumSchreiben(existing, jetzt)
                     .filterNot { parseSnoozeEntry(it)?.id == alarmId }
                     .toSet()
                 // commit(), NICHT apply(): dieser Eintrag ist die EINZIGE Spur eines
@@ -1039,7 +1201,7 @@ class AlarmManagerService(
                 prefs.edit(commit = true) {
                     putStringSet(
                         KEY_SNOOZE_ENTRIES,
-                        kept + encodeSnoozeEntry(alarmId, triggerTime, shiftName, shiftStartTimeFormatted)
+                        kept + encodeSnoozeEntry(alarmId, triggerTime, shiftName, shiftStartTimeFormatted, weckzeit)
                     )
                 }
             } catch (e: Exception) {
@@ -1065,7 +1227,7 @@ class AlarmManagerService(
             try {
                 val prefs = snoozePrefs(context)
                 val existing = prefs.getStringSet(KEY_SNOOZE_ENTRIES, emptySet()) ?: emptySet()
-                val kept = pruneSnoozeEntries(existing, System.currentTimeMillis())
+                val kept = kuerzeZumSchreiben(existing, System.currentTimeMillis())
                     .filterNot { parseSnoozeEntry(it)?.id == alarmId }
                     .toSet()
                 prefs.edit(commit = true) { putStringSet(KEY_SNOOZE_ENTRIES, kept) }
@@ -1177,7 +1339,7 @@ class AlarmManagerService(
                     synchronized(snoozeRegistryLock) {
                         val current = snoozePrefs(context)
                             .getStringSet(KEY_SNOOZE_ENTRIES, emptySet()) ?: emptySet()
-                        val pruned = pruneSnoozeEntries(current, now)
+                        val pruned = kuerzeZumSchreiben(current, now)
                         snoozePrefs(context).edit(commit = true) {
                             putStringSet(KEY_SNOOZE_ENTRIES, pruned)
                         }

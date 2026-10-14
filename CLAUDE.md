@@ -244,7 +244,8 @@ Vollständige Regellisten und Belege in den Skills oben. Was hier steht, gilt im
   aus.** Der Anker ist überall die Weckzeit (vier Stellen). Ohne den Backstop holt der
   `BootReceiver` den Wecker nach einem Neustart zurück; ohne die Ausnahme für manuelle Wecker
   löscht die Freigabe einen Wecker, den kein Kalender rekonstruieren kann — und der Backstop
-  verhindert zusätzlich, dass an dem Tag überhaupt einer gestellt werden kann.
+  verhindert zusätzlich, dass an dem Tag überhaupt einer gestellt werden kann. Auch ein
+  schwebender Snooze (Anker: die Weckzeit im Snooze-Merker).
 
 ### Wecken, Vollbild, Snooze
 

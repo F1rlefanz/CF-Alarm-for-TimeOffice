@@ -176,6 +176,17 @@ class TagFreigabeUseCase @Inject constructor(
                     }
                 }
 
+                // 5a. Ein schon GESCHLUMMERTER Wecker dieses Tages steht nicht mehr in `betroffene`
+                // (der Bestand wirft Verstrichenes weg), und sein Snooze liegt in einem eigenen
+                // Slot, den `cancelSystemAlarm` nie trifft - ohne diesen Schritt klingelte er am
+                // freigegebenen Morgen noch einmal. Zuordnung ueber die Weckzeit, manuelle Wecker
+                // ausgenommen (`AlarmManagerService.snoozesFuerFreigabe`). Wirft nie.
+                // ERST HIER, nach der Schleife: scheitert dort ein Loeschen, wird die Freigabe
+                // zurueckgenommen - ein vorher abgebrochener Snooze waere dann an einem NICHT
+                // freigegebenen Tag weg, samt Merker (Review 14.10.2026). Stirbt der Prozess
+                // zwischen Markierung und hier, faengt ihn der Backstop im `AlarmReceiver`.
+                alarmManagerService.cancelSnoozesFuerFreigabe(datum, zone)
+
                 // 5. Ein Ueberspringen desselben Tages ist jetzt gegenstandslos - die Freigabe ist
                 // die staerkere Aussage. Bliebe es stehen, muesste der Nutzer zwei Zustaende
                 // zuruecknehmen, um einen Wecker wiederzubekommen, und der zweite waere unsichtbar,

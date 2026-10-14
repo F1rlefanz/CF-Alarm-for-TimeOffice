@@ -26,7 +26,9 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.DateTimeFormats
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -222,6 +224,9 @@ class AlarmViewModel @Inject constructor(
      * schlichtes Feld ohne Synchronisierung.
      */
     private var skipVorgangLaeuft = false
+
+    /** Ein Probe-Start, dessen Read noch laeuft - [probehoerenStoppen] verwirft ihn. */
+    private var probeStartAusstehend: Job? = null
 
     /**
      * SINGLE SOURCE OF TRUTH: Shared upstream for active alarms.
@@ -472,12 +477,24 @@ class AlarmViewModel @Inject constructor(
      * [wecktonAnstieg], dessen Startwert vor der ersten Emission "aus" ist. `viewModelScope`
      * laeuft auf dem Main-Thread, wie es [WecktonProbe.start] verlangt; die Probe selbst haengt
      * danach nicht mehr an diesem Scope.
+     *
+     * DER LESEVORGANG IST ABBRECHBAR ([probeStartAusstehend]): Der Stopp aus der Oberflaeche
+     * (ON_STOP, Tabwechsel) laeuft synchron, der Start erst nach dem suspendierenden Read. Kam
+     * der Stopp dazwischen, lief er ins Leere - die Probe war ja noch aus -, und der Read startete
+     * danach einen Weckton im Hintergrund, ohne Stopp-Knopf (Review #139).
      */
     fun probehoerenStarten() {
-        viewModelScope.launch { wecktonProbe.start(alarmPrefs.wecktonAnstiegNow()) }
+        probeStartAusstehend?.cancel()
+        probeStartAusstehend = viewModelScope.launch {
+            val anstieg = alarmPrefs.wecktonAnstiegNow()
+            ensureActive()
+            wecktonProbe.start(anstieg)
+        }
     }
 
     fun probehoerenStoppen() {
+        probeStartAusstehend?.cancel()
+        probeStartAusstehend = null
         wecktonProbe.stop()
     }
 

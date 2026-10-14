@@ -164,6 +164,7 @@ class Pruefrunde8ManuellerWeckerTest {
             alarmPrefs = alarmPrefs,
             tagFreigabeUseCase = tagFreigabeUseCaseOhneFreigaben(),
             zeitkettenArmierer = armierer,
+            wecktonProbe = org.mockito.kotlin.mock(),
             alarmRepository = alarmRepository
         )
     }

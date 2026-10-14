@@ -168,6 +168,7 @@ class Pruefrunde6SkipManualAlarmTest {
             alarmPrefs = alarmPrefs,
             tagFreigabeUseCase = tagFreigabeUseCaseOhneFreigaben(),
             zeitkettenArmierer = org.mockito.kotlin.mock(),
+            wecktonProbe = org.mockito.kotlin.mock(),
             alarmRepository = mock<IAlarmRepository>().apply {
                 stub {
                     on { isPersistenceBlocked() } doReturn false

@@ -44,6 +44,7 @@ _Der Wecker-Bereich zeigt jetzt deine Dienst-Tage als Liste, und „Schichttypen
 
 - **Neue Namen:** „Überspringen“ heißt jetzt **„Nicht wecken“** (zurück mit **„Doch wecken“**), „Tag freigeben“ heißt **„Dienst fällt aus“** (zurück mit **„Zurücknehmen“**). „Nicht wecken“ gibt es nur für den nächsten Wecker; für einen späteren Tag nimmst du „Dienst fällt aus“.
 - **Schichttypen unter Einstellungen:** „Schichttypen verwalten“ steht jetzt neben „Kalender auswählen“ in den Einstellungen und nicht mehr im Wecker-Bereich. Die Hilfe auf der Website ist angepasst.
+- **„Nicht stören“ statt „DND“:** Die Zeile unter jedem Schichttyp und in der Detailansicht eines Tages schreibt jetzt „Nicht stören“ – wie überall sonst in der App.
 - **Klare Hinweise oben:** Ist die Pause an oder die Automatik aus, steht im Wecker-Bereich genau ein Hinweis mit dem Weg zurück; bei leerer Liste sagt dir der Leerzustand, woran es liegt.
 
 ### 🐛 Behoben

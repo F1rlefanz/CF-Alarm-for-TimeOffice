@@ -234,7 +234,7 @@ internal fun baueWeckerTage(
             kaertchen = if (freigegeben) emptyList() else kaertchenFuerSchichten(
                 schichten.map { reinerSchichtname(it.name) }.distinct(),
                 wirkungen
-            )
+            ).let { alle -> if (lichtMoeglich(eintraege)) alle else alle - Kaertchen.LICHT }
         )
     }
 }
@@ -248,6 +248,7 @@ internal fun baueWeckerTage(
  *   das Kaertchen versprache ein „Nicht stören“, das nie kommt.
  * - „Dimmen“: eine wirksame Regel, die nicht UNTERDRUECKT (leere Fensterliste = kein Dimmen).
  * - „Licht“: mindestens eine Hue-Regel; nicht lesbar / keine Bridge / stille Schicht = keins.
+ *   Auf Tagesebene zusaetzlich nur mit klingelndem Wecker ([lichtMoeglich]).
  * - „Rufbereitschaft“: [ShiftDefinition.isOnCall] DIREKT. NICHT `DndStatus.rufbereitschaft` -
  *   das ist der DND-Cutoff und ist `false`, sobald beide DND-Quellen aus sind; die stuendliche
  *   Kalender-Abfrage laeuft trotzdem.
@@ -261,6 +262,20 @@ internal fun kaertchenFuer(wirkung: SchichtWirkung): Set<Kaertchen> = buildSet {
     if (licht is LichtStatus.Regeln && licht.eigene + licht.allgemeine > 0) add(Kaertchen.LICHT)
     if (wirkung.definition.isOnCall) add(Kaertchen.RUFBEREITSCHAFT)
 }
+
+/**
+ * Geht an diesem Tag noch ein Licht an? Nur mit einem Wecker, der klingelt: Hue laeuft
+ * ausschliesslich ueber den Weckzeit-Pfad im `AlarmReceiver` und den Vorab-Sonnenaufgang, und
+ * beide haengen am Wecker. „Nicht wecken“ und „Dienst fällt aus“ loeschen ihn, der Sonnenaufgang
+ * prueft das beim Start (`HueSmartScheduler.sonnenaufgangNochGedeckt`) - die Schicht kommt dann
+ * nur noch aus dem `ShiftSpanStore`, das Licht nicht.
+ *
+ * Gilt genauso fuer heute nach der Weckzeit: das Licht des verstrichenen Weckers ist gewesen, es
+ * kommt keins mehr. Dimmen, „Nicht stören“ und die Rufbereitschaft folgen dagegen der Spanne und
+ * bleiben.
+ */
+private fun lichtMoeglich(eintraege: List<WeckerEintrag>): Boolean =
+    eintraege.any { it is WeckerEintrag.Wecker && !it.still }
 
 /** Vereinigung ueber alle bekannten Schichten des Tages, in fester Reihenfolge der Enum. */
 internal fun kaertchenFuerSchichten(

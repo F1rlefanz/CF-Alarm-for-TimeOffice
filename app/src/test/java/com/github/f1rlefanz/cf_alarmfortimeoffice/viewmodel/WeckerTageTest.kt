@@ -434,6 +434,29 @@ class WeckerTageTest {
     }
 
     @Test
+    fun `nach Nicht wecken kein Kaertchen Licht - Hue haengt am Wecker`() {
+        // Frühdienst mit Hue-Regel und Dimmen, „Nicht wecken“ angetippt: der Wecker ist geloescht,
+        // der Sonnenaufgang verwirft sich, der Weckzeit-Pfad laeuft nie. Dimmen folgt der Spanne.
+        val wirkungen = mapOf(
+            "Frühdienst" to wirkung(dimmen = DimmStatus.Wirksam(DimmArt.EIGENE, 0), licht = LichtStatus.Regeln(1, 0))
+        )
+        val uebersprungen = tage(
+            skip = SkipLage(aktiv = true, alarmId = 1, weckzeitpunkt = ms("2026-10-15T05:00")),
+            spannen = listOf(frueh15),
+            wirkungen = wirkungen
+        ).single()
+        assertEquals(listOf(Kaertchen.DIMMEN), uebersprungen.kaertchen)
+
+        // Gegenprobe: derselbe Tag MIT Wecker zeigt das Licht.
+        val mitWecker = tage(
+            alarme = listOf(alarm(1, "2026-10-15T05:00")),
+            spannen = listOf(frueh15),
+            wirkungen = wirkungen
+        ).single()
+        assertEquals(listOf(Kaertchen.DIMMEN, Kaertchen.LICHT), mitWecker.kaertchen)
+    }
+
+    @Test
     fun `heute bleibt der Tag, solange der Dienst laeuft - auch nach dem Klingeln`() {
         // 12:00, Wecker um 05:00 ist verstrichen und aus dem Bestand, Dienst bis 14:00.
         val heute = spanne("Frühdienst", "2026-10-14T06:00", "2026-10-14T14:00", "2026-10-14T05:00")

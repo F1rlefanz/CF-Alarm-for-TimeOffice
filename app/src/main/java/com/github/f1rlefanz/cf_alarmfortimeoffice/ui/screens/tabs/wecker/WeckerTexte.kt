@@ -246,12 +246,17 @@ internal const val RUFBEREITSCHAFT_BESCHREIBUNG: String =
  *    ueber dieselbe Funktion, `TagFreigabeUseCase` plant sie beim Freigeben neu.
  *  - "eigene Wecker bleiben": `istTagFreigegeben` und `TagFreigabeUseCase.gehoertZuTag` nehmen
  *    manuelle Wecker aus.
+ *  - "kein Weck-Licht": Hue laeuft nur ueber den Weckzeit-Pfad im `AlarmReceiver` und den
+ *    Vorab-Sonnenaufgang, der beim Start prueft, ob sein Wecker noch steht
+ *    (`HueSmartScheduler.sonnenaufgangNochGedeckt`); laeuft die Rampe schon, schaltet ihr
+ *    Vorab-Auto-Aus sie ab (`HueRuleUseCase.vorabAutoAusZiele`).
  *  - "der Termin im Kalender bleibt": die App schreibt nie in den Kalender.
  * Wer eine dieser Stellen aendert, prueft diesen Text mit.
  */
 internal const val DIENST_FAELLT_AUS_ERKLAERUNG: String =
     "Krank, frei oder getauscht? Für diesen Tag wird kein Wecker aus dem Dienstplan gestellt, " +
-        "auch nicht nach späteren Änderungen im Dienstplan. „Nicht stören“ und Dimmen richten sich nicht mehr nach dem " +
+        "auch nicht nach späteren Änderungen im Dienstplan. Ohne Wecker geht auch kein Weck-Licht an. " +
+        "„Nicht stören“ und Dimmen richten sich nicht mehr nach dem " +
         "Dienst – der Tag zählt als freier Tag. Die stündliche Rufdienst-Abfrage entfällt. " +
         "Deine eigenen Wecker bleiben, der Termin im Kalender auch."
 
@@ -275,11 +280,13 @@ internal const val ZURUECKNEHMEN_ERKLAERUNG: String =
  *    nur den Wecker; die Dienstzeit-Fenster kommen aus dem `ShiftSpanStore`, nicht aus dem
  *    Alarm-Bestand (Skill cfalarm-dimmer-und-dnd). Bewusst NICHT „laufen weiter“ - ohne Regel
  *    laeuft nichts.
+ *  - „das Weck-Licht bleibt aus“: Hue haengt am Wecker (siehe [DIENST_FAELLT_AUS_ERKLAERUNG]);
+ *    die Tagesliste nimmt deshalb auch das Kaertchen „Licht“ weg (`lichtMoeglich`).
  */
 internal const val NICHT_WECKEN_NUR_NAECHSTER: String =
-    "„Nicht wecken“ gibt es für den nächsten Wecker und lässt nur ihn aus – der Dienst bleibt, " +
-        "„Nicht stören“ und Dimmen richten sich weiter nach ihm. Krank oder frei? Tippe auf den " +
-        "Tag und wähle „Dienst fällt aus“."
+    "„Nicht wecken“ gibt es für den nächsten Wecker: er klingelt nicht, und sein Weck-Licht bleibt " +
+        "aus. Der Dienst bleibt – „Nicht stören“ und Dimmen richten sich weiter nach ihm. Krank " +
+        "oder frei? Tippe auf den Tag und wähle „Dienst fällt aus“."
 
 /**
  * Statt [NICHT_WECKEN_NUR_NAECHSTER], solange ein Wecker ausgelassen ist: dann traegt der folgende

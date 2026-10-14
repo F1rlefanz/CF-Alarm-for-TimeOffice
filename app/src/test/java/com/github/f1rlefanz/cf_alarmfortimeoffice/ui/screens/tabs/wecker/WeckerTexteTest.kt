@@ -224,6 +224,15 @@ class WeckerTexteTest {
         assertTrue(NUR_EIN_WECKER_AUSLASSEN.contains("„Dienst fällt aus“"))
     }
 
+    @Test
+    fun `beide Knoepfe sagen, dass das Weck-Licht mit dem Wecker entfaellt`() {
+        // Die Tagesliste zeigt nach „Nicht wecken“ kein Kaertchen „Licht“ - der Text darf nicht
+        // „lässt nur ihn aus“ behaupten (Eigentuemer 14.10.2026: was haengt am Wecker?).
+        assertTrue(NICHT_WECKEN_NUR_NAECHSTER.contains("Weck-Licht bleibt aus"))
+        assertFalse(NICHT_WECKEN_NUR_NAECHSTER.contains("nur ihn"))
+        assertTrue(DIENST_FAELLT_AUS_ERKLAERUNG.contains("kein Weck-Licht"))
+    }
+
     private val jetzt = 1_000_000_000_000L
     private val tag = 24 * 60 * 60 * 1000L
 

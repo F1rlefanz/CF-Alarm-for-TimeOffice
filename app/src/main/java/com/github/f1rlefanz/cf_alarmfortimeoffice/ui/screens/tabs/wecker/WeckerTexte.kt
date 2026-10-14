@@ -230,7 +230,9 @@ internal const val RUFBEREITSCHAFT_BESCHREIBUNG: String =
 
 /**
  * Was „Dienst fällt aus“ bewirkt - steht direkt am Knopf (Skill: ein Hinweis zu einem Knopf steht
- * unter DIESEM Knopf). Gekuerzte Fassung des frueheren Freigabe-Hinweises.
+ * unter DIESEM Knopf). Gekuerzte Fassung des frueheren Freigabe-Hinweises. Der Anlass steht vorn
+ * (Eigentuemer 14.10.2026): die Funktion ist fuer den Krankheits-, Tausch- oder freien Tag - JEDEN,
+ * auch heute -, nicht ein Ausweg fuer „spaetere“ Tage.
  *
  * JEDE Aussage ist am Code belegt (Stand 1.48.0, Hergang cfalarm-wecker-und-boot/reference/
  * tag-freigeben.md):
@@ -248,8 +250,8 @@ internal const val RUFBEREITSCHAFT_BESCHREIBUNG: String =
  * Wer eine dieser Stellen aendert, prueft diesen Text mit.
  */
 internal const val DIENST_FAELLT_AUS_ERKLAERUNG: String =
-    "Für diesen Tag wird kein Wecker aus dem Dienstplan gestellt, auch nicht nach späteren " +
-        "Änderungen im Dienstplan. „Nicht stören“ und Dimmen richten sich nicht mehr nach dem " +
+    "Krank, frei oder getauscht? Für diesen Tag wird kein Wecker aus dem Dienstplan gestellt, " +
+        "auch nicht nach späteren Änderungen im Dienstplan. „Nicht stören“ und Dimmen richten sich nicht mehr nach dem " +
         "Dienst – der Tag zählt als freier Tag. Die stündliche Rufdienst-Abfrage entfällt. " +
         "Deine eigenen Wecker bleiben, der Termin im Kalender auch."
 
@@ -265,10 +267,19 @@ internal const val ZURUECKNEHMEN_ERKLAERUNG: String =
 /**
  * Der Satz unter der Liste (Variante A): „Nicht wecken“ steht nur am naechsten klingelnden
  * Wecker, weil es genau einen Skip-Platz gibt und `skipNextAlarm` immer den naechsten trifft.
+ *
+ * Er grenzt die beiden Knoepfe gegeneinander ab (Eigentuemer 14.10.2026: der fruehere Satz
+ * „Fällt ein späterer Dienst aus …“ las sich, als waere „Dienst fällt aus“ nur ein Ausweg fuer
+ * spaetere Tage - gemeint ist der Krankheitstag, auch heute):
+ *  - „der Dienst bleibt, „Nicht stören“ und Dimmen richten sich weiter nach ihm“: ein Skip loescht
+ *    nur den Wecker; die Dienstzeit-Fenster kommen aus dem `ShiftSpanStore`, nicht aus dem
+ *    Alarm-Bestand (Skill cfalarm-dimmer-und-dnd). Bewusst NICHT „laufen weiter“ - ohne Regel
+ *    laeuft nichts.
  */
 internal const val NICHT_WECKEN_NUR_NAECHSTER: String =
-    "„Nicht wecken“ gibt es nur für den nächsten Wecker. Fällt ein späterer Dienst aus, tippe auf " +
-        "seinen Tag und wähle „Dienst fällt aus“."
+    "„Nicht wecken“ gibt es für den nächsten Wecker und lässt nur ihn aus – der Dienst bleibt, " +
+        "„Nicht stören“ und Dimmen richten sich weiter nach ihm. Krank oder frei? Tippe auf den " +
+        "Tag und wähle „Dienst fällt aus“."
 
 /**
  * Statt [NICHT_WECKEN_NUR_NAECHSTER], solange ein Wecker ausgelassen ist: dann traegt der folgende
@@ -276,8 +287,8 @@ internal const val NICHT_WECKEN_NUR_NAECHSTER: String =
  * dann nicht versprechen.
  */
 internal const val NUR_EIN_WECKER_AUSLASSEN: String =
-    "Es lässt sich immer nur ein Wecker auslassen – „Doch wecken“ nimmt das zurück. Fällt ein " +
-        "späterer Dienst aus, tippe auf seinen Tag und wähle „Dienst fällt aus“."
+    "Es lässt sich immer nur ein Wecker auslassen – „Doch wecken“ nimmt das zurück. Krank oder " +
+        "frei? Tippe auf den Tag und wähle „Dienst fällt aus“."
 
 /**
  * PURE, TESTBAR: der Satz unter der Liste - nur in dem Zustand, den er beschreibt.
@@ -296,8 +307,12 @@ internal fun nichtWeckenHinweis(tage: List<WeckerTag>): String? {
     }
 }
 
-/** Der Textknopf unter der Liste - dieselbe Geste, derselbe Name wie am Tag. */
-internal const val ANDERER_TAG_KNOPF: String = "Dienst fällt an einem anderen Tag aus …"
+/**
+ * Der Textknopf unter der Liste: dieselbe Geste wie „Dienst fällt aus“ am Tag, fuer einen Tag, der
+ * NICHT in der Liste steht (noch kein Wecker, nach der Vorausschau). Bewusst ohne „anderen“
+ * Dienst/„spaeteren“ Tag - auch heute ist ein moeglicher Tag.
+ */
+internal const val ANDERER_TAG_KNOPF: String = "Tag auswählen: Dienst fällt aus …"
 
 // ---- Klang ------------------------------------------------------------------------------
 

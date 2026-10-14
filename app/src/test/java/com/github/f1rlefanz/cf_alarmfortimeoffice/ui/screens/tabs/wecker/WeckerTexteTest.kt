@@ -209,7 +209,17 @@ class WeckerTexteTest {
     fun `der Satz unter der Liste nennt beide Knoepfe mit ihren neuen Namen`() {
         assertTrue(NICHT_WECKEN_NUR_NAECHSTER.contains("„Nicht wecken“"))
         assertTrue(NICHT_WECKEN_NUR_NAECHSTER.contains("„Dienst fällt aus“"))
-        assertTrue(ANDERER_TAG_KNOPF.startsWith("Dienst fällt"))
+        // Der Knopf unter der Liste nennt dieselbe Geste wie am Tag ...
+        assertTrue(ANDERER_TAG_KNOPF.contains("Dienst fällt aus"))
+        // ... und rahmt sie nicht als Ausweg fuer „spaetere“/„andere“ Dienste (Eigentuemer 14.10.2026).
+        listOf(NICHT_WECKEN_NUR_NAECHSTER, NUR_EIN_WECKER_AUSLASSEN, ANDERER_TAG_KNOPF).forEach { text ->
+            assertFalse(text, text.contains("späterer Dienst"))
+            assertFalse(text, text.contains("anderen Tag"))
+        }
+        assertTrue(NICHT_WECKEN_NUR_NAECHSTER.contains("Krank oder frei?"))
+        assertTrue(NUR_EIN_WECKER_AUSLASSEN.contains("Krank oder frei?"))
+        // Die Erklaerung am Knopf nennt den Anlass zuerst - fuer jeden Tag, nicht nur spaetere.
+        assertTrue(DIENST_FAELLT_AUS_ERKLAERUNG.startsWith("Krank, frei oder getauscht?"))
         assertTrue(NUR_EIN_WECKER_AUSLASSEN.contains("„Doch wecken“"))
         assertTrue(NUR_EIN_WECKER_AUSLASSEN.contains("„Dienst fällt aus“"))
     }

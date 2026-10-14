@@ -113,7 +113,11 @@ das baut man dieselbe Falle in neuer Form nach.
   Wegnehmen der Fläche.
 - **Etiketten (klein, AUF einer Karte) sind gefuellt** — Status als Pille aus `tonPaar()`
   (`ui/theme/Theme.kt`: Erfolg/Warnung/Info, Flaeche + eigene Textfarbe), neutral auf
-  `surfaceContainer` + Rand. Die Ampelfarben selbst erreichen auf ihrer weichen Flaeche KEINE 4,5:1
+  `surfaceContainer` + Rand. **Farbe heisst ZUSTAND, nie Funktion:** die Wirkungs-Kaertchen
+  (Nicht stören/Dimmen/Licht/Kalender-Abfrage) unterscheidet ein Symbol (dasselbe wie am Tab bzw.
+  in den Einstellungen), keine eigene Farbe. Der Eigentuemer vermisste am Fairphone Farbe; eine
+  Farbe je Funktion haette Gruen/Blau/Orange zweideutig gemacht, er waehlte das Symbol
+  (14.10.2026). Die Ampelfarben selbst erreichen auf ihrer weichen Flaeche KEINE 4,5:1
   (`ThemeKontrastTest` prueft jedes Paar). Knoepfe an Listenzeilen: umrandeter Kompaktknopf
   (`CompactContentPadding`), untereinander LINKSbuendig (`untereinanderAusrichtung = Start`) — ein
   Textknopf allein am rechten Rand sah am Fairphone verloren aus (14.10.2026).

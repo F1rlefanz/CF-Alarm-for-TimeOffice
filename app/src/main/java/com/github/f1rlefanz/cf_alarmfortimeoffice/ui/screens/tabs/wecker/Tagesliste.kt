@@ -28,7 +28,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
@@ -174,10 +173,11 @@ private fun EintragZeile(eintrag: WeckerEintrag, mehrereSchichten: Boolean, akti
                 horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_MEDIUM),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                // Tabellarische Ziffern statt Monospace: die Zeiten stehen buendig untereinander,
+                // ohne dass der Doppelpunkt eine volle Zeichenbreite bekommt ("05 : 30").
                 Text(
                     uhrzeit(uhrzeit),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontFamily = FontFamily.Monospace,
+                    style = MaterialTheme.typography.titleMedium.copy(fontFeatureSettings = "tnum"),
                     color = if (klingeltNicht) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
                     textDecoration = if (klingeltNicht) TextDecoration.LineThrough else null
                 )

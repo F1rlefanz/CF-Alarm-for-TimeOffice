@@ -2,6 +2,7 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components
 
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmInfo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.MANUELLER_ALARM_SUFFIX
+import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.Schlummern
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.SkipLage
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -44,7 +45,8 @@ class NaechsterWeckerKarteTest {
         naechster: Long?,
         pause: Boolean = false,
         laedt: Boolean = false,
-        uebersprungen: Int? = null
+        uebersprungen: Int? = null,
+        schlummern: List<Schlummern> = emptyList()
     ) = naechsterWeckerAnzeige(
         masterPausePaused = pause,
         activeAlarms = alarme,
@@ -52,6 +54,7 @@ class NaechsterWeckerKarteTest {
         isLoading = laedt,
         naechsterKlingelnderZeitpunkt = naechster,
         skippedAlarmId = uebersprungen,
+        schlummern = schlummern,
         jetzt = jetzt,
         zone = zone,
         heute = heute
@@ -257,5 +260,37 @@ class NaechsterWeckerKarteTest {
         assertTrue(NICHT_WECKEN_AKTIV_ZUSATZ.contains("„Doch wecken“"))
         // Die alten Namen sind seit #139 weg.
         assertFalse(NICHT_WECKEN_AKTIV_ZUSATZ.contains("berspring"))
+    }
+
+    // ---- Schlummern ---------------------------------------------------------------------------
+
+    @Test
+    fun `ein Snooze vor dem naechsten Wecker ist das Naechste`() {
+        val bis = jetzt + 20 * 60_000L
+        val spaeter = alarm(1, jetzt + 5 * 60 * 60_000L, name = "Spät")
+
+        val a = anzeige(listOf(spaeter), spaeter.triggerTime, schlummern = listOf(Schlummern(bis, jetzt - 60_000L, "Frühschicht", false)))
+
+        a as NaechsterWeckerAnzeige.Naechster
+        assertTrue(a.tag.endsWith(SCHLUMMERT_KARTE))
+        assertEquals("Frühschicht", a.schicht)
+    }
+
+    @Test
+    fun `ohne Wecker im Bestand zeigt die Karte den Snooze statt kein Wecker`() {
+        val a = anzeige(emptyList(), null, schlummern = listOf(Schlummern(jetzt + 60_000L, null, "Früh (Manuell)", true)))
+
+        a as NaechsterWeckerAnzeige.Naechster
+        assertEquals("Früh", a.schicht)
+    }
+
+    @Test
+    fun `ein Wecker vor dem Snooze bleibt der naechste`() {
+        val frueh = alarm(1, jetzt + 60_000L, name = "Früh")
+
+        val a = anzeige(listOf(frueh), frueh.triggerTime, schlummern = listOf(Schlummern(jetzt + 30 * 60_000L, null, "Spät", false)))
+
+        a as NaechsterWeckerAnzeige.Naechster
+        assertFalse(a.tag.endsWith(SCHLUMMERT_KARTE))
     }
 }

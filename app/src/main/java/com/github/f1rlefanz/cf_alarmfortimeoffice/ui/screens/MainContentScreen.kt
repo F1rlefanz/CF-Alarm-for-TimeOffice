@@ -378,6 +378,9 @@ fun MainContentScreen(
                     SettingsTabContent(
                         authViewModel = authViewModel,
                         onShowCalendarSelection = onShowCalendarSelection,
+                        // Zurueck fuehrt in die Einstellungen: MainScreen reicht den aktuellen
+                        // Tab als returnToTab durch.
+                        onShowShiftConfig = onShowShiftConfig,
                         onShowDndSettings = onShowDndSettings
                     )
                 }

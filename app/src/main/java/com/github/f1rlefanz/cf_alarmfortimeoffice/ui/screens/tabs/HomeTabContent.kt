@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Work
@@ -35,7 +34,7 @@ import androidx.compose.ui.unit.dp
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.KalenderVorausschauPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.LetzterSchichtStand
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpan
-import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.AlarmStatusHeader
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.NaechsterWeckerKarte
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.DateTimeFormats
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.AlarmSkipUiState
@@ -108,7 +107,7 @@ internal fun noShiftReason(
 
 /**
  * Der Zusatz fuer die Master-Pause. Bewusst kurz und ohne den Weg zurueck: den nennt die
- * Alarm-Status-Karte unmittelbar darunter (`ALARM_STATUS_PAUSIERT_AUSWEG`) - derselbe Zustand
+ * Karte "Nächster Wecker" unmittelbar darunter (`ALARM_STATUS_PAUSIERT_AUSWEG`) - derselbe Zustand
  * soll nicht zweimal ausfuehrlich auf demselben Bildschirm stehen.
  */
 internal const val NO_SHIFT_HINWEIS_PAUSIERT: String =
@@ -183,7 +182,7 @@ internal fun noShiftExplanation(
             "Noch kein Kalender ausgewählt — im System-Status unter \"Kalender\" den Dienstplan-Kalender wählen."
         NoShiftReason.AUTHORIZATION_LOST ->
             // KEINE Positionsangabe ("in der Karte darunter"): direkt unter dieser Karte liegt die
-            // Alarm-Status-Karte, die stattdessen in den Wecker-Tab springt - der Erneuern-Knopf
+            // Karte "Nächster Wecker", die stattdessen in den Wecker-Tab springt - der Erneuern-Knopf
             // sitzt erst eine Karte weiter. Wie bei den anderen Gruenden die Beschriftung nennen,
             // die im Screen wirklich steht (Karte "Kalender-Events", Knopf darin).
             "Kalender-Zugriff abgelaufen — in der Karte \"Kalender-Events\" auf " +
@@ -457,31 +456,14 @@ fun HomeTabContent(
             }
         }
 
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            onClick = onNavigateToWecker,
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surface
-            ),
-            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-        ) {
-            AlarmStatusHeader(
-                alarmState = alarmState,
-                skipState = skipState,
-                masterPausePaused = masterPausePaused,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(SpacingConstants.PADDING_CARD),
-                trailingContent = {
-                    Icon(
-                        // dekorativ: reines Weiter-Zeichen, die ganze Karte ist das bedienbare
-                        // Element und traegt ihre Beschriftung ueber AlarmStatusHeader selbst
-                        Icons.AutoMirrored.Default.KeyboardArrowRight,
-                        contentDescription = null
-                    )
-                }
-            )
-        }
+        // Statt "N aktive Alarme" die eine Frage: wann klingelt es als Naechstes (#139, P4).
+        NaechsterWeckerKarte(
+            alarmState = alarmState,
+            skipState = skipState,
+            masterPausePaused = masterPausePaused,
+            autoAlarmEnabled = shiftState.currentShiftConfig?.autoAlarmEnabled != false,
+            onAlleWecker = onNavigateToWecker
+        )
 
         val zugriffVerloren =
             !calendarState.calendarAuthorizationValid && calendarState.selectedCalendarIds.isNotEmpty()

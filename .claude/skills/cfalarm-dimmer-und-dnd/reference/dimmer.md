@@ -787,6 +787,13 @@ drei Tage wie die Spannen; `computeWindows` liest sie in die Zeitleiste. Verworf
 Device-Protected, weil der Receiver auch im Direct Boot feuert; jeder Zugriff wirft nie, ein
 Lesefehler fällt auf das alte Verhalten zurück.
 
+**Gemerkt wird die GEPLANTE Weckzeit, nicht die Klingelzeit** (Review #140, 14.10.2026): aus
+dem Merker erbt der Snooze-Eintrag seine Weckzeit, und die Hue-Tageslicht-Bedingung muss beim
+Schlummern dieselbe Zeit sehen wie beim ersten Klingeln. Ein verspätet (inexakt) zugestellter
+Wecker merkte sonst seine Verspätung. Quelle ist das Intent-Extra `EXTRA_TRIGGER_TIME` (auch im
+Direct Boot da), Rückfall „jetzt“ für Schlummer-Broadcasts und alte PendingIntents
+(`AlarmReceiver.zuMerkendeWeckzeit`). Exakt zugestellt ändert sich nichts.
+
 **Das Rennen an der Weckzeit (Review vor dem Merge).** Dimm-Tick und Wecker-Broadcast feuern im
 selben Augenblick. Rechnet der Tick, nachdem der verstrichene Wecker aus dem Bestand gefallen
 ist, aber bevor `merke()` geschrieben hat, öffnet er bei Nachlauf 0 die Nacht bis zur

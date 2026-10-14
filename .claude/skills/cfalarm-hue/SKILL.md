@@ -188,7 +188,9 @@ das baut man dieselbe Falle in neuer Form nach.
 - **„Nur bei Dunkelheit“ (#140, `HueScheduleRule.hellAb`) gilt an JEDER Stelle, an der
   `passtAufSchicht` prueft** — `findApplicableRules`, `matchingPreAlarmSunriseRules` (Vorab-Rampe
   UND Vorlaufzeit), `scheduleSunriseStarts`, `SunriseStartWorker`, `AlarmReceiver` (Snooze:
-  `SnoozeEntry.weckzeit`). Verglichen wird die **Weckzeit** (strikt `<`) mit dem Hell-Zeitpunkt
+  `SnoozeEntry.weckzeit`; sonst Intent-Extra `EXTRA_TRIGGER_TIME`, NICHT der Alarm-Bestand: im
+  kalten Prozess wirft der den gerade klingelnden Wecker beim Laden als verstrichen weg, die
+  Bedingung lief dann still ins Leere — Review 14.10.2026). Verglichen wird die **Weckzeit** (strikt `<`) mit dem Hell-Zeitpunkt
   **des Wecktags**, auch bei der Sonnenaufgangs-Rampe: ganz oder gar nicht. `SchichtFolgen` zaehlt
   nur. **Ein kuenftiger fuenfter Hue-Pfad muss die Bedingung mit anwenden** (wie die stille Schicht).
   Kein Ort/Lesefehler = Regel laeuft. Auto-Aus bei Sonnenaufgang ist bewusst NICHT Teil davon.

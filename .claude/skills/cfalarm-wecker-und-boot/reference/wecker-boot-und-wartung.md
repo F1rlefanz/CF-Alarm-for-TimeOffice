@@ -395,7 +395,11 @@
   Broadcast selbst feuert normal weiter, die `AlarmInfo` bleibt normal in `getAllAlarms()` — DND/
   Dimmer/Feature A sind davon unberührt. **Fail-safe wie der Skip-Check daneben:** schlägt der
   `AlarmInfo`-Lookup fehl (z. B. Direct Boot vor Entsperrung), gilt der Alarm NICHT als still — im
-  Zweifel wecken statt versehentlich stumm bleiben.
+  Zweifel wecken statt versehentlich stumm bleiben. **Offene Lücke (Review 14.10.2026):** der
+  Lookup fehlt auch im ENTSPERRTEN, kalt gestarteten Prozess (über Nacht beendet, Neustart) —
+  `AlarmRepository` filtert beim Laden `triggerTime > jetzt`, und der gerade feuernde Wecker ist
+  verstrichen. Eine stille Schicht klingelt dann. Die Hue-Weckzeit (#140) kommt deshalb aus dem
+  Intent-Extra `EXTRA_TRIGGER_TIME`; für `isSilent` gibt es (noch) kein solches Extra.
 - **„Deine Schicht beginnt um" (Notification + Vollbild) muss `AlarmInfo.shiftStartTime` zeigen,
   NICHT `triggerTime`/die Weckzeit** (Fix v1.20.1, Extra dafür heißt seither
   `AlarmReceiver.EXTRA_SHIFT_START_TIME`, Schlüssel `"shift_start_time_formatted"`). Real

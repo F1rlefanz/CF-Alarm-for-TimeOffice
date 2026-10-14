@@ -14,7 +14,9 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.AlarmPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.GeklingelteWeckzeiten
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.WecktonAnstieg
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.ZeitkettenArmierer
+import com.github.f1rlefanz.cf_alarmfortimeoffice.freietage.FreieTageStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.IHueRuleUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmManagerService
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmSoundService
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmInfo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.reinerSchichtname
@@ -36,6 +38,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import java.time.LocalDateTime
 import java.time.LocalTime
+import java.time.ZoneId
 import javax.inject.Inject
 
 /**
@@ -62,6 +65,8 @@ class AlarmReceiver : BroadcastReceiver() {
     @Inject lateinit var alarmPrefs: AlarmPrefs
     /** Lazy: erst beim Gebrauch aufgeloest, nur bei entsperrtem Speicher (siehe Aufrufstelle). */
     @Inject lateinit var zeitkettenArmierer: dagger.Lazy<ZeitkettenArmierer>
+    /** Lazy und nur bei entsperrtem Speicher gelesen - CE-DataStore (siehe Aufrufstelle). */
+    @Inject lateinit var freieTageStore: dagger.Lazy<FreieTageStore>
 
     companion object {
         /**
@@ -261,6 +266,38 @@ class AlarmReceiver : BroadcastReceiver() {
                         LogTags.ALARM_RECEIVER,
                         "🔐 DIRECT BOOT: Nutzer noch nicht entsperrt - Skip-Check uebersprungen, Alarm $alarmId klingelt"
                     )
+                }
+
+                // FREIGEGEBENER TAG, BACKSTOP FUER DEN SNOOZE. "Dienst faellt aus" bricht den
+                // schwebenden Snooze des Tages selbst ab (`TagFreigabeUseCase`, Schritt 2b) - stirbt
+                // der Prozess aber zwischen Markierung und Abbruch, liegt er noch scharf, und kein
+                // Sync raeumt Snoozes weg. Dieselbe Lage wie bei den Weckern: Gate UND Backstop.
+                // Nur bei entsperrtem Speicher (FreieTageStore ist CE); jeder Fehler = klingeln.
+                if (userUnlocked && intent.action == AlarmManagerService.snoozeAlarmAction(alarmId)) {
+                    val freigegeben = try {
+                        val eintrag = AlarmManagerService.snoozeEintrag(context, alarmId)
+                        eintrag != null && AlarmManagerService.gehoertSnoozeZuFreiemTag(
+                            eintrag,
+                            freieTageStore.get().freieTageNow(),
+                            ZoneId.systemDefault()
+                        )
+                    } catch (e: Exception) {
+                        Logger.e(
+                            LogTags.ALARM_RECEIVER,
+                            "❌ FREIGABE-CHECK: Snooze $alarmId nicht pruefbar - klingelt sicherheitshalber",
+                            e
+                        )
+                        false
+                    }
+                    if (freigegeben) {
+                        Logger.business(
+                            LogTags.ALARM_RECEIVER,
+                            "🚫 FREIGABE: Snooze $alarmId ($shiftName) gehoert zu einem freigegebenen Tag - klingelt nicht"
+                        )
+                        // Nur noch der Merker: der Alarm selbst ist gerade gefeuert.
+                        AlarmManagerService.cancelSnooze(context, alarmId)
+                        return@launch
+                    }
                 }
 
                 Logger.business(LogTags.ALARM_RECEIVER, "📱 ALARM TRIGGERED! Shift: $shiftName")

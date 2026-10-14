@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.Work
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -64,6 +65,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.NotificationSettings
 fun SettingsTabContent(
     authViewModel: AuthViewModel,
     onShowCalendarSelection: () -> Unit,
+    onShowShiftConfig: () -> Unit,
     onShowDndSettings: () -> Unit
 ) {
     val context = LocalContext.current
@@ -107,6 +109,15 @@ fun SettingsTabContent(
             titel = "Kalender auswählen",
             text = "Wähle die Kalender für Schichterkennung",
             onClick = onShowCalendarSelection
+        )
+
+        // Schichttypen (#139): gehoeren zur Konfiguration, nicht in den Wecker-Tab. Zurueck fuehrt
+        // ueber returnToTab (SETTINGS) wieder hierher.
+        WeiterKarte(
+            icon = Icons.Default.Work,
+            titel = "Schichttypen verwalten",
+            text = "Schichten anlegen, Muster und Weckzeiten festlegen",
+            onClick = onShowShiftConfig
         )
 
         // Kalender-Vorausschau (#51) - direkt unter der Kalenderauswahl: beides bestimmt, WAS

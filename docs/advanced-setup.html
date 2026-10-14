@@ -80,12 +80,12 @@
 
         <section class="content-card" id="schichten">
             <h2>Schichttypen: woran die App deine Dienste erkennt</h2>
-            <p>Zu finden im Bereich <strong>Wecker</strong> → „Schichttypen verwalten“. Neue Installationen beginnen mit Früh-, Spät- und Nachtschicht (Kürzel F, S, N) und dem Zwischendienst (ZD).</p>
+            <p>Zu finden unter <strong>Einstellungen</strong> → „Schichttypen verwalten“. Neue Installationen beginnen mit Früh-, Spät- und Nachtschicht (Kürzel F, S, N) und dem Zwischendienst (ZD).</p>
             <ul>
                 <li><strong>Weckzeit:</strong> Jeder Schichttyp hat eine feste Weckzeit, zum Beispiel 05:30 für die Frühschicht.</li>
                 <li><strong>Erkennungsmuster:</strong> Ein Muster trifft, wenn es im Termintitel als eigenes Wort vorkommt – „F“ erkennt den Termin „F“, aber nicht „Fortbildung“. Auch der Name des Schichttyps zählt ab zwei Zeichen als Muster.</li>
                 <li><strong>„Diese Kürzel stehen in deinem Kalender“:</strong> Diese Karte zeigt die Termintitel, für die es noch kein Muster gibt. Tippe ein Kürzel an und ordne es einer Schicht zu; die Wecker werden sofort neu gestellt.</li>
-                <li><strong>Statuszeile:</strong> Unter jeder Schicht steht, was sie außer dem Wecker auslöst, etwa „Dimmen: eigene Regel · Licht: 1 Regel · DND: aus“.</li>
+                <li><strong>Statuszeile:</strong> Unter jeder Schicht steht, was sie außer dem Wecker auslöst, etwa „Dimmen: eigene Regel · Licht: 1 Regel · Nicht stören: aus“.</li>
                 <li><strong>Stille Schicht:</strong> Kein Weckton, keine Vibration, kein Weckbildschirm – Dimmen und „Nicht stören“ richten sich aber weiter nach ihr.</li>
                 <li><strong>Rufbereitschaft:</strong> Markiert eine Schicht als Rufbereitschaft. An solchen Tagen schaut die App jede Stunde in den Kalender, und „Nicht stören“ endet zu einer festen Uhrzeit.</li>
                 <li><strong>Schichtdefinition aktiviert:</strong> Ausgeschaltet bekommt diese Schicht keinen Wecker mehr.</li>
@@ -94,14 +94,21 @@
 
         <section class="content-card" id="wecker">
             <h2>Wecker</h2>
-            <p>Im Bereich <strong>Wecker</strong>:</p>
+            <p>Im Bereich <strong>Wecker</strong> steht oben eine <strong>Liste deiner Dienst-Tage</strong> bis zum Ende der Kalender-Vorausschau. Pro Tag siehst du das Datum, die Schicht mit Dienstzeit und die Wecker dazu: <em>Weckt</em>, <em>Still</em> (kein Ton) oder <em>von dir gestellt</em>. Kleine Kärtchen zeigen, was der Dienst sonst auslöst – „Nicht stören“, Dimmen, Licht, bei Rufbereitschaft die stündliche Kalender-Abfrage. Tippst du einen Tag an, öffnet sich eine Detailansicht mit Erklärung.</p>
             <ul>
-                <li><strong>Automatische Alarme:</strong> der Hauptschalter für alle Wecker aus dem Kalender. Ausschalten entfernt die gestellten Wecker sofort.</li>
-                <li><strong>Schlummer-Dauer:</strong> 3, 5, 10 oder 15 Minuten – gilt für den Weckbildschirm und die Benachrichtigung.</li>
-                <li><strong>Sanft lauter werden:</strong> Der Wecker beginnt leise und wird bis zu deiner Alarm-Lautstärke lauter. Ab Werk ist das aus.</li>
-                <li><strong>Überspringen:</strong> lässt genau den nächsten Wecker aus. Der Dienst bleibt bestehen – Dimmen und „Nicht stören“ richten sich weiter nach ihm.</li>
-                <li><strong>Freigeben:</strong> für einen Tag, an dem der Dienst ausfällt. Dann gibt es keinen Wecker und kein „Nicht stören“ zur Dienstzeit; dein Kalender bleibt unverändert. Über das Kalender-Symbol daneben gibst du einen anderen Tag frei. Freigegebene Tage lassen sich wieder aufheben.</li>
+                <li><strong>Nicht wecken:</strong> gibt es nur beim <strong>nächsten</strong> Wecker (er ist mit „nächster“ markiert) und lässt genau diesen einen Wecker aus. Der Dienst bleibt bestehen – Dimmen und „Nicht stören“ richten sich weiter nach ihm.</li>
+                <li><strong>Doch wecken:</strong> nimmt „Nicht wecken“ zurück. Der übersprungene Wecker steht dafür an seinem Tag als „weckt diesmal nicht“. Es lässt sich immer nur ein Wecker auslassen – solange einer ausgelassen ist, gibt es „Nicht wecken“ an keinem anderen.</li>
+                <li><strong>Dienst fällt aus:</strong> für einen Tag, an dem der Dienst ausfällt – auch für einen späteren Tag als den nächsten. Dann gibt es keinen Wecker aus dem Dienstplan, auch nicht nach späteren Änderungen im Plan. „Nicht stören“ und Dimmen richten sich nicht mehr nach dem Dienst – der Tag zählt als freier Tag, eine Dimm-Regel für freie Tage wirkt also weiter. Die stündliche Rufdienst-Abfrage entfällt. Dein Kalender bleibt unverändert und eigene Wecker bleiben bestehen. Mit „Dienst fällt an einem anderen Tag aus …“ unter der Liste wählst du einen beliebigen Tag.</li>
+                <li><strong>Zurücknehmen:</strong> macht „Dienst fällt aus“ rückgängig. Solche Tage bleiben in der Liste stehen, bis du sie zurücknimmst.</li>
+                <li><strong>Hinweis oben:</strong> Ist die Automatik pausiert oder ausgeschaltet, steht dort der Grund samt Weg zurück. Ist die Liste leer, sagt dir der Leerzustand, woran es liegt.</li>
             </ul>
+            <p>Darunter, in „Wie der Wecker klingt“:</p>
+            <ul>
+                <li><strong>Schlummer-Dauer:</strong> ein Zahlenfeld, 1 bis 30 Minuten – gilt für den Weckbildschirm und die Benachrichtigung. Beim Verlassen des Felds gilt: Bleibt es leer oder steht keine Zahl darin, bleibt der bisherige Wert; eine zu kleine oder zu große Zahl wird auf 1 bzw. 30 gesetzt.</li>
+                <li><strong>Sanft lauter werden:</strong> Der Wecker beginnt leise und wird bis zu deiner Alarm-Lautstärke lauter. Ab Werk ist das aus.</li>
+                <li><strong>Probehören:</strong> spielt deinen Weckton samt eingestelltem Anstieg kurz vor und endet von selbst oder mit „Stopp“. Ein echter Wecker hat dabei immer Vorrang.</li>
+            </ul>
+            <p>Ganz unten in der Karte <strong>Automatik</strong> liegt der Hauptschalter <strong>Automatische Alarme</strong> für alle Wecker aus dem Kalender. Ausschalten entfernt die gestellten Wecker sofort.</p>
             <p>Den <strong>manuellen Alarm</strong> findest du in der <strong>Übersicht</strong> unten rechts. Er nimmt die Weckzeit des gewählten Schichttyps.</p>
             <p>Der Weckbildschirm erscheint, wenn das Handy gesperrt ist. Benutzt du es gerade, zeigt Android stattdessen eine Benachrichtigung mit denselben Knöpfen.</p>
         </section>
@@ -161,7 +168,7 @@
             <h2>Kurzfristige und längere Abwesenheit</h2>
             <ul>
                 <li><strong>Urlaub steht im Dienstplan:</strong> Für diese Tage erkennt die App keine Schicht und stellt keinen Wecker – du musst nichts tun.</li>
-                <li><strong>Ein Dienst fällt kurzfristig aus</strong>, steht aber noch im Plan (Tausch, Krankheit, freier Tag): Bereich <strong>Wecker</strong> → „Freigeben“.</li>
+                <li><strong>Ein Dienst fällt kurzfristig aus</strong>, steht aber noch im Plan (Tausch, Krankheit, freier Tag): Bereich <strong>Wecker</strong> → in der Liste den Tag antippen → „Dienst fällt aus“.</li>
                 <li><strong>Länger ganz ohne Wecker, Dimmer und „Nicht stören“:</strong> <strong>Einstellungen</strong> → „Hintergrunddienste pausieren“. Das hält Wecker, Dimmer, „Nicht stören“ und Hue-Automatik gemeinsam an, auch über einen Neustart hinweg. Die Übersicht und der System-Status zeigen an, dass pausiert ist.</li>
             </ul>
         </section>

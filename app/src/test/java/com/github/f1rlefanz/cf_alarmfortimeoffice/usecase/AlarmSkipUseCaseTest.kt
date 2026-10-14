@@ -243,11 +243,6 @@ class AlarmSkipUseCaseTest {
             skipRepo.setSkippedTriggerTime
         )
         assertEquals(anzeige.naechsterKlingelnder, result.getOrNull()?.formattedTime)
-        assertEquals(
-            "Der naechste EINTRAG bleibt der stille - 'Tag freigeben' schlaegt weiter dessen Tag vor",
-            "t12",
-            anzeige.naechsterEintrag
-        )
     }
 
     @Test

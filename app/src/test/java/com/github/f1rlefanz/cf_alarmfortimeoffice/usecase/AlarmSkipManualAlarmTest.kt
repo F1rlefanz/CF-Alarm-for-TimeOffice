@@ -145,7 +145,7 @@ class AlarmSkipManualAlarmTest {
             repo.current.find { it.id == 11 }
         )
         assertEquals(
-            "Ohne den Schnappschuss waere 'Aufheben' fuer einen manuellen Wecker wirkungslos",
+            "Ohne den Schnappschuss waere 'Doch wecken' fuer einen manuellen Wecker wirkungslos",
             manual,
             ManualAlarmSnapshot.decode(skipRepo.lastSnapshot).getOrThrow()
         )

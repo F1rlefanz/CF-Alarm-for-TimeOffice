@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Work
@@ -35,7 +34,7 @@ import androidx.compose.ui.unit.dp
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.KalenderVorausschauPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.LetzterSchichtStand
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpan
-import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.AlarmStatusHeader
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.NaechsterWeckerKarte
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.DateTimeFormats
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.AlarmSkipUiState
@@ -108,7 +107,7 @@ internal fun noShiftReason(
 
 /**
  * Der Zusatz fuer die Master-Pause. Bewusst kurz und ohne den Weg zurueck: den nennt die
- * Alarm-Status-Karte unmittelbar darunter (`ALARM_STATUS_PAUSIERT_AUSWEG`) - derselbe Zustand
+ * Karte "Nächster Wecker" unmittelbar darunter (`ALARM_STATUS_PAUSIERT_AUSWEG`) - derselbe Zustand
  * soll nicht zweimal ausfuehrlich auf demselben Bildschirm stehen.
  */
 internal const val NO_SHIFT_HINWEIS_PAUSIERT: String =
@@ -140,6 +139,13 @@ internal const val KALENDER_NICHT_GEFUNDEN_TEXT: String =
     "Google findet keinen ausgewählten Kalender mehr – gelöscht oder nicht mehr freigegeben? " +
         "Solange entstehen keine neuen Wecker, die gestellten bleiben. Näheres im System-Status " +
         "unter \"Kalender\"."
+
+/**
+ * Wo die Schichttypen eingerichtet werden - EINE Stelle fuer beide Saetze der Karte "Nächste
+ * Schicht", damit ein kuenftiger Umzug des Knopfs nicht einen davon vergisst (genau das waere bei
+ * #139 sonst passiert: zwei Texte, ein Ort).
+ */
+internal const val SCHICHTTYPEN_ORT: String = "in den Einstellungen unter „Schichttypen verwalten“"
 
 /**
  * PURE, TESTBAR: Formuliert Grund + Handlungsschritt.
@@ -176,7 +182,7 @@ internal fun noShiftExplanation(
             "Noch kein Kalender ausgewählt — im System-Status unter \"Kalender\" den Dienstplan-Kalender wählen."
         NoShiftReason.AUTHORIZATION_LOST ->
             // KEINE Positionsangabe ("in der Karte darunter"): direkt unter dieser Karte liegt die
-            // Alarm-Status-Karte, die stattdessen in den Wecker-Tab springt - der Erneuern-Knopf
+            // Karte "Nächster Wecker", die stattdessen in den Wecker-Tab springt - der Erneuern-Knopf
             // sitzt erst eine Karte weiter. Wie bei den anderen Gruenden die Beschriftung nennen,
             // die im Screen wirklich steht (Karte "Kalender-Events", Knopf darin).
             "Kalender-Zugriff abgelaufen — in der Karte \"Kalender-Events\" auf " +
@@ -213,7 +219,10 @@ internal fun noShiftExplanation(
                 "System-Status unter \"Debug-Informationen\" auf \"Logs an Entwickler senden\" " +
                 "tippen. Die Konfiguration liegt gesichert vor und wird NICHT überschrieben."
         NoShiftReason.NO_SHIFT_TYPES ->
-            "Keine aktiven Schichttypen — lege sie im Bereich „Wecker“ unter \"Schichttypen verwalten\" an."
+            // Seit #139 liegt "Schichttypen verwalten" in den Einstellungen (neben "Kalender
+            // auswählen"), nicht mehr im Wecker-Bereich - der Satz nennt den Ort, an dem der
+            // Knopf WIRKLICH steht, wortgleich mit ShiftSelectorDialog.
+            "Keine aktiven Schichttypen — lege sie $SCHICHTTYPEN_ORT an."
         NoShiftReason.NO_PATTERN_MATCH -> buildString {
             append("Termine gefunden, aber kein Erkennungsmuster passt")
             if (sampleEventTitles.isNotEmpty()) {
@@ -221,7 +230,7 @@ internal fun noShiftExplanation(
                 append(sampleEventTitles.joinToString(", "))
                 append(")")
             }
-            append(". Erkennungsmuster im Bereich „Wecker“ unter \"Schichttypen verwalten\" prüfen.")
+            append(". Erkennungsmuster $SCHICHTTYPEN_ORT prüfen.")
         }
         NoShiftReason.ONLY_PAST_SHIFTS ->
             "Alle erkannten Schichten liegen bereits in der Vergangenheit."
@@ -447,31 +456,14 @@ fun HomeTabContent(
             }
         }
 
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            onClick = onNavigateToWecker,
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surface
-            ),
-            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-        ) {
-            AlarmStatusHeader(
-                alarmState = alarmState,
-                skipState = skipState,
-                masterPausePaused = masterPausePaused,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(SpacingConstants.PADDING_CARD),
-                trailingContent = {
-                    Icon(
-                        // dekorativ: reines Weiter-Zeichen, die ganze Karte ist das bedienbare
-                        // Element und traegt ihre Beschriftung ueber AlarmStatusHeader selbst
-                        Icons.AutoMirrored.Default.KeyboardArrowRight,
-                        contentDescription = null
-                    )
-                }
-            )
-        }
+        // Statt "N aktive Alarme" die eine Frage: wann klingelt es als Naechstes (#139, P4).
+        NaechsterWeckerKarte(
+            alarmState = alarmState,
+            skipState = skipState,
+            masterPausePaused = masterPausePaused,
+            autoAlarmEnabled = shiftState.currentShiftConfig?.autoAlarmEnabled != false,
+            onAlleWecker = onNavigateToWecker
+        )
 
         val zugriffVerloren =
             !calendarState.calendarAuthorizationValid && calendarState.selectedCalendarIds.isNotEmpty()

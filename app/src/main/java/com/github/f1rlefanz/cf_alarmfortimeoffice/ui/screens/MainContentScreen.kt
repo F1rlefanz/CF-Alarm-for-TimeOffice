@@ -62,6 +62,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.HueTabContent
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.SettingsTabContent
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.StatusTabContent
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.WeckerTabContent
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.wecker.weckerWirkungen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.AlarmViewModel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.AuthViewModel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.CalendarViewModel
@@ -321,17 +322,31 @@ fun MainContentScreen(
                     )
                 }
                 MainTab.WECKER -> {
+                    // HIER gesammelt, nicht oben bei den uebrigen Flows: die Statuszeile je Schicht
+                    // liest Hue-, Dimmer- und DND-Stand erst beim Abo (WhileSubscribed) - ein Abo
+                    // aus jedem Tab hebelte das "gelesen nur bei Bedarf" aus.
+                    val schichtFolgen by shiftViewModel.schichtFolgen.collectAsStateWithLifecycle()
+                    val probeZustand by alarmViewModel.probeZustand.collectAsStateWithLifecycle()
+                    val definitionen = shiftState.currentShiftConfig?.definitions.orEmpty()
+                    val wirkungen = remember(definitionen, schichtFolgen) {
+                        weckerWirkungen(definitionen, schichtFolgen)
+                    }
                     WeckerTabContent(
                         shiftState = shiftState,
                         alarmState = alarmState,
                         skipState = skipState,
                         tagFreigabeState = tagFreigabeState,
+                        wirkungen = wirkungen,
+                        vorausschauTage = calendarState.vorausschauTage,
                         snoozeMinutes = snoozeMinutes,
                         wecktonAnstieg = wecktonAnstieg,
+                        probeZustand = probeZustand,
                         masterPausePaused = masterPausePaused,
                         onUpdateShiftConfig = shiftViewModel::updateShiftConfig,
-                        onSkipNextAlarm = alarmViewModel::skipNextAlarm,
-                        // Nach dem Aufheben MUSS der Alarm-Bestand neu aus dem Kalender
+                        // Der Tap ist der ausdrueckliche Nutzerwille - erst er schreibt.
+                        onResumeMasterPause = { masterPauseViewModel.setPaused(false) },
+                        onSkipNextAlarm = { ziel -> alarmViewModel.skipNextAlarm(angezeigtesZiel = ziel) },
+                        // Nach „Doch wecken“ MUSS der Alarm-Bestand neu aus dem Kalender
                         // aufgebaut werden - skipNextAlarm() hat ihn geloescht. refreshData()
                         // ist der bereits erprobte Weg dorthin (inkl. Vollstaendigkeits-Sperre
                         // und Race-Guard); der Callback laeuft erst, wenn das Flag weg ist.
@@ -345,20 +360,21 @@ fun MainContentScreen(
                             }
                         },
                         onTagFreigeben = alarmViewModel::tagFreigeben,
-                        // Wie beim Aufheben des Ueberspringens: der Bestand muss neu aus dem
-                        // Kalender aufgebaut werden, denn die Freigabe hat die Wecker dieses
-                        // Tages geloescht. forceRefresh = true ist auch hier Pflicht -
-                        // refreshData(false) macht nur einen Token-Check und laedt nichts.
+                        // Wie bei „Doch wecken“: der Bestand muss neu aus dem Kalender aufgebaut
+                        // werden, denn „Dienst fällt aus“ hat die Wecker dieses Tages geloescht.
+                        // forceRefresh = true ist auch hier Pflicht - refreshData(false) macht
+                        // nur einen Token-Check und laedt nichts.
                         onFreigabeZuruecknehmen = { tag ->
                             alarmViewModel.freigabeZuruecknehmen(tag) {
                                 calendarViewModel.refreshData(forceRefresh = true)
                             }
                         },
-                        onShowShiftConfig = onShowShiftConfig,
                         onSnoozeMinutesChange = alarmViewModel::setSnoozeMinutes,
                         onAnstiegAktivChange = alarmViewModel::setAnstiegAktiv,
                         onAnstiegSekundenChange = alarmViewModel::setAnstiegSekunden,
-                        onAnstiegStartProzentChange = alarmViewModel::setAnstiegStartProzent
+                        onAnstiegStartProzentChange = alarmViewModel::setAnstiegStartProzent,
+                        onProbeStart = alarmViewModel::probehoerenStarten,
+                        onProbeStopp = alarmViewModel::probehoerenStoppen
                     )
                 }
                 MainTab.STATUS -> {
@@ -378,6 +394,9 @@ fun MainContentScreen(
                     SettingsTabContent(
                         authViewModel = authViewModel,
                         onShowCalendarSelection = onShowCalendarSelection,
+                        // Zurueck fuehrt in die Einstellungen: MainScreen reicht den aktuellen
+                        // Tab als returnToTab durch.
+                        onShowShiftConfig = onShowShiftConfig,
                         onShowDndSettings = onShowDndSettings
                     )
                 }

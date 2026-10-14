@@ -114,6 +114,7 @@ class AlarmViewModelSkipRestoreTest {
             alarmPrefs = alarmPrefs,
             tagFreigabeUseCase = tagFreigabeUseCaseOhneFreigaben(),
             zeitkettenArmierer = org.mockito.kotlin.mock(),
+            wecktonProbe = org.mockito.kotlin.mock(),
             alarmRepository = mock<IAlarmRepository>().apply {
                 stub {
                     on { isPersistenceBlocked() } doReturn false
@@ -421,8 +422,8 @@ class AlarmViewModelSkipRestoreTest {
         advanceUntilIdle()
 
         assertNull(
-            "Ein uebersprungener Wecker darf nicht als naechster Alarm angekuendigt werden",
-            viewModel.uiState.value.nextAlarmTime
+            "Ein uebersprungener Wecker darf nicht als naechster Wecker angekuendigt werden",
+            viewModel.uiState.value.nextRingingAlarmTriggerTime
         )
     }
 }

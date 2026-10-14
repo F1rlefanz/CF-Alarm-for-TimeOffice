@@ -94,8 +94,9 @@ Konstruktion stumm aussteigt. Der Nutzer las eine Zusage, stellte keinen eigenen
 verschlief; zusätzlich verdeckte der stille Eintrag den nächsten, der wirklich klingelt. Der
 `ShiftConfigScreen` hatte für den Zwilling `isEnabled` schon eine Warnung in Großbuchstaben im Code
 stehen — ausgerechnet die Karte, die den NÄCHSTEN Wecker behauptet, hatte keine. Heute ist der
-stille Eintrag gekennzeichnet, die Zählung „N aktive Alarme" unterscheidet, und der nächste hörbare
-Wecker steht daneben. **Merke: eine Bedingung, die die AUSLÖSUNG gated, muss auch die ANZEIGE
+stille Eintrag gekennzeichnet, und genannt wird der nächste hörbare Wecker (seit #139 die Karte
+„Nächster Wecker“, die stille Einträge zählt, wenn kein klingelnder ansteht; die Tagesliste zeigt
+sie als „Still“). **Merke: eine Bedingung, die die AUSLÖSUNG gated, muss auch die ANZEIGE
 gaten — sonst sagt die App etwas zu, das sie nicht hält.**
 
 
@@ -111,8 +112,9 @@ falschen Zustand, am falschen Ort, in der falschen Richtung oder gar nicht geren
   weil die Schichterkennung unabhängig weiterläuft. Wer nach dem Urlaub Home und Wecker prüfte, sah
   nichts Auffälliges und verschlief jede Schicht — die App läuft aus diesem Zustand NIE von allein
   heraus. Jetzt: Karte im Status-Tab mit Folge und zwei Auswegen, Grund im Alarm-Status, korrigierte
-  Schalterbeschreibung, Schalter während der Pause gesperrt. **Die Pause hat Vorrang vor „N aktive
-  Alarme"** (`alarmStatusZustand` in `AlarmStatusHeader.kt`): ein nach `pause()` stehengebliebener
+  Schalterbeschreibung, Schalter während der Pause gesperrt. **Die Pause hat Vorrang vor dem
+  angezeigten Bestand** (`alarmStatusZustand`, seit #139 in `NaechsterWeckerKarte.kt`; bis 1.49 in
+  `AlarmStatusHeader.kt` vor „N aktive Alarme"): ein nach `pause()` stehengebliebener
   Bestand verspricht eine Weckzeit, die nie gestellt wird. Und **höchstens EIN Zusatz-Hinweis**
   gleichzeitig (`noShiftExplanation`), sonst bleibt offen, welcher der wirksame ist.
 - **Eine Meldung erreicht ihren Nutzer nur, wenn sie in GENAU dem Zustand gerendert wird, in dem sie
@@ -140,7 +142,8 @@ falschen Zustand, am falschen Ort, in der falschen Richtung oder gar nicht geren
 - **Ein neuer Compose-Parameter für einen sicherheitsrelevanten Zustand bekommt KEINEN Default.**
   `masterPausePaused: Boolean = false` hätte einen künftigen Aufrufer wortlos in den alten Fehler
   (Pause unsichtbar) zurückfallen lassen, ohne dass Compiler oder Test anschlagen. Auf dem
-  Anzeigepfad (`AlarmStatusHeader`, `WeckerTabContent`, `StatusTabContent`) ist der Parameter
+  Anzeigepfad (`NaechsterWeckerKarte` — dort auch `autoAlarmEnabled` —, `WeckerTabContent`,
+  `StatusTabContent`) ist der Parameter
   deshalb pflichtig.
 
 - **`surfaceVariant` ist in der HELLEN CSJR-Palette derselbe Farbwert wie `background` — eine Karte

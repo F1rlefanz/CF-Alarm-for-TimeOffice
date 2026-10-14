@@ -1,22 +1,21 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel
 
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmInfo
-import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.FREIGEBEN_HINWEIS
-import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.FREIGEBEN_HINWEIS_DETAIL
-import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.FREIGEBEN_NEBENWIRKUNGEN
-import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.UEBERSPRINGEN_KEIN_ZIEL
-import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.ueberspringenZeile
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.wecker.DIENST_FAELLT_AUS_ERKLAERUNG
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.AlarmSkipUseCase
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.LocalDateTime
+import java.time.LocalTime
 import java.time.ZoneId
 
 /**
- * "Überspringen" trifft den angezeigten KLINGELNDEN Wecker und sagt, welchen (Paket C), und der
- * Hinweis zu "Tag freigeben" nennt die Nebenwirkungen (Paket D) - beides seit 1.48.0.
+ * „Nicht wecken“ (bis 1.49 "Überspringen") trifft den angezeigten KLINGELNDEN Wecker und steht an
+ * genau dessen Zeile (seit 1.48.0, mit #139 in die Tagesliste gewandert), und die Erklaerung zu
+ * „Dienst fällt aus“ (bis 1.49 "Tag freigeben") nennt die Nebenwirkungen.
  *
  * DER BEFUND (12.10.2026, Rufdienst-Tag): stiller Rufdienst-Eintrag 05:00, eigener Wecker 05:30.
  * Die Karte zeigte "Nächster klingelnder Wecker: 05:30", die Zeile darunter "Nächsten Alarm
@@ -24,9 +23,9 @@ import java.time.ZoneId
  * nichts veraendert. Die Tests hier halten fest:
  *  - Anzeige und Skip-Ziel laufen ueber DIESELBE Funktion
  *    (`AlarmSkipUseCase.naechsterKlingelnderWecker`), auch mit uebersprungenem Eintrag im Bestand.
- *  - Die Knopfzeile nennt Datum und Uhrzeit genau dieses Weckers; ohne klingelnden Wecker sagt sie
- *    das, statt einen zu versprechen.
- *  - Der neue Freigabe-Satz steht im Hinweis, an der richtigen Stelle, mit echten Umlauten.
+ *  - „Nicht wecken“ steht in der Tagesliste an genau diesem Wecker; ohne klingelnden Wecker steht
+ *    es nirgends, statt einen zu versprechen.
+ *  - Die Erklaerung am Knopf „Dienst fällt aus“ nennt die Nebenwirkungen, mit echten Umlauten.
  *
  * Der Skip-Vorgang selbst (stiller Eintrag bleibt, klingelnder wird uebersprungen; nur stille ->
  * kein Ziel) ist in `AlarmSkipUseCaseTest` geprueft.
@@ -66,8 +65,6 @@ class UeberspringenKlingelnderWeckerTest {
         assertEquals(2, ziel?.id)
         assertEquals(ziel?.formattedTime, anzeige.naechsterKlingelnder)
         assertEquals(ziel?.triggerTime, anzeige.naechsterKlingelnderZeitpunkt)
-        assertEquals("Der naechste EINTRAG bleibt der stille", "t1", anzeige.naechsterEintrag)
-        assertTrue(anzeige.naechsterEintragIstStumm)
     }
 
     @Test
@@ -88,7 +85,7 @@ class UeberspringenKlingelnderWeckerTest {
     }
 
     @Test
-    fun `Stehen nur stille Eintraege an, gibt es kein Ziel und keine Knopfzeile mit Wecker`() {
+    fun `Stehen nur stille Eintraege an, gibt es kein Ziel und nirgends Nicht wecken`() {
         val jetzt = millis(2026, 10, 12, 20, 0)
         val alarme = listOf(
             alarm(1, millis(2026, 10, 13, 5, 0), stumm = true),
@@ -98,99 +95,76 @@ class UeberspringenKlingelnderWeckerTest {
         val anzeige = berechneWeckerAnzeige(alarme, skippedAlarmId = null, jetzt = jetzt)
 
         assertNull(AlarmSkipUseCase.naechsterKlingelnderWecker(alarme, jetzt))
-        assertNull("Ohne Ziel ist der Knopf gesperrt (enabled haengt hieran)", anzeige.naechsterKlingelnder)
+        assertNull(anzeige.naechsterKlingelnder)
         assertNull(anzeige.naechsterKlingelnderZeitpunkt)
-        assertEquals(UEBERSPRINGEN_KEIN_ZIEL, ueberspringenZeile(anzeige.naechsterKlingelnderZeitpunkt, zone))
-    }
-
-    // --- Knopfzeile ---
-
-    @Test
-    fun `Die Knopfzeile nennt Datum und Uhrzeit des klingelnden Weckers`() {
-        assertEquals(
-            "Wecker 13.10.\u00A005:30 einmalig überspringen",
-            ueberspringenZeile(millis(2026, 10, 13, 5, 30), zone)
+        assertTrue(
+            "Ohne klingelnden Wecker darf keine Zeile „Nicht wecken“ anbieten",
+            wecker(alarme, jetzt, zone).none { it.nichtWeckenMoeglich || it.naechster }
         )
     }
 
-    @Test
-    fun `Die Knopfzeile schreibt Tag, Monat und Stunde zweistellig`() {
-        assertEquals(
-            "Wecker 03.11.\u00A007:05 einmalig überspringen",
-            ueberspringenZeile(millis(2026, 11, 3, 7, 5), zone)
-        )
-    }
+    // --- „Nicht wecken“ in der Tagesliste ---
 
     @Test
-    fun `Die Knopfzeile rechnet in der uebergebenen Zeitzone`() {
-        // Derselbe Zeitpunkt, andere Wanduhr: die Zeile muss die Ortszeit des Geraets nennen,
-        // denn dort klingelt der Wecker. 05:30 in Berlin (MESZ, UTC+2) ist 03:30 UTC.
-        val zeitpunkt = millis(2026, 10, 13, 5, 30)
-        assertEquals(
-            "Wecker 13.10.\u00A003:30 einmalig überspringen",
-            ueberspringenZeile(zeitpunkt, ZoneId.of("UTC"))
-        )
-    }
-
-    @Test
-    fun `Ohne klingelnden Wecker verspricht die Knopfzeile keinen`() {
-        assertEquals(UEBERSPRINGEN_KEIN_ZIEL, ueberspringenZeile(null, zone))
-        assertTrue(UEBERSPRINGEN_KEIN_ZIEL.contains("Überspringen"))
-    }
-
-    @Test
-    fun `Die Knopfzeile nennt denselben Wecker wie die Karte`() {
-        // Ende-zu-Ende ueber den ViewModel-Pfad: Zeile aus dem Zeitpunkt, den die Anzeige liefert.
+    fun `Nicht wecken steht an DEM Wecker, den die Anzeige als naechsten klingelnden nennt`() {
+        // Der Befund vom 12.10. in der neuen Liste: der stille 05:00 steht davor, „Nicht wecken“
+        // gehoert trotzdem an den 05:30 - dieselbe Auswahl wie das Ziel von skipNextAlarm().
         val jetzt = millis(2026, 10, 12, 20, 0)
         val alarme = listOf(
             alarm(1, millis(2026, 10, 13, 5, 0), stumm = true),
-            alarm(2, millis(2026, 10, 13, 5, 30), stumm = false)
+            alarm(2, millis(2026, 10, 13, 5, 30), stumm = false),
+            alarm(3, millis(2026, 10, 14, 5, 30), stumm = false)
         )
         val anzeige = berechneWeckerAnzeige(alarme, skippedAlarmId = null, jetzt = jetzt)
 
-        assertEquals(
-            "Wecker 13.10.\u00A005:30 einmalig überspringen",
-            ueberspringenZeile(anzeige.naechsterKlingelnderZeitpunkt, zone)
-        )
-    }
-
-    // --- Freigabe-Hinweis (D) ---
-
-    @Test
-    fun `Der Freigabe-Hinweis nennt Rufdienst-Abfrage, spaetere Dienstplan-Aenderungen und eigene Wecker`() {
-        assertEquals(
-            "Auch die stündliche Rufdienst-Abfrage entfällt, und spätere Änderungen im Dienstplan " +
-                "stellen an diesem Tag keinen Wecker mehr. Deine eigenen Wecker bleiben.",
-            FREIGEBEN_NEBENWIRKUNGEN
-        )
-        assertTrue(FREIGEBEN_HINWEIS_DETAIL.contains(FREIGEBEN_NEBENWIRKUNGEN))
-        assertTrue(FREIGEBEN_HINWEIS.contains(FREIGEBEN_NEBENWIRKUNGEN))
+        val mitKnopf = wecker(alarme, jetzt, zone).filter { it.nichtWeckenMoeglich }
+        assertEquals("Genau EINE Zeile bietet „Nicht wecken“ an (Variante A)", 1, mitKnopf.size)
+        assertEquals(anzeige.naechsterKlingelnderZeitpunkt, mitKnopf.single().triggerTime)
     }
 
     @Test
-    fun `Der Freigabe-Satz steht im Absatz zu Tag freigeben, vor dem Satz zum Kalendertermin`() {
-        val satz = FREIGEBEN_HINWEIS_DETAIL.indexOf(FREIGEBEN_NEBENWIRKUNGEN)
-        val absatzFreigeben = FREIGEBEN_HINWEIS_DETAIL.indexOf("Tag freigeben streicht den Dienst selbst.")
-        val termin = FREIGEBEN_HINWEIS_DETAIL.indexOf("Der Termin im Kalender bleibt")
+    fun `Die Uhrzeit der Zeile ist die Wanduhr der uebergebenen Zeitzone`() {
+        // Derselbe Zeitpunkt, andere Wanduhr: die Zeile muss die Ortszeit des Geraets nennen,
+        // denn dort klingelt der Wecker. 05:30 in Berlin (MESZ, UTC+2) ist 03:30 UTC.
+        val jetzt = millis(2026, 10, 12, 20, 0)
+        val alarme = listOf(alarm(2, millis(2026, 10, 13, 5, 30), stumm = false))
 
-        assertTrue("Absatz 'Tag freigeben' fehlt", absatzFreigeben >= 0)
-        assertTrue("Satz zum Kalendertermin fehlt", termin >= 0)
-        assertTrue("Der Satz gehoert hinter den Anfang des Freigabe-Absatzes", satz > absatzFreigeben)
-        assertTrue("Der Satz gehoert vor den Satz zum Kalendertermin", satz < termin)
-        assertTrue(
-            "Der Satz darf nicht in den Absatz zum Ueberspringen rutschen - dort gilt er nicht",
-            FREIGEBEN_HINWEIS_DETAIL.substring(0, absatzFreigeben).contains("Rufdienst").not()
-        )
+        assertEquals(LocalTime.of(5, 30), wecker(alarme, jetzt, zone).single().uhrzeit)
+        assertEquals(LocalTime.of(3, 30), wecker(alarme, jetzt, ZoneId.of("UTC")).single().uhrzeit)
+    }
+
+    private fun wecker(alarme: List<AlarmInfo>, jetzt: Long, zone: ZoneId): List<WeckerEintrag.Wecker> =
+        baueWeckerTage(alarme, emptyList(), SkipLage.KEIN, jetzt, zone, emptyMap())
+            .flatMap { it.eintraege }
+            .filterIsInstance<WeckerEintrag.Wecker>()
+
+    // --- Erklaerung am Knopf „Dienst fällt aus“ ---
+
+    @Test
+    fun `Die Erklaerung nennt Rufdienst-Abfrage, spaetere Dienstplan-Aenderungen und eigene Wecker`() {
+        // Die drei Nebenwirkungen, die man sonst nur am Geraet sieht - Belege an der Konstante.
+        assertTrue(DIENST_FAELLT_AUS_ERKLAERUNG.contains("Rufdienst-Abfrage entfällt"))
+        assertTrue(DIENST_FAELLT_AUS_ERKLAERUNG.contains("auch nicht nach späteren Änderungen im Dienstplan"))
+        assertTrue(DIENST_FAELLT_AUS_ERKLAERUNG.contains("Deine eigenen Wecker bleiben"))
+        assertTrue(DIENST_FAELLT_AUS_ERKLAERUNG.contains("Termin im Kalender"))
     }
 
     @Test
-    fun `Der Freigabe-Satz schreibt echte Umlaute`() {
+    fun `Die Erklaerung verspricht kein Dimmen-Aus - eine Regel fuer freie Tage wirkt weiter`() {
+        // Der Tag zaehlt als freier Tag (FreieTageStore.filtereSpannen) - die Regel fuer freie
+        // Tage gilt dann. "kein Dimmen" waere eine Zusage, die nicht eintritt.
+        assertTrue(DIENST_FAELLT_AUS_ERKLAERUNG.contains("freier Tag"))
+        assertFalse(DIENST_FAELLT_AUS_ERKLAERUNG.contains("kein Dimmen"))
+    }
+
+    @Test
+    fun `Die Erklaerung schreibt echte Umlaute`() {
         // Projektregel fuer Nutzertexte: echte Umlaute, keine Ersatzschreibung.
-        listOf("stündliche", "entfällt", "spätere", "Änderungen").forEach { wort ->
-            assertTrue("'$wort' fehlt", FREIGEBEN_NEBENWIRKUNGEN.contains(wort))
+        listOf("stündliche", "entfällt", "späteren", "Änderungen", "fällt").forEach { wort ->
+            assertTrue("'$wort' fehlt", DIENST_FAELLT_AUS_ERKLAERUNG.contains(wort))
         }
-        listOf("stuendliche", "entfaellt", "spaetere", "Aenderungen").forEach { ersatz ->
-            assertTrue("Ersatzschreibung '$ersatz'", !FREIGEBEN_NEBENWIRKUNGEN.contains(ersatz))
+        listOf("stuendliche", "entfaellt", "spaeteren", "Aenderungen", "faellt").forEach { ersatz ->
+            assertFalse("Ersatzschreibung '$ersatz'", DIENST_FAELLT_AUS_ERKLAERUNG.contains(ersatz))
         }
     }
 }

@@ -29,9 +29,10 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
 /**
  * Ein Hinweis, dessen Kurzsatz immer sichtbar ist und dessen Rest sich aufklappen laesst.
  *
- * Gemeinsamer Baustein fuer den Schichterkennungs-Hinweis (Schicht-Konfiguration) und den
- * "Ueberspringen oder freigeben"-Hinweis (Wecker-Tab) - bis v1.45 zwei Kopien desselben Aufbaus
- * (#132, G11-05). Die Gruende stehen damit an EINER Stelle:
+ * Entstanden als gemeinsamer Baustein fuer den Schichterkennungs-Hinweis (Schicht-Konfiguration)
+ * und den frueheren "Ueberspringen oder freigeben"-Hinweis (Wecker-Tab) - bis v1.45 zwei Kopien
+ * desselben Aufbaus (#132, G11-05). Seit der Tagesliste (#139) steht die Erklaerung direkt am Knopf
+ * im Tages-Sheet; die Gruende bleiben hier an EINER Stelle:
  *  - Der Kurzsatz bleibt sichtbar: er ist die eigentliche Regel; der volle Text fuellt bei grosser
  *    Systemschrift die halbe Seite.
  *  - Der Umschalter sagt, WAS er zeigt ([aufklappText]) - nicht "Details" oder "i". Material3 gibt

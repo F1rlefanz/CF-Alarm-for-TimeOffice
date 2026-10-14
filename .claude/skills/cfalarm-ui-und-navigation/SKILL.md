@@ -55,14 +55,16 @@ das baut man dieselbe Falle in neuer Form nach.
   ausgeschalteter Automatik ist keiner gestellt. Drei Offline-Texte hatten den Satz fest verdrahtet
   und widersprachen auf derselben Karte dem Pausenhinweis (Emulator, 01.10.2026).
 - **Ein Zustand, der die App dauerhaft nicht wecken lässt, MUSS dort stehen, wo der Nutzer
-  nachsieht** — nicht nur an seinem Schalter. Die Master-Pause hat dabei **Vorrang vor „N aktive
-  Alarme"**, und es steht höchstens EIN Zusatz-Hinweis gleichzeitig.
+  nachsieht** — nicht nur an seinem Schalter. Die Master-Pause hat dabei **Vorrang vor dem angezeigten
+  nächsten Wecker** (Karte „Nächster Wecker“, bis 1.49 „N aktive Alarme“), und es steht höchstens
+  EIN Zusatz-Hinweis gleichzeitig.
 - **Eine Meldung erreicht ihren Nutzer nur, wenn sie in GENAU dem Zustand gerendert wird, in dem sie
   gesetzt wird** — Renderstelle UND Zustand bei jedem neuen Meldungsfeld per grep prüfen.
 - **Kein `SnackbarDuration.Indefinite`**: es blockiert über den Mutex des `SnackbarHostState` alle
   übrigen Meldungen samt ihrer `clearError()`-Aufrufe. Bleibende Zustände sind Karten im Status-Tab.
 - **Auf dem ANZEIGEPFAD bekommt ein sicherheitsrelevanter Compose-Parameter KEINEN Default**
-  (`masterPausePaused` in `AlarmStatusHeader`, `WeckerTabContent`, `StatusTabContent`) — sonst
+  (`masterPausePaused` in `NaechsterWeckerKarte`, `WeckerTabContent`, `StatusTabContent`;
+  in `NaechsterWeckerKarte` ebenso `autoAlarmEnabled`) — sonst
   fällt ein künftiger Aufrufer wortlos in den alten Fehler zurück. Reine Textfunktionen wie
   `noShiftExplanation()` dürfen einen Default haben; dort ist der Wert ein Zusatz, keine Zusage.
 - **Hilfe gibt es genau einmal: auf der Website (`docs/`).** Die App verweist nur, über
@@ -94,12 +96,12 @@ das baut man dieselbe Falle in neuer Form nach.
   mehreren Mechanismen, sagt ihr Name welchen ("Nächster regelmäßiger Abgleich", nicht "Nächster
   Abgleich" - an Rufbereitschafts-Tagen stand sie sonst 6 h ueber der stuendlichen Abfrage).
 - **Eine Zeile, die das ZIEL eines Knopfs nennt, wird beim Tippen nachgerechnet** (1.48.0,
-  "Überspringen"): Anzeigen rechnen nur bei einer Emission, nicht mit der Uhr. Ist das genannte
+  "Überspringen", seit 1.50.0 "Nicht wecken"): Anzeigen rechnen nur bei einer Emission, nicht mit der Uhr. Ist das genannte
   Ziel inzwischen vorbei, lehnt der Knopf ab und sagt, dass NICHTS geschah - er trifft nie still
   ein anderes Ziel als das genannte.
 - **Text links, Bedienelement rechts: unter 270 dp (Zeilenbreite ÷ Schriftskalierung)
-  untereinander** - `TextUndBedienung`/`AuswahlRow` mit `UNTEREINANDER_UNTER` in
-  `WeckerTabContent`, Messwerte dort (Emulator 13.10.2026: 320 dp + Schrift 1,3 brach sonst
+  untereinander** - `InhaltUndBedienung`/`AuswahlRow` mit `UNTEREINANDER_UNTER` in
+  `ui/screens/tabs/wecker/WeckerLayout.kt`, Messwerte dort (Emulator 13.10.2026: 320 dp + Schrift 1,3 brach sonst
   mitten im Wort, "überspri|ngen"). Ein geschuetztes Leerzeichen hilft nur, wo die Zeile breit
   genug ist - in einer zu schmalen Spalte macht es aus "17.10. 05:30" ein Wort, das erst recht bricht.
 - **Ein Hinweis zu einem Knopf steht direkt unter DIESEM Knopf und nennt ihn beim Namen** - nicht
@@ -109,6 +111,14 @@ das baut man dieselbe Falle in neuer Form nach.
   Wert wie `background`, die Karte verschwindet. Dezente Karten: `surface` +
   `BorderStroke(1.dp, outline)`. Und ein Zustand wird ADDITIV gezeigt (Rand, Text), nie durch
   Wegnehmen der Fläche.
+- **Die Wecker-Tagesliste (#139, `viewmodel/WeckerTage.kt`) waehlt den naechsten klingelnden
+  Wecker ueber `AlarmSkipUseCase.naechsterKlingelnderWecker` — dieselbe Auswahl wie der Knopf**,
+  und nur dieser bekommt „Nicht wecken“ (Variante A, Eigentuemer 14.10.2026: der Skip-Merker
+  bleibt EINER; ein spaeterer Dienst geht ueber „Dienst fällt aus“ am Tag). Tagesanker = Kalendertag
+  der Weckzeit, wie bei Skip und Freigabe. Ein abgelaufener, noch nicht geraeumter Skip
+  (`SkipLage.wirktNoch`) darf die Liste nicht sperren. Die Liste rechnet beim Zurueckkehren in die
+  App und bei jedem neuen Ziel nach — sonst haengt der Knopf an einem verstrichenen Wecker
+  (Review 14.10.2026). Kaertchen kommen aus `SchichtFolgen`, keine Nachbildung.
 - **Neue Screens einmal bei 320 dp ansehen** (`adb shell wm density 540` auf 1080 px, danach
   `wm density reset`) — das Gerät des Eigentümers läuft so. Lange zusammengesetzte Hauptwörter
   brechen dort mitten im Wort um.

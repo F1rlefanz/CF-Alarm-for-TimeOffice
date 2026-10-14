@@ -62,6 +62,15 @@ class NavigationViewModelTest {
     }
 
     @Test
+    fun `Schichttypen aus den Einstellungen fuehren per Zurueck wieder zu den Einstellungen`() {
+        val vm = newViewModel()
+        vm.handleNavigationAction(NavigationAction.NavigateToShiftConfig(MainTab.SETTINGS))
+        assertEquals(NavigationState.ShiftConfig(MainTab.SETTINGS), vm.navigationState.value)
+        vm.navigateBackToMain()
+        assertEquals(NavigationState.MainContent(MainTab.SETTINGS), vm.navigationState.value)
+    }
+
+    @Test
     fun `NavigateToShiftConfig setzt ShiftConfig`() {
         val vm = newViewModel()
         vm.handleNavigationAction(NavigationAction.NavigateToShiftConfig(MainTab.WECKER))

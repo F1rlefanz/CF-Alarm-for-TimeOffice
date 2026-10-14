@@ -108,6 +108,7 @@ class Pruefrunde7SkipWiedereintrittTest {
             alarmPrefs = alarmPrefs,
             tagFreigabeUseCase = tagFreigabeUseCaseOhneFreigaben(),
             zeitkettenArmierer = org.mockito.kotlin.mock(),
+            wecktonProbe = org.mockito.kotlin.mock(),
             alarmRepository = mock<IAlarmRepository>().apply {
                 stub { on { isPersistenceBlocked() } doReturn false }
             }
@@ -183,7 +184,7 @@ class Pruefrunde7SkipWiedereintrittTest {
         verifyBlocking(skipUseCase, never()) { cancelSkip() }
         assertTrue(
             "Der gerade bestaetigt geschriebene Skip muss stehen - ein dazwischenfunkendes " +
-                "Aufheben haette Merker und Wecker gleichzeitig geraeumt",
+                "'Doch wecken' haette Merker und Wecker gleichzeitig geraeumt",
             viewModel.skipState.value.isNextAlarmSkipped
         )
     }

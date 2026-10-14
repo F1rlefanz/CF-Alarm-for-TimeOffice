@@ -22,9 +22,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.mockito.kotlin.any
@@ -44,15 +42,17 @@ import org.mockito.kotlin.whenever
  * und zaehlte den stillen Eintrag unter "N aktive Alarme" mit. Der naechste WIRKLICH klingelnde
  * Wecker war aus der Oberflaeche gar nicht ablesbar, weil der stille ihn verdeckte.
  *
- * WAS BEWUSST GLEICH BLEIBT: [AlarmUiState.nextAlarmTime] waehlt weiterhin den fruehesten
- * Eintrag, auch wenn er stumm ist - er ist der Anker fuer Dimmer und DND, und "Tag freigeben"
- * schlaegt seinen Tag vor (am Rufdienst-Tag ist der stille Eintrag der richtige Tag).
+ * SEIT #139 (1.50.0) nennt die Oberflaeche nur noch den naechsten KLINGELNDEN Wecker
+ * ([AlarmUiState.nextRingingAlarmTime]/[AlarmUiState.nextRingingAlarmTriggerTime]); die frueheren
+ * Felder fuer den naechsten EINTRAG samt Stumm-Kennzeichen und Zaehler sind mit der Karte
+ * "Alarm-Status" entfallen. Stille Eintraege bleiben trotzdem sichtbar, nur an anderer Stelle:
+ * die Karte "Nächster Wecker" zaehlt sie ("nur 1 stiller Eintrag", `NaechsterWeckerKarteTest`),
+ * die Tagesliste zeigt sie als "Still" (`WeckerTageTest`) - gekennzeichnet, nicht versteckt.
  *
- * SEIT 1.48.0: "Überspringen" haengt NICHT mehr an [AlarmUiState.nextAlarmTime], sondern an
- * [AlarmUiState.nextRingingAlarmTime] - `AlarmSkipUseCase.skipNextAlarm()` waehlt den naechsten
- * KLINGELNDEN Wecker ueber dieselbe Funktion (`AlarmSkipUseCase.naechsterKlingelnderWecker`), mit
- * der die Anzeige ihn errechnet. Bis 1.47.1 traf der Knopf den stillen Eintrag, waehrend die Karte
- * den klingelnden nannte. Die Tests zum Ziel stehen in `UeberspringenKlingelnderWeckerTest`.
+ * SEIT 1.48.0: „Nicht wecken“ waehlt ueber dieselbe Funktion
+ * (`AlarmSkipUseCase.naechsterKlingelnderWecker`), mit der die Anzeige den naechsten klingelnden
+ * Wecker errechnet. Bis 1.47.1 traf der Knopf den stillen Eintrag, waehrend die Karte den
+ * klingelnden nannte. Die Tests zum Ziel stehen in `UeberspringenKlingelnderWeckerTest`.
  */
 @OptIn(ExperimentalCoroutinesApi::class) // Dispatchers.setMain/resetMain, advanceUntilIdle
 class Pruefrunde8StilleSchichtAnzeigeTest {
@@ -116,6 +116,7 @@ class Pruefrunde8StilleSchichtAnzeigeTest {
             alarmPrefs = alarmPrefs,
             tagFreigabeUseCase = tagFreigabeUseCaseOhneFreigaben(),
             zeitkettenArmierer = org.mockito.kotlin.mock(),
+            wecktonProbe = org.mockito.kotlin.mock(),
             alarmRepository = mock<IAlarmRepository>().apply {
                 stub { on { isPersistenceBlocked() } doReturn false }
             }
@@ -123,10 +124,10 @@ class Pruefrunde8StilleSchichtAnzeigeTest {
     }
 
     @Test
-    fun `ein stiller naechster Eintrag wird als stumm ausgewiesen und verdeckt den echten Wecker nicht`() =
+    fun `ein stiller naechster Eintrag verdeckt den echten Wecker nicht`() =
         runTest {
-            // OHNE DEN FIX: nextAlarmIsSilent gaebe es nicht, die Karte behauptete schlicht
-            // "Nächster Alarm: 20.08.2026 05:30" - ein Zeitpunkt, an dem nichts klingelt.
+            // OHNE DEN FIX behauptete die Karte "Nächster Alarm: 20.08.2026 05:30" - ein
+            // Zeitpunkt, an dem nichts klingelt.
             val viewModel = buildViewModel(
                 listOf(
                     alarm(1, inStunden = 12, stumm = true, anzeige = "20.08.2026 05:30"),
@@ -137,13 +138,6 @@ class Pruefrunde8StilleSchichtAnzeigeTest {
 
             val stand = viewModel.uiState.value
             assertEquals(
-                "Die Auswahl selbst bleibt der fruehste Eintrag - Anker fuer Dimmer, DND und " +
-                    "'Tag freigeben'",
-                "20.08.2026 05:30",
-                stand.nextAlarmTime
-            )
-            assertTrue("Der stille Eintrag muss als stumm gekennzeichnet sein", stand.nextAlarmIsSilent)
-            assertEquals(
                 "Der naechste wirklich klingelnde Wecker muss zusaetzlich ablesbar sein",
                 "21.08.2026 05:00",
                 stand.nextRingingAlarmTime
@@ -153,11 +147,10 @@ class Pruefrunde8StilleSchichtAnzeigeTest {
                 now + 36 * 60 * 60 * 1000L,
                 stand.nextRingingAlarmTriggerTime
             )
-            assertEquals("Der Zaehler muss die stummen mitzaehlen", 1, stand.silentAlarmCount)
         }
 
     @Test
-    fun `ein klingelnder naechster Eintrag bleibt unmarkiert`() = runTest {
+    fun `ein klingelnder naechster Eintrag ist selbst der naechste klingelnde`() = runTest {
         val viewModel = buildViewModel(
             listOf(
                 alarm(1, inStunden = 12, stumm = false, anzeige = "20.08.2026 05:00"),
@@ -167,9 +160,8 @@ class Pruefrunde8StilleSchichtAnzeigeTest {
         advanceUntilIdle()
 
         val stand = viewModel.uiState.value
-        assertEquals("20.08.2026 05:00", stand.nextAlarmTime)
-        assertFalse(stand.nextAlarmIsSilent)
-        assertEquals(1, stand.silentAlarmCount)
+        assertEquals("20.08.2026 05:00", stand.nextRingingAlarmTime)
+        assertEquals(now + 12 * 60 * 60 * 1000L, stand.nextRingingAlarmTriggerTime)
     }
 
     @Test
@@ -181,42 +173,34 @@ class Pruefrunde8StilleSchichtAnzeigeTest {
         advanceUntilIdle()
 
         val stand = viewModel.uiState.value
-        assertTrue(stand.nextAlarmIsSilent)
         assertNull(
             "Es gibt keinen klingelnden Wecker - die Karte darf auch keinen nennen",
             stand.nextRingingAlarmTime
         )
         assertNull(
-            "...und der Knopf 'Überspringen' hat kein Ziel",
+            "...und der Knopf 'Nicht wecken' hat kein Ziel",
             stand.nextRingingAlarmTriggerTime
         )
-        assertEquals(1, stand.silentAlarmCount)
     }
 
     // --- Die reine Rechenvorschrift, ohne ViewModel ---
 
     @Test
-    fun `berechneWeckerAnzeige - der uebersprungene Eintrag faellt aus beiden Auswahlen`() {
+    fun `berechneWeckerAnzeige - der uebersprungene Eintrag faellt aus der Auswahl`() {
         val stumm = alarm(1, inStunden = 12, stumm = true, anzeige = "A")
         val laut = alarm(2, inStunden = 36, stumm = false, anzeige = "B")
+        val spaeter = alarm(3, inStunden = 60, stumm = false, anzeige = "C")
 
-        val ohneSkip = berechneWeckerAnzeige(listOf(stumm, laut), skippedAlarmId = null, jetzt = now)
-        assertEquals("A", ohneSkip.naechsterEintrag)
-        assertTrue(ohneSkip.naechsterEintragIstStumm)
-        assertEquals("B", ohneSkip.naechsterKlingelnder)
+        val ohneSkip = berechneWeckerAnzeige(listOf(stumm, laut, spaeter), skippedAlarmId = null, jetzt = now)
+        assertEquals("Der stille Eintrag ist nie der naechste klingelnde", "B", ohneSkip.naechsterKlingelnder)
 
-        val mitSkip = berechneWeckerAnzeige(listOf(stumm, laut), skippedAlarmId = 1, jetzt = now)
-        assertEquals(
-            "Faellt der stille Eintrag weg, ruecken beide Angaben auf den lauten",
-            "B",
-            mitSkip.naechsterEintrag
-        )
-        assertFalse(mitSkip.naechsterEintragIstStumm)
-        assertEquals("B", mitSkip.naechsterKlingelnder)
+        val mitSkip = berechneWeckerAnzeige(listOf(stumm, laut, spaeter), skippedAlarmId = 2, jetzt = now)
+        assertEquals("Faellt der laute weg, rueckt die Auswahl auf den naechsten lauten", "C", mitSkip.naechsterKlingelnder)
+        assertEquals(spaeter.triggerTime, mitSkip.naechsterKlingelnderZeitpunkt)
     }
 
     @Test
-    fun `berechneWeckerAnzeige - verstrichene Alarme zaehlen nicht als naechster Eintrag`() {
+    fun `berechneWeckerAnzeige - verstrichene Alarme zaehlen nicht als naechster klingelnder`() {
         val vergangen = AlarmInfo(
             id = 9,
             shiftId = "alt",
@@ -229,8 +213,8 @@ class Pruefrunde8StilleSchichtAnzeigeTest {
 
         val anzeige = berechneWeckerAnzeige(listOf(vergangen, kommend), skippedAlarmId = null, jetzt = now)
 
-        assertEquals("morgen", anzeige.naechsterEintrag)
-        assertTrue(anzeige.naechsterEintragIstStumm)
+        // Der verstrichene ist laut, der kommende still: es klingelt nichts mehr.
         assertNull(anzeige.naechsterKlingelnder)
+        assertNull(anzeige.naechsterKlingelnderZeitpunkt)
     }
 }

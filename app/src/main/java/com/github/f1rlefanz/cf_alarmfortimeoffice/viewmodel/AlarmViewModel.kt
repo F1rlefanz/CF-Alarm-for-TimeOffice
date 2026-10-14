@@ -3,7 +3,9 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.AlarmPrefs
+import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.ProbeZustand
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.WecktonAnstieg
+import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.WecktonProbe
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.ZeitkettenArmierer
 import com.github.f1rlefanz.cf_alarmfortimeoffice.error.ErrorHandler
 import com.github.f1rlefanz.cf_alarmfortimeoffice.freietage.FreigabeZurueckgenommenException
@@ -24,7 +26,9 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.DateTimeFormats
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -38,7 +42,6 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -48,73 +51,60 @@ data class AlarmUiState(
     val isLoading: Boolean = false,
     val activeAlarms: List<AlarmInfo> = emptyList(),
     val hasActiveAlarms: Boolean = false,
-    val nextAlarmTime: String? = null,
     /**
-     * Ist der unter [nextAlarmTime] angekuendigte Eintrag eine STILLE Schicht?
+     * Der naechste Eintrag, der wirklich klingelt (Anzeigetext) - `null`, wenn keiner ansteht. Ein
+     * STILLER Eintrag zaehlt nie: die App bleibt zu seiner Zeit per Konstruktion stumm
+     * (AlarmReceiver steigt bei `isSilent` vor Ton, Vibration, Vollbild und Hue aus). Gezeigt
+     * werden stille Eintraege trotzdem - gekennzeichnet, nicht versteckt - in der Karte "Nächster
+     * Wecker" (Zaehlung) und in der Tagesliste ("Still").
      *
-     * Dann bleibt die App zu diesem Zeitpunkt per Konstruktion stumm (AlarmReceiver steigt bei
-     * `isSilent` vor Ton, Vibration, Vollbild und Hue aus) - die Karte darf ihn also nicht wie
-     * einen klingelnden Wecker anzeigen. Bewusst KEIN Herausfiltern: der Zeitpunkt ist der Anker
-     * fuer Dimmer und DND, der Nutzer muss ihn weiterhin sehen koennen, und "Tag freigeben"
-     * schlaegt den Tag dieses Eintrags vor ([nextAlarmDate]) - am Rufdienst-Tag ist der stille
-     * Eintrag genau der richtige Tag. Also: kennzeichnen, nicht verstecken.
-     *
-     * Das Ueberspringen haengt seit 1.48.0 NICHT mehr an diesem Eintrag, sondern an
-     * [nextRingingAlarmTime] - ein stiller Eintrag klingelt ohnehin nicht.
-     */
-    val nextAlarmIsSilent: Boolean = false,
-    /**
-     * Der naechste Eintrag, der wirklich klingelt - `null`, wenn keiner ansteht.
-     *
-     * Zwei Aufgaben. Ist [nextAlarmIsSilent], verdeckt der stille Eintrag sonst den echten
-     * Wecker, und der Nutzer kann nicht ablesen, wann er das naechste Mal geweckt wird. Und es
-     * ist das ZIEL von "Überspringen": `AlarmSkipUseCase.skipNextAlarm()` waehlt nach derselben
-     * Regel (`AlarmSkipUseCase.naechsterKlingelnderWecker`), der Knopf ist nur bei einem Wert
-     * hier bedienbar und nennt dessen Datum und Uhrzeit ([nextRingingAlarmTriggerTime]).
+     * Es ist das ZIEL von „Nicht wecken“: `AlarmSkipUseCase.skipNextAlarm()` waehlt nach derselben
+     * Regel (`AlarmSkipUseCase.naechsterKlingelnderWecker`) wie die Tagesliste ihren „nächsten“.
+     * Gelesen wird der Text nur noch im Log der Ziel-Nachrechnung; die Oberflaeche nimmt
+     * [nextRingingAlarmTriggerTime].
      */
     val nextRingingAlarmTime: String? = null,
     /**
      * Weckzeitpunkt (Epoch-Millis) desselben Weckers wie [nextRingingAlarmTime] - `null`, wenn
-     * keiner ansteht. Quelle fuer die Knopfzeile "Wecker 13.10. 05:30 einmalig überspringen":
-     * aus dem Zeitpunkt formatiert statt aus dem Anzeigetext herausgeschnitten, damit die Zeile
-     * nicht an der Form von `AlarmInfo.formattedTime` haengt.
+     * keiner ansteht. Vergleichswert der Ziel-Nachrechnung in [AlarmViewModel.skipNextAlarm] und
+     * Quelle der Uebersicht ("Nächster Wecker").
      */
     val nextRingingAlarmTriggerTime: Long? = null,
-    /** Wie viele der [activeAlarms] stumm sind - damit "N aktive Alarme" nicht laut behauptet. */
-    val silentAlarmCount: Int = 0,
-    /**
-     * Der KALENDERTAG des unter [nextAlarmTime] angekuendigten Eintrags - `null`, wenn keiner
-     * ansteht. Vorlage fuer "Tag freigeben", damit der Knopf ohne Datumsauswahl auskommt.
-     *
-     * Bewusst hier abgeleitet und nicht in der Oberflaeche: dort gaebe es keinen pruefbaren
-     * Bezugszeitpunkt, und der Tag MUSS derselbe sein, den der Wecker traegt - sonst gibt der
-     * Knopf einen anderen Tag frei, als die Karte darueber anzeigt.
-     */
-    val nextAlarmDate: LocalDate? = null,
     val error: String? = null
 )
 
 data class AlarmSkipUiState(
     val isNextAlarmSkipped: Boolean = false,
     val skippedAlarmId: Int? = null,
+    /**
+     * Weckzeitpunkt (Epoch-Millis) des uebersprungenen Weckers, `null` ohne aktiven Skip.
+     *
+     * Die Tagesliste braucht ihn fuer die Zeile „weckt diesmal nicht“ mit „Doch wecken“: der
+     * uebersprungene Wecker ist im Bestand GELOESCHT, sein Tag kommt also allein von hier. Ohne
+     * diesen Wert verschwaende „Doch wecken“, sobald der uebersprungene der einzige Wecker war -
+     * dieselbe Falle wie bis v1.26.2, nur in der neuen Liste.
+     */
+    val skippedAlarmTriggerTime: Long? = null,
     val isLoading: Boolean = false,
     /**
      * Nutzertext zum Ausgang des letzten Skip-Vorgangs, sofern er NICHT einfach aufging:
      *
-     * - "Aufheben": der uebersprungene MANUELLE Wecker kam nicht zurueck (Weckzeit verstrichen,
+     * - „Doch wecken“: der uebersprungene MANUELLE Wecker kam nicht zurueck (Weckzeit verstrichen,
      *   gesicherter Stand unlesbar, Speichern/Stellen fehlgeschlagen).
-     * - "Ueberspringen": der Vorgang musste mitten drin zurueckgenommen werden, weil sich der
-     *   Alarm nicht loeschen liess (siehe `SkipRolledBackException`).
+     * - „Nicht wecken“: der Vorgang musste mitten drin zurueckgenommen werden, weil sich der
+     *   Alarm nicht loeschen liess (siehe `SkipRolledBackException`); ausserdem die Ablehnung,
+     *   wenn der angezeigte Wecker schon vorbei ist (`ueberspringenZielVerstrichenHinweis`).
      *
      * Ohne diesen Text waere der schlechteste Fall stumm: der Nutzer drueckt einen Knopf, die
      * Oberflaeche zeigt danach keinen Skip mehr - und keinen Wecker. Wird beim naechsten
-     * Ueberspringen bzw. Aufheben wieder geleert.
+     * „Nicht wecken“ bzw. „Doch wecken“ wieder geleert.
      */
     val restoreNotice: String? = null
 )
 
 /**
- * Zustand von "Tag freigeben" - die Geste fuer "an diesem Tag findet der Dienst NICHT statt".
+ * Zustand von „Dienst fällt aus“ (intern: Tag freigeben) - die Geste fuer "an diesem Tag findet
+ * der Dienst NICHT statt".
  *
  * **Abgrenzung zu [AlarmSkipUiState], und warum es beide gibt.** Ueberspringen schaltet den
  * naechsten WECKER ab und laesst den Dienst bestehen; "Nicht stoeren" und der Schicht-Dimmer
@@ -167,14 +157,20 @@ class AlarmViewModel @Inject constructor(
      * CalendarViewModel, MainViewModel halten es genauso).
      */
     private val alarmRepository: IAlarmRepository,
-    /** "Tag freigeben" - siehe [TagFreigabeUiState] fuer die Abgrenzung zum Ueberspringen. */
+    /** „Dienst fällt aus“ - siehe [TagFreigabeUiState] fuer die Abgrenzung zu „Nicht wecken“. */
     private val tagFreigabeUseCase: TagFreigabeUseCase,
     /**
      * Ein manueller Wecker verschiebt das Ende eines Dimm-Fensters „bis zur Weckzeit, spaetestens
      * um X" - ohne Nachzug blieb der naechste Dimm-Wechsel auf der alten Uhrzeit-Grenze stehen
      * (Emulator, 13.10.2026: Wecker 05:30 angelegt, Wechsel weiter 07:00). Siehe [createManualAlarm].
      */
-    private val zeitkettenArmierer: ZeitkettenArmierer
+    private val zeitkettenArmierer: ZeitkettenArmierer,
+    /**
+     * „Probehören“ - ein Prozess-Singleton, NICHT an diesen `viewModelScope` gebunden (Lehre der
+     * Dimmer-Vorschau). Das ViewModel reicht nur durch; gestoppt wird von der Oberflaeche bei
+     * ON_STOP und vom Singleton selbst nach Ablauf.
+     */
+    private val wecktonProbe: WecktonProbe
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(AlarmUiState())
@@ -218,6 +214,9 @@ class AlarmViewModel @Inject constructor(
      * schlichtes Feld ohne Synchronisierung.
      */
     private var skipVorgangLaeuft = false
+
+    /** Ein Probe-Start, dessen Read noch laeuft - [probehoerenStoppen] verwirft ihn. */
+    private var probeStartAusstehend: Job? = null
 
     /**
      * SINGLE SOURCE OF TRUTH: Shared upstream for active alarms.
@@ -328,8 +327,8 @@ class AlarmViewModel @Inject constructor(
      * Bleibt ein Eintrag zurueck, ist er NICHT armiert - als "Nächster Alarm" angekuendigt
      * waere er eine Anzeige, die nicht eintritt.
      *
-     * Die stille Schicht wird dagegen NICHT herausgefiltert, sondern gekennzeichnet - warum,
-     * steht bei [AlarmUiState.nextAlarmIsSilent].
+     * Eine stille Schicht ist nie der naechste KLINGELNDE Wecker - siehe
+     * [AlarmUiState.nextRingingAlarmTime].
      */
     private fun uebernehmeAlarmAnzeige(
         bisher: AlarmUiState,
@@ -340,12 +339,8 @@ class AlarmViewModel @Inject constructor(
         return bisher.copy(
             activeAlarms = alarms, // Show all alarms for debugging
             hasActiveAlarms = alarms.isNotEmpty(),
-            nextAlarmTime = anzeige.naechsterEintrag,
-            nextAlarmIsSilent = anzeige.naechsterEintragIstStumm,
             nextRingingAlarmTime = anzeige.naechsterKlingelnder,
-            nextRingingAlarmTriggerTime = anzeige.naechsterKlingelnderZeitpunkt,
-            silentAlarmCount = anzeige.stummeAlarme,
-            nextAlarmDate = anzeige.naechsterEintragTag
+            nextRingingAlarmTriggerTime = anzeige.naechsterKlingelnderZeitpunkt
         )
     }
 
@@ -358,10 +353,12 @@ class AlarmViewModel @Inject constructor(
      * und `skipStatusFlow` endet nach fuenf vergeblichen Leseversuchen bewusst endgueltig
      * (Begruendung in `AlarmSkipRepository`).
      */
-    private fun applySkipState(isNextAlarmSkipped: Boolean, skippedAlarmId: Int?) {
+    private fun applySkipState(isNextAlarmSkipped: Boolean, skippedAlarmId: Int?, skippedAlarmTriggerTime: Long?) {
         _skipState.value = _skipState.value.copy(
             isNextAlarmSkipped = isNextAlarmSkipped,
             skippedAlarmId = skippedAlarmId,
+            // 0 ist im Speicher "unbekannt" - fuer die Anzeige dasselbe wie kein Wert.
+            skippedAlarmTriggerTime = skippedAlarmTriggerTime?.takeIf { isNextAlarmSkipped && it > 0L },
             isLoading = false
         )
         // "Naechster Alarm" haengt auch am Skip-Zustand: bleibt der uebersprungene Eintrag
@@ -397,7 +394,11 @@ class AlarmViewModel @Inject constructor(
                             Logger.e(LogTags.ALARM_SKIP, "Error observing skip state", error)
                         }
                         .collect { skipState ->
-                            applySkipState(skipState.isNextAlarmSkipped, skipState.skippedAlarmId)
+                            applySkipState(
+                                skipState.isNextAlarmSkipped,
+                                skipState.skippedAlarmId,
+                                skipState.skippedAlarmTriggerTime
+                            )
                         }
                 } catch (e: kotlinx.coroutines.CancellationException) {
                     // Rethrow for proper structured concurrency
@@ -441,11 +442,47 @@ class AlarmViewModel @Inject constructor(
         _uiState.value = _uiState.value.copy(error = null)
     }
 
-    /** Setzt die Schlummer-Dauer (Minuten), geklemmt auf einen sinnvollen Bereich. */
+    /** Setzt die Schlummer-Dauer (Minuten), geklemmt auf die Grenzen aus [AlarmPrefs]. */
     fun setSnoozeMinutes(minutes: Int) {
         viewModelScope.launch {
-            alarmPrefs.setSnoozeMinutes(minutes.coerceIn(1, 30))
+            alarmPrefs.setSnoozeMinutes(
+                minutes.coerceIn(AlarmPrefs.MIN_SNOOZE_MINUTES, AlarmPrefs.MAX_SNOOZE_MINUTES)
+            )
         }
+    }
+
+    // ---- Probehoeren ---------------------------------------------------------------------
+
+    /**
+     * Zustand der Probe. Ein GETTER, kein Initializer: beim Bauen des ViewModels wird die Probe
+     * nicht angefasst - sie ist strikt lazy, und so bleibt sie es auch hier.
+     */
+    val probeZustand: StateFlow<ProbeZustand> get() = wecktonProbe.zustand
+
+    /**
+     * Spielt den Weckton mit dem GESPEICHERTEN Anstieg an - frisch gelesen statt aus
+     * [wecktonAnstieg], dessen Startwert vor der ersten Emission "aus" ist. `viewModelScope`
+     * laeuft auf dem Main-Thread, wie es [WecktonProbe.start] verlangt; die Probe selbst haengt
+     * danach nicht mehr an diesem Scope.
+     *
+     * DER LESEVORGANG IST ABBRECHBAR ([probeStartAusstehend]): Der Stopp aus der Oberflaeche
+     * (ON_STOP, Tabwechsel) laeuft synchron, der Start erst nach dem suspendierenden Read. Kam
+     * der Stopp dazwischen, lief er ins Leere - die Probe war ja noch aus -, und der Read startete
+     * danach einen Weckton im Hintergrund, ohne Stopp-Knopf (Review #139).
+     */
+    fun probehoerenStarten() {
+        probeStartAusstehend?.cancel()
+        probeStartAusstehend = viewModelScope.launch {
+            val anstieg = alarmPrefs.wecktonAnstiegNow()
+            ensureActive()
+            wecktonProbe.start(anstieg)
+        }
+    }
+
+    fun probehoerenStoppen() {
+        probeStartAusstehend?.cancel()
+        probeStartAusstehend = null
+        wecktonProbe.stop()
     }
 
     // ---- Sanfter Weckton-Anstieg ---------------------------------------------------------
@@ -535,7 +572,7 @@ class AlarmViewModel @Inject constructor(
                             "✅ Tag freigegeben: ${ergebnis.datum} (${ergebnis.geloeschteWecker} Wecker entfernt)"
                         )
                         val zusatz = if (ergebnis.ueberspringenAufgehoben) {
-                            "Das Überspringen für diesen Tag wurde dabei aufgehoben – es wird nicht mehr gebraucht."
+                            "„Nicht wecken“ für diesen Tag ist damit zurückgenommen – es wird nicht mehr gebraucht."
                         } else {
                             null
                         }
@@ -552,7 +589,7 @@ class AlarmViewModel @Inject constructor(
                                 stelleNachAbgebrochenerFreigabeWiederHer(fehler)
                             }
                         } else {
-                            "Der Tag konnte nicht freigegeben werden – an den Weckern hat sich nichts geändert. Bitte noch einmal versuchen."
+                            "„Dienst fällt aus“ hat nicht geklappt – an den Weckern hat sich nichts geändert. Bitte noch einmal versuchen."
                         }
                         _tagFreigabeState.update { it.copy(isLoading = false, hinweis = hinweis) }
                     }
@@ -587,7 +624,7 @@ class AlarmViewModel @Inject constructor(
                         _tagFreigabeState.update {
                             it.copy(
                                 isLoading = false,
-                                hinweis = "Die Freigabe konnte nicht zurückgenommen werden – der Tag bleibt frei und es wird kein Wecker gestellt. Bitte noch einmal versuchen."
+                                hinweis = "„Zurücknehmen“ hat nicht geklappt – der Dienst fällt weiter aus, und es wird kein Wecker gestellt. Bitte noch einmal versuchen."
                             )
                         }
                     }
@@ -616,7 +653,7 @@ class AlarmViewModel @Inject constructor(
                 LogTags.ALARM,
                 "❌ Freigabe fuer ${fehler.datum} abgebrochen, Markierung liess sich nicht raeumen - kein Re-Arming"
             )
-            return "Der Tag konnte nicht freigegeben werden und ließ sich nicht sauber zurücknehmen. Bitte im Bereich „Wecker“ prüfen, ob die Wecker dieses Tages noch stehen."
+            return "„Dienst fällt aus“ hat nicht geklappt und ließ sich nicht sauber zurücknehmen. Bitte in der Liste im Bereich „Wecker“ prüfen, ob die Wecker dieses Tages noch stehen."
         }
 
         // EIN FEHLENDER EINTRAG IST EIN MISSLUNGENER, KEIN UEBERGANGENER. `alarmIds` traegt ALLE
@@ -645,36 +682,47 @@ class AlarmViewModel @Inject constructor(
         }
         return if (misslungen == 0) {
             Logger.business(LogTags.ALARM, "✅ Abgebrochene Freigabe zurueckgenommen - Wecker wieder armiert")
-            "Der Tag konnte nicht freigegeben werden. Die Wecker dieses Tages klingeln wie geplant."
+            "„Dienst fällt aus“ hat nicht geklappt. Die Wecker dieses Tages klingeln wie geplant."
         } else {
             Logger.e(
                 LogTags.ALARM,
                 "❌ Abgebrochene Freigabe: $misslungen Wecker konnten nicht wieder gestellt werden"
             )
-            "Der Tag konnte nicht freigegeben werden, und $misslungen Wecker dieses Tages stehen jetzt nicht mehr – bitte im Wecker-Tab prüfen und gegebenenfalls neu stellen."
+            "„Dienst fällt aus“ hat nicht geklappt, und $misslungen Wecker dieses Tages stehen jetzt nicht mehr – bitte in der Liste im Bereich „Wecker“ prüfen."
         }
     }
 
-    fun skipNextAlarm() {
+    /**
+     * „Nicht wecken“: schaltet den naechsten klingelnden Wecker einmal ab.
+     *
+     * @param angezeigtesZiel Weckzeitpunkt des Weckers, an dessen Zeile getippt wurde. Die
+     *   Tagesliste rechnet mit ihrer eigenen Uhr; nur dieser Wert sagt, was der Nutzer GESEHEN hat.
+     *   `null` = der Wecker aus [AlarmUiState.nextRingingAlarmTriggerTime].
+     */
+    fun skipNextAlarm(angezeigtesZiel: Long? = null) {
         // Zweiter Druck auf einen noch laufenden Vorgang: nichts tun. Der zweite Lauf faende
         // denselben, noch nicht geloeschten Alarm - Begruendung an [skipVorgangLaeuft].
         if (skipVorgangLaeuft) {
             Logger.w(
                 LogTags.ALARM_SKIP,
-                "⏳ Ueberspringen ignoriert - es laeuft bereits ein Skip-Vorgang"
+                "⏳ Nicht wecken ignoriert - es laeuft bereits ein Skip-Vorgang"
             )
             return
         }
-        // DAS ZIEL MUSS NOCH DER ANGEZEIGTE WECKER SEIN (Review 1.48.0): Die Zeile am Knopf nennt
-        // Datum und Uhrzeit ([AlarmUiState.nextRingingAlarmTriggerTime]), berechnet aber nur, wenn
-        // Bestand oder Skip-Zustand sich aendern - einen Zeit-Ticker gibt es nicht. Klingelt der
-        // genannte Wecker und wird beendet, steht er bis zum naechsten Sync im Bestand und in der
-        // Zeile, waehrend skipNextAlarm() im UseCase zum Tippzeitpunkt neu waehlt: es traefe den
-        // Wecker von MORGEN, den die Zeile nie genannt hat. Deshalb hier mit der Uhr von jetzt
-        // nachrechnen; weicht das Ziel ab, wird die Anzeige erneuert und NICHTS uebersprungen.
+        // DAS ZIEL MUSS NOCH DER ANGEZEIGTE WECKER SEIN (Review 1.48.0): Die Zeile mit dem Knopf
+        // nennt die Uhrzeit, berechnet aber nur, wenn Bestand oder Skip-Zustand sich aendern -
+        // einen Zeit-Ticker gibt es nicht. Klingelt der genannte Wecker und wird beendet, steht er
+        // bis zum naechsten Sync im Bestand und in der Liste, waehrend skipNextAlarm() im UseCase
+        // zum Tippzeitpunkt neu waehlt: es traefe den Wecker von MORGEN, den die Zeile nie genannt
+        // hat. Deshalb hier mit der Uhr von jetzt nachrechnen; weicht das Ziel ab, wird die
+        // Anzeige erneuert und NICHTS abgeschaltet.
         val angezeigt = _uiState.value
+        val genannt = angezeigtesZiel ?: angezeigt.nextRingingAlarmTriggerTime
         val frisch = uebernehmeAlarmAnzeige(angezeigt, angezeigt.activeAlarms)
-        if (frisch.nextRingingAlarmTriggerTime != angezeigt.nextRingingAlarmTriggerTime) {
+        // Per Konstruktion das Ziel, das der UseCase gleich waehlt (dieselbe Auswahlfunktion,
+        // dieselbe Grundmenge) - Quelle fuer den Tag der Zeile „weckt diesmal nicht“.
+        val ziel = frisch.nextRingingAlarmTriggerTime
+        if (ziel != genannt) {
             Logger.w(
                 LogTags.ALARM_SKIP,
                 "⏭️ Ueberspringen abgelehnt - der angezeigte Wecker (${angezeigt.nextRingingAlarmTime}) " +
@@ -700,9 +748,13 @@ class AlarmViewModel @Inject constructor(
                         )
                         // Den gerade BESTAETIGT geschriebenen Zustand selbst uebernehmen, statt auf
                         // die naechste Emission zu warten: der Flow kann geendet sein, und dann bliebe
-                        // der Spinner ewig stehen - samt gesperrtem "Aufheben" (siehe
+                        // der Spinner ewig stehen - samt gesperrtem „Doch wecken“ (siehe
                         // [applySkipState]). Eine Vermutung ist das nicht, das Schreiben ist durch.
-                        applySkipState(isNextAlarmSkipped = true, skippedAlarmId = result.alarmId)
+                        applySkipState(
+                            isNextAlarmSkipped = true,
+                            skippedAlarmId = result.alarmId,
+                            skippedAlarmTriggerTime = ziel
+                        )
                     }
                     .onFailure { error ->
                         Logger.e(LogTags.ALARM_SKIP, "❌ Failed to skip next alarm", error)
@@ -738,7 +790,7 @@ class AlarmViewModel @Inject constructor(
                                 stelleNachAbgebrochenemSkipWiederHer(error)
                             }
                         } else {
-                            "Das Überspringen hat nicht geklappt – am Wecker hat sich nichts " +
+                            "„Nicht wecken“ hat nicht geklappt – am Wecker hat sich nichts " +
                                 "geändert. Bitte noch einmal versuchen."
                         }
                         _skipState.update {
@@ -778,8 +830,8 @@ class AlarmViewModel @Inject constructor(
                 LogTags.ALARM_SKIP,
                 "❌ Skip fuer Alarm ${fehler.alarmId} abgebrochen, Merker liess sich nicht raeumen - kein Re-Arming moeglich"
             )
-            return "Das Überspringen hat nicht geklappt und ließ sich nicht sauber zurücknehmen. " +
-                "Bitte im Bereich „Wecker“ prüfen, ob der Wecker noch steht."
+            return "„Nicht wecken“ hat nicht geklappt und ließ sich nicht sauber zurücknehmen. " +
+                "Bitte in der Liste im Bereich „Wecker“ prüfen, ob der Wecker noch steht."
         }
 
         val alarm = alarmUseCase.getAllAlarms().getOrNull()?.find { it.id == fehler.alarmId }
@@ -788,7 +840,7 @@ class AlarmViewModel @Inject constructor(
                 LogTags.ALARM_SKIP,
                 "⚠️ Abgebrochener Skip: Alarm ${fehler.alarmId} ist nicht mehr im Bestand - kein Re-Arming"
             )
-            return "Das Überspringen hat nicht geklappt. Der Wecker ist nicht mehr in der Liste – " +
+            return "„Nicht wecken“ hat nicht geklappt. Der Wecker ist nicht mehr in der Liste – " +
                 "bitte im Bereich „Wecker“ prüfen und gegebenenfalls neu stellen."
         }
 
@@ -798,7 +850,7 @@ class AlarmViewModel @Inject constructor(
                 LogTags.ALARM_SKIP,
                 "✅ Abgebrochener Skip zurueckgenommen - Alarm ${alarm.id} wieder armiert"
             )
-            "Das Überspringen hat nicht geklappt und wurde zurückgenommen. Der Wecker um " +
+            "„Nicht wecken“ hat nicht geklappt und wurde zurückgenommen. Der Wecker um " +
                 "${alarm.formattedTime} klingelt wie geplant."
         } else {
             Logger.e(
@@ -806,7 +858,7 @@ class AlarmViewModel @Inject constructor(
                 "❌ Abgebrochener Skip: Alarm ${alarm.id} konnte nicht wieder armiert werden",
                 armiert.exceptionOrNull()
             )
-            "Das Überspringen hat nicht geklappt. Der Wecker um ${alarm.formattedTime} konnte " +
+            "„Nicht wecken“ hat nicht geklappt. Der Wecker um ${alarm.formattedTime} konnte " +
                 "nicht wieder gestellt werden – bitte im Bereich „Wecker“ prüfen."
         }
     }
@@ -862,7 +914,7 @@ class AlarmViewModel @Inject constructor(
                 // Wecker, den die Oberflaeche nicht mehr als uebersprungen zeigt und den niemand
                 // stellt. Der Fehler wird deshalb bis zur Oberflaeche durchgereicht (restoreNotice).
                 //
-                // isLoading traegt hier zweierlei: den Spinner im "Aufheben"-Knopf und - zusammen
+                // isLoading traegt hier zweierlei: den Spinner im „Doch wecken“-Knopf und - zusammen
                 // mit [skipVorgangLaeuft] - dessen Sperre, solange geschrieben wird.
                 _skipState.value = _skipState.value.copy(restoreNotice = null, isLoading = true)
 
@@ -882,8 +934,8 @@ class AlarmViewModel @Inject constructor(
                         status.exceptionOrNull()
                     )
                     _skipState.value = _skipState.value.copy(
-                        restoreNotice = "Der gespeicherte Stand ließ sich gerade nicht lesen – das " +
-                            "Überspringen wurde deshalb NICHT aufgehoben, damit nichts verloren geht. " +
+                        restoreNotice = "Der gespeicherte Stand ließ sich gerade nicht lesen – „Doch wecken“ " +
+                            "wurde deshalb NICHT ausgeführt, damit nichts verloren geht. " +
                             "Bitte gleich noch einmal versuchen."
                     )
                     return@launch
@@ -925,9 +977,9 @@ class AlarmViewModel @Inject constructor(
                         )
                         // Das Loeschen des Merkers ist bestaetigt - also selbst uebernehmen, statt auf
                         // die naechste Emission zu warten. Ist der Flow geendet, zeigte die
-                        // Oberflaeche sonst weiter "Nächster Alarm wird übersprungen" samt
-                        // "Aufheben"-Knopf fuer ein Ueberspringen, das es nicht mehr gibt.
-                        applySkipState(isNextAlarmSkipped = false, skippedAlarmId = null)
+                        // Oberflaeche sonst weiter „weckt diesmal nicht“ samt „Doch wecken“ fuer ein
+                        // Ueberspringen, das es nicht mehr gibt.
+                        applySkipState(isNextAlarmSkipped = false, skippedAlarmId = null, skippedAlarmTriggerTime = null)
                         // Erst der manuelle Zweig (braucht das bereits geloeschte Flag, sonst weist
                         // der Skip-Backstop in scheduleSystemAlarm() das Re-Arming ab), dann der
                         // kalenderbasierte Wiederaufbau des Aufrufers.
@@ -941,9 +993,9 @@ class AlarmViewModel @Inject constructor(
                                 entschluesselt.exceptionOrNull()
                             )
                             _skipState.value = _skipState.value.copy(
-                                restoreNotice = "Das Überspringen wurde aufgehoben, aber der gesicherte " +
+                                restoreNotice = "„Nicht wecken“ ist zurückgenommen, aber der gesicherte " +
                                     "Stand war beschädigt. Falls es ein manuell gestellter Wecker war, " +
-                                    "bitte im Bereich „Wecker“ neu anlegen."
+                                    "bitte in der Übersicht über „Manueller Alarm“ neu anlegen."
                             )
                         } else {
                             restoreSkippedManualAlarm(manualAlarm)
@@ -981,10 +1033,10 @@ class AlarmViewModel @Inject constructor(
         // bei ausgeschalteten "Automatischen Alarmen" verweigert. Ohne dieselben Gates entstuende
         // hier ein Wecker, den der naechste syncAlarms()-Lauf ohne Rueckmeldung wieder wegraeumt.
         if (masterPausePrefs.pausedNow()) {
-            return "Der übersprungene manuelle Wecker für ${alarm.formattedTime} kann gerade " +
-                "nicht zurückkehren: die Hintergrunddienste sind pausiert. Das Überspringen " +
-                "bleibt so lange bestehen – bitte zuerst die Master-Pause beenden und dann " +
-                "erneut auf „Aufheben“ tippen."
+            return "Der manuelle Wecker für ${alarm.formattedTime}, den du mit „Nicht wecken“ abgeschaltet hast, " +
+                "kann gerade nicht zurückkehren: die Hintergrunddienste sind pausiert. " +
+                "„Nicht wecken“ bleibt so lange bestehen – bitte zuerst die Master-Pause beenden " +
+                "und dann erneut auf „Doch wecken“ tippen."
         }
 
         // KEIN `getOrNull() ?: true`: ein nicht lesbarer Konfigurationsstand ist etwas anderes
@@ -1000,16 +1052,17 @@ class AlarmViewModel @Inject constructor(
                 "❌ Schicht-Konfiguration beim Aufheben nicht lesbar - Aufheben zurueckgestellt",
                 konfiguration.exceptionOrNull()
             )
-            return "Der übersprungene manuelle Wecker für ${alarm.formattedTime} kann gerade " +
-                "nicht zurückkehren: die Einstellungen ließen sich nicht lesen. Das Überspringen " +
-                "bleibt bestehen, damit nichts verloren geht – bitte gleich noch einmal versuchen."
+            return "Der manuelle Wecker für ${alarm.formattedTime}, den du mit „Nicht wecken“ abgeschaltet hast, " +
+                "kann gerade nicht zurückkehren: die Einstellungen ließen sich nicht lesen. " +
+                "„Nicht wecken“ bleibt bestehen, damit nichts verloren geht – bitte gleich noch " +
+                "einmal versuchen."
         }
         val autoAlarmEnabled = konfiguration.getOrThrow().autoAlarmEnabled
         if (!autoAlarmEnabled) {
-            return "Der übersprungene manuelle Wecker für ${alarm.formattedTime} kann gerade " +
-                "nicht zurückkehren: „Automatische Alarme“ ist ausgeschaltet, und solange das so " +
-                "ist, werden ALLE Wecker gelöscht. Das Überspringen bleibt so lange bestehen – " +
-                "bitte zuerst einschalten und dann erneut auf „Aufheben“ tippen."
+            return "Der manuelle Wecker für ${alarm.formattedTime}, den du mit „Nicht wecken“ abgeschaltet hast, " +
+                "kann gerade nicht zurückkehren: „Automatische Alarme“ ist ausgeschaltet, und " +
+                "solange das so ist, werden ALLE Wecker gelöscht. „Nicht wecken“ bleibt so lange " +
+                "bestehen – bitte zuerst einschalten und dann erneut auf „Doch wecken“ tippen."
         }
 
         // ES GIBT NUR EINEN MANUELLEN WECKER. Zwischen Ueberspringen und Aufheben ist dieser
@@ -1031,10 +1084,10 @@ class AlarmViewModel @Inject constructor(
                 "❌ Alarm-Bestand beim Aufheben nicht lesbar - Aufheben zurueckgestellt",
                 bestand.exceptionOrNull()
             )
-            return "Der übersprungene manuelle Wecker für ${alarm.formattedTime} kann gerade " +
-                "nicht zurückkehren: die gespeicherten Wecker ließen sich nicht lesen. Das " +
-                "Überspringen bleibt bestehen, damit nichts verloren geht – bitte gleich noch " +
-                "einmal versuchen."
+            return "Der manuelle Wecker für ${alarm.formattedTime}, den du mit „Nicht wecken“ abgeschaltet hast, " +
+                "kann gerade nicht zurückkehren: die gespeicherten Wecker ließen sich nicht " +
+                "lesen. „Nicht wecken“ bleibt bestehen, damit nichts verloren geht – bitte gleich " +
+                "noch einmal versuchen."
         }
         val bestehenderManueller = bestand.getOrThrow()
             .firstOrNull { ManualAlarmConstants.isManualAlarm(it) && it.id != alarm.id }
@@ -1044,11 +1097,11 @@ class AlarmViewModel @Inject constructor(
             // stehenden Skip-Merker. Dass er trotzdem funktioniert, stellt createManualAlarm()
             // sicher (es hebt einen kollidierenden Skip auf) - empfohlen wird hier aber der
             // Weg, der Schnappschuss und Wecker sauber zusammenfuehrt.
-            return "Der übersprungene manuelle Wecker für ${alarm.formattedTime} kann nicht " +
-                "zurückkehren, solange ein anderer manueller Wecker " +
+            return "Der manuelle Wecker für ${alarm.formattedTime}, den du mit „Nicht wecken“ " +
+                "abgeschaltet hast, kann nicht zurückkehren, solange ein anderer manueller Wecker " +
                 "(${bestehenderManueller.formattedTime}) gestellt ist – es kann immer nur einen " +
-                "geben. Das Überspringen bleibt bestehen: bitte den anderen löschen und dann " +
-                "erneut auf „Aufheben“ tippen."
+                "geben. „Nicht wecken“ bleibt bestehen: bitte den anderen löschen und dann " +
+                "erneut auf „Doch wecken“ tippen."
         }
 
         return null
@@ -1101,8 +1154,8 @@ class AlarmViewModel @Inject constructor(
                 "⏰ Manueller Wecker ${alarm.id} nicht wiederherstellbar - Weckzeit ${alarm.formattedTime} verstrichen"
             )
             _skipState.value = _skipState.value.copy(
-                restoreNotice = "Der übersprungene manuelle Wecker für ${alarm.formattedTime} " +
-                    "wurde nicht wieder gestellt: seine Weckzeit ist inzwischen verstrichen. " +
+                restoreNotice = "Der manuelle Wecker für ${alarm.formattedTime} wurde nicht wieder " +
+                    "gestellt: seine Weckzeit ist inzwischen verstrichen. " +
                     "Bitte bei Bedarf einen neuen manuellen Wecker anlegen."
             )
             return
@@ -1117,7 +1170,7 @@ class AlarmViewModel @Inject constructor(
             )
             _skipState.value = _skipState.value.copy(
                 restoreNotice = "Der manuelle Wecker für ${alarm.formattedTime} konnte nicht " +
-                    "wiederhergestellt werden. Bitte im Bereich „Wecker“ neu anlegen."
+                    "wiederhergestellt werden. Bitte in der Übersicht über „Manueller Alarm“ neu anlegen."
             )
             return
         }
@@ -1141,8 +1194,8 @@ class AlarmViewModel @Inject constructor(
             _skipState.value = _skipState.value.copy(
                 restoreNotice = "Der manuelle Wecker für ${alarm.formattedTime} ließ sich nicht " +
                     "mehr stellen und wurde deshalb NICHT wieder in die Liste aufgenommen – so " +
-                    "kündigt keine Anzeige einen Wecker an, der stumm bliebe. Bitte im " +
-                    "Bereich „Wecker“ neu anlegen."
+                    "kündigt keine Anzeige einen Wecker an, der stumm bliebe. Bitte in der " +
+                    "Übersicht über „Manueller Alarm“ neu anlegen."
             )
             return
         }
@@ -1358,7 +1411,7 @@ class AlarmViewModel @Inject constructor(
                 _manualAlarmState.value = state.copy(
                     error = AppErrorState.validationError(
                         "„Automatische Alarme“ ist im Bereich „Wecker“ ausgeschaltet – solange das so " +
-                            "ist, werden ALLE Wecker geloescht, auch manuell gestellte. Bitte " +
+                            "ist, werden ALLE Wecker gelöscht, auch manuell gestellte. Bitte " +
                             "zuerst dort einschalten."
                     )
                 )
@@ -1490,8 +1543,8 @@ class AlarmViewModel @Inject constructor(
                         _manualAlarmState.value = _manualAlarmState.value.copy(
                             isCreating = false,
                             error = AppErrorState.validationError(
-                                "Dieser Wecker ist gerade als übersprungen markiert, und das " +
-                                    "ließ sich nicht aufheben. Er wurde deshalb NICHT gestellt – " +
+                                "Für diesen Wecker gilt gerade „Nicht wecken“, und das ließ " +
+                                    "sich nicht zurücknehmen. Er wurde deshalb NICHT gestellt – " +
                                     "bitte gleich noch einmal versuchen."
                             )
                         )
@@ -1707,16 +1760,13 @@ class AlarmViewModel @Inject constructor(
 }
 
 /**
- * Was die Alarm-Status-Karte ueber den naechsten Wecker sagen darf - siehe [berechneWeckerAnzeige].
+ * Was die App ueber den naechsten Wecker sagen darf - siehe [berechneWeckerAnzeige]. Seit #139
+ * nur noch der naechste KLINGELNDE Wecker; die Felder fuer den naechsten EINTRAG samt
+ * Stumm-Kennzeichen und Zaehler sind mit der Karte "Alarm-Status" entfallen.
  */
 internal data class WeckerAnzeige(
-    val naechsterEintrag: String?,
-    val naechsterEintragIstStumm: Boolean,
     val naechsterKlingelnder: String?,
-    val stummeAlarme: Int,
-    /** Kalendertag von [naechsterEintrag] - Vorlage fuer "Tag freigeben". */
-    val naechsterEintragTag: LocalDate? = null,
-    /** Weckzeitpunkt von [naechsterKlingelnder] - Quelle fuer die Knopfzeile "Überspringen". */
+    /** Weckzeitpunkt von [naechsterKlingelnder] - das Ziel von „Nicht wecken“. */
     val naechsterKlingelnderZeitpunkt: Long? = null
 )
 
@@ -1736,12 +1786,11 @@ internal data class WeckerAnzeige(
  * nicht in der Karte, die den naechsten Wecker behauptet.
  *
  * WARUM KENNZEICHNEN UND NICHT FILTERN: der stille Eintrag ist der Zeitanker fuer Dimmer und DND,
- * der Nutzer muss ihn weiterhin sehen. Und "Tag freigeben" schlaegt den Tag des naechsten EINTRAGS
- * vor ([WeckerAnzeige.naechsterEintragTag]) - am Rufdienst-Tag ist der stille Eintrag der richtige
- * Tag. Deshalb bleibt [naechsterEintrag] die unveraenderte Auswahl, sie wird nur als stumm
- * ausgewiesen, und [naechsterKlingelnder] nennt zusaetzlich den naechsten echten Wecker.
+ * der Nutzer muss ihn weiterhin sehen. Seit #139 tun das die Karte "Nächster Wecker" (sie zaehlt
+ * stille Eintraege, wenn kein klingelnder ansteht) und die Tagesliste ("Still"); diese Funktion
+ * nennt nur noch den naechsten ECHTEN Wecker.
  *
- * [naechsterKlingelnder] ist zugleich das ZIEL von "Überspringen" und wird deshalb NICHT hier
+ * [WeckerAnzeige.naechsterKlingelnder] ist zugleich das ZIEL von „Nicht wecken“ und wird deshalb NICHT hier
  * nachgebaut, sondern ueber `AlarmSkipUseCase.naechsterKlingelnderWecker` gerechnet - dieselbe
  * Funktion, mit der `skipNextAlarm()` waehlt. Bis 1.47.1 nahm das Ueberspringen den naechsten
  * EINTRAG, auch einen stillen: die Karte nannte den 05:30-Wecker, der Knopf haette den stillen
@@ -1754,36 +1803,43 @@ internal fun berechneWeckerAnzeige(
     skippedAlarmId: Int?,
     jetzt: Long
 ): WeckerAnzeige {
-    val anstehend = alarms.filter { it.triggerTime > jetzt && it.id != skippedAlarmId }
-    val naechster = anstehend.minByOrNull { it.triggerTime }
+    val anstehend = anstehendeOhneUebersprungenen(alarms, skippedAlarmId, jetzt)
     val klingelnder = AlarmSkipUseCase.naechsterKlingelnderWecker(anstehend, jetzt)
     return WeckerAnzeige(
-        naechsterEintrag = naechster?.formattedTime,
-        naechsterEintragIstStumm = naechster?.isSilent == true,
         naechsterKlingelnder = klingelnder?.formattedTime,
-        naechsterKlingelnderZeitpunkt = klingelnder?.triggerTime,
-        // Bezugsgroesse ist bewusst die GANZE Liste: die Karte zaehlt daneben `activeAlarms.size`,
-        // und zwei Zahlen aus verschiedenen Grundmengen waeren wieder eine Anzeige, die nicht
-        // stimmt.
-        stummeAlarme = alarms.count { it.isSilent },
-        // Derselbe Eintrag wie [naechsterEintrag] und derselbe Anker (Weckzeit) wie
-        // `AlarmUseCase.istTagFreigegeben` und `FreieTageStore.tagVon`. Vier Stellen, ein Anker.
-        naechsterEintragTag = naechster
-            ?.let { Instant.ofEpochMilli(it.triggerTime).atZone(ZoneId.systemDefault()).toLocalDate() }
+        naechsterKlingelnderZeitpunkt = klingelnder?.triggerTime
     )
 }
 
+/** Die Grundmenge von [berechneWeckerAnzeige]: anstehend, ohne den uebersprungenen Eintrag. */
+private fun anstehendeOhneUebersprungenen(alarms: List<AlarmInfo>, skippedAlarmId: Int?, jetzt: Long) =
+    alarms.filter { it.triggerTime > jetzt && it.id != skippedAlarmId }
+
 /**
- * Hinweis, wenn "Überspringen" abgelehnt wurde, weil der in der Zeile genannte Wecker schon vorbei
- * ist (siehe `AlarmViewModel.skipNextAlarm`). Er sagt zuerst, dass NICHTS uebersprungen wurde -
+ * Weckzeitpunkt des naechsten klingelnden Weckers zur Uhr [jetzt] - DIESELBE Grundmenge und
+ * DIESELBE Auswahl wie [berechneWeckerAnzeige] (und damit wie das Ziel von `skipNextAlarm`).
+ *
+ * Fuer Anzeigen, die einen gespeicherten [AlarmUiState.nextRingingAlarmTriggerTime] als verstrichen
+ * erkennen: der Wert wird nur bei einer Emission von Bestand oder Skip-Zustand neu berechnet,
+ * einen Zeit-Ticker gibt es nicht. Ein geklingelter Wecker steht bis zum naechsten Sync im
+ * Bestand - ohne Nachwahl nannte die Uebersicht um 07:00 noch "Heute 05:30".
+ */
+internal fun naechsterKlingelnderZeitpunkt(alarms: List<AlarmInfo>, skippedAlarmId: Int?, jetzt: Long): Long? =
+    AlarmSkipUseCase.naechsterKlingelnderWecker(anstehendeOhneUebersprungenen(alarms, skippedAlarmId, jetzt), jetzt)
+        ?.triggerTime
+
+/**
+ * Hinweis, wenn „Nicht wecken“ abgelehnt wurde, weil der in der Zeile genannte Wecker schon vorbei
+ * ist (siehe `AlarmViewModel.skipNextAlarm`). Er sagt zuerst, dass NICHTS abgeschaltet wurde -
  * der Nutzer muss nicht raten, ob sein Wecker morgen klingelt.
  *
  * @param weitererWecker steht nach dem Erneuern noch ein klingelnder Wecker an?
  */
 internal fun ueberspringenZielVerstrichenHinweis(weitererWecker: Boolean): String =
-    "Der angezeigte Wecker ist schon vorbei – übersprungen wurde nichts. " +
+    "Der angezeigte Wecker ist schon vorbei – abgeschaltet wurde nichts. " +
         if (weitererWecker) {
-            "Die Zeile nennt jetzt den nächsten Wecker; tippe noch einmal, wenn du ihn überspringen willst."
+            "Die Liste zeigt jetzt den nächsten Wecker; tippe dort noch einmal auf „Nicht wecken“, " +
+                "wenn er nicht wecken soll."
         } else {
             "Es steht kein weiterer klingelnder Wecker an."
         }

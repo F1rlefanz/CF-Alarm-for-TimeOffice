@@ -168,6 +168,7 @@ class Pruefrunde6SkipManualAlarmTest {
             alarmPrefs = alarmPrefs,
             tagFreigabeUseCase = tagFreigabeUseCaseOhneFreigaben(),
             zeitkettenArmierer = org.mockito.kotlin.mock(),
+            wecktonProbe = org.mockito.kotlin.mock(),
             alarmRepository = mock<IAlarmRepository>().apply {
                 stub {
                     on { isPersistenceBlocked() } doReturn false
@@ -285,7 +286,7 @@ class Pruefrunde6SkipManualAlarmTest {
 
         verify(skipUseCase, never()).cancelSkip()
         assertNotNull(
-            "Der Nutzer muss erfahren, warum das Aufheben zurueckgestellt wurde",
+            "Der Nutzer muss erfahren, warum 'Doch wecken' zurueckgestellt wurde",
             viewModel.skipState.value.restoreNotice
         )
     }

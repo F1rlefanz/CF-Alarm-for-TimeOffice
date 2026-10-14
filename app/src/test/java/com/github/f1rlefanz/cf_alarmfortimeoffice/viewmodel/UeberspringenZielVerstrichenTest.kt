@@ -38,9 +38,10 @@ import org.mockito.kotlin.verifyBlocking
 import org.mockito.kotlin.whenever
 
 /**
- * "Überspringen" darf nur den Wecker treffen, den die Zeile am Knopf nennt (Review 1.48.0).
+ * „Nicht wecken“ (bis 1.49 "Überspringen") darf nur den Wecker treffen, den die Zeile am Knopf
+ * nennt (Review 1.48.0).
  *
- * DER FALL: Die Zeile ("Wecker 13.10. 05:30 einmalig überspringen") rechnet nur nach, wenn sich
+ * DER FALL: Die Zeile rechnet nur nach, wenn sich
  * Bestand oder Skip-Zustand aendern. Klingelt der genannte Wecker und wird beendet, bleibt er bis
  * zum naechsten Sync im Bestand - und in der Zeile. `skipNextAlarm()` im UseCase waehlt dagegen zum
  * Tippzeitpunkt neu und haette den Wecker von MORGEN uebersprungen, den die Zeile nie genannt hat:
@@ -100,6 +101,7 @@ class UeberspringenZielVerstrichenTest {
             alarmPrefs = alarmPrefs,
             tagFreigabeUseCase = tagFreigabeUseCaseOhneFreigaben(),
             zeitkettenArmierer = org.mockito.kotlin.mock(),
+            wecktonProbe = org.mockito.kotlin.mock(),
             alarmRepository = mock<IAlarmRepository>().apply {
                 stub { on { isPersistenceBlocked() } doReturn false }
             }
@@ -155,14 +157,40 @@ class UeberspringenZielVerstrichenTest {
         verifyBlocking(skipUseCase, times(1)) { skipNextAlarm() }
         assertNull(viewModel.skipState.value.restoreNotice)
         assertTrue(viewModel.skipState.value.isNextAlarmSkipped)
+        assertEquals(
+            "Die Zeile „weckt diesmal nicht“ braucht den Weckzeitpunkt sofort, nicht erst nach " +
+                "der naechsten Emission des Skip-Flows",
+            morgen.triggerTime,
+            viewModel.skipState.value.skippedAlarmTriggerTime
+        )
     }
 
     @Test
-    fun `der Hinweis sagt zuerst, dass nichts uebersprungen wurde`() {
+    fun `die Tagesliste nennt einen anderen Wecker als den naechsten - nichts wird abgeschaltet`() =
+        runTest(dispatcher) {
+            // Die Liste rechnet mit ihrer eigenen Uhr. Weicht der Wecker, an dessen Zeile getippt
+            // wurde, vom Ziel des UseCase ab, darf der Tipp nicht still ein anderes Ziel treffen.
+            val jetzt = System.currentTimeMillis()
+            val morgen = alarm(2, jetzt + 24 * 60 * 60 * 1000L, "14.10.2026 05:30")
+            val skipUseCase = mock<IAlarmSkipUseCase>()
+            val viewModel = buildViewModel(listOf(morgen), skipUseCase)
+            advanceUntilIdle()
+
+            viewModel.skipNextAlarm(angezeigtesZiel = jetzt - 60_000L)
+            advanceUntilIdle()
+
+            verifyBlocking(skipUseCase, never()) { skipNextAlarm() }
+            assertEquals(ueberspringenZielVerstrichenHinweis(weitererWecker = true), viewModel.skipState.value.restoreNotice)
+        }
+
+    @Test
+    fun `der Hinweis sagt zuerst, dass nichts abgeschaltet wurde - mit dem neuen Knopfnamen`() {
         listOf(true, false).forEach { weiterer ->
             val hinweis = ueberspringenZielVerstrichenHinweis(weiterer)
-            assertTrue(hinweis, hinweis.startsWith("Der angezeigte Wecker ist schon vorbei – übersprungen wurde nichts."))
+            assertTrue(hinweis, hinweis.startsWith("Der angezeigte Wecker ist schon vorbei – abgeschaltet wurde nichts."))
+            assertFalse("Alter Knopfname: $hinweis", hinweis.contains("überspring", ignoreCase = true))
         }
+        assertTrue(ueberspringenZielVerstrichenHinweis(true).contains("„Nicht wecken“"))
         assertTrue(ueberspringenZielVerstrichenHinweis(false).contains("kein weiterer klingelnder Wecker"))
     }
 }

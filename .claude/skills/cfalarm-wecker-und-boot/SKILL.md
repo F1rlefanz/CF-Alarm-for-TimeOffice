@@ -247,6 +247,30 @@ Optional, ab Werk AUS. Schalter, Anlaufzeit und Startpegel im Wecker-Tab; Rechen
 - **Die Vibration ist NICHT Teil des Anstiegs** — sie startet weiterhin sofort in voller Staerke.
   Bewusst offen gelassen; wer das aendert, aendert die Weckwirkung selbst.
 
+## Probehoeren — Kurzregeln (seit 1.50.0, #139)
+
+`alarm/WecktonProbe.kt` (Prozess-Singleton, Zustand als StateFlow) + `alarm/AndroidProbeAudio.kt`.
+
+- **Probehoeren laeuft NIE ueber die Wecker-Kette**: kein `AlarmReceiver`, kein
+  `AlarmSoundService`-Start, keine Notification 2002, kein `OneShotAlarmHandoff`, kein
+  AlarmManager. Geteilt werden nur REINE Bausteine: die Ton-Auswahl `WecktonQuellen.kandidaten()`
+  und die Kurve `LautstaerkeAnstieg` — eine zweite Kopie der Rampe wuerde etwas vorspielen, das
+  morgens nicht klingt.
+- **`AlarmSoundService` weiss nichts von der Probe.** Laufen beide kurz parallel (echter Wecker
+  waehrend der hoechstens 125 s Probe), klingelt der Wecker trotzdem — das ist die einzige
+  Invariante, die zaehlt. Die Probe nimmt `AUDIOFOCUS_GAIN_TRANSIENT` und stoppt bei Fokusverlust.
+- **Der Stopp haengt nicht am `viewModelScope`** (Lehre der Dimm-Vorschau): Besitzer ist der
+  Singleton; die Oberflaeche stoppt bei Lifecycle ON_STOP, und ein noch ausstehender Start wird von
+  `probehoerenStoppen()` mit abgebrochen (Review 14.10.2026: Stopp vor Start liess die Probe sonst
+  ohne Knopf im Hintergrund weiterlaufen). Am Emulator gemessen: Fokus ~1 s nach HOME freigegeben.
+- **Strikt lazy**: nichts im Konstruktor/Initializer — der Graph wird im Direct-Boot-Prozess gebaut.
+  `pruefe_direct_boot.py` am 14.10.2026 gruen (3/3 Wecker, RUNNING_LOCKED).
+
+**Namen in der Oberflaeche seit 1.50.0:** „Überspringen“ heisst „Nicht wecken“ (zurueck: „Doch
+wecken“), „Tag freigeben“ heisst „Dienst fällt aus“ (zurueck: „Zurücknehmen“). Im Code und in
+diesem Skill bleiben die Mechanismus-Namen (Skip, `TagFreigabeUseCase`) — sie benennen die
+Mechanik, nicht den Knopf.
+
 ## Master-Pause — Kurzregeln
 
 - **Eigenständig neben `autoAlarmEnabled`** — `pause()`/`resume()` rühren den Flag NICHT an, sondern

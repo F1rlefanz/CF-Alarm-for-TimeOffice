@@ -43,7 +43,7 @@ import org.mockito.kotlin.whenever
 import java.time.LocalTime
 
 /**
- * Die Statuszeile "Dimmen: … · Licht: … · DND: …" je Schicht (Issue #70).
+ * Die Statuszeile "Dimmen: … · Licht: … · Nicht stören: …" je Schicht (Issue #70).
  *
  * Geprueft wird jede Zeile der Falltabellen aus dem Umsetzungsplan - und zwar ueber DIESELBEN
  * Funktionen wie zur Laufzeit: die Dimm-Auswahl kommt aus einem echten
@@ -250,14 +250,14 @@ class SchichtFolgenTest {
     @Test
     fun `DND - beide Quellen aus heisst aus, auch bei Rufbereitschaft`() {
         val f = folgen(definition = def(onCall = true), ausgenommen = setOf("AD1"))
-        assertEquals("DND: aus", dnd(f))
+        assertEquals("Nicht stören: aus", dnd(f))
         assertFalse(f.dnd.rufbereitschaft)
     }
 
     @Test
     fun `DND - nur Dienstzeit, nicht ausgenommen`() {
         val f = folgen(dnd = DndPrefs.Toggles(followDimmerEnabled = false, duringShiftEnabled = true))
-        assertEquals("DND: Dienstzeit", dnd(f))
+        assertEquals("Nicht stören: Dienstzeit", dnd(f))
     }
 
     @Test
@@ -266,7 +266,7 @@ class SchichtFolgenTest {
             dnd = DndPrefs.Toggles(followDimmerEnabled = false, duringShiftEnabled = true),
             ausgenommen = setOf("AD1")
         )
-        assertEquals("DND: ausgenommen", dnd(f))
+        assertEquals("Nicht stören: ausgenommen", dnd(f))
     }
 
     @Test
@@ -275,20 +275,20 @@ class SchichtFolgenTest {
             dnd = DndPrefs.Toggles(followDimmerEnabled = false, duringShiftEnabled = true),
             ausgenommen = setOf("ad1")
         )
-        assertEquals("DND: Dienstzeit", dnd(f))
+        assertEquals("Nicht stören: Dienstzeit", dnd(f))
     }
 
     @Test
     fun `DND - nur folgt Dimmer, die Ausnahme wirkt darauf nicht`() {
         val toggles = DndPrefs.Toggles(followDimmerEnabled = true, duringShiftEnabled = false)
-        assertEquals("DND: nach Dimmer", dnd(folgen(dnd = toggles)))
-        assertEquals("DND: nach Dimmer", dnd(folgen(dnd = toggles, ausgenommen = setOf("AD1"))))
+        assertEquals("Nicht stören: nach Dimmer", dnd(folgen(dnd = toggles)))
+        assertEquals("Nicht stören: nach Dimmer", dnd(folgen(dnd = toggles, ausgenommen = setOf("AD1"))))
     }
 
     @Test
     fun `DND - beide an ergibt die Kombination`() {
         val f = folgen(dnd = DndPrefs.Toggles(followDimmerEnabled = true, duringShiftEnabled = true))
-        assertEquals("DND: Dienstzeit + nach Dimmer", dnd(f))
+        assertEquals("Nicht stören: Dienstzeit + nach Dimmer", dnd(f))
     }
 
     @Test
@@ -297,22 +297,22 @@ class SchichtFolgenTest {
             dnd = DndPrefs.Toggles(followDimmerEnabled = true, duringShiftEnabled = true),
             ausgenommen = setOf("AD1")
         )
-        assertEquals("DND: nach Dimmer (Dienstzeit ausgenommen)", dnd(f))
+        assertEquals("Nicht stören: nach Dimmer (Dienstzeit ausgenommen)", dnd(f))
     }
 
     @Test
     fun `DND - Rufbereitschaft nur mit mindestens einer Quelle`() {
         val oc = def(onCall = true)
         assertEquals(
-            "DND: Dienstzeit, Rufbereitschaft",
+            "Nicht stören: Dienstzeit, Rufbereitschaft",
             dnd(folgen(definition = oc, dnd = DndPrefs.Toggles(followDimmerEnabled = false, duringShiftEnabled = true)))
         )
         assertEquals(
-            "DND: nach Dimmer, Rufbereitschaft",
+            "Nicht stören: nach Dimmer, Rufbereitschaft",
             dnd(folgen(definition = oc, dnd = DndPrefs.Toggles(followDimmerEnabled = true, duringShiftEnabled = false)))
         )
         assertEquals(
-            "DND: nach Dimmer (Dienstzeit ausgenommen), Rufbereitschaft",
+            "Nicht stören: nach Dimmer (Dienstzeit ausgenommen), Rufbereitschaft",
             dnd(
                 folgen(
                     definition = oc,
@@ -332,7 +332,7 @@ class SchichtFolgenTest {
             hueRegeln = Result.success(listOf(hueRegel("h1", "ALL"))),
             dnd = DndPrefs.Toggles(followDimmerEnabled = false, duringShiftEnabled = true)
         )
-        assertEquals("Dimmen: eigene Regel · Licht: allgemeine Regel · DND: Dienstzeit", f.lesbar())
+        assertEquals("Dimmen: eigene Regel · Licht: allgemeine Regel · Nicht stören: Dienstzeit", f.lesbar())
     }
 
     @Test
@@ -346,7 +346,7 @@ class SchichtFolgenTest {
         val text = f.alsText()
         // Normale Leerzeichen gibt es genau an den erlaubten Bruchstellen.
         val erlaubt = listOf(
-            "${NBSP}· Licht", "${NBSP}· DND", // hinter dem Trenner
+            "${NBSP}· Licht", "${NBSP}· Nicht", // hinter dem Trenner
             "Regel (+1", // vor dem Dimm-Zusatz
             "Dimmer, Rufbereitschaft" // hinter dem Komma
         )
@@ -427,7 +427,7 @@ class SchichtFolgenTest {
             val zeilen = vm.schichtFolgen.value
             assertEquals(setOf("id-AD1"), zeilen.keys) // die deaktivierte Schicht fehlt
             assertEquals(
-                "Dimmen: eigene Regel · Licht: 1 Regel · DND: Dienstzeit",
+                "Dimmen: eigene Regel · Licht: 1 Regel · Nicht stören: Dienstzeit",
                 zeilen.getValue("id-AD1").lesbar()
             )
         }

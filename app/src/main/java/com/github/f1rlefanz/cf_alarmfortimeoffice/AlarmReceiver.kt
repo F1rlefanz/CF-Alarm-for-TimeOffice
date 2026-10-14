@@ -392,17 +392,20 @@ class AlarmReceiver : BroadcastReceiver() {
             notificationManager.createNotificationChannel(
                 android.app.NotificationChannel(
                     SKIP_CHANNEL_ID,
-                    "Übersprungene Alarme",
+                    // Nur Name und Beschreibung geaendert (#139, „Nicht wecken“ statt
+                    // "Überspringen") - die uebernimmt Android beim erneuten Anlegen; die
+                    // Wichtigkeit und damit die Kanal-ID bleiben unangetastet.
+                    "Bestätigung „Nicht wecken“",
                     NotificationManager.IMPORTANCE_LOW
                 ).apply {
-                    description = "Bestätigung, dass ein Alarm wie gewünscht übersprungen wurde"
+                    description = "Bestätigung, dass ein Wecker nach „Nicht wecken“ wie gewünscht still geblieben ist"
                 }
             )
 
             val notification = NotificationCompat.Builder(context, SKIP_CHANNEL_ID)
                 .setSmallIcon(android.R.drawable.ic_menu_close_clear_cancel)
-                .setContentTitle("Alarm übersprungen")
-                .setContentText("$shiftName-Alarm wurde wie gewünscht übersprungen")
+                .setContentTitle("Nicht geweckt")
+                .setContentText("Dein $shiftName-Wecker hat wie gewünscht nicht geweckt")
                 .setPriority(NotificationCompat.PRIORITY_LOW)
                 .setAutoCancel(true)
                 .setTimeoutAfter(30000) // 30 Sekunden

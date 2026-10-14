@@ -4,6 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
 
 /**
  * Deckt HomeTabContents pure Erklaerfunktionen ab.
@@ -149,6 +150,33 @@ class NoShiftReasonTest {
         val text = noShiftExplanation(NoShiftReason.NO_PATTERN_MATCH, sampleEventTitles = emptyList())
         assertTrue("Kein leeres Klammerpaar erwartet: $text", !text.contains("()"))
         assertTrue(text.isNotBlank())
+    }
+
+    @Test
+    fun `beide Schichttypen-Saetze nennen die Einstellungen als Ort - nicht mehr den Wecker-Bereich`() {
+        // Seit #139 steht "Schichttypen verwalten" in den Einstellungen. Ein Satz, der noch auf
+        // den Wecker-Bereich zeigt, schickt den Nutzer an eine Stelle, an der der Knopf fehlt.
+        val texte = listOf(
+            noShiftExplanation(NoShiftReason.NO_SHIFT_TYPES),
+            noShiftExplanation(NoShiftReason.NO_PATTERN_MATCH, sampleEventTitles = listOf("Dienst A1"))
+        )
+        for (text in texte) {
+            assertTrue("Ort fehlt: $text", text.contains(SCHICHTTYPEN_ORT))
+            assertTrue("Knopfname fehlt: $text", text.contains("„Schichttypen verwalten“"))
+            assertTrue("Einstellungen fehlen: $text", text.contains("Einstellungen"))
+            assertFalse("Alter Ort steht noch drin: $text", text.contains("„Wecker“"))
+        }
+    }
+
+    @Test
+    fun `auch die String-Ressourcen schicken nicht mehr in den Wecker-Bereich`() {
+        // Der Leerzustand der Hue-Regel (hue_shift_none_body) war beim Umzug uebersehen worden.
+        val datei = listOf(File("app/src/main/res/values/strings.xml"), File("src/main/res/values/strings.xml"))
+            .firstOrNull { it.isFile } ?: error("strings.xml nicht gefunden")
+        datei.readLines().filter { it.contains("Schichttypen verwalten") }.forEach { zeile ->
+            assertTrue("Einstellungen fehlen: $zeile", zeile.contains("Einstellungen"))
+            assertFalse("Alter Ort steht noch drin: $zeile", zeile.contains("„Wecker“"))
+        }
     }
 
     @Test

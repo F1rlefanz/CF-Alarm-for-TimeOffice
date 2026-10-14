@@ -241,6 +241,30 @@ class WeckerTageTest {
     }
 
     @Test
+    fun `abgelaufener, noch nicht geraeumter Skip gibt Nicht wecken am naechsten Wecker frei`() {
+        // Merker fuer heute 05:30 steht noch (kein Sync seitdem), jetzt ist 12:00: die Zeile
+        // „weckt diesmal nicht“ ist weg - dann darf nicht zusaetzlich „Nicht wecken“ fehlen.
+        val liste = tage(
+            listOf(alarm(2, "2026-10-15T05:30"), alarm(3, "2026-10-16T05:30")),
+            skip = SkipLage(aktiv = true, alarmId = 1, weckzeitpunkt = ms("2026-10-14T05:30"))
+        )
+        assertTrue(liste.flatMap { it.eintraege }.none { it is WeckerEintrag.Uebersprungen })
+        val wecker = liste.flatMap { it.wecker() }
+        assertTrue(wecker[0].naechster)
+        assertTrue(wecker[0].nichtWeckenMoeglich)
+        assertFalse(wecker[1].nichtWeckenMoeglich)
+    }
+
+    @Test
+    fun `wirktNoch - aussteht, unbekannt und abgelaufen`() {
+        assertTrue(SkipLage(true, 1, jetzt + 1).wirktNoch(jetzt))
+        assertTrue(SkipLage(true, 1, null).wirktNoch(jetzt))
+        assertFalse(SkipLage(true, 1, jetzt).wirktNoch(jetzt))
+        assertFalse(SkipLage(true, 1, jetzt - 1).wirktNoch(jetzt))
+        assertFalse(SkipLage.KEIN.wirktNoch(jetzt))
+    }
+
+    @Test
     fun `Skip ohne Weckzeitpunkt erzeugt keinen Eintrag, sperrt aber Nicht wecken`() {
         val liste = tage(
             listOf(alarm(2, "2026-10-16T05:00")),

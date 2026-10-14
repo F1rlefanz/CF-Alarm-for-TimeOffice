@@ -53,8 +53,8 @@ sealed interface WeckerEintrag {
         val naechster: Boolean,
         /**
          * Darf diese Zeile „Nicht wecken“ anbieten? Nur [naechster], und nur solange KEIN Skip
-         * aktiv ist - es gibt genau einen Skip-Platz, und `skipNextAlarm` traefe ohnehin immer
-         * den naechsten, nie die angetippte Zeile (Variante A).
+         * WIRKT ([SkipLage.wirktNoch]) - es gibt genau einen Skip-Platz, und `skipNextAlarm`
+         * traefe ohnehin immer den naechsten, nie die angetippte Zeile (Variante A).
          */
         val nichtWeckenMoeglich: Boolean,
         /**
@@ -103,6 +103,19 @@ data class SkipLage(
     val alarmId: Int?,
     val weckzeitpunkt: Long?
 ) {
+    /**
+     * Belegt der Skip noch den einen Skip-Platz? Ja, solange sein Weckzeitpunkt aussteht - und
+     * auch dann, wenn der Zeitpunkt UNBEKANNT ist (sonst ueberschriebe ein zweites „Nicht wecken“
+     * still den ersten Merker).
+     *
+     * Ein ABGELAUFENER Merker belegt ihn nicht mehr: `clearExpiredSkip()` raeumt ihn erst beim
+     * naechsten Sync (offline oder bei Kalenderfehler bis zu 6 h spaeter), der Systemalarm des
+     * uebersprungenen Weckers feuert nie. Galt bis dahin weiter `aktiv`, zeigte die Liste weder
+     * „Doch wecken“ (die Zeile entfaellt mit der Weckzeit) noch irgendwo „Nicht wecken“ - eine
+     * Sackgasse. `skipNextAlarm` ueberschreibt den alten Merker ohnehin.
+     */
+    fun wirktNoch(jetzt: Long): Boolean = aktiv && (weckzeitpunkt == null || weckzeitpunkt > jetzt)
+
     companion object {
         val KEIN = SkipLage(aktiv = false, alarmId = null, weckzeitpunkt = null)
     }
@@ -159,7 +172,7 @@ internal fun baueWeckerTage(
             still = alarm.isSilent,
             manuell = manuell,
             naechster = istNaechster,
-            nichtWeckenMoeglich = istNaechster && !skip.aktiv,
+            nichtWeckenMoeglich = istNaechster && !skip.wirktNoch(jetzt),
             entfaelltDurchFreigabe = tag in freiAbHeute && !manuell
         )
     }

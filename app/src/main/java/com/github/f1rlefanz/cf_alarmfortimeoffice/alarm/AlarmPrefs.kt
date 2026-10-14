@@ -45,9 +45,15 @@ class AlarmPrefs @Inject constructor(
          * (`ConfigBackupFilter.rangeRejection`), aber der Lesepfad ist die letzte Linie und die
          * einzige, die auch fuer das Android-Backup gilt - genauso wie `DimOverlayPrefs` jeden
          * seiner Werte beim Lesen klemmt.
+         *
+         * Das Maximum ist 30 (Entscheidung 14.10.2026, Spec #139): die Eingabe ist ein Zahlenfeld
+         * 1-30 statt der frueheren Auswahl 3/5/10/15. Gespeichert wurde nie mehr als 15 - der
+         * Lesepfad klemmt ueber 30 trotzdem, denn ein Wert kann per Backup oder Import hereinkommen
+         * (Import erlaubt heute bis 120, `ConfigBackupFormat`); der Wecker bekommt immer den
+         * geklemmten Wert. [SchlummerEingabe] nutzt dieselben Konstanten - eine Wahrheit.
          */
         const val MIN_SNOOZE_MINUTES = 1
-        const val MAX_SNOOZE_MINUTES = 120
+        const val MAX_SNOOZE_MINUTES = 30
 
         // ---- Sanfter Weckton-Anstieg -------------------------------------------------------
         //
@@ -219,5 +225,39 @@ data class WecktonAnstieg(
             sekunden = AlarmPrefs.DEFAULT_ANSTIEG_SEKUNDEN,
             startProzent = AlarmPrefs.DEFAULT_ANSTIEG_START_PROZENT
         )
+    }
+}
+
+
+/**
+ * Reine Pruefung der Zahlenfeld-Eingabe fuer die Schlummer-Dauer (Spec #139, P2).
+ *
+ * Kein Compose, kein Android: die Oberflaeche zeigt [hinweis] und uebernimmt [wert], die Regeln
+ * stehen hier und sind getestet. Grenzen kommen aus [AlarmPrefs], nie als Zahl hier.
+ *
+ * Fehleingaben ergeben nie "keinen" Wert, sondern den naechsten gueltigen (zu klein -> MIN, zu
+ * gross -> MAX, leer/unlesbar -> [fallback], i. d. R. der bisher gespeicherte Wert) - ein Wecker
+ * ohne Schlummerdauer waere schlimmer als eine korrigierte.
+ */
+object SchlummerEingabe {
+
+    enum class Hinweis { LEER, KEINE_ZAHL, ZU_KLEIN, ZU_GROSS }
+
+    /** [hinweis] ist null, wenn die Eingabe unveraendert gueltig war. */
+    data class Ergebnis(val wert: Int, val hinweis: Hinweis?)
+
+    fun pruefen(text: String, fallback: Int = AlarmPrefs.DEFAULT_SNOOZE_MINUTES): Ergebnis {
+        val sicherer = fallback.coerceIn(AlarmPrefs.MIN_SNOOZE_MINUTES, AlarmPrefs.MAX_SNOOZE_MINUTES)
+        val t = text.trim()
+        if (t.isEmpty()) return Ergebnis(sicherer, Hinweis.LEER)
+        // Nur Ziffern: kein Vorzeichen, kein Komma. Eine rein numerische, aber absurd lange Eingabe
+        // (Ueberlauf von Int) zaehlt als "zu gross", nicht als "keine Zahl".
+        if (!t.all { it in '0'..'9' }) return Ergebnis(sicherer, Hinweis.KEINE_ZAHL)
+        val n = t.toIntOrNull() ?: return Ergebnis(AlarmPrefs.MAX_SNOOZE_MINUTES, Hinweis.ZU_GROSS)
+        return when {
+            n < AlarmPrefs.MIN_SNOOZE_MINUTES -> Ergebnis(AlarmPrefs.MIN_SNOOZE_MINUTES, Hinweis.ZU_KLEIN)
+            n > AlarmPrefs.MAX_SNOOZE_MINUTES -> Ergebnis(AlarmPrefs.MAX_SNOOZE_MINUTES, Hinweis.ZU_GROSS)
+            else -> Ergebnis(n, null)
+        }
     }
 }

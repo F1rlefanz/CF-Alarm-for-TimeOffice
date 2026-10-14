@@ -12,7 +12,6 @@ import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.media.MediaPlayer
-import android.media.RingtoneManager
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
@@ -31,6 +30,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.AlarmPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.LautstaerkeAnstieg
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.VorweckEntscheidung
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.WecktonAnstieg
+import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.WecktonQuellen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -713,11 +713,8 @@ class AlarmSoundService : Service() {
         // player will see a mismatched generation and release itself instead of starting.
         val myGeneration = ++playerGeneration
 
-        val candidates = listOfNotNull(
-            RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM),
-            RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION),
-            RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
-        ).distinct()
+        // Dieselbe Auswahl wie beim Probehoeren - eine Quelle, damit man dort den echten Weckton hoert.
+        val candidates = WecktonQuellen.kandidaten()
 
         if (candidates.isEmpty()) {
             Logger.w(LogTags.ALARM, "⚠️ No alarm URIs available for MediaPlayer - Wecker bleibt stumm, nur Vibration")

@@ -27,7 +27,21 @@ Schreibkonventionen (der Generator verlässt sich darauf):
 - `### 🐛 Behoben` — Rubrik, mit Emoji wie bisher.
 - `- **Kurzfassung:** Erklärung` — ein Eintrag.
 
-## 🆕 Version 1.50.3 (Aktuell – interne Alpha)
+## 🆕 Version 1.51.0 (Aktuell – interne Alpha)
+
+**Stand:** Oktober 2026
+
+_Ein geschlummerter Wecker ist jetzt zu sehen – in der Wecker-Liste und auf der Übersicht._
+
+### ✨ Neu
+
+- **„schlummert“ in der Wecker-Liste:** Hast du „später“ gedrückt, steht am Tag die Zeile „Weckt wieder“ mit der Uhrzeit, zu der er noch einmal klingelt, und dem blauen Etikett „schlummert“. Bisher war der Wecker nach dem Klingeln einfach verschwunden.
+
+### 🐛 Behoben
+
+- **„Nächster Wecker“ nach dem Klingeln:** Die Karte auf der Übersicht zeigte nach dem Wecken manchmal noch den gerade geklingelten Wecker. Jetzt zeigt sie das Schlummern („Heute … · schlummert“) oder den wirklich nächsten Wecker – auch wenn die App dabei offen bleibt.
+
+## Version 1.50.3
 
 **Stand:** Oktober 2026
 

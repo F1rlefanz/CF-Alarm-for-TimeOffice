@@ -50,6 +50,7 @@
                 <li><a href="#dimmer">Schicht-Dimmer</a></li>
                 <li><a href="#nicht-stoeren">„Nicht stören“</a></li>
                 <li><a href="#hue">Philips Hue</a></li>
+                <li><a href="#tageslicht">Ort für Tageslicht</a></li>
                 <li><a href="#sichern">Sichern und Gerätewechsel</a></li>
                 <li><a href="#abwesenheit">Abwesenheit</a></li>
             </ul>
@@ -119,7 +120,7 @@
             <ul>
                 <li><strong>Dimmen:</strong> der Hauptschalter. Ist er aus, dimmt nichts.</li>
                 <li><strong>Regeln verwalten:</strong> Wann gedimmt wird, steht ausschließlich in Regeln. Eine Regel gilt für alle Tage oder für eine Schicht und hat eigene Zeitfenster, Verdunkelung und Wärme. Ein Fenster kann zu einer festen Uhrzeit, zur Weckzeit oder zum Schichtende beginnen bzw. enden.</li>
-                <li><strong>„Weckzeit, spätestens“:</strong> Das Fenster endet an deinem nächsten Wecker – auch an einem manuellen –, aber nie später als die eingestellte Uhrzeit. Unter „Minuten nach dem Wecken“ bleibt der Bildschirm nach dem Wecken noch eine Weile gedunkelt, etwa damit er dich im dunklen Winter nicht blendet; die Uhrzeit bleibt auch dann die Obergrenze. Die Minuten gelten nur an Morgen, an denen der Wecker vor dieser Uhrzeit klingelt – mit einer Regel für alle Tage also zum Beispiel am Frühdienst, nicht an Spätdienst- oder freien Tagen. Eigene Regeln je Schicht brauchst du dafür nicht.</li>
+                <li><strong>„Weckzeit, spätestens“:</strong> Das Fenster endet an deinem nächsten Wecker – auch an einem manuellen –, aber nie später als die eingestellte Uhrzeit. Unter „Minuten nach dem Wecken“ bleibt der Bildschirm nach dem Wecken noch eine Weile gedunkelt, etwa damit er dich im dunklen Winter nicht blendet; die Uhrzeit bleibt auch dann die Obergrenze. Die Minuten gelten nur an Morgen, an denen der Wecker vor dieser Uhrzeit klingelt – mit einer Regel für alle Tage also zum Beispiel am Frühdienst, nicht an Spätdienst- oder freien Tagen. Eigene Regeln je Schicht brauchst du dafür nicht. Mit „Nachlauf nur, solange es dunkel ist“ endet dieser Nachlauf, sobald es draußen hell wird – siehe <a href="#tageslicht">Ort für Tageslicht</a>.</li>
                 <li><strong>Vorlagen:</strong> „Nacht-Dimmen anlegen“ (22:00 bis zur Weckzeit, spätestens 07:00), „Nachtdienst-Rhythmus anlegen“ (fragt in drei Sätzen, wann du rund um den Nachtdienst schläfst) und „Schicht ausnehmen“ (an Tagen dieser Schicht wird nicht gedimmt).</li>
                 <li><strong>Vorschau (nächste Tage):</strong> zeigt, wann tatsächlich gedimmt wird.</li>
                 <li>Während gedimmt wird, kannst du in der Benachrichtigung „Heller“, „Dunkler“ oder „Pause“ wählen.</li>
@@ -151,15 +152,34 @@
                 <li><strong>Manuell:</strong> einzelne Lampen oder Gruppen mit eigener Helligkeit und Farbe.</li>
                 <li><strong>Sonnenaufgang:</strong> das Licht wird über eine einstellbare Dauer von warm nach kühl heller – standardmäßig so, dass es zur Weckzeit seinen Zielwert erreicht („Vor dem Alarm“), oder ab der Weckzeit („Ab Alarmzeit“).</li>
                 <li><strong>Automatisch ausschalten:</strong> Liegt als Zeitplan auf der Bridge und greift auch, wenn dein Handy nicht mehr im WLAN ist. Bei einer Szene wird der ganze Raum ausgeschaltet.</li>
+                <li><strong>Tageslicht:</strong> Mit „Nur vor der Dämmerung“ oder „Nur vor Sonnenaufgang“ läuft eine Regel nur, wenn es beim Wecken draußen noch dunkel ist; in der Liste trägt sie dann das Etikett „nur bei Dunkelheit“. Siehe <a href="#tageslicht">Ort für Tageslicht</a>.</li>
                 <li><strong>Regel testen</strong> im Editor bzw. „Test“ in der Liste schaltet sofort und räumt nach ein paar Sekunden wieder auf.</li>
             </ul>
             <p>Geht die Verbindung verloren, verbindet sich die App von selbst wieder, sobald das Heim-WLAN zurück ist. „Prüfen“ testet die Verbindung von Hand.</p>
         </section>
 
+        <section class="content-card" id="tageslicht">
+            <h2>Ort für Tageslicht (optional)</h2>
+            <p>Dimmer und Hue-Regeln können sich danach richten, ob es <strong>morgens beim Wecken</strong> draußen schon hell ist. Dafür braucht die App deinen ungefähren Ort; die Zeiten von Dämmerung und Sonnenaufgang rechnet sie daraus selbst aus, ohne Internet. Einstellen kannst du den Ort unter <strong>Einstellungen</strong> → „Ort für Tageslicht“, mit „Ort einstellen“ im Dimm-Fenster-Editor oder mit „Ändern“ in der Karte „Tageslicht“ einer Hue-Regel.</p>
+            <p>Die App nutzt den genauesten Ort, den sie hat, und zeigt an, welcher „Wird gerade genutzt“:</p>
+            <ol class="steps">
+                <li><strong>Standort:</strong> „Standort übernehmen“ fragt Android einmal nach deinem ungefähren Standort – nur auf diesen Knopfdruck, nie im Hintergrund. Gespeichert wird er auf etwa 10&nbsp;km gerundet. „Standort entfernen“ löscht ihn wieder.</li>
+                <li><strong>Von Hand:</strong> Ohne Standort-Berechtigung genügen Land (Deutschland, Österreich, Schweiz) und Postleitzahl – schon die ersten zwei Ziffern.</li>
+                <li><strong>Zeitzone:</strong> Ist oben nichts eingestellt, nimmt die App einen Ort in der Mitte deiner Zeitzone – für Deutschland, Österreich, die Schweiz und Liechtenstein. Das kann bis zu 20 Minuten danebenliegen.</li>
+            </ol>
+            <p>Darunter zeigt der Bildschirm, wann heute an diesem Ort die Dämmerung beginnt und die Sonne aufgeht. Gemeint ist die bürgerliche Dämmerung: Ab da kann man draußen ohne Licht etwa lesen.</p>
+            <ul>
+                <li><strong>Dimmer:</strong> Im Dimm-Fenster-Editor erscheint „Nachlauf nur, solange es dunkel ist“, sobald unter „Minuten nach dem Wecken“ mehr als 0 steht. Mit „Bis Dämmerung“ oder „Bis Sonnenaufgang“ endet der Nachlauf, sobald es hell wird; „Immer“ lässt ihn unverändert. Vor dem Wecken bleibt es immer gedimmt: Wird es schon vor dem Wecken hell, endet das Fenster an der Weckzeit. Die eingestellte Uhrzeit bleibt die Obergrenze. Die „Vorschau (nächste Tage)“ zeigt, wann ein Fenster deshalb früher endet. „Nicht stören“ ändert sich dadurch nicht, es macht den Nachlauf ohnehin nicht mit.</li>
+                <li><strong>Philips Hue:</strong> In der Karte „Tageslicht“ einer Regel wählst du „Immer“, „Nur vor der Dämmerung“ oder „Nur vor Sonnenaufgang“. Liegt die Weckzeit danach, entfällt die Regel an diesem Morgen ganz – bei einem Sonnenaufgang auch das langsame Hellerwerden davor. Der Editor zeigt für den nächsten Wecker, ob das Licht angeht.</li>
+            </ul>
+            <div class="hint"><p>Verglichen wird immer mit Dämmerung bzw. Sonnenaufgang <strong>des Wecktags</strong> – nicht damit, ob es im Moment des Weckens dunkel ist. Ein Wecker am Abend, etwa vor einem Nachtdienst, liegt nach dem Sonnenaufgang dieses Tages: Die Hue-Regel entfällt dann, auch wenn es draußen dunkel ist, und der Dimmer endet an der Weckzeit. Ist kein Ort bekannt, schränkt nichts ein – der Nachlauf gilt voll, Hue-Regeln laufen immer.</p></div>
+            <p>Land und Postleitzahl kommen beim Exportieren und mit der Android-Datensicherung mit, der übernommene Standort nicht – auf einem neuen Handy übernimmst du ihn neu. Mehr dazu in der <a href="privacy.html#ort">Datenschutzerklärung</a>. Die Orte zu den Postleitzahlen stammen von GeoNames (CC BY 4.0).</p>
+        </section>
+
         <section class="content-card" id="sichern">
             <h2>Sichern und Gerätewechsel</h2>
             <ul>
-                <li><strong>Einstellungen</strong> → „Exportieren“ legt Schichttypen, Hue-Regeln, Dimmer-Regeln und „Nicht stören“ als Datei ab; „Importieren“ spielt sie wieder ein. Anmeldung, Kalenderauswahl und Hue-Bridge-Zugang sind nicht in der Datei und werden auf jedem Gerät neu eingerichtet.</li>
+                <li><strong>Einstellungen</strong> → „Exportieren“ legt Schichttypen, Hue-Regeln, Dimmer-Regeln und „Nicht stören“ als Datei ab; „Importieren“ spielt sie wieder ein. Land und Postleitzahl für den <a href="#tageslicht">Ort für Tageslicht</a> reisen mit, der übernommene Standort nicht. Anmeldung, Kalenderauswahl und Hue-Bridge-Zugang sind nicht in der Datei und werden auf jedem Gerät neu eingerichtet.</li>
                 <li>Ist die Android-Datensicherung eingeschaltet, kommen deine Einstellungen beim Umzug auf ein neues Handy mit. Ab Android 9 meldet dich die App dort auch selbst wieder mit demselben Google-Konto an.</li>
             </ul>
         </section>

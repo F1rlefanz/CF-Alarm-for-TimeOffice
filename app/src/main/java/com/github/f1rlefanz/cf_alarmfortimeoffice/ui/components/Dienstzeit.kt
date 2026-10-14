@@ -48,8 +48,8 @@ internal fun kurzesDatum(datum: LocalDate): String =
  *
  * Normale Leerzeichen NUR um „bis“: dort darf die lange Form in der schmalen Tageskarte (320 dp,
  * Schrift 1,3) umbrechen - als ein einziges Wort braeche sie mitten im Wort (Skill
- * cfalarm-ui-und-navigation). Datum und Uhrzeit bleiben am Stueck. Die Karte „Nächster Wecker“,
- * die nur hinter ihrem Trenner umbricht, macht daraus selbst geschuetzte Leerzeichen.
+ * cfalarm-ui-und-navigation). Datum und Uhrzeit bleiben am Stueck. Das gilt auch fuer die Karte
+ * „Nächster Wecker“: ihre Textspalte ist bei 320 dp nur ~208 dp breit.
  *
  * @param beginn, ende Epoch-Millis; 0 = unbekannt (so steht es in `AlarmInfo` bei manuellen Weckern).
  */

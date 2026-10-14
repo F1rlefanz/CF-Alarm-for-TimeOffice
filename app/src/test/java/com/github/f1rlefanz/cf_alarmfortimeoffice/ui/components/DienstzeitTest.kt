@@ -127,14 +127,14 @@ class DienstzeitTest {
     }
 
     @Test
-    fun `in der Karte Naechster Wecker bleibt auch die mehrtaegige Dienstzeit am Stueck`() {
-        // Die Karte bricht nur hinter ihrem Trenner um - auch „ganztägig bis So 18.10.“ nicht.
+    fun `in der Karte Naechster Wecker bricht die mehrtaegige Dienstzeit um bis, nicht im Wort`() {
+        // 208 dp Textspalte (320 dp, Schrift 1,3): „ganztägig bis So 18.10.“ passt nicht am Stueck.
+        // Umbruchstellen also nur hinter dem Trenner und um „bis“; das Datum bleibt zusammen.
         val alarm = AlarmInfo(
             id = 1, shiftId = "abruf", shiftName = "Abrufdienst", triggerTime = millis(2026, 10, 15, 23, 0),
             formattedTime = "x", shiftStartTime = millis(2026, 10, 16, 0, 0), shiftEndTime = millis(2026, 10, 19, 0, 0)
         )
         val teile = schichtZeile(alarm, zone)!!.split(TRENNER)
-        assertEquals(2, teile.size)
-        assertTrue(teile.none { it.contains(' ') })
+        assertEquals(listOf("Abrufdienst", "ganztägig bis So${nbsp}18.10."), teile)
     }
 }

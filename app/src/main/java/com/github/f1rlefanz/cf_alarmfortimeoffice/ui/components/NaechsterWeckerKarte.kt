@@ -174,7 +174,8 @@ private val WOCHENTAGE = listOf("Mo", "Di", "Mi", "Do", "Fr", "Sa", "So")
 
 /**
  * Geschuetztes Leerzeichen. Innerhalb eines Teils ("Mi 14.10.", "von dir gestellt") darf die Zeile
- * bei 320 dp und Schrift 1,3 nicht umbrechen - nur HINTER einem Trenner.
+ * bei 320 dp und Schrift 1,3 nicht umbrechen - nur HINTER einem Trenner. Einzige Ausnahme ist
+ * die lange Dienstzeit, die um ihr „bis“ umbrechen darf ([schichtZeile]).
  */
 private const val NBSP = ' '
 
@@ -207,8 +208,10 @@ internal fun weckerTagText(datum: LocalDate, heute: LocalDate): String {
  */
 internal fun schichtZeile(alarm: AlarmInfo, zone: ZoneId): String? {
     // Dieselbe Formatierung wie die Tagesliste im Wecker-Tab - „ganztägig“ statt „00:00–00:00“.
-    // Am Stueck: diese Karte bricht nur hinter ihrem Trenner um.
-    val dienstzeit = dienstzeitText(alarm.shiftStartTime, alarm.shiftEndTime, zone)?.replace(' ', NBSP)
+    // UNVERAENDERT uebernommen: die lange Form („06:00 bis So 18.10. 06:00“, ~265 dp bei 320 dp und
+    // Schrift 1,3) passt nicht in die ~208 dp breite Textspalte. Am Stueck braeche sie mitten im
+    // Wort; so bricht sie um „bis“, Datum und Uhrzeit bleiben zusammen (dienstzeitText).
+    val dienstzeit = dienstzeitText(alarm.shiftStartTime, alarm.shiftEndTime, zone)
     val teile = listOfNotNull(
         reinerSchichtname(alarm.shiftName).trim().takeIf { it.isNotEmpty() },
         dienstzeit,

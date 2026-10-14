@@ -3,6 +3,7 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
@@ -11,6 +12,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmSoundService
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.Schlummern
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.schwebendesSchlummern
 import kotlinx.coroutines.delay
@@ -55,16 +57,18 @@ internal data class WeckerStand(val jetzt: Long, val schlummern: List<Schlummern
  * 05:30, und vom Schlummern stand nirgends etwas (Emulator, 14.10.2026). Bewusst kein
  * Dauer-Ticker: ein Wechsel, ein Tick, nur innerhalb eines Tages.
  *
- * Der Snooze-Merker liegt in Device-Protected SharedPreferences und hat keinen Beobachter; ein
- * Schlummern, das waehrend der sichtbaren App gedrueckt wird, erscheint erst beim naechsten Anlass
- * (Fortsetzen, Bestandsaenderung, Tick).
+ * Der Snooze-Merker liegt in Device-Protected SharedPreferences und hat keinen Beobachter. Gelesen
+ * wird er deshalb auch, sobald ein Klingeln ENDET (`AlarmSoundService.alarmActive` faellt): beim
+ * Schlummern steht der Merker da schon (`scheduleSnooze` schreibt vor dem Stopp). Ohne das blieb
+ * ein Schlummern aus der Benachrichtigung bei offener App unsichtbar (Emulator, 14.10.2026).
  */
 @Composable
 internal fun rememberWeckerStand(alarmeSchluessel: Any?, naechsterWecker: Long?): WeckerStand {
     val context = LocalContext.current
     var getickt by remember { mutableLongStateOf(0L) }
+    val klingelt by AlarmSoundService.alarmActive.collectAsState()
     val stand = maxOf(uhrBeimFortsetzen(), getickt)
-    val schlummern = remember(stand, alarmeSchluessel) {
+    val schlummern = remember(stand, alarmeSchluessel, klingelt) {
         schwebendesSchlummern(context, System.currentTimeMillis())
     }
     val jetzt = maxOf(stand, System.currentTimeMillis())

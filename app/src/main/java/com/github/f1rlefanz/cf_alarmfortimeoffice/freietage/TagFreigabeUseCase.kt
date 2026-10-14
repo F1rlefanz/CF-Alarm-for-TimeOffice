@@ -133,6 +133,14 @@ class TagFreigabeUseCase @Inject constructor(
                 // ein spurlos verschwundener Wecker, den nichts wiederherstellt.
                 store.freigeben(datum)
 
+                // 2b. Ein schon GESCHLUMMERTER Wecker dieses Tages steht nicht mehr in `betroffene`
+                // (der Bestand wirft Verstrichenes weg), und sein Snooze liegt in einem eigenen
+                // Slot, den `cancelSystemAlarm` nie trifft - ohne diesen Schritt klingelte er am
+                // freigegebenen Morgen noch einmal. Zuordnung ueber die Weckzeit, manuelle Wecker
+                // ausgenommen (`AlarmManagerService.snoozesFuerFreigabe`). Stirbt der Prozess vor
+                // diesem Schritt, faengt ihn der Backstop im `AlarmReceiver`. Wirft nie.
+                alarmManagerService.cancelSnoozesFuerFreigabe(datum, zone)
+
                 // 3. Je Wecker: erst cancelSystemAlarm, dann deleteAlarm. DIE REIHENFOLGE IST
                 // PFLICHT - umgekehrt entsteht ein armierter Alarm, den weder Bestand noch
                 // Direct-Boot-Spiegel kennen: unsichtbar UND unabbrechbar bis zum Neustart.

@@ -131,6 +131,10 @@ class TagFreigabeUseCaseTest {
             protokoll += "cancel:${inv.getArgument<Int>(0)}"
             Unit
         }
+        whenever(service.cancelSnoozesFuerFreigabe(any(), any())).thenAnswer { inv ->
+            protokoll += "snooze:${inv.getArgument<LocalDate>(0)}"
+            0
+        }
         return service
     }
 
@@ -180,7 +184,9 @@ class TagFreigabeUseCaseTest {
         // Die Markierung steht ZUERST: faellt der Prozess danach, ist der schlimmste Zustand ein
         // freigegebener Tag mit noch stehendem Wecker - den raeumt das Gate im naechsten Sync weg.
         // Umgekehrt waere derselbe Absturz ein spurlos verschwundener Wecker.
-        assertEquals(listOf("markiere:$tag", "cancel:1", "delete:1"), protokoll)
+        // Der schwebende Snooze eines schon geklingelten Weckers faellt direkt nach der
+        // Markierung - er steht in keinem Bestand, den die Schleife danach abarbeitet.
+        assertEquals(listOf("markiere:$tag", "snooze:$tag", "cancel:1", "delete:1"), protokoll)
         assertEquals(listOf(2), repo.current.map { it.id })
     }
 

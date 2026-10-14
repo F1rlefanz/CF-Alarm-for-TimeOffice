@@ -229,4 +229,17 @@ class AlarmManagerServiceSnoozeRegistryTest {
         assertFalse(AlarmManagerService.gehoertSnoozeZuFreiemTag(eintrag, emptySet(), zone))
         assertTrue(AlarmManagerService.gehoertSnoozeZuFreiemTag(eintrag, setOf(LocalDate.parse("2026-10-15")), zone))
     }
+
+    @Test
+    fun `Zurueckschreiben behaelt den gerade gefeuerten Eintrag als Anker-Spur, Neu-Armieren nicht`() {
+        val jetzt = ms("2026-10-16T00:06")
+        val gefeuert = AlarmManagerService.encodeSnoozeEntry(7, ms("2026-10-16T00:05"), "Spaet", "", ms("2026-10-15T23:50"))
+        val uralt = AlarmManagerService.encodeSnoozeEntry(8, ms("2026-10-15T20:00"), "Spaet", "", ms("2026-10-15T19:50"))
+
+        // Ein fremdes Schreiben (anderer Abbruch, Boot-Restore) raeumt den frisch gefeuterten
+        // Eintrag NICHT weg - sonst fiele der Anker beim erneuten Schlummern auf 00:05, den Folgetag.
+        assertEquals(setOf(gefeuert), AlarmManagerService.kuerzeZumSchreiben(setOf(gefeuert, uralt), jetzt))
+        // Neu armiert wird trotzdem nur Zukuenftiges.
+        assertTrue(AlarmManagerService.pruneSnoozeEntries(setOf(gefeuert, uralt), jetzt).isEmpty())
+    }
 }

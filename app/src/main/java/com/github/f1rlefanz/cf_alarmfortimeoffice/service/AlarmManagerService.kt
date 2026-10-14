@@ -1134,6 +1134,23 @@ class AlarmManagerService(
          * Selbstreinigung: Eintraege, deren Snooze-Zeit verstrichen ist, sind erledigt (der Alarm
          * ist gefeuert oder wurde gestoppt) und wuerden den Merker sonst unbegrenzt wachsen lassen.
          */
+        /**
+         * Kuerzen fuer das ZURUECKSCHREIBEN des Merkers: wie [pruneSnoozeEntries], behaelt aber
+         * gerade gefeuerte Eintraege noch [VORGAENGER_HOECHSTALTER_MS] lang. Sie sind die einzige
+         * Spur der urspruenglichen Weckzeit, falls derselbe Wecker gleich noch einmal geschlummert
+         * wird ([weckzeitFuerEintrag]). Ohne diese Frist konnte ein beliebiges anderes Schreiben
+         * (Abbruch eines anderen Snooze, Boot-Restore) sie wegraeumen, und der Anker fiel auf die
+         * Schlummer-Zeit zurueck - um Mitternacht der falsche Tag (Review 14.10.2026).
+         *
+         * NIE zum Neu-Armieren benutzen: dafuer gilt allein [pruneSnoozeEntries] (nur Zukuenftiges).
+         * Ein verstrichener Eintrag schadet sonst nirgends - Abbrechen ist fuer ihn ein Leerlauf.
+         */
+        internal fun kuerzeZumSchreiben(entries: Set<String>, now: Long): Set<String> =
+            entries.filter { raw ->
+                val parsed = parseSnoozeEntry(raw)
+                parsed != null && parsed.triggerTime > now - VORGAENGER_HOECHSTALTER_MS
+            }.toSet()
+
         internal fun pruneSnoozeEntries(entries: Set<String>, now: Long): Set<String> =
             entries.filter { raw ->
                 val parsed = parseSnoozeEntry(raw)
@@ -1172,7 +1189,7 @@ class AlarmManagerService(
                     geklingelt = GeklingelteWeckzeiten.lies(context, jetzt),
                     jetzt = jetzt
                 )
-                val kept = pruneSnoozeEntries(existing, jetzt)
+                val kept = kuerzeZumSchreiben(existing, jetzt)
                     .filterNot { parseSnoozeEntry(it)?.id == alarmId }
                     .toSet()
                 // commit(), NICHT apply(): dieser Eintrag ist die EINZIGE Spur eines
@@ -1210,7 +1227,7 @@ class AlarmManagerService(
             try {
                 val prefs = snoozePrefs(context)
                 val existing = prefs.getStringSet(KEY_SNOOZE_ENTRIES, emptySet()) ?: emptySet()
-                val kept = pruneSnoozeEntries(existing, System.currentTimeMillis())
+                val kept = kuerzeZumSchreiben(existing, System.currentTimeMillis())
                     .filterNot { parseSnoozeEntry(it)?.id == alarmId }
                     .toSet()
                 prefs.edit(commit = true) { putStringSet(KEY_SNOOZE_ENTRIES, kept) }
@@ -1322,7 +1339,7 @@ class AlarmManagerService(
                     synchronized(snoozeRegistryLock) {
                         val current = snoozePrefs(context)
                             .getStringSet(KEY_SNOOZE_ENTRIES, emptySet()) ?: emptySet()
-                        val pruned = pruneSnoozeEntries(current, now)
+                        val pruned = kuerzeZumSchreiben(current, now)
                         snoozePrefs(context).edit(commit = true) {
                             putStringSet(KEY_SNOOZE_ENTRIES, pruned)
                         }

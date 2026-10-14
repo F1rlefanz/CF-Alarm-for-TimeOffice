@@ -27,7 +27,31 @@ Schreibkonventionen (der Generator verlässt sich darauf):
 - `### 🐛 Behoben` — Rubrik, mit Emoji wie bisher.
 - `- **Kurzfassung:** Erklärung` — ein Eintrag.
 
-## 🆕 Version 1.49.3 (Aktuell – interne Alpha)
+## 🆕 Version 1.50.0 (Aktuell – interne Alpha)
+
+**Stand:** Oktober 2026
+
+_Der Wecker-Bereich zeigt jetzt deine Dienst-Tage als Liste, und „Schichttypen verwalten“ ist in die Einstellungen gezogen._
+
+### ✨ Neu
+
+- **Tagesliste im Wecker-Bereich:** Du siehst deine kommenden Dienste Tag für Tag, mit Schicht, Dienstzeit und den Weckern dazu – bis zum Ende der Kalender-Vorausschau. Kleine Kärtchen zeigen, was ein Dienst außer dem Wecker auslöst („Nicht stören“, Dimmen, Licht, bei Rufbereitschaft die stündliche Kalender-Abfrage). Tippst du einen Tag an, erklärt dir eine Detailansicht, was dort passiert.
+- **Probehören:** In „Wie der Wecker klingt“ spielst du deinen Weckton kurz vor – mit dem eingestellten sanften Anstieg. Er endet von selbst oder mit „Stopp“, und ein echter Wecker hat immer Vorrang.
+- **Schlummer-Dauer frei wählbar:** Statt vier festen Stufen trägst du jetzt eine Zahl von 1 bis 30 Minuten ein.
+- **Nächster Wecker in der Übersicht:** Die Karte nennt zuerst, wann der nächste Wecker klingelt, für welchen Tag und welche Schicht. „Alle gestellten Wecker“ führt direkt in den Wecker-Bereich.
+
+### 🎨 Feinschliff
+
+- **Neue Namen:** „Überspringen“ heißt jetzt **„Nicht wecken“** (zurück mit **„Doch wecken“**), „Tag freigeben“ heißt **„Dienst fällt aus“** (zurück mit **„Zurücknehmen“**). „Nicht wecken“ gibt es nur für den nächsten Wecker; für einen späteren Tag nimmst du „Dienst fällt aus“.
+- **Schichttypen unter Einstellungen:** „Schichttypen verwalten“ steht jetzt neben „Kalender auswählen“ in den Einstellungen und nicht mehr im Wecker-Bereich. Die Hilfe auf der Website ist angepasst.
+- **Klare Hinweise oben:** Ist die Pause an oder die Automatik aus, steht im Wecker-Bereich genau ein Hinweis mit dem Weg zurück; bei leerer Liste sagt dir der Leerzustand, woran es liegt.
+
+### 🐛 Behoben
+
+- **Bestätigung nach „Nicht wecken“:** Die Benachrichtigung nannte noch den alten Namen „Alarm übersprungen“; sie spricht jetzt dieselbe Sprache wie die App.
+- **Sicherung einspielen:** Eine importierte Schlummer-Dauer wird jetzt gegen dieselben Grenzen (1 bis 30 Minuten) geprüft wie das Zahlenfeld.
+
+## Version 1.49.3
 
 **Stand:** Oktober 2026
 

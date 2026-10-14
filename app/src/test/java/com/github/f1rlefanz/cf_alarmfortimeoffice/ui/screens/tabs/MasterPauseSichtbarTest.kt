@@ -91,9 +91,9 @@ class MasterPauseSichtbarTest {
         // WIDERLEGTE ANNAHME: hier stand einmal, der Weg zurueck muesse AUCH in dieser
         // Beschreibung stehen ("sonst ist es nur eine Sackgasse"). Die Pruefung dieses Fixes hat
         // gezeigt, dass er damit im selben Scroll-Bereich zweimal nahezu wortgleich steht - die
-        // Karte direkt darunter (AlarmStatusHeader) traegt ihn bereits. Die Beschreibung sagt
-        // deshalb nur noch, dass der Schalter gerade wirkungslos ist; genau EINE Stelle je
-        // Bildschirm nennt den Ausweg.
+        // Karte direkt darunter (damals "Alarm-Status", heute der Zustandshinweis oben im Wecker-Tab
+        // mit "Pause beenden") traegt ihn bereits. Die Beschreibung sagt deshalb nur noch, dass
+        // der Schalter gerade wirkungslos ist; genau EINE Stelle je Bildschirm nennt den Ausweg.
         assertFalse(pausiert.contains("Hintergrunddienste pausieren"))
     }
 

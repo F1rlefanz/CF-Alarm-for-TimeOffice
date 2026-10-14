@@ -1756,7 +1756,9 @@ class AlarmViewModel @Inject constructor(
 }
 
 /**
- * Was die Alarm-Status-Karte ueber den naechsten Wecker sagen darf - siehe [berechneWeckerAnzeige].
+ * Was die App ueber den naechsten Wecker sagen darf - siehe [berechneWeckerAnzeige]. Seit #139 liest
+ * die Oberflaeche davon nur noch [naechsterKlingelnderZeitpunkt] (Karte "Nächster Wecker", Ziel von
+ * „Nicht wecken“); die uebrigen Felder halten die Pruefrunde-8-Tests zur stillen Schicht fest.
  */
 internal data class WeckerAnzeige(
     val naechsterEintrag: String?,

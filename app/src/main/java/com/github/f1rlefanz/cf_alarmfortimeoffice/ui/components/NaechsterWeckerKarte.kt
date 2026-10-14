@@ -32,6 +32,47 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
 /**
+ * Nutzertext der Master-Pause an dieser Stelle. Als Konstante, damit ein Test genau ihn
+ * festhalten kann - der Text IST die Zusicherung.
+ *
+ * Bewusst ohne Fachbegriff ("Master-Pause", "Sync"): der Nutzer hat einen Schalter umgelegt, der
+ * "Hintergrunddienste pausieren" heisst, und sucht genau diesen Wortlaut wieder.
+ */
+internal const val ALARM_STATUS_PAUSIERT_TEXT: String =
+    "Alles pausiert — es wird kein Wecker gestellt und keiner klingelt."
+
+/**
+ * Der AUSWEG gehoert dazu: die App laeuft aus diesem Zustand NIE von allein heraus (die
+ * 6h-Wartung ist mit abgeschaltet). Nennt die Karten-/Schalterbeschriftung wortgleich, nie eine
+ * Position.
+ */
+internal const val ALARM_STATUS_PAUSIERT_AUSWEG: String =
+    "Zum Fortsetzen in den Einstellungen den Schalter \"Hintergrunddienste pausieren\" ausschalten."
+
+/** Die Grundzweige der Karte - siehe [alarmStatusZustand]. */
+internal enum class AlarmStatusZustand { PAUSIERT, AKTIVE_ALARME, LAEDT, KEINE_ALARME }
+
+/**
+ * PURE, TESTBAR: welcher Grundzweig der Karte "Nächster Wecker" gilt.
+ *
+ * DIE PAUSE STEHT VORNE, UND ZWAR AUCH VOR [AlarmUiState.hasActiveAlarms]. Die Master-Pause
+ * loescht ALLE Alarme; ein noch angezeigter Bestand ist danach ein veralteter Zustand, kein
+ * Versprechen. Eine Weckzeit, die nie gestellt wird, waere die gefaehrlichste Anzeige, die eine
+ * Wecker-App haben kann. Aus demselben Grund liegt sie vor dem Lade-Zustand: pausiert ist
+ * pausiert, egal ob gerade nachgeladen wird.
+ */
+internal fun alarmStatusZustand(
+    masterPausePaused: Boolean,
+    hasActiveAlarms: Boolean,
+    isLoading: Boolean
+): AlarmStatusZustand = when {
+    masterPausePaused -> AlarmStatusZustand.PAUSIERT
+    hasActiveAlarms -> AlarmStatusZustand.AKTIVE_ALARME
+    isLoading -> AlarmStatusZustand.LAEDT
+    else -> AlarmStatusZustand.KEINE_ALARME
+}
+
+/**
  * Die Alarm-Karte der Uebersicht (#139, Spec P4). Sie beantwortet zuerst EINE Frage: wann klingelt
  * es als Naechstes, und wofuer? Bis 1.49 stand hier "N aktive Alarme" - eine Zaehlung, aus der
  * niemand ablesen konnte, ob morgen um 05:30 oder um 14:30 geweckt wird.

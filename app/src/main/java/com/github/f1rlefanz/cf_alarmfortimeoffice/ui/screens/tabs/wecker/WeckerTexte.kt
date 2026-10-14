@@ -319,7 +319,7 @@ internal fun nichtWeckenHinweis(tage: List<WeckerTag>): String? {
  * NICHT in der Liste steht (noch kein Wecker, nach der Vorausschau). Bewusst ohne „anderen“
  * Dienst/„spaeteren“ Tag - auch heute ist ein moeglicher Tag.
  */
-internal const val ANDERER_TAG_KNOPF: String = "Tag auswählen: Dienst fällt aus …"
+internal const val ANDERER_TAG_KNOPF: String = "Tag auswählen: Dienst fällt aus …"
 
 // ---- Klang ------------------------------------------------------------------------------
 

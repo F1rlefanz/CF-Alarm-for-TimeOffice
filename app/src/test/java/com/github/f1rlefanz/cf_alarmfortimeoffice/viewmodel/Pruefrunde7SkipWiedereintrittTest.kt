@@ -184,7 +184,7 @@ class Pruefrunde7SkipWiedereintrittTest {
         verifyBlocking(skipUseCase, never()) { cancelSkip() }
         assertTrue(
             "Der gerade bestaetigt geschriebene Skip muss stehen - ein dazwischenfunkendes " +
-                "Aufheben haette Merker und Wecker gleichzeitig geraeumt",
+                "'Doch wecken' haette Merker und Wecker gleichzeitig geraeumt",
             viewModel.skipState.value.isNextAlarmSkipped
         )
     }

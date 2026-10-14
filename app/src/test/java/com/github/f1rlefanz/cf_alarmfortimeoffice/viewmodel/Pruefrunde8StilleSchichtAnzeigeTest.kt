@@ -139,7 +139,7 @@ class Pruefrunde8StilleSchichtAnzeigeTest {
             val stand = viewModel.uiState.value
             assertEquals(
                 "Die Auswahl selbst bleibt der fruehste Eintrag - Anker fuer Dimmer, DND und " +
-                    "'Tag freigeben'",
+                    "'Dienst fällt aus'",
                 "20.08.2026 05:30",
                 stand.nextAlarmTime
             )
@@ -188,7 +188,7 @@ class Pruefrunde8StilleSchichtAnzeigeTest {
             stand.nextRingingAlarmTime
         )
         assertNull(
-            "...und der Knopf 'Überspringen' hat kein Ziel",
+            "...und der Knopf 'Nicht wecken' hat kein Ziel",
             stand.nextRingingAlarmTriggerTime
         )
         assertEquals(1, stand.silentAlarmCount)

@@ -286,7 +286,7 @@ class Pruefrunde6SkipManualAlarmTest {
 
         verify(skipUseCase, never()).cancelSkip()
         assertNotNull(
-            "Der Nutzer muss erfahren, warum das Aufheben zurueckgestellt wurde",
+            "Der Nutzer muss erfahren, warum 'Doch wecken' zurueckgestellt wurde",
             viewModel.skipState.value.restoreNotice
         )
     }

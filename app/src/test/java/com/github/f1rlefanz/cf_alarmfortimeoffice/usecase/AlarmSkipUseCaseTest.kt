@@ -244,7 +244,7 @@ class AlarmSkipUseCaseTest {
         )
         assertEquals(anzeige.naechsterKlingelnder, result.getOrNull()?.formattedTime)
         assertEquals(
-            "Der naechste EINTRAG bleibt der stille - 'Tag freigeben' schlaegt weiter dessen Tag vor",
+            "Der naechste EINTRAG bleibt der stille - 'Dienst fällt aus' schlaegt weiter dessen Tag vor",
             "t12",
             anzeige.naechsterEintrag
         )

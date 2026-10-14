@@ -744,7 +744,7 @@ class AlarmViewModel @Inject constructor(
                         )
                         // Den gerade BESTAETIGT geschriebenen Zustand selbst uebernehmen, statt auf
                         // die naechste Emission zu warten: der Flow kann geendet sein, und dann bliebe
-                        // der Spinner ewig stehen - samt gesperrtem "Aufheben" (siehe
+                        // der Spinner ewig stehen - samt gesperrtem „Doch wecken“ (siehe
                         // [applySkipState]). Eine Vermutung ist das nicht, das Schreiben ist durch.
                         applySkipState(
                             isNextAlarmSkipped = true,
@@ -910,7 +910,7 @@ class AlarmViewModel @Inject constructor(
                 // Wecker, den die Oberflaeche nicht mehr als uebersprungen zeigt und den niemand
                 // stellt. Der Fehler wird deshalb bis zur Oberflaeche durchgereicht (restoreNotice).
                 //
-                // isLoading traegt hier zweierlei: den Spinner im "Aufheben"-Knopf und - zusammen
+                // isLoading traegt hier zweierlei: den Spinner im „Doch wecken“-Knopf und - zusammen
                 // mit [skipVorgangLaeuft] - dessen Sperre, solange geschrieben wird.
                 _skipState.value = _skipState.value.copy(restoreNotice = null, isLoading = true)
 
@@ -973,8 +973,8 @@ class AlarmViewModel @Inject constructor(
                         )
                         // Das Loeschen des Merkers ist bestaetigt - also selbst uebernehmen, statt auf
                         // die naechste Emission zu warten. Ist der Flow geendet, zeigte die
-                        // Oberflaeche sonst weiter "Nächster Alarm wird übersprungen" samt
-                        // "Aufheben"-Knopf fuer ein Ueberspringen, das es nicht mehr gibt.
+                        // Oberflaeche sonst weiter „weckt diesmal nicht“ samt „Doch wecken“ fuer ein
+                        // Ueberspringen, das es nicht mehr gibt.
                         applySkipState(isNextAlarmSkipped = false, skippedAlarmId = null, skippedAlarmTriggerTime = null)
                         // Erst der manuelle Zweig (braucht das bereits geloeschte Flag, sonst weist
                         // der Skip-Backstop in scheduleSystemAlarm() das Re-Arming ab), dann der

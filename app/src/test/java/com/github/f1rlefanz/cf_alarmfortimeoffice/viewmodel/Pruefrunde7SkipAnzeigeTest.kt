@@ -155,7 +155,7 @@ class Pruefrunde7SkipAnzeigeTest {
         advanceUntilIdle()
 
         assertFalse(
-            "Bleibt isLoading stehen, sind Ueberspringen UND Aufheben dauerhaft ausgegraut",
+            "Bleibt isLoading stehen, sind 'Nicht wecken' UND 'Doch wecken' dauerhaft ausgegraut",
             viewModel.skipState.value.isLoading
         )
         assertTrue(
@@ -188,7 +188,7 @@ class Pruefrunde7SkipAnzeigeTest {
         advanceUntilIdle()
 
         assertFalse(
-            "Sonst bietet die Oberflaeche 'Aufheben' fuer ein Ueberspringen an, das es nicht mehr gibt",
+            "Sonst bietet die Oberflaeche 'Doch wecken' fuer ein Ueberspringen an, das es nicht mehr gibt",
             viewModel.skipState.value.isNextAlarmSkipped
         )
         assertFalse(viewModel.skipState.value.isLoading)

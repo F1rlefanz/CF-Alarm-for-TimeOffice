@@ -121,9 +121,50 @@ ab — 1,5 s entprellt und nur im lebenden Prozess. Wird die App direkt nach „
 weggewischt, blieb der Auftrag stehen, und das Licht fuhr am freien Morgen ohne Auto-Aus hoch.
 Seitdem trägt der Auftrag seine Weckzeit und fragt beim Feuern
 `HueSmartScheduler.sonnenaufgangNochGedeckt` — dieselben Bedingungen wie beim Planen, kein
-Freigabe-Zweig. Bekannt und offen: ein Schlummern, das am Krankheitsmorgen schon läuft, klingelt
-nach einer Freigabe weiter (der Schlummer-Merker kennt keine Freigabe); und eine Rampe, die bereits
-läuft, wird nicht zurückgedreht.
+Freigabe-Zweig. Bekannt und offen: eine Rampe, die bereits läuft, wird nicht zurückgedreht.
+
+## Ein schon geschlummerter Wecker (1.50.3)
+
+**Der Fall:** Wecker klingelt 05:30, der Nutzer schlummert, merkt, dass er krank ist, und wählt
+„Dienst fällt aus“ für heute. Bis 1.50.2 klingelte es trotzdem nach Ablauf des Schlummerns. Zwei
+Gründe, beide strukturell: der gefeuerte Wecker steht nicht mehr im Bestand (er wirft
+Verstrichenes beim Laden weg, `AlarmRepository:322`), also findet ihn `betroffene` nicht; und der
+Snooze liegt in einem EIGENEN PendingIntent-Slot, den `cancelSystemAlarm` nie trifft.
+
+**Die Lösung hat zwei Schichten, wie jede Freigabe:**
+- **Gate:** `freigeben()` bricht direkt nach der Markierung jeden schwebenden Snooze ab, der zum
+  Tag gehört (`AlarmManagerService.cancelSnoozesFuerFreigabe`, über `cancelSnooze` samt Merker -
+  ein Neustart holt ihn nicht zurück).
+- **Backstop:** der `AlarmReceiver` prüft beim Feuern eines Snooze (`snoozeAlarmAction`), ob sein
+  Tag freigegeben ist, und klingelt dann nicht. Nötig, weil die Markierung zuerst steht: stirbt
+  der Prozess zwischen Markierung und Abbruch, räumt bei Weckern das Gate im nächsten Sync auf,
+  bei einem Snooze niemand. Nur bei entsperrtem Speicher (`FreieTageStore` ist CE); jeder Fehler =
+  klingeln.
+
+**Der Anker ist die WECKZEIT, gespeichert im Snooze-Merker (fünftes Feld).** Die Schlummer-Zeit
+wäre falsch: 23:50 geweckt, 00:05 erneut geschlummert, und der Snooze gehörte zum Folgetag - eine
+Freigabe des Folgetags bräche dann einen Wecker eines Tages ab, den niemand freigegeben hat. Woher
+die Weckzeit kommt (`weckzeitFuerEintrag`): beim erneuten Schlummern und beim Wiederherstellen nach
+einem Neustart vom Vorgänger-Eintrag derselben ID (VOR dem Kürzen gelesen, sonst ist er schon
+weg); beim ersten Schlummern die jüngste geklingelte Weckzeit aus `GeklingelteWeckzeiten`.
+**Bewusst kein „jetzt“ als Ersatz** - fehlt beides, bleibt der Anker leer, und der Snooze nimmt an
+keiner Freigabe teil (er klingelt).
+
+**Verworfen:** die Zuordnung über `betroffene` (Abgleich der Snooze-ID mit den Weckern des Tages).
+Sie fängt nur den Fall, in dem der Prozess seit dem Klingeln lebt - danach ist der Wecker aus dem
+Bestand. Ebenso verworfen: eine neue Intent-Extra quer durch Receiver, Dienst und Vollbild - der
+Merker kann sich die Weckzeit selbst merken, ohne drei geschützte Komponenten anzufassen.
+
+**Manuelle Wecker** erkennt der Merker am Anhängsel `MANUELLER_ALARM_SUFFIX` (er kennt keine
+Kalender-Kennung). Die Richtung ist sicher: ein Schichtwecker, der fälschlich als manuell gilt,
+klingelt.
+
+**Am Emulator gemessen (14.10.2026, Uhr vorgestellt auf Sa 17.10. 05:29):** Wecker 05:30 klingelt,
+„30 Min später“ - Merker `…|17.10.2026 06:00|1792207800000` (Weckzeit 05:30). „Dienst fällt aus“
+für Sa 17.10. - Log `FREIGABE: schwebender Snooze … gehoert zum freigegebenen 2026-10-17`, Merker
+leer, `dumpsys alarm` führt den Slot nur noch unter `Reason=alarm_cancelled`. Uhr auf 06:02 - kein
+Klingeln. Den Backstop allein (Prozesstod zwischen Markierung und Abbruch) kann die Shell nicht
+herbeiführen; er ist nur per Unit-Test (`gehoertSnoozeZuFreiemTag`) belegt.
 
 ## Was am Emulator gemessen wurde (24.08.2026)
 

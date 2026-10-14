@@ -30,7 +30,7 @@ class TagFreigabeAnzeigeTest {
     private val jetzt: Long = heute.atTime(6, 0).atZone(zone).toInstant().toEpochMilli()
 
     private fun tage(alarme: List<AlarmInfo>, freieTage: List<LocalDate>) =
-        baueWeckerTage(alarme, emptyList(), freieTage, SkipLage.KEIN, jetzt, zone, emptyMap())
+        baueWeckerTage(alarme, emptyList(), freieTage, SkipLage.KEIN, emptyList(), jetzt, zone, emptyMap())
 
     @Test
     fun `Der freigegebene Tag bleibt in der Liste, wenn danach kein Wecker mehr uebrig ist`() {

@@ -1067,6 +1067,22 @@ class AlarmManagerService(
         }
 
         /**
+         * Die schwebenden Snoozes (Schlummer-Zeit noch nicht erreicht) - fuer die ANZEIGE
+         * („schlummert bis“ in Tagesliste und Uebersicht). Synchron, Device-Protected, wirft nie;
+         * bei einem Lesefehler leer - dann fehlt nur die Anzeige, der Snooze klingelt trotzdem.
+         */
+        internal fun schwebendeSnoozes(context: Context, jetzt: Long): List<SnoozeEntry> =
+            try {
+                pruneSnoozeEntries(
+                    snoozePrefs(context).getStringSet(KEY_SNOOZE_ENTRIES, emptySet()) ?: emptySet(),
+                    jetzt
+                ).mapNotNull { parseSnoozeEntry(it) }
+            } catch (e: Exception) {
+                Logger.w(LogTags.ALARM_MANAGER, "Snooze-Merker fuer die Anzeige nicht lesbar", e)
+                emptyList()
+            }
+
+        /**
          * Der Merker-Eintrag zu [alarmId], OHNE Selbstreinigung gelesen - fuer den Backstop im
          * `AlarmReceiver`: beim Feuern ist die Schlummer-Zeit gerade verstrichen, ein gekuerzter
          * Read faende ihn nicht mehr. Synchron (Device-Protected), wirft nie; null = keiner.

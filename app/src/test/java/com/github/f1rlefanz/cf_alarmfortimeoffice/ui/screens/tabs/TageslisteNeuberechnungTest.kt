@@ -51,8 +51,10 @@ class TageslisteNeuberechnungTest {
     @Test
     fun `die Liste rechnet neu, wenn der Nutzer in die App zurueckkehrt`() {
         val quelle = code("ui/screens/tabs/WeckerTabContent.kt")
-        val variable = Regex("""val (\w+) = uhrBeimFortsetzen\(\)""").find(quelle)?.groupValues?.get(1)
-        require(variable != null) { "uhrBeimFortsetzen() wird nicht gelesen" }
+        // Seit 1.50.4 ueber rememberWeckerStand(): Fortsetzen, ein Tick nach dem naechsten Wechsel
+        // und der Snooze-Merker in einem Wert.
+        val variable = Regex("""val (\w+) = rememberWeckerStand\(""").find(quelle)?.groupValues?.get(1)
+        require(variable != null) { "rememberWeckerStand() wird nicht gelesen" }
         assertTrue(
             "Der Zeitpunkt des letzten Fortsetzens muss Schluessel der Liste sein.",
             Regex("""\b$variable\b""").containsMatchIn(schluesselDerTagesliste())

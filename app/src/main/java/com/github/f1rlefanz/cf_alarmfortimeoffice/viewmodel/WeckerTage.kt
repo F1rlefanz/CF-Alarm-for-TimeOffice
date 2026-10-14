@@ -1,9 +1,12 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel
 
+import android.content.Context
 import com.github.f1rlefanz.cf_alarmfortimeoffice.freietage.FreieTageStore
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.MANUELLER_ALARM_SUFFIX
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmInfo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.reinerSchichtname
+import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmManagerService
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpan
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.AlarmSkipUseCase
 import java.time.Instant
@@ -91,7 +94,45 @@ sealed interface WeckerEintrag {
         override val triggerTime: Long,
         val uhrzeit: LocalTime
     ) : WeckerEintrag
+
+    /**
+     * Ein geschlummerter Wecker: klingelt um [uhrzeit] wieder. Der Ursprungswecker hat schon
+     * geklingelt und ist aus dem Bestand verschwunden; ohne diese Zeile stand der Tag ohne jeden
+     * Wecker da, waehrend gleich einer klingelt (Emulator, 14.10.2026). Quelle ist der
+     * Snooze-Merker ([Schlummern]).
+     */
+    data class Schlummert(
+        override val triggerTime: Long,
+        val uhrzeit: LocalTime,
+        val manuell: Boolean
+    ) : WeckerEintrag
 }
+
+/**
+ * Ein schwebender Snooze, wie die Anzeige ihn braucht - aus dem Snooze-Merker
+ * ([schwebendesSchlummern]). [weckzeit] ist die urspruengliche Weckzeit (null = unbekannt).
+ */
+data class Schlummern(
+    val bis: Long,
+    val weckzeit: Long?,
+    val schichtName: String,
+    val manuell: Boolean
+)
+
+/**
+ * Die schwebenden Snoozes aus dem Merker. Liest Device-Protected SharedPreferences synchron; wirft
+ * nie (leer bei Fehler - dann fehlt nur die Anzeige). Manuell erkennt der Merker am Anhaengsel,
+ * dieselbe Regel wie `AlarmManagerService.gehoertSnoozeZuFreiemTag`.
+ */
+fun schwebendesSchlummern(context: Context, jetzt: Long): List<Schlummern> =
+    AlarmManagerService.schwebendeSnoozes(context, jetzt).map {
+        Schlummern(
+            bis = it.triggerTime,
+            weckzeit = it.weckzeit,
+            schichtName = it.shiftName,
+            manuell = it.shiftName.endsWith(MANUELLER_ALARM_SUFFIX)
+        )
+    }
 
 /** Eine Wirkung eines Dienstes ausserhalb des Weckers - ohne Uhrzeit (Details im Bottom-Sheet). */
 enum class Kaertchen { NICHT_STOEREN, DIMMEN, LICHT, RUFBEREITSCHAFT }
@@ -166,6 +207,11 @@ data class SkipLage(
  *   will gerade an einem freigegebenen Tag nennen, WELCHER Dienst ausfaellt. Dessen Wirkungen
  *   (Kaertchen) zeigt sie dort trotzdem nicht - siehe unten.
  *
+ * - Ein schwebender Snooze ([schlummern]) steht als „schlummert“ an dem Tag, an dem er KLINGELT
+ *   (nicht am Tag seiner Weckzeit: um 23:50 geweckt, um 00:20 wieder - die Zeile gehoert zu dem
+ *   Tag, den man vor sich hat). Gehoert er zu einem freigegebenen Tag und ist nicht manuell, fehlt
+ *   er: der Backstop im `AlarmReceiver` laesst ihn ohnehin nicht klingeln.
+ *
  * @param spannen der zuletzt geschriebene Stand des `ShiftSpanStore` (`ShiftUiState.letzterSchichtStand`).
  * @param wirkungen Schichtname (rein, ohne „(Manuell)“) -> [SchichtWirkung]. Fehlt ein Name,
  *   bekommt seine Schicht kein Kaertchen.
@@ -176,6 +222,8 @@ internal fun baueWeckerTage(
     spannen: List<ShiftSpan>,
     freieTage: Collection<LocalDate>,
     skip: SkipLage,
+    // Bewusst OHNE Default, wie [wirkungen]: vergessen hiesse still „nichts schlummert“.
+    schlummern: List<Schlummern>,
     jetzt: Long,
     zone: ZoneId,
     // Bewusst OHNE Default: ein vergessenes Argument liefe still als "keine Wirkungen" durch.
@@ -213,6 +261,15 @@ internal fun baueWeckerTage(
     if (skipZeit != null) {
         eintraegeJeTag.getOrPut(tagVon(skipZeit, zone)) { mutableListOf() } +=
             WeckerEintrag.Uebersprungen(skipZeit, uhrzeitVon(skipZeit, zone))
+    }
+
+    val freieTageAlle = freieTage.toHashSet()
+    for (s in schlummern) {
+        if (s.bis <= jetzt) continue
+        val ankerTag = s.weckzeit?.let { tagVon(it, zone) }
+        if (!s.manuell && ankerTag != null && ankerTag in freieTageAlle) continue
+        eintraegeJeTag.getOrPut(tagVon(s.bis, zone)) { mutableListOf() } +=
+            WeckerEintrag.Schlummert(s.bis, uhrzeitVon(s.bis, zone), s.manuell)
     }
 
     val spannenJeTag = spannen

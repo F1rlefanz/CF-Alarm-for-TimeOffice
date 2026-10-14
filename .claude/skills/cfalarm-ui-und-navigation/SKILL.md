@@ -129,6 +129,13 @@ das baut man dieselbe Falle in neuer Form nach.
   (`SkipLage.wirktNoch`) darf die Liste nicht sperren. Die Liste rechnet beim Zurueckkehren in die
   App und bei jedem neuen Ziel nach — sonst haengt der Knopf an einem verstrichenen Wecker
   (Review 14.10.2026). Kaertchen kommen aus `SchichtFolgen`, keine Nachbildung.
+  **Ein schwebender Snooze steht als Zeile „Weckt wieder · schlummert“** (Tagesliste) bzw. als
+  „… · schlummert“ in „Nächster Wecker“, Quelle ist der Snooze-Merker (`schwebendesSchlummern`).
+  Vorher war ein geschlummerter Wecker nirgends zu sehen: sein Eintrag ist nach dem Klingeln aus
+  dem Bestand, und die Karte nannte den schon geklingelten Wecker (Emulator, 14.10.2026). Der
+  Merker hat keinen Beobachter; `rememberWeckerStand` liest ihn beim Fortsetzen, bei
+  Bestandsaenderung, sobald `AlarmSoundService.alarmActive` faellt (Schlummern aus der
+  Benachrichtigung bei offener App) und EINMAL nach dem naechsten Wechsel (kein Dauer-Ticker).
   **Die Dienste eines Tages kommen zusaetzlich aus dem `ShiftSpanStore`** (ROH, ueber
   `ShiftUiState.letzterSchichtStand`, bewusst NICHT durch `filtereSpannen` — die Liste will am
   freigegebenen Tag nennen, welcher Dienst ausfaellt; Kaertchen gibt es dort trotzdem keine): sonst

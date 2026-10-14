@@ -26,6 +26,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.DateTimeFormats
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.AlarmSkipUiState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.AlarmUiState
+import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.Schlummern
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.SkipLage
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.naechsterKlingelnderZeitpunkt as waehleNaechstenKlingelnden
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.wecker.alsSkipLage
@@ -138,19 +139,27 @@ internal fun naechsterWeckerAnzeige(
     isLoading: Boolean,
     naechsterKlingelnderZeitpunkt: Long?,
     skippedAlarmId: Int?,
+    // Bewusst ohne Default: vergessen hiesse still „nichts schlummert“.
+    schlummern: List<Schlummern>,
     jetzt: Long,
     zone: ZoneId,
     heute: LocalDate = LocalDate.now(zone)
 ): NaechsterWeckerAnzeige = when (alarmStatusZustand(masterPausePaused, hasActiveAlarms, isLoading)) {
     AlarmStatusZustand.PAUSIERT -> NaechsterWeckerAnzeige.Pausiert
     AlarmStatusZustand.LAEDT -> NaechsterWeckerAnzeige.Laedt
-    AlarmStatusZustand.KEINE_ALARME -> NaechsterWeckerAnzeige.KeinWecker(stilleEintraege = 0)
+    // Der Bestand kann leer sein, waehrend ein Snooze schwebt (sein Wecker ist verbraucht).
+    AlarmStatusZustand.KEINE_ALARME -> fruehestesSchlummern(schlummern, jetzt)
+        ?.let { schlummerAnzeige(it, zone, heute) }
+        ?: NaechsterWeckerAnzeige.KeinWecker(stilleEintraege = 0)
     AlarmStatusZustand.AKTIVE_ALARME -> {
         val zeitpunkt = naechsterKlingelnderZeitpunkt?.let { gespeichert ->
             if (gespeichert > jetzt) gespeichert
             else waehleNaechstenKlingelnden(activeAlarms, skippedAlarmId, jetzt)
         }
-        if (zeitpunkt == null) {
+        val schlummer = fruehestesSchlummern(schlummern, jetzt)
+        if (schlummer != null && (zeitpunkt == null || schlummer.bis < zeitpunkt)) {
+            schlummerAnzeige(schlummer, zone, heute)
+        } else if (zeitpunkt == null) {
             NaechsterWeckerAnzeige.KeinWecker(
                 stilleEintraege = activeAlarms.count { it.isSilent && it.triggerTime > jetzt }
             )
@@ -168,6 +177,30 @@ internal fun naechsterWeckerAnzeige(
         }
     }
 }
+
+/**
+ * Der frueheste noch schwebende Snooze. Freigegebene Tage filtert die Karte nicht: „Dienst fällt
+ * aus“ bricht deren Snooze ab, bevor die Karte ihn sehen koennte.
+ */
+private fun fruehestesSchlummern(schlummern: List<Schlummern>, jetzt: Long): Schlummern? =
+    schlummern.filter { it.bis > jetzt }.minByOrNull { it.bis }
+
+/**
+ * Ein schwebender Snooze als „naechster Wecker“: er IST das Naechste, das klingelt. Vorher zeigte
+ * die Karte nach dem Schlummern den schon geklingelten Wecker weiter oder sprang auf den
+ * naechsten Tag - von den 30 Minuten stand nirgends etwas (Emulator, 14.10.2026).
+ */
+private fun schlummerAnzeige(s: Schlummern, zone: ZoneId, heute: LocalDate): NaechsterWeckerAnzeige.Naechster {
+    val wann = Instant.ofEpochMilli(s.bis).atZone(zone)
+    return NaechsterWeckerAnzeige.Naechster(
+        tag = weckerTagText(wann.toLocalDate(), heute) + TRENNER + SCHLUMMERT_KARTE,
+        uhrzeit = DateTimeFormatter.ofPattern(DateTimeFormats.TIME_ONLY).format(wann),
+        schicht = reinerSchichtname(s.schichtName).takeIf { it.isNotBlank() }
+    )
+}
+
+/** Der Zusatz in der Tageszeile der Karte, wenn das Naechste ein Schlummern ist. */
+internal const val SCHLUMMERT_KARTE: String = "schlummert"
 
 /** Wochentage fest verdrahtet: `Locale.GERMAN` liefert je nach JDK/CLDR "Mi." mit Punkt. */
 private val WOCHENTAGE = listOf("Mo", "Di", "Mi", "Do", "Fr", "Sa", "So")
@@ -284,8 +317,10 @@ fun NaechsterWeckerKarte(
     modifier: Modifier = Modifier
 ) {
     val zone = ZoneId.systemDefault()
-    // Gelesen, damit die Karte beim Zurueckkehren in die App neu rechnet (uhrBeimFortsetzen).
-    val jetzt = maxOf(uhrBeimFortsetzen(), System.currentTimeMillis())
+    // Neu gerechnet beim Zurueckkehren in die App, nach der naechsten Weckzeit bzw. dem Ende eines
+    // Schlummerns (ein Tick) - und mit den schwebenden Snoozes (rememberWeckerStand).
+    val stand = rememberWeckerStand(alarmState.activeAlarms, alarmState.nextRingingAlarmTriggerTime)
+    val jetzt = maxOf(stand.jetzt, System.currentTimeMillis())
     val skip = skipState.alsSkipLage()
     val anzeige = naechsterWeckerAnzeige(
         masterPausePaused = masterPausePaused,
@@ -294,6 +329,7 @@ fun NaechsterWeckerKarte(
         isLoading = alarmState.isLoading,
         naechsterKlingelnderZeitpunkt = alarmState.nextRingingAlarmTriggerTime,
         skippedAlarmId = skip.alarmId.takeIf { skip.aktiv },
+        schlummern = stand.schlummern,
         jetzt = jetzt,
         zone = zone
     )

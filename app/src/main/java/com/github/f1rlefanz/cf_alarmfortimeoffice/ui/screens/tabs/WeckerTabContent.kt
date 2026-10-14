@@ -30,7 +30,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.WecktonAnstieg
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.DatePickerDialog
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.SwitchRow
-import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.uhrBeimFortsetzen
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.rememberWeckerStand
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.wecker.ANDERER_TAG_KNOPF
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.wecker.Abschnittstitel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.wecker.KlangKarte
@@ -146,10 +146,12 @@ fun WeckerTabContent(
     //   erneuert es genau dieses Feld (der Bestand bleibt derselbe). Ohne den Schluessel blieb die
     //   Zeile mit „Nicht wecken“ am verstrichenen Wecker stehen, jeder Tipp wurde erneut abgelehnt,
     //   und der Hinweis „Die Liste zeigt jetzt den nächsten Wecker“ stimmte nicht.
-    // - uhrBeimFortsetzen(): wer nach dem Wecken in die App zurueckkehrt, sieht frisch gerechnet.
+    // - rememberWeckerStand(): wer nach dem Wecken in die App zurueckkehrt, sieht frisch
+    //   gerechnet; dazu EIN Tick nach der naechsten Weckzeit bzw. dem Ende eines Schlummerns, und
+    //   der Snooze-Merker fuer die Zeile „schlummert“.
     // Was dazwischen veralten kann, faengt die Ziel-Nachrechnung in skipNextAlarm() ab (die Zeile
     // reicht ihren Weckzeitpunkt mit).
-    val fortgesetzt = uhrBeimFortsetzen()
+    val stand = rememberWeckerStand(alarmState.activeAlarms, alarmState.nextRingingAlarmTriggerTime)
     val config = shiftState.currentShiftConfig
     val zustand = weckerZustand(masterPausePaused, config?.autoAlarmEnabled)
     // Die Dienste aus dem Schichtspannen-Bestand - dieselbe Quelle wie die Karte „Nächste
@@ -163,14 +165,15 @@ fun WeckerTabContent(
         tagFreigabeState.freieTage,
         skipLage,
         wirkungen,
-        fortgesetzt
+        stand
     ) {
         baueWeckerTage(
             alarme = alarmState.activeAlarms,
             spannen = spannen,
             freieTage = tagFreigabeState.freieTage,
             skip = skipLage,
-            jetzt = System.currentTimeMillis(),
+            schlummern = stand.schlummern,
+            jetzt = maxOf(stand.jetzt, System.currentTimeMillis()),
             zone = zone,
             wirkungen = wirkungen
         )

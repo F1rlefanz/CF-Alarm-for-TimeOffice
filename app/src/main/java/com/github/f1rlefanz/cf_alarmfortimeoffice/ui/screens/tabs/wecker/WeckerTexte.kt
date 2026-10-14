@@ -194,6 +194,11 @@ internal data class EtikettInhalt(val text: String, val ton: EtikettTon)
  */
 internal fun weckerEtiketten(eintrag: WeckerEintrag): List<EtikettInhalt> = when (eintrag) {
     is WeckerEintrag.Uebersprungen -> listOf(EtikettInhalt(UEBERSPRUNGEN_ETIKETT, EtikettTon.WARNUNG))
+    // Blau wie „von dir gestellt“: eine Auskunft, kein Warnzustand - er klingelt ja.
+    is WeckerEintrag.Schlummert -> buildList {
+        add(EtikettInhalt(SCHLUMMERT_ETIKETT, EtikettTon.INFO))
+        if (eintrag.manuell) add(EtikettInhalt("von dir gestellt", EtikettTon.INFO))
+    }
     is WeckerEintrag.Wecker -> buildList {
         if (eintrag.still) add(EtikettInhalt("still", EtikettTon.GEDAEMPFT))
         if (eintrag.manuell) add(EtikettInhalt("von dir gestellt", EtikettTon.INFO))
@@ -203,12 +208,20 @@ internal fun weckerEtiketten(eintrag: WeckerEintrag): List<EtikettInhalt> = when
 
 internal const val UEBERSPRUNGEN_TEXT: String = "Weckt diesmal nicht"
 
+/** Was ein geschlummerter Wecker tut - an der Stelle von „Weckt“ in der Zeile. */
+internal const val SCHLUMMERT_ART: String = "Weckt wieder"
+
+/** Das Etikett dazu, klein wie die uebrigen. */
+internal const val SCHLUMMERT_ETIKETT: String = "schlummert"
+
 /** Dasselbe als Etikett in der Zeile - klein geschrieben wie die uebrigen Etiketten. */
 internal const val UEBERSPRUNGEN_ETIKETT: String = "weckt diesmal nicht"
 
 /** Die Zeile im Bottom-Sheet: was dieser Wecker ist - Herkunft ausgeschrieben. */
 internal fun weckerBeschreibung(eintrag: WeckerEintrag): String = when (eintrag) {
     is WeckerEintrag.Uebersprungen -> "$UEBERSPRUNGEN_TEXT. „Doch wecken“ stellt ihn wieder."
+    is WeckerEintrag.Schlummert ->
+        "Der Wecker hat geklingelt und wurde verschoben – er klingelt dann noch einmal."
     is WeckerEintrag.Wecker -> when {
         eintrag.entfaelltDurchFreigabe -> "Klingelt nicht: der Dienst fällt aus."
         eintrag.still -> "Still: kein Ton, nur Zeitanker für den Dienst."

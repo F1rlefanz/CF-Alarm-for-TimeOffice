@@ -177,6 +177,7 @@ private fun EintragZeile(eintrag: WeckerEintrag, mehrereSchichten: Boolean, akti
     val uhrzeit = when (eintrag) {
         is WeckerEintrag.Wecker -> eintrag.uhrzeit
         is WeckerEintrag.Uebersprungen -> eintrag.uhrzeit
+        is WeckerEintrag.Schlummert -> eintrag.uhrzeit
     }
 
     InhaltUndBedienung(
@@ -205,6 +206,13 @@ private fun EintragZeile(eintrag: WeckerEintrag, mehrereSchichten: Boolean, akti
                     if (wecker != null) {
                         Text(
                             weckerArt(wecker, mehrereSchichten),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    if (eintrag is WeckerEintrag.Schlummert) {
+                        Text(
+                            SCHLUMMERT_ART,
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -291,14 +299,15 @@ internal fun TagDetails(
             TagKopf(tag, heute)
 
             tag.eintraege.forEach { eintrag ->
-                val uhrzeit = when (eintrag) {
-                    is WeckerEintrag.Wecker -> eintrag.uhrzeit
-                    is WeckerEintrag.Uebersprungen -> eintrag.uhrzeit
+                val titel = when (eintrag) {
+                    is WeckerEintrag.Wecker -> "Wecker ${uhrzeit(eintrag.uhrzeit)}"
+                    is WeckerEintrag.Uebersprungen -> "Wecker ${uhrzeit(eintrag.uhrzeit)}"
+                    is WeckerEintrag.Schlummert -> "Schlummert bis ${uhrzeit(eintrag.uhrzeit)}"
                 }
                 InhaltUndBedienung(
                     inhalt = { modifier ->
                         Column(modifier = modifier) {
-                            Text("Wecker ${uhrzeit(uhrzeit)}", style = MaterialTheme.typography.titleSmall)
+                            Text(titel, style = MaterialTheme.typography.titleSmall)
                             Text(
                                 weckerBeschreibung(eintrag),
                                 style = MaterialTheme.typography.bodyMedium,

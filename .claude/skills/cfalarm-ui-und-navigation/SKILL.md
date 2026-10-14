@@ -38,6 +38,12 @@ das baut man dieselbe Falle in neuer Form nach.
   bei degradiertem Read). Die Entscheidung ist die reine Funktion `naechsterGateSchritt()` in
   `navigation/OnboardingGates.kt`; gelesen wird nur in `MainScreen.leseGateLage()`.
 - **Der Rückweg aus den Regel-Editoren wird NUR in `NavigationViewModel.navigateBackFrom()` aufgelöst.**
+- **`OrtFuerTageslicht` (#140) traegt sein `zurueckZu`** (Einstellungen, Dimmer- oder Hue-Editor)
+  und hat einen eigenen Zweig in `rueckwegZiel`. Die Editoren ueberleben den Umweg ueber den
+  `SaveableStateHolder` in `MainScreen`, verschluesselt mit `sitzung` (`editorFormularSchluessel`);
+  jedes frische Oeffnen bekommt eine neue `sitzung`, beim endgueltigen Verlassen wird der Zustand
+  entfernt (`verworfenesEditorFormular`). Wer einen weiteren Unterscreen aus einem Editor heraus
+  oeffnet, haengt sich an dasselbe Muster - sonst verliert der Nutzer seine Eingabe.
 - **Gate-Texte verweisen nicht auf vorige Schritte** („wie eben bei …“): seit „Später“ weiterführt,
   kommt jedes Gate auch direkt nach einem ABGELEHNTEN Vorgänger.
 

@@ -276,3 +276,15 @@
   - **Keine der stichprobenhaft geprueften Szenen enthaelt Lampen mit `on:false`** (8 Szenen aus
     5 Raeumen, Felder je Lampe: `on` + `bri` + `ct`/`xy`). „Szene an heisst Licht an" traegt damit
     fuer den Auto-Aus-Text.
+
+## Tageslicht-Bedingung (#140, Oktober 2026)
+
+Eine Regel mit `hellAb != IMMER` laeuft nur, wenn die Weckzeit vor Daemmerung bzw. Sonnenaufgang
+des Wecktags liegt. Bewusst die WECKZEIT, nicht der Rampenstart oder „jetzt“: die Rampe beginnt
+vor dem Wecker, ein Vergleich mit ihrem Start liesse dieselbe Regel je nach Rampendauer anders
+entscheiden. Ein Abendwecker (vor einem Nachtdienst) liegt nach dem Sonnenaufgang desselben Tages —
+die Regel entfaellt dann, auch wenn es draussen dunkel ist; der Editor sagt das
+(`tageslicht_hue_hinweis_abend`). Verworfen: „ist es JETZT dunkel“ — das haette die Rampe
+mittendrin abbrechen koennen. Bekannte Restluecke: `HueConfigRepository` liest ohne
+`coerceInputValues`; ein unbekannter `HellAb`-Wert aus einer neueren Version macht die
+Regelliste unlesbar (dokumentiert in `HellAb`).

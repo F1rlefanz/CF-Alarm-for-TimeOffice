@@ -235,3 +235,9 @@ das baut man dieselbe Falle in neuer Form nach.
   leer — deshalb das eigene Protokoll. Das Geschwister-Unterlog **Interception Events** trifft es
   NICHT (eigene 100 Plaetze, ungeflutet, am 05.09.2026 knapp 15 Stunden zurueck): welche
   Benachrichtigung unterdrueckt wurde, steht dort weiterhin.
+- **„Hell ab“ (#140, `DimWindow.nachlaufBisHell`) kuerzt NUR den Nachlauf** — Ende = fruehestes
+  von Weckzeit + Nachlauf, Uhrzeit-Obergrenze und Hell-Zeitpunkt, aber **nie vor der Weckzeit**;
+  Fensteranfang, Faelle ohne Weckzeit und „Nicht stören“ bleiben unberuehrt. Der Resolver bleibt
+  rein: er bekommt nur eine `hellZeitpunkt`-Funktion (Default: nie hell), keinen Repository-Zugriff.
+  Jede Luecke (kein Ort, Lesefehler, gesperrt, Polartag/-nacht) heisst VOLLER Nachlauf. Den Ort
+  liefert ausschliesslich `TageslichtQuelle.stand()`. Hergang in `reference/dimmer.md`.

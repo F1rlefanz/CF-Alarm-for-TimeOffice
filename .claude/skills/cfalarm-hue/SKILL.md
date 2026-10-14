@@ -185,3 +185,10 @@ das baut man dieselbe Falle in neuer Form nach.
 - **`IHueConfigRepository.getConfiguration()` emittiert bei JEDER Änderung des @HueDataStore** — die
   Statuszeile je Schicht liest geänderte Regeln darüber nach. Ein `distinctUntilChanged` dort macht sie
   für Regeländerungen blind.
+- **„Nur bei Dunkelheit“ (#140, `HueScheduleRule.hellAb`) gilt an JEDER Stelle, an der
+  `passtAufSchicht` prueft** — `findApplicableRules`, `matchingPreAlarmSunriseRules` (Vorab-Rampe
+  UND Vorlaufzeit), `scheduleSunriseStarts`, `SunriseStartWorker`, `AlarmReceiver` (Snooze:
+  `SnoozeEntry.weckzeit`). Verglichen wird die **Weckzeit** (strikt `<`) mit dem Hell-Zeitpunkt
+  **des Wecktags**, auch bei der Sonnenaufgangs-Rampe: ganz oder gar nicht. `SchichtFolgen` zaehlt
+  nur. **Ein kuenftiger fuenfter Hue-Pfad muss die Bedingung mit anwenden** (wie die stille Schicht).
+  Kein Ort/Lesefehler = Regel laeuft. Auto-Aus bei Sonnenaufgang ist bewusst NICHT Teil davon.

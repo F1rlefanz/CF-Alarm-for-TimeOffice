@@ -821,3 +821,20 @@ danach — Dimmer und DND nur, wenn sich die Schichtspannen geändert haben. Das
 bloßer Blick in die App schaltet nichts um" (Emulator: leerer Abgleich ohne Neuberechnung,
 geänderte Schicht-Weckzeit mit). Unbekannter oder unlesbarer Stand: nichts anfassen, die Wartung
 zieht nach.
+
+## Tageslicht-Nachlauf (#140, Oktober 2026)
+
+Wunsch des Eigentuemers: im Sommer ist es beim Wecken laengst hell, der 30-Minuten-Nachlauf dunkelt
+dann sinnlos ab. Gewaehlt wurde je Dimm-Fenster `HellAb { IMMER, DAEMMERUNG, SONNENAUFGANG }`
+(Default `IMMER` = altes Verhalten), nur beim Ende-Anker „Weckzeit, spätestens“ mit Nachlauf > 0.
+
+- **Nur der Nachlauf, nie davor.** Verworfen: das Fenster schon VOR dem Wecken enden lassen, wenn es
+  hell ist. Wer schlaeft, merkt das Licht nicht; wer nach dem Wecken noch ins Telefon schaut, schon.
+  Und eine Abhaengigkeit zwischen Dimmer-Ende und Weckzeit in beide Richtungen haette DND
+  (`ohneNachlaufFalls`, „Schlaf-Fenster folgt dem Dimmer“) mitgezogen.
+- **DND bleibt identisch** mit und ohne Tageslicht (Test in `DimWindowTageslichtTest`).
+- **Fail-safe = voller Nachlauf**: lieber 30 Minuten zu lange gedimmt als ein Dimmer, der wegen
+  eines Lesefehlers ploetzlich anders arbeitet.
+- **Wanduhr- und Kalendertag-Arithmetik**, kein `+ 24 h` in Millisekunden (Zeitumstellung).
+- Die Vorschau nennt den Grund nur, wenn wirklich gekuerzt wurde („bis 07:31, Sonnenaufgang …“);
+  der Editor zeigt fuer den naechsten Wecker live, was passiert (`tageslicht_dimmer_grund_*`).

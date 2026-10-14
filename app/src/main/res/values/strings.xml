@@ -202,7 +202,7 @@
     <string name="hue_shift_header">Schichtmuster</string>
     <string name="hue_shift_intro">Wähle aus, für welches Schichtmuster diese Regel gilt:</string>
     <string name="hue_shift_none_title">Keine Schichtmuster konfiguriert</string>
-    <string name="hue_shift_none_body">Lege zuerst Schichttypen an: Bereich „Wecker“ → „Schichttypen verwalten“.</string>
+    <string name="hue_shift_none_body">Lege zuerst Schichttypen an: in den Einstellungen unter „Schichttypen verwalten“.</string>
     <string name="hue_shift_universal_hint">Gilt für jede erkannte Schicht</string>
     <string name="hue_shift_required">Bitte wähle ein Schichtmuster aus.</string>
     <string name="hue_shift_universal_label">Alle Schichten</string>

@@ -4,6 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
 
 /**
  * Deckt HomeTabContents pure Erklaerfunktionen ab.
@@ -164,6 +165,17 @@ class NoShiftReasonTest {
             assertTrue("Knopfname fehlt: $text", text.contains("„Schichttypen verwalten“"))
             assertTrue("Einstellungen fehlen: $text", text.contains("Einstellungen"))
             assertFalse("Alter Ort steht noch drin: $text", text.contains("„Wecker“"))
+        }
+    }
+
+    @Test
+    fun `auch die String-Ressourcen schicken nicht mehr in den Wecker-Bereich`() {
+        // Der Leerzustand der Hue-Regel (hue_shift_none_body) war beim Umzug uebersehen worden.
+        val datei = listOf(File("app/src/main/res/values/strings.xml"), File("src/main/res/values/strings.xml"))
+            .firstOrNull { it.isFile } ?: error("strings.xml nicht gefunden")
+        datei.readLines().filter { it.contains("Schichttypen verwalten") }.forEach { zeile ->
+            assertTrue("Einstellungen fehlen: $zeile", zeile.contains("Einstellungen"))
+            assertFalse("Alter Ort steht noch drin: $zeile", zeile.contains("„Wecker“"))
         }
     }
 

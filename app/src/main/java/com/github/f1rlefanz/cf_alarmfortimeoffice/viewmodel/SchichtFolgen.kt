@@ -10,7 +10,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
 
 /**
  * Was eine Schicht AUSSERHALB des Weckers ausloest - rein lesend, fuer die Statuszeile
- * "Dimmen: … · Licht: … · DND: …" unter jeder Schichtkarte (Issue #70).
+ * "Dimmen: … · Licht: … · Nicht stören: …" unter jeder Schichtkarte (Issue #70).
  *
  * WARUM ES DIE ZEILE GIBT: Dimmer-, Hue- und DND-Regeln binden ueber den Schichtnamen, werden aber
  * an drei anderen Stellen der App eingerichtet. Ob eine Schicht verwaist ist (keine Regel) oder
@@ -261,7 +261,7 @@ private val GESCHUETZT: Char = Char(0x00A0)
 private object Texte {
     const val DIMMEN = "Dimmen:"
     const val LICHT = "Licht:"
-    const val DND = "DND:"
+    const val DND = "Nicht stören:"
 
     /** Umbruch nur HINTER dem Punkt: davor geschuetzt, danach ein normales Leerzeichen. */
     val TRENNER = "${GESCHUETZT}· "

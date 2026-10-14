@@ -168,7 +168,7 @@ class ShiftViewModel @Inject constructor(
 
     /**
      * Was jede AKTIVE Schicht ausserhalb des Weckers ausloest - die Statuszeile
-     * "Dimmen: … · Licht: … · DND: …" im `ShiftConfigScreen` (Issue #70). Schluessel ist die
+     * "Dimmen: … · Licht: … · Nicht stören: …" im `ShiftConfigScreen` (Issue #70). Schluessel ist die
      * `ShiftDefinition.id`; eine DEAKTIVIERTE Definition fehlt bewusst (ihre Karte sagt schon
      * "kein Dimmer- und kein DND-Fenster", "Dimmen: eigene Regel" widerspraeche dem).
      *

@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
@@ -29,6 +30,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.StatusTon
@@ -173,9 +175,13 @@ internal fun Abschnittstitel(text: String) {
  * `ThemeKontrastTest`), die neutralen aus `surfaceContainer` + Rand - NIE `surfaceVariant`, das ist
  * in der hellen Palette dieselbe Farbe wie der Hintergrund (Skill cfalarm-ui-und-navigation). Die
  * Regel „keine gefuellte Kartenflaeche“ betrifft Karten; ein Etikett SITZT auf einer Karte.
+ *
+ * [symbol] unterscheidet die Wirkungs-Kaertchen. Farbe bleibt dem ZUSTAND vorbehalten („naechster“,
+ * „von dir gestellt“, „Nicht wecken“); eine Farbe je Funktion hiesse Farbe in zwei Bedeutungen
+ * (Entscheidung des Eigentuemers, 14.10.2026). Das Symbol waechst mit der Schriftgroesse mit.
  */
 @Composable
-internal fun Etikett(text: String, ton: EtikettTon) {
+internal fun Etikett(text: String, ton: EtikettTon, symbol: ImageVector? = null) {
     val schema = MaterialTheme.colorScheme
     val status = when (ton) {
         EtikettTon.ERFOLG -> schema.tonPaar(StatusTon.ERFOLG)
@@ -190,11 +196,21 @@ internal fun Etikett(text: String, ton: EtikettTon) {
         contentColor = status?.text ?: if (ton == EtikettTon.GEDAEMPFT) schema.onSurfaceVariant else schema.onSurface,
         border = if (status == null) BorderStroke(1.dp, schema.outline) else null
     ) {
-        Text(
-            text,
-            style = MaterialTheme.typography.labelMedium,
-            fontWeight = if (pille) FontWeight.SemiBold else null,
-            modifier = Modifier.padding(horizontal = if (pille) 8.dp else 6.dp, vertical = 2.dp)
-        )
+        Row(
+            modifier = Modifier.padding(horizontal = if (pille) 8.dp else 6.dp, vertical = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            if (symbol != null) {
+                val groesse = with(LocalDensity.current) { MaterialTheme.typography.labelMedium.fontSize.toDp() }
+                // Rein schmueckend: der Text sagt dasselbe, TalkBack soll es nicht doppelt vorlesen.
+                Icon(symbol, contentDescription = null, modifier = Modifier.size(groesse))
+            }
+            Text(
+                text,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = if (pille) FontWeight.SemiBold else null
+            )
+        }
     }
 }

@@ -165,7 +165,7 @@ class WeckerTageTest {
         val liste = tage(
             listOf(
                 alarm(1, "2026-10-15T04:30", manuell = true),
-                alarm(2, "2026-10-15T05:00")
+                alarm(2, "2026-10-15T05:00", beginn = ms("2026-10-15T06:00"))
             )
         )
         val (manuell, dienst) = liste.single().wecker()
@@ -173,10 +173,10 @@ class WeckerTageTest {
         assertFalse(dienst.manuell)
         // Der manuelle ist frueher und klingelt - er ist der naechste, wie beim Knopf.
         assertTrue(manuell.naechster)
-        // Gleicher reiner Name: Anzeige getrennt, beide Schichten stehen in der Liste.
+        // Gleicher reiner Name = eine Schicht im Tageskopf, mit der bekannten Dienstzeit.
         assertEquals(
-            listOf("Frühdienst$MANUELLER_ALARM_SUFFIX", "Frühdienst"),
-            liste.single().schichten.map { it.name }
+            listOf(TagesSchicht("Frühdienst", LocalTime.of(6, 0), null)),
+            liste.single().schichten
         )
     }
 

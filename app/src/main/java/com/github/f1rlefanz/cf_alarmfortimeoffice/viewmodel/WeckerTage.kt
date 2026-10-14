@@ -131,7 +131,8 @@ internal fun baueWeckerTage(
     skip: SkipLage,
     jetzt: Long,
     zone: ZoneId,
-    wirkungen: Map<String, SchichtWirkung> = emptyMap()
+    // Bewusst OHNE Default: ein vergessenes Argument liefe still als "keine Wirkungen" durch.
+    wirkungen: Map<String, SchichtWirkung>
 ): List<WeckerTag> {
     val heute = tagVon(jetzt, zone)
     val skipZeit = skip.weckzeitpunkt?.takeIf { skip.aktiv && it > jetzt }
@@ -220,15 +221,24 @@ internal fun kaertchenFuerSchichten(
     return Kaertchen.entries.filter { it in alle }
 }
 
+/**
+ * Eine Zeile je Schicht, zusammengefasst ueber den REINEN Namen: ein manueller „Frühdienst
+ * (Manuell)“ neben dem Dienstplan-Frühdienst ist dieselbe Schicht, und der Kopf des Tages soll sie
+ * nicht doppelt nennen - dass ein Wecker von Hand gestellt ist, sagt schon dessen Zeile. Bevorzugt
+ * wird der Eintrag MIT bekannter Dienstzeit (ein manueller hat 0/0) und dessen Anzeigename.
+ */
 private fun schichtenDesTages(eintraege: List<WeckerEintrag>, zone: ZoneId): List<TagesSchicht> =
     eintraege.filterIsInstance<WeckerEintrag.Wecker>()
-        .filter { it.alarm.shiftName.isNotBlank() }
-        .distinctBy { it.alarm.shiftName }
-        .map {
+        .map { it.alarm }
+        .filter { it.shiftName.isNotBlank() }
+        .groupBy { reinerSchichtname(it.shiftName) }
+        .values
+        .map { gruppe ->
+            val alarm = gruppe.firstOrNull { it.shiftStartTime != 0L || it.shiftEndTime != 0L } ?: gruppe.first()
             TagesSchicht(
-                name = it.alarm.shiftName,
-                beginn = it.alarm.shiftStartTime.takeIf { t -> t != 0L }?.let { t -> uhrzeitVon(t, zone) },
-                ende = it.alarm.shiftEndTime.takeIf { t -> t != 0L }?.let { t -> uhrzeitVon(t, zone) }
+                name = alarm.shiftName,
+                beginn = alarm.shiftStartTime.takeIf { it != 0L }?.let { uhrzeitVon(it, zone) },
+                ende = alarm.shiftEndTime.takeIf { it != 0L }?.let { uhrzeitVon(it, zone) }
             )
         }
 

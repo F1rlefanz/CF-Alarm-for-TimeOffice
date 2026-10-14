@@ -160,7 +160,8 @@ data class SkipLage(
  * - Der verstrichene Wecker von heute erscheint NICHT als Zeile („hat um 05:30 geweckt“): ob er
  *   wirklich geklingelt hat, weiss die Anzeige nicht - er kann uebersprungen oder still gewesen
  *   sein, und der Bestand hat ihn verworfen. Eine Zeile, die das behauptet, waere eine Anzeige, die
- *   es nicht gibt (Skill cfalarm-ui-und-navigation). Der Tag zeigt Dienst, Dienstzeit, Kaertchen.
+ *   es nicht gibt (Skill cfalarm-ui-und-navigation). Der Tag zeigt Dienst, Dienstzeit, Kaertchen
+ *   - ohne „Licht“, das kommt nach der Weckzeit nicht mehr ([lichtMoeglich]).
  * - Die Spannen kommen ROH, nicht durch `FreieTageStore.filtereSpannen`: die Liste ist Anzeige und
  *   will gerade an einem freigegebenen Tag nennen, WELCHER Dienst ausfaellt. Dessen Wirkungen
  *   (Kaertchen) zeigt sie dort trotzdem nicht - siehe unten.

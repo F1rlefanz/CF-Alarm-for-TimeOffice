@@ -70,6 +70,15 @@ class DienstzeitTest {
     }
 
     @Test
+    fun `ein 24-Stunden-Dienst ist keine Spanne der Laenge null`() {
+        // Rettungsdienst/Feuerwehr: Mi 07:00 bis Do 07:00 - nicht "07:00–07:00".
+        assertEquals(
+            "07:00 bis Do 15.10. 07:00",
+            text(millis(2026, 10, 14, 7, 0), millis(2026, 10, 15, 7, 0))
+        )
+    }
+
+    @Test
     fun `unbekannt wird nicht erfunden`() {
         assertNull(text(0L, millis(2026, 10, 14, 14, 0)))
         assertEquals("ab 06:00", text(millis(2026, 10, 14, 6, 0), 0L))

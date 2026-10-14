@@ -39,7 +39,8 @@ internal fun kurzesDatum(datum: LocalDate): String =
  *   Bewusst ueber KALENDERTAGE und nicht ueber „mindestens 24 h“: am Tag der Zeitumstellung ist ein
  *   ganzer Tag 23 oder 25 Stunden lang, ein Millisekunden-Vergleich zeigte dort wieder 00:00–00:00.
  * - Ende am selben Tag, oder am Folgetag VOR der Beginnzeit (Nachtdienst unter 24 h):
- *   „06:00–14:12“ bzw. „22:00–06:00“.
+ *   „06:00–14:12“ bzw. „22:00–06:00“. Genau 24 h (Rettungsdienst, Feuerwehr: Mi 07:00 bis Do 07:00)
+ *   gehoert NICHT dazu - „07:00–07:00“ saehe aus wie eine Spanne der Laenge null.
  * - Laenger: „06:00 bis So 18.10. 06:00“ - sonst saehe ein Dienst ueber zwei Naechte aus wie einer
  *   ueber eine.
  * - Ende unbekannt (0) oder nicht nach dem Beginn: „ab 06:00“ - eine erfundene Zeit waere
@@ -62,7 +63,7 @@ internal fun dienstzeitText(beginn: Long, ende: Long, zone: ZoneId): String? {
     if (b.toLocalTime() == LocalTime.MIDNIGHT && e.toLocalTime() == LocalTime.MIDNIGHT && tage >= 1) {
         return if (tage == 1L) "ganztägig" else "ganztägig bis ${datumAmStueck(e.toLocalDate().minusDays(1))}"
     }
-    val eineSpanne = tage == 0L || (tage == 1L && !e.toLocalTime().isAfter(b.toLocalTime()))
+    val eineSpanne = tage == 0L || (tage == 1L && e.toLocalTime().isBefore(b.toLocalTime()))
     return if (eineSpanne) {
         "${b.format(UHRZEIT)}–${e.format(UHRZEIT)}"
     } else {

@@ -111,6 +111,12 @@ das baut man dieselbe Falle in neuer Form nach.
   Wert wie `background`, die Karte verschwindet. Dezente Karten: `surface` +
   `BorderStroke(1.dp, outline)`. Und ein Zustand wird ADDITIV gezeigt (Rand, Text), nie durch
   Wegnehmen der Fläche.
+- **Etiketten (klein, AUF einer Karte) sind gefuellt** — Status als Pille aus `tonPaar()`
+  (`ui/theme/Theme.kt`: Erfolg/Warnung/Info, Flaeche + eigene Textfarbe), neutral auf
+  `surfaceContainer` + Rand. Die Ampelfarben selbst erreichen auf ihrer weichen Flaeche KEINE 4,5:1
+  (`ThemeKontrastTest` prueft jedes Paar). Knoepfe an Listenzeilen: umrandeter Kompaktknopf
+  (`CompactContentPadding`), untereinander LINKSbuendig (`untereinanderAusrichtung = Start`) — ein
+  Textknopf allein am rechten Rand sah am Fairphone verloren aus (14.10.2026).
 - **Die Wecker-Tagesliste (#139, `viewmodel/WeckerTage.kt`) waehlt den naechsten klingelnden
   Wecker ueber `AlarmSkipUseCase.naechsterKlingelnderWecker` — dieselbe Auswahl wie der Knopf**,
   und nur dieser bekommt „Nicht wecken“ (Variante A, Eigentuemer 14.10.2026: der Skip-Merker

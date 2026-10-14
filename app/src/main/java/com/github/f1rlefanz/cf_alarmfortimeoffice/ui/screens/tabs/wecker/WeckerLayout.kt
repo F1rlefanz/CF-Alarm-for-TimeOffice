@@ -26,11 +26,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.StatusTon
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.tonPaar
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
 
 /**
@@ -47,15 +49,20 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
 internal val UNTEREINANDER_UNTER = 270.dp
 
 /**
- * Inhalt links, Bedienelemente rechts - und UNTEREINANDER (Bedienelemente rechtsbuendig darunter),
- * wenn daneben keine ganzen Woerter mehr Platz haetten (siehe [UNTEREINANDER_UNTER]).
+ * Inhalt links, Bedienelemente rechts - und UNTEREINANDER, wenn daneben keine ganzen Woerter mehr
+ * Platz haetten (siehe [UNTEREINANDER_UNTER]).
  *
  * @param inhalt bekommt den Modifier, den es tragen MUSS: nebeneinander `weight(1f)` (sonst schiebt
  *   ein langer Text den Knopf aus der Zeile), untereinander `fillMaxWidth()`.
+ * @param untereinanderAusrichtung wo die Bedienelemente untereinander stehen. Die Knoepfe der
+ *   Tagesliste nehmen `Start`: ein einzelner Knopf rechtsbuendig unter einer kurzen Weckerzeile stand
+ *   am Fairphone (320 dp, 14.10.2026) verloren am Rand. Die Auswahlknoepfe der Klang-Karte bleiben
+ *   rechts, unter ihrem Wert-Platz.
  */
 @Composable
 internal fun InhaltUndBedienung(
     inhalt: @Composable (Modifier) -> Unit,
+    untereinanderAusrichtung: Alignment.Horizontal = Alignment.End,
     bedienung: @Composable RowScope.() -> Unit
 ) {
     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
@@ -67,7 +74,7 @@ internal fun InhaltUndBedienung(
             ) {
                 inhalt(Modifier.fillMaxWidth())
                 Row(
-                    modifier = Modifier.align(Alignment.End),
+                    modifier = Modifier.align(untereinanderAusrichtung),
                     horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_SMALL),
                     verticalAlignment = Alignment.CenterVertically,
                     content = bedienung
@@ -162,26 +169,32 @@ internal fun Abschnittstitel(text: String) {
 }
 
 /**
- * Kleines Etikett ("nächster", ein Kaertchen). Flaeche `surface` + Rand statt `surfaceVariant` -
- * das ist in der hellen Palette dieselbe Farbe wie der Hintergrund (Skill
- * cfalarm-ui-und-navigation).
+ * Kleines Etikett. Flaechen nur aus dem Theme: die Status-Toene aus [tonPaar] (Kontrast in
+ * `ThemeKontrastTest`), die neutralen aus `surfaceContainer` + Rand - NIE `surfaceVariant`, das ist
+ * in der hellen Palette dieselbe Farbe wie der Hintergrund (Skill cfalarm-ui-und-navigation). Die
+ * Regel „keine gefuellte Kartenflaeche“ betrifft Karten; ein Etikett SITZT auf einer Karte.
  */
 @Composable
-internal fun Etikett(
-    text: String,
-    hervorgehoben: Boolean = false
-) {
-    val farbe = if (hervorgehoben) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+internal fun Etikett(text: String, ton: EtikettTon) {
+    val schema = MaterialTheme.colorScheme
+    val status = when (ton) {
+        EtikettTon.ERFOLG -> schema.tonPaar(StatusTon.ERFOLG)
+        EtikettTon.INFO -> schema.tonPaar(StatusTon.INFO)
+        EtikettTon.WARNUNG -> schema.tonPaar(StatusTon.WARNUNG)
+        EtikettTon.GEDAEMPFT, EtikettTon.WIRKUNG -> null
+    }
+    val pille = ton != EtikettTon.WIRKUNG
     Surface(
-        shape = RoundedCornerShape(6.dp),
-        color = Color.Transparent,
-        contentColor = farbe,
-        border = BorderStroke(1.dp, if (hervorgehoben) farbe else MaterialTheme.colorScheme.outline)
+        shape = if (pille) RoundedCornerShape(percent = 50) else RoundedCornerShape(6.dp),
+        color = status?.flaeche ?: schema.surfaceContainer,
+        contentColor = status?.text ?: if (ton == EtikettTon.GEDAEMPFT) schema.onSurfaceVariant else schema.onSurface,
+        border = if (status == null) BorderStroke(1.dp, schema.outline) else null
     ) {
         Text(
             text,
             style = MaterialTheme.typography.labelMedium,
-            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+            fontWeight = if (pille) FontWeight.SemiBold else null,
+            modifier = Modifier.padding(horizontal = if (pille) 8.dp else 6.dp, vertical = 2.dp)
         )
     }
 }

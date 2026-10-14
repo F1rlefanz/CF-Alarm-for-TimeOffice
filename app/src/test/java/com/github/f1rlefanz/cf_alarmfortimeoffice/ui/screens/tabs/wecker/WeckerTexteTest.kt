@@ -170,12 +170,25 @@ class WeckerTexteTest {
     @Test
     fun `die Art eines Weckers - nie Weckt fuer einen, der nicht klingelt`() {
         assertEquals("Weckt", weckerArt(wecker(), mehrereSchichten = false))
-        assertEquals("Still: kein Ton", weckerArt(wecker(still = true), mehrereSchichten = false))
+        assertEquals("Kein Ton", weckerArt(wecker(still = true), mehrereSchichten = false))
         assertTrue(weckerArt(wecker(entfaellt = true), mehrereSchichten = false).startsWith("Entfällt"))
-        assertEquals("Weckt · von dir gestellt", weckerArt(wecker(manuell = true), mehrereSchichten = false))
+        // Die Herkunft steht als Etikett daneben, nicht doppelt im Text.
+        assertEquals("Weckt", weckerArt(wecker(manuell = true), mehrereSchichten = false))
+        assertEquals("Weckt · S2", weckerArt(wecker(manuell = true, schicht = "S2 (Manuell)"), mehrereSchichten = true))
+    }
+
+    @Test
+    fun `die Etiketten einer Weckerzeile tragen die Farben aus dem Mockup`() {
+        assertEquals(emptyList<EtikettInhalt>(), weckerEtiketten(wecker()))
+        assertEquals(listOf(EtikettInhalt("still", EtikettTon.GEDAEMPFT)), weckerEtiketten(wecker(still = true)))
+        assertEquals(listOf(EtikettInhalt("von dir gestellt", EtikettTon.INFO)), weckerEtiketten(wecker(manuell = true)))
         assertEquals(
-            "Weckt · von dir gestellt · S2",
-            weckerArt(wecker(manuell = true, schicht = "S2 (Manuell)"), mehrereSchichten = true)
+            listOf(EtikettInhalt("von dir gestellt", EtikettTon.INFO), EtikettInhalt("nächster", EtikettTon.ERFOLG)),
+            weckerEtiketten(wecker(manuell = true).copy(naechster = true))
+        )
+        assertEquals(
+            listOf(EtikettInhalt("weckt diesmal nicht", EtikettTon.WARNUNG)),
+            weckerEtiketten(WeckerEintrag.Uebersprungen(1L, LocalTime.NOON))
         )
     }
 

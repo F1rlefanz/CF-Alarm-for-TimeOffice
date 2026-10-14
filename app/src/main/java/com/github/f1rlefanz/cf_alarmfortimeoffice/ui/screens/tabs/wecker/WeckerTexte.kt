@@ -87,6 +87,23 @@ internal fun leerzustandText(zustand: WeckerZustand?, vorausschauTage: Int): Str
 
 // ---- Tagesliste ------------------------------------------------------------------------
 
+/**
+ * Wie ein Etikett aussieht (Mockup #139): Status-Etiketten als gefuellte Pille im weichen Ton,
+ * Wirkungs-Kaertchen als ruhige gefuellte Flaeche mit Rand.
+ */
+internal enum class EtikettTon {
+    /** „nächster“ - gruen. */
+    ERFOLG,
+    /** „von dir gestellt“ - blau. */
+    INFO,
+    /** „weckt diesmal nicht“ - bernstein. */
+    WARNUNG,
+    /** „Dienst fällt aus“, „still“ - zurueckgenommen, neutral. */
+    GEDAEMPFT,
+    /** Die Kaertchen „Nicht stören“, „Dimmen“, „Licht“, Kalender-Abfrage. */
+    WIRKUNG
+}
+
 /** Die Skip-Lage, wie die Tagesliste sie braucht - aus dem Zustand des ViewModels. */
 internal fun AlarmSkipUiState.alsSkipLage(): SkipLage = SkipLage(
     aktiv = isNextAlarmSkipped,
@@ -149,24 +166,45 @@ internal fun uhrzeit(zeit: LocalTime): String = zeit.format(UHRZEIT)
 /**
  * PURE, TESTBAR: was ein Wecker tut, in einem Satzstueck. Ein Dienstplan-Wecker an einem
  * freigegebenen Tag klingelt nicht (Gate und Backstop) - er darf nicht als "Weckt" erscheinen.
+ * Herkunft und Zustand („von dir gestellt“, „still“, „nächster“) stehen NICHT hier, sondern als
+ * farbige Etiketten daneben ([weckerEtiketten]).
  *
  * @param mehrereSchichten nennt den Dienst, wenn der Tag mehrere hat - sonst steht er schon oben.
  */
 internal fun weckerArt(eintrag: WeckerEintrag.Wecker, mehrereSchichten: Boolean): String {
     val art = when {
         eintrag.entfaelltDurchFreigabe -> "Entfällt, der Dienst fällt aus"
-        eintrag.still -> "Still: kein Ton"
+        eintrag.still -> "Kein Ton"
         else -> "Weckt"
     }
     val teile = buildList {
         add(art)
-        if (eintrag.manuell) add("von dir gestellt")
         if (mehrereSchichten && eintrag.alarm.shiftName.isNotBlank()) add(reinerSchichtname(eintrag.alarm.shiftName))
     }
     return teile.joinToString(" · ")
 }
 
+/** Ein Etikett in einer Weckerzeile: Text und Ton - ohne Compose, damit es testbar bleibt. */
+internal data class EtikettInhalt(val text: String, val ton: EtikettTon)
+
+/**
+ * PURE, TESTBAR: die Etiketten einer Weckerzeile, in Lesereihenfolge hinter [weckerArt].
+ * Farben wie im Mockup: „nächster“ gruen, „von dir gestellt“ blau, „weckt diesmal nicht“
+ * bernstein, „still“ gedaempft.
+ */
+internal fun weckerEtiketten(eintrag: WeckerEintrag): List<EtikettInhalt> = when (eintrag) {
+    is WeckerEintrag.Uebersprungen -> listOf(EtikettInhalt(UEBERSPRUNGEN_ETIKETT, EtikettTon.WARNUNG))
+    is WeckerEintrag.Wecker -> buildList {
+        if (eintrag.still) add(EtikettInhalt("still", EtikettTon.GEDAEMPFT))
+        if (eintrag.manuell) add(EtikettInhalt("von dir gestellt", EtikettTon.INFO))
+        if (eintrag.naechster) add(EtikettInhalt("nächster", EtikettTon.ERFOLG))
+    }
+}
+
 internal const val UEBERSPRUNGEN_TEXT: String = "Weckt diesmal nicht"
+
+/** Dasselbe als Etikett in der Zeile - klein geschrieben wie die uebrigen Etiketten. */
+internal const val UEBERSPRUNGEN_ETIKETT: String = "weckt diesmal nicht"
 
 /** Die Zeile im Bottom-Sheet: was dieser Wecker ist - Herkunft ausgeschrieben. */
 internal fun weckerBeschreibung(eintrag: WeckerEintrag): String = when (eintrag) {

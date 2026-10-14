@@ -480,7 +480,7 @@
     <string name="tageslicht_standort_abgelehnt">Ohne Standort-Berechtigung geht es auch: nutze die Postleitzahl.</string>
     <string name="tageslicht_standort_fehlgeschlagen">Der Standort ließ sich nicht ermitteln. Versuch es später noch einmal oder nutze die Postleitzahl.</string>
     <string name="tageslicht_standort_abgeschaltet">Die Standortermittlung ist in den Android-Einstellungen ausgeschaltet. Schalte sie dort ein oder nutze die Postleitzahl.</string>
-    <string name="tageslicht_plz_quelle">Postleitzahl-Orte: GeoNames, CC BY 4.0</string>
+    <string name="tageslicht_plz_quelle">Postleitzahl-Orte: GeoNames, CC BY 4.0</string>
 
     <string name="tageslicht_dimmer_titel">Nachlauf nur, solange es dunkel ist</string>
     <string name="tageslicht_wahl_immer">Immer</string>

@@ -3,6 +3,7 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.cards
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -43,6 +44,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.Unresol
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.HellAb
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tageslicht.DunkelheitEtikett
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.CompactOutlinedButton
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.KnopfZeile
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.hueRuleModusLabel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.hueShiftPatternLabel
 import androidx.compose.ui.res.pluralStringResource
@@ -89,8 +91,10 @@ internal fun HueRuleCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column(Modifier.weight(1f)) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
+                    // FlowRow: in einer Row quetschte ein langer Name das Abzeichen bei 320 dp auf
+                    // Buchstabenbreite ("S/o/n/n/e/..." senkrecht, Emulator 14.10.2026).
+                    FlowRow(
+                        itemVerticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Text(rule.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
@@ -155,23 +159,23 @@ internal fun HueRuleCard(
             }
 
 
-            // CompactOutlinedButton: zwei weight(1f)-Buttons plus IconButton - siehe CompactActionButton.kt.
+            // KnopfZeile statt zweier weight(1f)-Knoepfe: die kuerzten bei 320 dp zu "Bea…".
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                CompactOutlinedButton(
-                    onClick = onEdit,
-                    text = stringResource(R.string.hue_rulecard_edit),
-                    icon = Icons.Default.Edit,
-                    modifier = Modifier.weight(1f)
-                )
-                CompactOutlinedButton(
-                    onClick = onTest,
-                    text = stringResource(R.string.hue_rulecard_test),
-                    icon = Icons.Default.PlayArrow,
-                    modifier = Modifier.weight(1f)
-                )
+                KnopfZeile(modifier = Modifier.weight(1f)) {
+                    CompactOutlinedButton(
+                        onClick = onEdit,
+                        text = stringResource(R.string.hue_rulecard_edit),
+                        icon = Icons.Default.Edit
+                    )
+                    CompactOutlinedButton(
+                        onClick = onTest,
+                        text = stringResource(R.string.hue_rulecard_test),
+                        icon = Icons.Default.PlayArrow
+                    )
+                }
                 IconButton(onClick = { showDeleteDialog = true }) {
                     // Eigenstaendiges Bedienelement ohne sichtbare Beschriftung: die
                     // contentDescription benennt die AKTION, nicht das Symbol.

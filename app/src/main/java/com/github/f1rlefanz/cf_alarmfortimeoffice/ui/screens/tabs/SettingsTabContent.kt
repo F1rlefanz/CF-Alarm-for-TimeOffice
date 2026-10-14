@@ -1,5 +1,7 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.wecker.TitelUndBeschreibung
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.wecker.InhaltUndBedienung
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -678,21 +680,10 @@ private fun BenachrichtigungsSchalter(
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically
+    // InhaltUndBedienung: der Text lief bei 320 dp mit Schrift 1,3 bis an den Schalter heran.
+    InhaltUndBedienung(
+        inhalt = { mod -> TitelUndBeschreibung(titel, text, mod) }
     ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                titel,
-                style = MaterialTheme.typography.titleMedium
-            )
-            Text(
-                text,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
         Switch(
             checked = checked,
             onCheckedChange = onCheckedChange

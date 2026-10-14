@@ -187,9 +187,12 @@ private fun EintragZeile(eintrag: WeckerEintrag, mehrereSchichten: Boolean, akti
                     color = if (klingeltNicht) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
                     textDecoration = if (klingeltNicht) TextDecoration.LineThrough else null
                 )
+                // Zeilenabstand wie im TagKopf: bei 320 dp und Schrift 1,3 brechen die gefuellten
+                // Etiketten um und stiessen sonst Flaeche an Flaeche aneinander.
                 FlowRow(
                     modifier = Modifier.weight(1f),
                     horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_SMALL),
+                    verticalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_EXTRA_SMALL),
                     itemVerticalAlignment = Alignment.CenterVertically
                 ) {
                     if (wecker != null) {

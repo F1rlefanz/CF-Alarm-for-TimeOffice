@@ -1801,7 +1801,7 @@ internal fun berechneWeckerAnzeige(
     skippedAlarmId: Int?,
     jetzt: Long
 ): WeckerAnzeige {
-    val anstehend = alarms.filter { it.triggerTime > jetzt && it.id != skippedAlarmId }
+    val anstehend = anstehendeOhneUebersprungenen(alarms, skippedAlarmId, jetzt)
     val naechster = anstehend.minByOrNull { it.triggerTime }
     val klingelnder = AlarmSkipUseCase.naechsterKlingelnderWecker(anstehend, jetzt)
     return WeckerAnzeige(
@@ -1815,6 +1815,23 @@ internal fun berechneWeckerAnzeige(
         stummeAlarme = alarms.count { it.isSilent }
     )
 }
+
+/** Die Grundmenge von [berechneWeckerAnzeige]: anstehend, ohne den uebersprungenen Eintrag. */
+private fun anstehendeOhneUebersprungenen(alarms: List<AlarmInfo>, skippedAlarmId: Int?, jetzt: Long) =
+    alarms.filter { it.triggerTime > jetzt && it.id != skippedAlarmId }
+
+/**
+ * Weckzeitpunkt des naechsten klingelnden Weckers zur Uhr [jetzt] - DIESELBE Grundmenge und
+ * DIESELBE Auswahl wie [berechneWeckerAnzeige] (und damit wie das Ziel von `skipNextAlarm`).
+ *
+ * Fuer Anzeigen, die einen gespeicherten [AlarmUiState.nextRingingAlarmTriggerTime] als verstrichen
+ * erkennen: der Wert wird nur bei einer Emission von Bestand oder Skip-Zustand neu berechnet,
+ * einen Zeit-Ticker gibt es nicht. Ein geklingelter Wecker steht bis zum naechsten Sync im
+ * Bestand - ohne Nachwahl nannte die Uebersicht um 07:00 noch "Heute 05:30".
+ */
+internal fun naechsterKlingelnderZeitpunkt(alarms: List<AlarmInfo>, skippedAlarmId: Int?, jetzt: Long): Long? =
+    AlarmSkipUseCase.naechsterKlingelnderWecker(anstehendeOhneUebersprungenen(alarms, skippedAlarmId, jetzt), jetzt)
+        ?.triggerTime
 
 /**
  * Hinweis, wenn „Nicht wecken“ abgelehnt wurde, weil der in der Zeile genannte Wecker schon vorbei

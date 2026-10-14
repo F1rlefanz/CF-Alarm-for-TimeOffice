@@ -26,6 +26,9 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.DateTimeFormats
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.AlarmSkipUiState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.AlarmUiState
+import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.SkipLage
+import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.naechsterKlingelnderZeitpunkt as waehleNaechstenKlingelnden
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.wecker.alsSkipLage
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -80,8 +83,10 @@ internal fun alarmStatusZustand(
  * Alles, was die Karte zeigt, kommt aus VORHANDENEN Feldern von [AlarmUiState]: der naechste
  * klingelnde Wecker ist [AlarmUiState.nextRingingAlarmTriggerTime] - dieselbe Auswahl wie das Ziel
  * von "Nicht wecken" (`AlarmSkipUseCase.naechsterKlingelnderWecker` in `berechneWeckerAnzeige`,
- * dort schon ohne den uebersprungenen Eintrag). Hier wird NICHT neu ausgewaehlt: eine zweite
- * Auswahl auf dem rohen Bestand koennte einen anderen Wecker nennen als die Wecker-Liste.
+ * dort schon ohne den uebersprungenen Eintrag). Eine EIGENE Auswahl gibt es hier nicht: eine zweite
+ * Auswahl auf dem rohen Bestand koennte einen anderen Wecker nennen als die Wecker-Liste. Nur ein
+ * VERSTRICHENER Wert wird nachgewaehlt - ueber `naechsterKlingelnderZeitpunkt`, also mit derselben
+ * Grundmenge und derselben Auswahlfunktion, nur mit der Uhr von jetzt (siehe [naechsterWeckerAnzeige]).
  */
 internal sealed interface NaechsterWeckerAnzeige {
     /** Master-Pause. Vorrang vor allem anderen, siehe [alarmStatusZustand]. */
@@ -116,7 +121,15 @@ internal sealed interface NaechsterWeckerAnzeige {
  * STILLE EINTRAEGE ZAEHLEN NICHT als naechster Wecker: ein Rufdienst-Zeitanker um 05:00 klingelt
  * nicht, "Nächster Wecker 05:00" waere eine Zusage, die die App nicht haelt.
  *
- * @param jetzt nur fuer die Zaehlung der noch anstehenden stillen Eintraege.
+ * VERSTRICHEN IST NICHT NAECHSTER: [naechsterKlingelnderZeitpunkt] stammt aus der letzten Emission
+ * von Bestand oder Skip-Zustand. Liegt er nicht mehr nach [jetzt] (der Wecker hat geklingelt und
+ * steht bis zum naechsten Sync im Bestand), wird mit derselben Auswahl wie im ViewModel neu
+ * gewaehlt - sonst nannte die Karte um 07:00 noch "Heute 05:30", waehrend die Wecker-Liste schon
+ * den naechsten Wecker markierte.
+ *
+ * @param skippedAlarmId der aktuell uebersprungene Eintrag (nur bei aktivem Skip) - dieselbe
+ *   Ausnahme wie in `berechneWeckerAnzeige`. Bewusst ohne Default.
+ * @param jetzt Uhr fuer die Nachwahl und die Zaehlung der noch anstehenden stillen Eintraege.
  */
 internal fun naechsterWeckerAnzeige(
     masterPausePaused: Boolean,
@@ -124,6 +137,7 @@ internal fun naechsterWeckerAnzeige(
     hasActiveAlarms: Boolean,
     isLoading: Boolean,
     naechsterKlingelnderZeitpunkt: Long?,
+    skippedAlarmId: Int?,
     jetzt: Long,
     zone: ZoneId,
     heute: LocalDate = LocalDate.now(zone)
@@ -131,23 +145,27 @@ internal fun naechsterWeckerAnzeige(
     AlarmStatusZustand.PAUSIERT -> NaechsterWeckerAnzeige.Pausiert
     AlarmStatusZustand.LAEDT -> NaechsterWeckerAnzeige.Laedt
     AlarmStatusZustand.KEINE_ALARME -> NaechsterWeckerAnzeige.KeinWecker(stilleEintraege = 0)
-    AlarmStatusZustand.AKTIVE_ALARME -> if (naechsterKlingelnderZeitpunkt == null) {
-        NaechsterWeckerAnzeige.KeinWecker(
-            stilleEintraege = activeAlarms.count { it.isSilent && it.triggerTime > jetzt }
-        )
-    } else {
-        // Der Eintrag zum Zeitpunkt - nur fuer die Schicht. Fehlt er (Bestand und Anzeige aus
-        // verschiedenen Emissionen), steht trotzdem die Weckzeit da, nur ohne Schicht: die Zeit
-        // ist die Zusage, die Schicht nur Erlaeuterung.
-        val alarm = activeAlarms.firstOrNull {
-            it.triggerTime == naechsterKlingelnderZeitpunkt && !it.isSilent
+    AlarmStatusZustand.AKTIVE_ALARME -> {
+        val zeitpunkt = naechsterKlingelnderZeitpunkt?.let { gespeichert ->
+            if (gespeichert > jetzt) gespeichert
+            else waehleNaechstenKlingelnden(activeAlarms, skippedAlarmId, jetzt)
         }
-        val wann = Instant.ofEpochMilli(naechsterKlingelnderZeitpunkt).atZone(zone)
-        NaechsterWeckerAnzeige.Naechster(
-            tag = weckerTagText(wann.toLocalDate(), heute),
-            uhrzeit = DateTimeFormatter.ofPattern(DateTimeFormats.TIME_ONLY).format(wann),
-            schicht = alarm?.let { schichtZeile(it, zone) }
-        )
+        if (zeitpunkt == null) {
+            NaechsterWeckerAnzeige.KeinWecker(
+                stilleEintraege = activeAlarms.count { it.isSilent && it.triggerTime > jetzt }
+            )
+        } else {
+            // Der Eintrag zum Zeitpunkt - nur fuer die Schicht. Fehlt er (Bestand und Anzeige aus
+            // verschiedenen Emissionen), steht trotzdem die Weckzeit da, nur ohne Schicht: die
+            // Zeit ist die Zusage, die Schicht nur Erlaeuterung.
+            val alarm = activeAlarms.firstOrNull { it.triggerTime == zeitpunkt && !it.isSilent }
+            val wann = Instant.ofEpochMilli(zeitpunkt).atZone(zone)
+            NaechsterWeckerAnzeige.Naechster(
+                tag = weckerTagText(wann.toLocalDate(), heute),
+                uhrzeit = DateTimeFormatter.ofPattern(DateTimeFormats.TIME_ONLY).format(wann),
+                schicht = alarm?.let { schichtZeile(it, zone) }
+            )
+        }
     }
 }
 
@@ -232,15 +250,20 @@ internal const val ALLE_GESTELLTEN_WECKER: String = "Alle gestellten Wecker"
  * Die Pause bringt ihren Hinweis samt Ausweg im eigenen Zweig mit - daneben stuende sonst ein
  * zweiter, der offenlaesst, welcher wirkt. Danach "Automatik aus" vor dem Skip: der umfassendere
  * Zustand zuerst (dieselbe Regel wie `noShiftExplanation`).
+ *
+ * Der Skip-Zusatz haengt an [SkipLage.wirktNoch], nicht am blossen Merker: ein abgelaufener, noch
+ * nicht geraeumter Merker hat in der Wecker-Liste keine Zeile mit „Doch wecken“ mehr - der Satz
+ * verwiese auf einen Knopf, den es nicht gibt.
  */
 internal fun naechsterWeckerZusatz(
     masterPausePaused: Boolean,
     autoAlarmEnabled: Boolean,
-    nichtWeckenAktiv: Boolean
+    skip: SkipLage,
+    jetzt: Long
 ): String? = when {
     masterPausePaused -> null
     !autoAlarmEnabled -> AUTOMATIK_AUS_ZUSATZ
-    nichtWeckenAktiv -> NICHT_WECKEN_AKTIV_ZUSATZ
+    skip.wirktNoch(jetzt) -> NICHT_WECKEN_AKTIV_ZUSATZ
     else -> null
 }
 
@@ -263,19 +286,24 @@ fun NaechsterWeckerKarte(
     modifier: Modifier = Modifier
 ) {
     val zone = ZoneId.systemDefault()
+    // Gelesen, damit die Karte beim Zurueckkehren in die App neu rechnet (uhrBeimFortsetzen).
+    val jetzt = maxOf(uhrBeimFortsetzen(), System.currentTimeMillis())
+    val skip = skipState.alsSkipLage()
     val anzeige = naechsterWeckerAnzeige(
         masterPausePaused = masterPausePaused,
         activeAlarms = alarmState.activeAlarms,
         hasActiveAlarms = alarmState.hasActiveAlarms,
         isLoading = alarmState.isLoading,
         naechsterKlingelnderZeitpunkt = alarmState.nextRingingAlarmTriggerTime,
-        jetzt = System.currentTimeMillis(),
+        skippedAlarmId = skip.alarmId.takeIf { skip.aktiv },
+        jetzt = jetzt,
         zone = zone
     )
     val zusatz = naechsterWeckerZusatz(
         masterPausePaused = masterPausePaused,
         autoAlarmEnabled = autoAlarmEnabled,
-        nichtWeckenAktiv = skipState.isNextAlarmSkipped
+        skip = skip,
+        jetzt = jetzt
     )
 
     Card(

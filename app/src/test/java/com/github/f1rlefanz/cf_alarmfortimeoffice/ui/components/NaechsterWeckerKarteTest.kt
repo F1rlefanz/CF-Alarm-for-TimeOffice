@@ -2,6 +2,7 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components
 
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmInfo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.MANUELLER_ALARM_SUFFIX
+import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.SkipLage
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -42,13 +43,15 @@ class NaechsterWeckerKarteTest {
         alarme: List<AlarmInfo>,
         naechster: Long?,
         pause: Boolean = false,
-        laedt: Boolean = false
+        laedt: Boolean = false,
+        uebersprungen: Int? = null
     ) = naechsterWeckerAnzeige(
         masterPausePaused = pause,
         activeAlarms = alarme,
         hasActiveAlarms = alarme.isNotEmpty(),
         isLoading = laedt,
         naechsterKlingelnderZeitpunkt = naechster,
+        skippedAlarmId = uebersprungen,
         jetzt = jetzt,
         zone = zone,
         heute = heute
@@ -70,6 +73,38 @@ class NaechsterWeckerKarteTest {
                 schicht = "Frühdienst${TRENNER}06:00–14:12"
             ),
             ergebnis
+        )
+    }
+
+    @Test
+    fun `ein verstrichener naechster Wecker wird mit der Uhr von jetzt nachgewaehlt`() {
+        // Heute 05:30 hat geklingelt und steht bis zum Sync im Bestand; der gespeicherte Wert aus
+        // der letzten Emission nennt ihn noch. Die Karte muss morgen 05:30 zeigen.
+        val heuteFrueh = millis(2026, 10, 13, 5, 30)
+        val morgen = millis(2026, 10, 14, 5, 30)
+        val ergebnis = anzeige(listOf(alarm(1, heuteFrueh), alarm(2, morgen)), naechster = heuteFrueh)
+        assertEquals(weckerTagText(LocalDate.of(2026, 10, 14), heute), (ergebnis as NaechsterWeckerAnzeige.Naechster).tag)
+    }
+
+    @Test
+    fun `die Nachwahl laesst den uebersprungenen Eintrag aus - wie das ViewModel`() {
+        val heuteFrueh = millis(2026, 10, 13, 5, 30)
+        val morgen = millis(2026, 10, 14, 5, 30)
+        val uebermorgen = millis(2026, 10, 15, 5, 30)
+        val ergebnis = anzeige(
+            listOf(alarm(1, heuteFrueh), alarm(2, morgen), alarm(3, uebermorgen)),
+            naechster = heuteFrueh,
+            uebersprungen = 2
+        )
+        assertEquals(weckerTagText(LocalDate.of(2026, 10, 15), heute), (ergebnis as NaechsterWeckerAnzeige.Naechster).tag)
+    }
+
+    @Test
+    fun `verstrichen und nichts mehr anstehend heisst kein Wecker`() {
+        val heuteFrueh = millis(2026, 10, 13, 5, 30)
+        assertEquals(
+            NaechsterWeckerAnzeige.KeinWecker(stilleEintraege = 0),
+            anzeige(listOf(alarm(1, heuteFrueh)), naechster = heuteFrueh)
         )
     }
 
@@ -194,19 +229,25 @@ class NaechsterWeckerKarteTest {
 
     // ---- Zusatz-Hinweis ------------------------------------------------------------------------
 
+    private val skipMorgen = SkipLage(aktiv = true, alarmId = 7, weckzeitpunkt = millis(2026, 10, 14, 5, 30))
+
+    private fun zusatz(pause: Boolean, automatik: Boolean, skip: SkipLage) =
+        naechsterWeckerZusatz(masterPausePaused = pause, autoAlarmEnabled = automatik, skip = skip, jetzt = jetzt)
+
     @Test
     fun `hoechstens EIN Zusatz - Pause vor Automatik vor Nicht wecken`() {
         // Die Pause bringt Text und Ausweg in ihrem eigenen Zweig mit.
-        assertNull(naechsterWeckerZusatz(masterPausePaused = true, autoAlarmEnabled = false, nichtWeckenAktiv = true))
-        assertEquals(
-            AUTOMATIK_AUS_ZUSATZ,
-            naechsterWeckerZusatz(masterPausePaused = false, autoAlarmEnabled = false, nichtWeckenAktiv = true)
-        )
-        assertEquals(
-            NICHT_WECKEN_AKTIV_ZUSATZ,
-            naechsterWeckerZusatz(masterPausePaused = false, autoAlarmEnabled = true, nichtWeckenAktiv = true)
-        )
-        assertNull(naechsterWeckerZusatz(masterPausePaused = false, autoAlarmEnabled = true, nichtWeckenAktiv = false))
+        assertNull(zusatz(pause = true, automatik = false, skip = skipMorgen))
+        assertEquals(AUTOMATIK_AUS_ZUSATZ, zusatz(pause = false, automatik = false, skip = skipMorgen))
+        assertEquals(NICHT_WECKEN_AKTIV_ZUSATZ, zusatz(pause = false, automatik = true, skip = skipMorgen))
+        assertNull(zusatz(pause = false, automatik = true, skip = SkipLage.KEIN))
+    }
+
+    @Test
+    fun `ein abgelaufener, noch nicht geraeumter Skip verweist nicht mehr auf Doch wecken`() {
+        // Die Liste hat dafuer keine Zeile mehr - der Satz zeigte auf einen Knopf, den es nicht gibt.
+        val abgelaufen = skipMorgen.copy(weckzeitpunkt = millis(2026, 10, 13, 5, 30))
+        assertNull(zusatz(pause = false, automatik = true, skip = abgelaufen))
     }
 
     @Test

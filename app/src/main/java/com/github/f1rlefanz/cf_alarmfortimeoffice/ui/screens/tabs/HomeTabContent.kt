@@ -142,6 +142,13 @@ internal const val KALENDER_NICHT_GEFUNDEN_TEXT: String =
         "unter \"Kalender\"."
 
 /**
+ * Wo die Schichttypen eingerichtet werden - EINE Stelle fuer beide Saetze der Karte "Nächste
+ * Schicht", damit ein kuenftiger Umzug des Knopfs nicht einen davon vergisst (genau das waere bei
+ * #139 sonst passiert: zwei Texte, ein Ort).
+ */
+internal const val SCHICHTTYPEN_ORT: String = "in den Einstellungen unter „Schichttypen verwalten“"
+
+/**
  * PURE, TESTBAR: Formuliert Grund + Handlungsschritt.
  *
  * Bei [NoShiftReason.NO_PATTERN_MATCH] werden die tatsaechlich geladenen Termintitel genannt - das
@@ -213,7 +220,10 @@ internal fun noShiftExplanation(
                 "System-Status unter \"Debug-Informationen\" auf \"Logs an Entwickler senden\" " +
                 "tippen. Die Konfiguration liegt gesichert vor und wird NICHT überschrieben."
         NoShiftReason.NO_SHIFT_TYPES ->
-            "Keine aktiven Schichttypen — lege sie im Bereich „Wecker“ unter \"Schichttypen verwalten\" an."
+            // Seit #139 liegt "Schichttypen verwalten" in den Einstellungen (neben "Kalender
+            // auswählen"), nicht mehr im Wecker-Bereich - der Satz nennt den Ort, an dem der
+            // Knopf WIRKLICH steht, wortgleich mit ShiftSelectorDialog.
+            "Keine aktiven Schichttypen — lege sie $SCHICHTTYPEN_ORT an."
         NoShiftReason.NO_PATTERN_MATCH -> buildString {
             append("Termine gefunden, aber kein Erkennungsmuster passt")
             if (sampleEventTitles.isNotEmpty()) {
@@ -221,7 +231,7 @@ internal fun noShiftExplanation(
                 append(sampleEventTitles.joinToString(", "))
                 append(")")
             }
-            append(". Erkennungsmuster im Bereich „Wecker“ unter \"Schichttypen verwalten\" prüfen.")
+            append(". Erkennungsmuster $SCHICHTTYPEN_ORT prüfen.")
         }
         NoShiftReason.ONLY_PAST_SHIFTS ->
             "Alle erkannten Schichten liegen bereits in der Vergangenheit."

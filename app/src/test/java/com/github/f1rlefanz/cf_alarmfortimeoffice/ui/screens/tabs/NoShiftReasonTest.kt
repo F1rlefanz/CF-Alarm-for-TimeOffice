@@ -152,6 +152,22 @@ class NoShiftReasonTest {
     }
 
     @Test
+    fun `beide Schichttypen-Saetze nennen die Einstellungen als Ort - nicht mehr den Wecker-Bereich`() {
+        // Seit #139 steht "Schichttypen verwalten" in den Einstellungen. Ein Satz, der noch auf
+        // den Wecker-Bereich zeigt, schickt den Nutzer an eine Stelle, an der der Knopf fehlt.
+        val texte = listOf(
+            noShiftExplanation(NoShiftReason.NO_SHIFT_TYPES),
+            noShiftExplanation(NoShiftReason.NO_PATTERN_MATCH, sampleEventTitles = listOf("Dienst A1"))
+        )
+        for (text in texte) {
+            assertTrue("Ort fehlt: $text", text.contains(SCHICHTTYPEN_ORT))
+            assertTrue("Knopfname fehlt: $text", text.contains("„Schichttypen verwalten“"))
+            assertTrue("Einstellungen fehlen: $text", text.contains("Einstellungen"))
+            assertFalse("Alter Ort steht noch drin: $text", text.contains("„Wecker“"))
+        }
+    }
+
+    @Test
     fun `erkannte Schichten aber keine kuenftige heisst Vergangenheit`() {
         // upcomingShift filtert auf startTime.isAfter(now) - recognizedShifts kann also nicht-leer
         // sein, obwohl oben nichts angezeigt wird. Das ist der letzte Fall, kein "unbekannt".

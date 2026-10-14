@@ -27,7 +27,17 @@ Schreibkonventionen (der Generator verlässt sich darauf):
 - `### 🐛 Behoben` — Rubrik, mit Emoji wie bisher.
 - `- **Kurzfassung:** Erklärung` — ein Eintrag.
 
-## 🆕 Version 1.50.1 (Aktuell – interne Alpha)
+## 🆕 Version 1.50.2 (Aktuell – interne Alpha)
+
+**Stand:** Oktober 2026
+
+_Die Kärtchen in der Wecker-Liste sind jetzt auf einen Blick zu unterscheiden._
+
+### 🎨 Feinschliff
+
+- **Symbole an den Kärtchen:** „Nicht stören“, Dimmen, Licht und die Kalender-Abfrage tragen jetzt dasselbe Symbol wie an der Stelle, an der du sie einstellst. Eine eigene Farbe bekommen sie bewusst nicht: Farbe zeigt in der Liste den Zustand eines Weckers an – grün „nächster“, blau „von dir gestellt“, orange „weckt diesmal nicht“.
+
+## Version 1.50.1
 
 **Stand:** Oktober 2026
 

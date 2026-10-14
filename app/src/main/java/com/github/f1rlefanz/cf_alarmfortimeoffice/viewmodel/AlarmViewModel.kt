@@ -101,20 +101,22 @@ data class AlarmSkipUiState(
     /**
      * Nutzertext zum Ausgang des letzten Skip-Vorgangs, sofern er NICHT einfach aufging:
      *
-     * - "Aufheben": der uebersprungene MANUELLE Wecker kam nicht zurueck (Weckzeit verstrichen,
+     * - „Doch wecken“: der uebersprungene MANUELLE Wecker kam nicht zurueck (Weckzeit verstrichen,
      *   gesicherter Stand unlesbar, Speichern/Stellen fehlgeschlagen).
-     * - "Ueberspringen": der Vorgang musste mitten drin zurueckgenommen werden, weil sich der
-     *   Alarm nicht loeschen liess (siehe `SkipRolledBackException`).
+     * - „Nicht wecken“: der Vorgang musste mitten drin zurueckgenommen werden, weil sich der
+     *   Alarm nicht loeschen liess (siehe `SkipRolledBackException`); ausserdem die Ablehnung,
+     *   wenn der angezeigte Wecker schon vorbei ist (`ueberspringenZielVerstrichenHinweis`).
      *
      * Ohne diesen Text waere der schlechteste Fall stumm: der Nutzer drueckt einen Knopf, die
      * Oberflaeche zeigt danach keinen Skip mehr - und keinen Wecker. Wird beim naechsten
-     * Ueberspringen bzw. Aufheben wieder geleert.
+     * „Nicht wecken“ bzw. „Doch wecken“ wieder geleert.
      */
     val restoreNotice: String? = null
 )
 
 /**
- * Zustand von "Tag freigeben" - die Geste fuer "an diesem Tag findet der Dienst NICHT statt".
+ * Zustand von „Dienst fällt aus“ (intern: Tag freigeben) - die Geste fuer "an diesem Tag findet
+ * der Dienst NICHT statt".
  *
  * **Abgrenzung zu [AlarmSkipUiState], und warum es beide gibt.** Ueberspringen schaltet den
  * naechsten WECKER ab und laesst den Dienst bestehen; "Nicht stoeren" und der Schicht-Dimmer
@@ -167,7 +169,7 @@ class AlarmViewModel @Inject constructor(
      * CalendarViewModel, MainViewModel halten es genauso).
      */
     private val alarmRepository: IAlarmRepository,
-    /** "Tag freigeben" - siehe [TagFreigabeUiState] fuer die Abgrenzung zum Ueberspringen. */
+    /** „Dienst fällt aus“ - siehe [TagFreigabeUiState] fuer die Abgrenzung zu „Nicht wecken“. */
     private val tagFreigabeUseCase: TagFreigabeUseCase,
     /**
      * Ein manueller Wecker verschiebt das Ende eines Dimm-Fensters „bis zur Weckzeit, spaetestens

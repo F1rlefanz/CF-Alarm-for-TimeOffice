@@ -120,8 +120,8 @@ fun SettingsTabContent(
             onClick = onShowShiftConfig
         )
 
-        // Kalender-Vorausschau (#51) - direkt unter der Kalenderauswahl: beides bestimmt, WAS
-        // CF-Alarm aus dem Kalender liest.
+        // Kalender-Vorausschau (#51) - nahe der Kalenderauswahl (dazwischen nur die
+        // Schichttypen): alle drei bestimmen, WAS CF-Alarm aus dem Kalender liest und erkennt.
         KalenderVorausschauKarte(
             tage = vorausschauTage,
             meldung = vorausschauMeldung,

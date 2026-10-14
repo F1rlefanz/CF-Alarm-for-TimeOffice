@@ -48,9 +48,9 @@ class AlarmPrefs @Inject constructor(
          *
          * Das Maximum ist 30 (Entscheidung 14.10.2026, Spec #139): die Eingabe ist ein Zahlenfeld
          * 1-30 statt der frueheren Auswahl 3/5/10/15. Gespeichert wurde nie mehr als 15 - der
-         * Lesepfad klemmt ueber 30 trotzdem, denn ein Wert kann per Backup oder Import hereinkommen
-         * (Import erlaubt heute bis 120, `ConfigBackupFormat`); der Wecker bekommt immer den
-         * geklemmten Wert. [SchlummerEingabe] nutzt dieselben Konstanten - eine Wahrheit.
+         * Lesepfad klemmt ueber 30 trotzdem, denn ein Wert kann per Android-Backup oder aus einem
+         * alten Speicherstand hereinkommen (der Import selbst lehnt seit #139 alles ausserhalb
+         * 1-30 ab, `ConfigBackupFormat`); der Wecker bekommt immer den geklemmten Wert. [SchlummerEingabe] nutzt dieselben Konstanten - eine Wahrheit.
          */
         const val MIN_SNOOZE_MINUTES = 1
         const val MAX_SNOOZE_MINUTES = 30

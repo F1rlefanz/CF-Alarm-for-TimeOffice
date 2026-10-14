@@ -27,7 +27,17 @@ Schreibkonventionen (der Generator verlässt sich darauf):
 - `### 🐛 Behoben` — Rubrik, mit Emoji wie bisher.
 - `- **Kurzfassung:** Erklärung` — ein Eintrag.
 
-## 🆕 Version 1.50.2 (Aktuell – interne Alpha)
+## 🆕 Version 1.50.3 (Aktuell – interne Alpha)
+
+**Stand:** Oktober 2026
+
+_Wer am Krankheitsmorgen schon geschlummert hat, wird nach „Dienst fällt aus“ nicht noch einmal geweckt._
+
+### 🐛 Behoben
+
+- **Schlummern und „Dienst fällt aus“:** Hat der Wecker schon geklingelt und du hast „später“ gedrückt, dann wählst „Dienst fällt aus“ für diesen Tag – bisher klingelte er nach Ablauf des Schlummerns trotzdem noch einmal. Jetzt fällt auch das Schlummern weg, auch wenn das Handy dazwischen neu startet. Deine selbst gestellten Wecker schlummern weiter wie gewohnt.
+
+## Version 1.50.2
 
 **Stand:** Oktober 2026
 

@@ -1,89 +1,57 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.RowScope
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material.icons.filled.BeachAccess
-import androidx.compose.material.icons.filled.CalendarMonth
-import androidx.compose.material.icons.filled.SkipNext
-import androidx.compose.material.icons.filled.Work
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.ProbeZustand
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.WecktonAnstieg
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
-import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.AlarmStatusHeader
-import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.AufklappHinweis
-import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.CompactButton
-import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.CompactOutlinedButton
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.DatePickerDialog
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.SwitchRow
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.wecker.ANDERER_TAG_KNOPF
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.wecker.Abschnittstitel
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.wecker.KlangKarte
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.wecker.NICHT_WECKEN_NUR_NAECHSTER
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.wecker.TagDetails
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.wecker.TagKarte
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.wecker.TagesAktionen
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.wecker.WeckerZustand
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.wecker.alsSkipLage
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.wecker.leerzustandText
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.wecker.weckerZustand
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.wecker.zustandsHinweisText
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.warning
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.AlarmSkipUiState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.AlarmUiState
+import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.SchichtWirkung
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.ShiftUiState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.TagFreigabeUiState
-import java.time.Instant
+import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.baueWeckerTage
 import java.time.LocalDate
 import java.time.ZoneId
-import java.time.format.DateTimeFormatter
-import java.util.Locale
-
-/** Auswahlmoeglichkeiten fuer die Schlummer-Dauer-Dropdown - deckt die ueblichen Werte ab. */
-private val SNOOZE_MINUTES_OPTIONS = listOf(3, 5, 10, 15)
-
-/**
- * Anlaufzeiten des sanften Weckton-Anstiegs, in Sekunden.
- *
- * Die Liste endet bei 120 s, weil
- * [com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.AlarmPrefs.MAX_ANSTIEG_SEKUNDEN] dort endet - ein laengerer
- * Anlauf ist kein sanfterer Wecker mehr, sondern ein spaeterer.
- */
-private val ANSTIEG_SEKUNDEN_OPTIONS = listOf(10, 15, 30, 45, 60, 90, 120)
-
-/**
- * Startlautstaerken in Prozent der am Geraet eingestellten Alarm-Lautstaerke.
- *
- * Kein Wert unter 5 %: darunter ist der Anfang auf den meisten Geraeten schlicht nicht mehr zu
- * hoeren, und ein Wecker, dessen erste Sekunden wirkungslos verstreichen, ist kein sanfter
- * Wecker, sondern ein kuerzerer.
- */
-private val ANSTIEG_START_PROZENT_OPTIONS = listOf(5, 10, 15, 25, 40, 60)
 
 /** Beschreibung des Schalters im Normalfall - beschreibt, was ein Umlegen wirklich tut. */
 internal const val AUTO_ALARM_BESCHREIBUNG_NORMAL: String =
@@ -105,160 +73,6 @@ internal const val AUTO_ALARM_BESCHREIBUNG_PAUSIERT: String =
     "Ohne Wirkung, solange alles pausiert ist: es sind bereits alle Wecker gelöscht, und es wird " +
         "keiner neu gestellt."
 
-/**
- * Kurzfassung der Abgrenzung "Ueberspringen" gegen "Tag freigeben" - immer sichtbar.
- *
- * Zwei Gesten, die sich fast gleich anfuehlen und verschieden wirken, brauchen den Unterschied
- * an genau der Stelle, an der man sich entscheidet - Hergang
- * cfalarm-wecker-und-boot/reference/tag-freigeben.md.
- */
-internal const val FREIGEBEN_HINWEIS_KURZ: String =
-    "„Überspringen“ betrifft nur den Wecker, „Tag freigeben“ den ganzen Dienst."
-
-/**
- * Die Nebenwirkungen einer Freigabe, die man sonst nur am Geraet sieht - Teil von
- * [FREIGEBEN_HINWEIS_DETAIL], als eigene Konstante, damit ein Test genau diesen Satz festhalten
- * kann.
- *
- * JEDE Aussage ist am Code belegt, nicht nur gemeint (Stand 1.48.0):
- *  - "stuendliche Rufdienst-Abfrage entfaellt": `RufbereitschaftAbfrage.reschedule()` filtert die
- *    Schichtspannen ueber `FreieTageStore.filtereSpannen`, und `TagFreigabeUseCase` plant sie
- *    gleich beim Freigeben neu (`ZeitkettenArmierer.armiere("FREIGABE")`).
- *  - "spaetere Aenderungen im Dienstplan stellen an diesem Tag keinen Wecker mehr": Gate in
- *    `AlarmUseCase.syncAlarms()` und Backstop in `scheduleSystemAlarm()`, beide ueber
- *    `AlarmUseCase.istTagFreigegeben` - die Freigabe haengt am Datum, nicht an Termin oder
- *    Kennung, und greift deshalb auch fuer einen spaeter eingetragenen Dienst.
- *  - "Deine eigenen Wecker bleiben": `istTagFreigegeben` und `TagFreigabeUseCase.gehoertZuTag`
- *    nehmen manuelle Wecker (`eventId.isEmpty()`) aus.
- * Wer eine dieser Stellen aendert, prueft diesen Satz mit.
- */
-internal const val FREIGEBEN_NEBENWIRKUNGEN: String =
-    "Auch die stündliche Rufdienst-Abfrage entfällt, und spätere Änderungen im Dienstplan " +
-        "stellen an diesem Tag keinen Wecker mehr. Deine eigenen Wecker bleiben."
-
-/** Der ausfuehrliche Teil - nach der Hausform: was faellt weg, was kommt wieder, was bleibt. */
-internal const val FREIGEBEN_HINWEIS_DETAIL: String =
-    "Überspringen lässt genau einen Weckruf aus. Der Dienst bleibt bestehen: „Nicht stören“ und " +
-        "das Dimmen richten sich weiter nach der Schicht — gedacht für den Morgen, an dem du " +
-        "ohnehin wach bist.\n\n" +
-        "Tag freigeben streicht den Dienst selbst. Für diesen Kalendertag wird kein Wecker " +
-        "gestellt, und weder „Nicht stören“ noch das Dimmen richten sich noch nach der " +
-        "Schicht — der Tag zählt ab dann als freier Tag, mit allem, was für dich an freien Tagen " +
-        "gilt (deine Regel für freie Tage). " + FREIGEBEN_NEBENWIRKUNGEN + " Gedacht für den Tag, " +
-        "an dem du nicht arbeitest, obwohl er im Dienstplan steht.\n\n" +
-        "Der Termin im Kalender bleibt in beiden Fällen unangetastet. Nimmst du eine Freigabe " +
-        "zurück, legt die App den Wecker aus dem Dienstplan neu an."
-
-/** Gesamttext - damit ein Test auf beide Haelften zeigen kann, ohne sie zu duplizieren. */
-internal const val FREIGEBEN_HINWEIS: String = FREIGEBEN_HINWEIS_KURZ + "\n\n" + FREIGEBEN_HINWEIS_DETAIL
-
-/**
- * PURE, TESTBAR: Ist der Abschnitt "Tag freigeben" ueberhaupt zu zeigen?
- *
- * Das zweite Kriterium ist tragend und dieselbe Falle wie beim Ueberspringen bis v1.26.2: eine
- * Freigabe LOESCHT die Wecker des Tages. War es der einzige, gibt es danach keinen naechsten
- * Wecker mehr - ohne `freieTage.isNotEmpty()` verschwaende der Abschnitt samt dem einzigen Weg
- * zurueck, obwohl der Zustand ausdruecklich als umkehrbar angeboten wird.
- */
-internal fun freigabeAbschnittSichtbar(
-    naechsterAlarmTag: LocalDate?,
-    freieTage: List<LocalDate>
-): Boolean = naechsterAlarmTag != null || freieTage.isNotEmpty()
-
-/** Steht kein klingelnder Wecker an (nur stille Eintraege), gibt es nichts zu ueberspringen. */
-internal const val UEBERSPRINGEN_KEIN_ZIEL: String = "Kein klingelnder Wecker zum Überspringen"
-
-/**
- * PURE, TESTBAR: die Zeile neben dem Knopf "Überspringen" - sie nennt den Wecker, den der Knopf
- * abschaltet, mit Datum und Uhrzeit ("Wecker 13.10. 05:30 einmalig überspringen").
- *
- * Bis 1.47.1 stand dort "Nächsten Alarm einmalig überspringen:", und der Knopf traf den naechsten
- * EINTRAG - am Rufdienst-Tag einen stillen, waehrend die Karte darueber den klingelnden Wecker
- * nannte. Seit das Ueberspringen den naechsten KLINGELNDEN Wecker waehlt
- * (`AlarmSkipUseCase.naechsterKlingelnderWecker`), kommt der Zeitpunkt hier aus derselben
- * Auswahl ([AlarmUiState.nextRingingAlarmTriggerTime]) - der Text kann also nur den Wecker nennen,
- * den der Knopf auch trifft. `null` heisst: es steht keiner an, der Knopf ist gesperrt, und die
- * Zeile sagt das, statt einen Wecker zu versprechen.
- *
- * Die Zeile rechnet nur nach, wenn sich Bestand oder Skip-Zustand aendern - ein genannter Wecker
- * kann also schon vorbei sein. Dann lehnt `AlarmViewModel.skipNextAlarm()` ab, erneuert die Zeile
- * und sagt, dass nichts uebersprungen wurde (Review 1.48.0), statt still den naechsten zu treffen.
- */
-internal fun ueberspringenZeile(
-    naechsterKlingelnderZeitpunkt: Long?,
-    zone: ZoneId = ZoneId.systemDefault()
-): String {
-    if (naechsterKlingelnderZeitpunkt == null) return UEBERSPRINGEN_KEIN_ZIEL
-    val wann = Instant.ofEpochMilli(naechsterKlingelnderZeitpunkt)
-        .atZone(zone)
-        // Geschuetztes Leerzeichen: Datum und Uhrzeit bleiben bei schmaler Anzeige zusammen.
-        .format(DateTimeFormatter.ofPattern("dd.MM.'\u00A0'HH:mm", Locale.GERMAN))
-    return "Wecker $wann einmalig überspringen"
-}
-
-/**
- * Unterhalb dieser Breite - gemessen in "Schrift-dp", also durch die Schriftskalierung geteilt -
- * stehen Text und Bedienelemente einer Zeile untereinander statt nebeneinander.
- *
- * GEMESSEN (Emulator, 13.10.2026): Die Kartenzeile ist bei 411 dp Anzeigebreite 347 dp breit, bei
- * 320 dp (Fairphone-Einstellung) 256 dp. Bei 320 dp UND Schrift 1,3 (= 197) blieb neben dem Knopf
- * "Überspringen" so wenig Platz, dass Compose mitten im Wort brach ("überspri|ngen",
- * "17.10. 0|5:30"). Bei 320 dp mit normaler Schrift (= 256) und bei 411 dp mit Schrift 1,3 (= 267)
- * brach zwar nur zwischen Woertern, aber in vier schmale Zeilen neben einem breiten Knopf - deshalb
- * die Schwelle darueber. 360-dp-Geraete mit normaler Schrift (= 296) bleiben nebeneinander.
- */
-private val UNTEREINANDER_UNTER = 270.dp
-
-/**
- * Text links, Bedienelemente rechts - und UNTEREINANDER (Bedienelemente rechtsbuendig darunter),
- * wenn daneben keine ganzen Woerter mehr Platz haetten (siehe [UNTEREINANDER_UNTER]).
- */
-@Composable
-private fun TextUndBedienung(
-    text: String,
-    bedienung: @Composable RowScope.() -> Unit
-) {
-    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-        val untereinander = maxWidth / LocalDensity.current.fontScale < UNTEREINANDER_UNTER
-        if (untereinander) {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_SMALL)
-            ) {
-                Text(
-                    text,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Row(
-                    modifier = Modifier.align(Alignment.End),
-                    horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_SMALL),
-                    verticalAlignment = Alignment.CenterVertically,
-                    content = bedienung
-                )
-            }
-        } else {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_SMALL),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.weight(1f)
-                )
-                bedienung()
-            }
-        }
-    }
-}
-
-/** Anzeigeform eines freigegebenen Tages, z. B. "Mo, 24.08.2026". */
-internal fun formatiereFreienTag(datum: LocalDate): String =
-    datum.format(DateTimeFormatter.ofPattern("EEE, dd.MM.yyyy", Locale.GERMAN))
-
 /** PURE, TESTBAR: welcher der beiden Beschreibungstexte unter dem Schalter steht. */
 internal fun autoAlarmBeschreibung(masterPausePaused: Boolean): String =
     if (masterPausePaused) AUTO_ALARM_BESCHREIBUNG_PAUSIERT else AUTO_ALARM_BESCHREIBUNG_NORMAL
@@ -277,359 +91,185 @@ internal fun autoAlarmSchalterBedienbar(
     masterPausePaused: Boolean
 ): Boolean = shiftConfigGeladen && !masterPausePaused
 
+/**
+ * Der Wecker-Tab als Tagesliste (Issue #139, Variante A).
+ *
+ * REIHENFOLGE: Zustandshinweis (hoechstens einer) -> Liste der gestellten Wecker -> „Wie der Wecker
+ * klingt“ -> „Automatik“. Zuerst steht, was als Naechstes passiert; Einstellungen darunter. Die
+ * Schichttypen sind Einrichtung und stehen seit #139 in den Einstellungen.
+ *
+ * Die Liste ist eine `Column` mit `key(datum)` statt einer `LazyColumn`: sie steht in einer
+ * scrollenden Spalte (eine `LazyColumn` darin bekaeme unendliche Hoehe), und mehr als die Tage der
+ * Kalender-Vorausschau werden es nie.
+ *
+ * @param masterPausePaused bewusst OHNE Default (Anzeigepfad, Skill cfalarm-ui-und-navigation).
+ * @param wirkungen Schichtname -> Wirkung, aus `ShiftViewModel.schichtFolgen` (siehe
+ *   `weckerWirkungen`).
+ */
 @Composable
 fun WeckerTabContent(
     shiftState: ShiftUiState,
     alarmState: AlarmUiState,
     skipState: AlarmSkipUiState,
     tagFreigabeState: TagFreigabeUiState,
+    wirkungen: Map<String, SchichtWirkung>,
+    vorausschauTage: Int,
     snoozeMinutes: Int,
     wecktonAnstieg: WecktonAnstieg,
+    probeZustand: ProbeZustand,
     masterPausePaused: Boolean,
     onUpdateShiftConfig: (ShiftConfig) -> Unit,
-    onSkipNextAlarm: () -> Unit,
+    onResumeMasterPause: () -> Unit,
+    /** „Nicht wecken“ - mit dem Weckzeitpunkt der Zeile, die der Nutzer gesehen hat. */
+    onSkipNextAlarm: (angezeigtesZiel: Long) -> Unit,
+    /** „Doch wecken“. */
     onCancelSkip: () -> Unit,
+    /** „Dienst fällt aus“. */
     onTagFreigeben: (LocalDate) -> Unit,
+    /** „Zurücknehmen“. */
     onFreigabeZuruecknehmen: (LocalDate) -> Unit,
-    onShowShiftConfig: () -> Unit,
     onSnoozeMinutesChange: (Int) -> Unit,
     onAnstiegAktivChange: (Boolean) -> Unit,
     onAnstiegSekundenChange: (Int) -> Unit,
-    onAnstiegStartProzentChange: (Int) -> Unit
+    onAnstiegStartProzentChange: (Int) -> Unit,
+    onProbeStart: () -> Unit,
+    onProbeStopp: () -> Unit
 ) {
+    val zone = ZoneId.systemDefault()
+    val skipLage = skipState.alsSkipLage()
+    // Die Liste rechnet bei jeder Aenderung ihrer Eingaben neu - mit der Uhr von DIESEM Moment.
+    // Einen Ticker gibt es nicht; was dadurch veralten kann, faengt die Ziel-Nachrechnung in
+    // AlarmViewModel.skipNextAlarm() ab (die Zeile reicht ihren Weckzeitpunkt mit).
+    val tage = remember(alarmState.activeAlarms, tagFreigabeState.freieTage, skipLage, wirkungen) {
+        baueWeckerTage(
+            alarme = alarmState.activeAlarms,
+            freieTage = tagFreigabeState.freieTage,
+            skip = skipLage,
+            jetzt = System.currentTimeMillis(),
+            zone = zone,
+            wirkungen = wirkungen
+        )
+    }
+    val heute = LocalDate.now(zone)
+    val config = shiftState.currentShiftConfig
+    val zustand = weckerZustand(masterPausePaused, config?.autoAlarmEnabled)
+    // Beide Vorgaenge teilen sich im ViewModel EINE Wiedereintrittssperre (`skipVorgangLaeuft`):
+    // waehrend einer laeuft, kehrt jeder Tap wortlos zurueck. Also sind waehrenddessen ALLE
+    // Knoepfe gesperrt, nicht nur der des laufenden Vorgangs.
+    val gesperrt = skipState.isLoading || tagFreigabeState.isLoading
+    val aktionen = TagesAktionen(
+        gesperrt = gesperrt,
+        skipLaeuft = skipState.isLoading,
+        onNichtWecken = onSkipNextAlarm,
+        onDochWecken = onCancelSkip,
+        onDienstFaelltAus = onTagFreigeben,
+        onZuruecknehmen = onFreigabeZuruecknehmen
+    )
+
+    // Der geoeffnete Tag als Epochentag: ein LocalDate laesst sich nicht im Bundle sichern.
+    var offenerTag by rememberSaveable { mutableStateOf<Long?>(null) }
+    var datumsauswahlOffen by rememberSaveable { mutableStateOf(false) }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(SpacingConstants.PADDING_SCREEN_HORIZONTAL),
-        verticalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_LARGE)
+        verticalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_MEDIUM)
     ) {
-        
-        // Auto-Alarm Switch
-        //
-        // Farbe und Erhebung ausdruecklich gesetzt, obwohl die Compose-Vorgabe hier dasselbe
-        // Weiss liefert: die Status-Karte darunter setzt beides seit jeher selbst, und zwei
-        // Inhaltskarten direkt untereinander duerfen nicht aus zwei verschiedenen Quellen
-        // stammen - sonst verschiebt eine kuenftige Aenderung an einer der beiden Stellen
-        // stillschweigend nur die halbe Liste.
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surface
-            ),
-            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(SpacingConstants.PADDING_CARD)
-            ) {
-                SwitchRow(
-                    title = "Automatische Alarme",
-                    description = autoAlarmBeschreibung(masterPausePaused),
-                    checked = shiftState.currentShiftConfig?.autoAlarmEnabled ?: false,
-                    onCheckedChange = { enabled ->
-                        shiftState.currentShiftConfig?.let { config ->
-                            onUpdateShiftConfig(config.copy(autoAlarmEnabled = enabled))
-                        }
-                    },
-                    // Zwei Sperrgruende, beide mit sichtbarer Begruendung daneben - siehe
-                    // autoAlarmSchalterBedienbar().
-                    enabled = autoAlarmSchalterBedienbar(
-                        shiftConfigGeladen = shiftState.currentShiftConfig != null,
-                        masterPausePaused = masterPausePaused
-                    ),
-                    titleStyle = MaterialTheme.typography.titleMedium
-                )
-
-                HorizontalDivider(modifier = Modifier.padding(vertical = SpacingConstants.SPACING_MEDIUM))
-
-                SnoozeMinutesRow(
-                    snoozeMinutes = snoozeMinutes,
-                    onSnoozeMinutesChange = onSnoozeMinutesChange
-                )
-
-                HorizontalDivider(modifier = Modifier.padding(vertical = SpacingConstants.SPACING_MEDIUM))
-
-                WecktonAnstiegAbschnitt(
-                    anstieg = wecktonAnstieg,
-                    onAktivChange = onAnstiegAktivChange,
-                    onSekundenChange = onAnstiegSekundenChange,
-                    onStartProzentChange = onAnstiegStartProzentChange
-                )
-            }
-        }
-
-        EnhancedAlarmStatusCard(
-            alarmState = alarmState,
-            skipState = skipState,
-            tagFreigabeState = tagFreigabeState,
-            masterPausePaused = masterPausePaused,
-            onSkipNextAlarm = onSkipNextAlarm,
-            onCancelSkip = onCancelSkip,
-            onTagFreigeben = onTagFreigeben,
-            onFreigabeZuruecknehmen = onFreigabeZuruecknehmen
-        )
-
-        // Schichttypen verwalten
-        WeiterKarte(
-            icon = Icons.Default.Work,
-            titel = "Schichttypen verwalten",
-            text = "Definiere Schichttypen und Erkennungsmuster",
-            onClick = onShowShiftConfig
-        )
-    }
-}
-
-@Composable
-private fun EnhancedAlarmStatusCard(
-    alarmState: AlarmUiState,
-    skipState: AlarmSkipUiState,
-    tagFreigabeState: TagFreigabeUiState,
-    masterPausePaused: Boolean,
-    onSkipNextAlarm: () -> Unit,
-    onCancelSkip: () -> Unit,
-    onTagFreigeben: (LocalDate) -> Unit,
-    onFreigabeZuruecknehmen: (LocalDate) -> Unit
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            AlarmStatusHeader(
-                alarmState = alarmState,
-                skipState = skipState,
-                masterPausePaused = masterPausePaused
-            )
-
-            // Ausgang des letzten "Aufheben", falls der uebersprungene MANUELLE Wecker NICHT
-            // zurueckkam: Weckzeit inzwischen verstrichen, gesicherter Stand unlesbar, oder das
-            // Speichern/Stellen schlug fehl. Steht bewusst AUSSERHALB des Blocks unten: nach so
-            // einem Ausgang gibt es womoeglich weder einen aktiven Alarm noch ein aktives
-            // Ueberspringen - der Block waere dann ausgeblendet und die Meldung damit unsichtbar.
-            skipState.restoreNotice?.let { notice ->
-                Text(
-                    notice,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.warning
-                )
-            }
-
-            // Sichtbar, sobald es etwas zu bedienen gibt: entweder ein Alarm zum Ueberspringen
-            // ODER ein aktives Ueberspringen zum Aufheben.
-            //
-            // Das `|| skipState.isNextAlarmSkipped` ist tragend und fehlte bis v1.26.2. Da
-            // skipNextAlarm() den Alarm SOFORT aus dem Repository loescht (SKIP-IMMEDIATE-UX),
-            // wird hasActiveAlarms `false`, sobald der uebersprungene Alarm der einzige war - und
-            // damit verschwand der gesamte Block INKLUSIVE des einzigen "Aufheben"-Knopfes. Der
-            // Nutzer hatte dann keinen Weg mehr zurueck, obwohl der Zustand ausdruecklich als
-            // umkehrbar angeboten wird.
-            if (alarmState.hasActiveAlarms || skipState.isNextAlarmSkipped) {
-                HorizontalDivider()
-
-                if (skipState.isNextAlarmSkipped) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Icon(
-                                Icons.Default.SkipNext,
-                                tint = MaterialTheme.colorScheme.warning,
-                                modifier = Modifier.size(20.dp),
-                                // dekorativ: Text daneben sagt es bereits ("Nächster Alarm wird
-                                // übersprungen")
-                                contentDescription = null
-                            )
-                            Text(
-                                "Nächster Alarm wird übersprungen",
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.Medium,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-
-                        OutlinedButton(
-                            onClick = onCancelSkip,
-                            enabled = !skipState.isLoading,
-                            colors = ButtonDefaults.outlinedButtonColors(
-                                contentColor = MaterialTheme.colorScheme.primary
-                            )
-                        ) {
-                            if (skipState.isLoading) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(16.dp),
-                                    strokeWidth = 2.dp
-                                )
-                            } else {
-                                Text("Aufheben")
-                            }
-                        }
-                    }
-                } else {
-                    // Zeile und Freischaltung haengen am naechsten KLINGELNDEN Wecker, nicht
-                    // am naechsten Eintrag (nextAlarmTime) - dasselbe Ziel, das
-                    // skipNextAlarm() waehlt. Mit nextAlarmTime waere der Knopf an einem Tag
-                    // mit nur stillen Eintraegen bedienbar, ohne dass es etwas zu
-                    // ueberspringen gibt. Siehe ueberspringenZeile().
-                    TextUndBedienung(ueberspringenZeile(alarmState.nextRingingAlarmTriggerTime)) {
-                        Button(
-                            onClick = onSkipNextAlarm,
-                            enabled = alarmState.nextRingingAlarmTime != null && !skipState.isLoading
-                        ) {
-                            if (skipState.isLoading) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(16.dp),
-                                    strokeWidth = 2.dp,
-                                    color = MaterialTheme.colorScheme.onPrimary
-                                )
-                            } else {
-                                Icon(
-                                    Icons.Default.SkipNext,
-                                    modifier = Modifier.size(16.dp),
-                                    // dekorativ: die Beschriftung im selben Button sagt es bereits
-                                    // ("Überspringen")
-                                    contentDescription = null
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Überspringen")
-                            }
-                        }
+        zustand?.let {
+            ZustandsHinweis(
+                zustand = it,
+                onHandlung = when (it) {
+                    WeckerZustand.MASTER_PAUSE -> onResumeMasterPause
+                    // Der Hinweis entsteht nur bei geladener Konfiguration (weckerZustand).
+                    WeckerZustand.AUTOMATIK_AUS -> {
+                        { if (config != null) onUpdateShiftConfig(config.copy(autoAlarmEnabled = true)) }
                     }
                 }
-            }
-
-            TagFreigabeAbschnitt(
-                naechsterAlarmTag = alarmState.nextAlarmDate,
-                tagFreigabeState = tagFreigabeState,
-                ueberspringenLaeuft = skipState.isLoading,
-                onTagFreigeben = onTagFreigeben,
-                onFreigabeZuruecknehmen = onFreigabeZuruecknehmen
             )
         }
-    }
-}
 
-/**
- * "Tag freigeben": zweite Aktion neben dem Ueberspringen, plus die Liste der freigegebenen Tage
- * und die Erklaerung, wofuer die beiden Gesten jeweils da sind.
- *
- * Der Hauptknopf gibt den Tag des NAECHSTEN Weckers frei (der haeufige Fall: der Chef sagt am
- * Vorabend Bescheid); das Kalender-Symbol daneben oeffnet die vorhandene Datumsauswahl fuer jeden
- * anderen Tag.
- */
-@Composable
-private fun TagFreigabeAbschnitt(
-    naechsterAlarmTag: LocalDate?,
-    tagFreigabeState: TagFreigabeUiState,
-    /**
-     * Laeuft gerade ein Ueberspringen? Dann sind die Knoepfe hier GESPERRT.
-     *
-     * Beide Vorgaenge teilen sich im ViewModel eine Wiedereintrittssperre (`skipVorgangLaeuft`) -
-     * ein Tap waehrenddessen kehrt wortlos zurueck. Ein Knopf, der bedienbar aussieht und still
-     * nichts tut, ist schlimmer als ein ausgegrauter: der Nutzer haelt die Freigabe fuer gesetzt.
-     */
-    ueberspringenLaeuft: Boolean,
-    onTagFreigeben: (LocalDate) -> Unit,
-    onFreigabeZuruecknehmen: (LocalDate) -> Unit
-) {
-    val gesperrt = tagFreigabeState.isLoading || ueberspringenLaeuft
-    if (!freigabeAbschnittSichtbar(naechsterAlarmTag, tagFreigabeState.freieTage)) return
-
-    var datumsauswahlOffen by rememberSaveable { mutableStateOf(false) }
-
-    HorizontalDivider()
-
-    Column(verticalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_SMALL)) {
-        TextUndBedienung("Dienst fällt aus? Tag freigeben:") {
-            // Zwei Bedienelemente teilen sich hier eine Zeile mit dem Text - deshalb der
-            // CompactButton: ein normaler Button braeuchte mehr Innenabstand, als auf 360dp
-            // uebrig ist, und Compose braeche die Beschriftung mitten im Wort.
-            CompactButton(
-                onClick = { naechsterAlarmTag?.let(onTagFreigeben) },
-                text = "Freigeben",
-                icon = Icons.Default.BeachAccess,
-                enabled = naechsterAlarmTag != null &&
-                    naechsterAlarmTag !in tagFreigabeState.freieTage &&
-                    !gesperrt
-            )
-
-            IconButton(
-                onClick = { datumsauswahlOffen = true },
-                enabled = !gesperrt
-            ) {
-                Icon(
-                    Icons.Default.CalendarMonth,
-                    // NICHT dekorativ: dieses Symbol steht ohne Beschriftung fuer sich.
-                    contentDescription = "Anderen Tag freigeben"
-                )
-            }
-        }
-
-        naechsterAlarmTag?.let { tag ->
+        // Ausgang des letzten Vorgangs, sofern er nicht einfach aufging. Steht AUSSERHALB der
+        // Liste: nach einem „Nicht wecken“ oder „Dienst fällt aus“ kann es den Tag, an dem
+        // getippt wurde, nicht mehr geben - die Meldung verschwaende mit ihm.
+        listOfNotNull(skipState.restoreNotice, tagFreigabeState.hinweis).forEach { meldung ->
             Text(
-                "Betrifft ${formatiereFreienTag(tag)} — den Tag des nächsten Weckers.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-
-        // Ausgang des letzten Vorgangs, sofern er nicht einfach aufging - dieselbe Rolle wie
-        // skipState.restoreNotice: der schlechteste Fall darf nicht stumm sein.
-        tagFreigabeState.hinweis?.let { hinweis ->
-            Text(
-                hinweis,
+                meldung,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.warning
             )
         }
 
-        tagFreigabeState.freieTage.forEach { tag ->
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_SMALL),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    Icons.Default.BeachAccess,
-                    modifier = Modifier.size(SpacingConstants.ICON_SIZE_STANDARD),
-                    tint = MaterialTheme.colorScheme.warning,
-                    // dekorativ: der Text daneben sagt es bereits
-                    contentDescription = null
-                )
-                Text(
-                    "${formatiereFreienTag(tag)} — freigegeben: kein Wecker, kein Dienst",
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.weight(1f)
-                )
-                CompactOutlinedButton(
-                    onClick = { onFreigabeZuruecknehmen(tag) },
-                    text = "Aufheben",
-                    enabled = !gesperrt
-                )
+        Abschnittstitel("Gestellte Wecker")
+
+        if (tage.isEmpty()) {
+            Text(
+                leerzustandText(zustand, vorausschauTage),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        } else {
+            tage.forEach { tag ->
+                key(tag.datum) {
+                    TagKarte(
+                        tag = tag,
+                        heute = heute,
+                        aktionen = aktionen,
+                        onOeffnen = { offenerTag = tag.datum.toEpochDay() }
+                    )
+                }
             }
         }
 
-        UeberspringenOderFreigebenHinweis()
+        if (tage.any { it.eintraege.isNotEmpty() }) {
+            Text(
+                NICHT_WECKEN_NUR_NAECHSTER,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        TextButton(onClick = { datumsauswahlOffen = true }, enabled = !gesperrt) {
+            Text(ANDERER_TAG_KNOPF)
+        }
+
+        Abschnittstitel("Wie der Wecker klingt")
+        KlangKarte(
+            snoozeMinutes = snoozeMinutes,
+            wecktonAnstieg = wecktonAnstieg,
+            probeZustand = probeZustand,
+            onSnoozeMinutesChange = onSnoozeMinutesChange,
+            onAnstiegAktivChange = onAnstiegAktivChange,
+            onAnstiegSekundenChange = onAnstiegSekundenChange,
+            onAnstiegStartProzentChange = onAnstiegStartProzentChange,
+            onProbeStart = onProbeStart,
+            onProbeStopp = onProbeStopp
+        )
+
+        Abschnittstitel("Automatik")
+        AutomatikKarte(shiftState = shiftState, masterPausePaused = masterPausePaused, onUpdateShiftConfig = onUpdateShiftConfig)
+    }
+
+    offenerTag?.let { epochentag ->
+        val tag = tage.firstOrNull { it.datum.toEpochDay() == epochentag }
+        if (tag != null) {
+            TagDetails(
+                tag = tag,
+                heute = heute,
+                wirkungen = wirkungen,
+                aktionen = aktionen,
+                onSchliessen = { offenerTag = null }
+            )
+        } else {
+            // Der Tag ist aus der Liste verschwunden (Wecker verstrichen, Sync) - nicht wieder
+            // aufspringen lassen, falls er spaeter zurueckkommt.
+            LaunchedEffect(epochentag) { offenerTag = null }
+        }
     }
 
     if (datumsauswahlOffen) {
         DatePickerDialog(
-            selectedDate = naechsterAlarmTag ?: LocalDate.now(),
+            selectedDate = heute,
             onDateSelected = { gewaehlt ->
                 datumsauswahlOffen = false
                 onTagFreigeben(gewaehlt)
@@ -637,185 +277,76 @@ private fun TagFreigabeAbschnitt(
             onDismiss = { datumsauswahlOffen = false },
             // Kein Tag in der Vergangenheit: die Freigabe wuerde beim naechsten Lesen sofort
             // weggeraeumt, der Tap bliebe wirkungslos. Begruendung an fruehesterTag.
-            fruehesterTag = LocalDate.now()
+            fruehesterTag = heute
         )
     }
 }
 
 /**
- * Erklaert den Unterschied zwischen "Ueberspringen" und "Tag freigeben". Aufbau und Gruende:
- * [AufklappHinweis].
+ * Ein Zustand, der die App dauerhaft nicht wecken laesst, steht OBEN - dort, wo der Nutzer
+ * nachsieht, nicht nur an seinem Schalter weiter unten. Mit Handlung, damit der Weg zurueck nicht
+ * erst gesucht werden muss. Additiv gezeigt (Rand + Farbe), nie per `surfaceVariant`.
  */
 @Composable
-private fun UeberspringenOderFreigebenHinweis() {
-    AufklappHinweis(
-        kurz = FREIGEBEN_HINWEIS_KURZ,
-        voll = FREIGEBEN_HINWEIS,
-        aufklappText = "Wann was benutzen?"
-    )
-}
-
-/**
- * Auswahl der Schlummer-Dauer. Wirkt auf beide Snooze-Ausloeser (Vollbild-Button, Notification-
- * Button) gleichermassen - siehe [com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.AlarmPrefs].
- */
-@Composable
-private fun SnoozeMinutesRow(
-    snoozeMinutes: Int,
-    onSnoozeMinutesChange: (Int) -> Unit
-) {
-    AuswahlRow(
-        titel = "Schlummer-Dauer",
-        beschreibung = "Gilt für Vollbild und Benachrichtigung",
-        optionen = SNOOZE_MINUTES_OPTIONS,
-        beschriftung = { "$it Min" },
-        aktuellerWert = snoozeMinutes,
-        aenderungsBeschreibung = "Schlummer-Dauer ändern",
-        onAuswahl = onSnoozeMinutesChange
-    )
-}
-
-/**
- * Der sanfte Weckton-Anstieg: Schalter plus die beiden Werte, die ihn beschreiben.
- *
- * ## Warum es diesen Abschnitt gibt - und warum daneben KEINE Ton- oder Lautstaerkeauswahl steht
- *
- * Weckton und Lautstaerke kommen vollstaendig aus den Android-Einstellungen: der Ton ist der
- * Standard-Alarmton des Geraets, die Lautstaerke der Alarm-Regler. Eine eigene Auswahl daneben
- * waere eine zweite Wahrheit ohne Gewinn - und eine Stelle, an der die App leiser sein kann, als
- * der Nutzer glaubt. Das EINE, was Android nicht anbietet, ist ein sanfter Anstieg. Nur der steht
- * hier.
- *
- * ## Warum die beiden Werte nur bei eingeschaltetem Anstieg erscheinen
- *
- * Ausgeschaltet beschreiben sie nichts, was passiert. Ein bedienbares Dropdown, das folgenlos
- * bleibt, ist genau die Art Oberflaeche, die man einmal einstellt und danach fuer wirksam haelt.
- */
-@Composable
-private fun WecktonAnstiegAbschnitt(
-    anstieg: WecktonAnstieg,
-    onAktivChange: (Boolean) -> Unit,
-    onSekundenChange: (Int) -> Unit,
-    onStartProzentChange: (Int) -> Unit
-) {
-    Column(
+private fun ZustandsHinweis(zustand: WeckerZustand, onHandlung: () -> Unit) {
+    val text = zustandsHinweisText(zustand)
+    Card(
         modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_MEDIUM)
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.warning)
     ) {
-        SwitchRow(
-            title = "Sanft lauter werden",
-            // Nennt beide Halbwahrheiten, auf die man sonst kommt: dass die App eine eigene
-            // Lautstaerke haette, und dass sie die des Geraets veraendert. Beides ist falsch -
-            // der Anstieg endet bei dem, was am Alarm-Regler eingestellt ist.
-            description = "Der Wecker beginnt leise und wird bis zu deiner eingestellten " +
-                "Alarm-Lautstärke lauter. Die Lautstärke des Geräts bleibt unverändert.",
-            checked = anstieg.aktiv,
-            onCheckedChange = onAktivChange,
-            titleStyle = MaterialTheme.typography.titleMedium
-        )
-
-        if (anstieg.aktiv) {
-            AuswahlRow(
-                titel = "Anlaufzeit",
-                beschreibung = "Bis zur vollen Lautstärke",
-                optionen = ANSTIEG_SEKUNDEN_OPTIONS,
-                beschriftung = { "$it s" },
-                aktuellerWert = anstieg.sekunden,
-                aenderungsBeschreibung = "Anlaufzeit ändern",
-                onAuswahl = onSekundenChange
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(SpacingConstants.PADDING_CARD),
+            verticalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_SMALL)
+        ) {
+            Text(
+                text.titel,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.warning
             )
-
-            AuswahlRow(
-                titel = "Startlautstärke",
-                beschreibung = "Anteil deiner Alarm-Lautstärke am Anfang",
-                optionen = ANSTIEG_START_PROZENT_OPTIONS,
-                beschriftung = { "$it %" },
-                aktuellerWert = anstieg.startProzent,
-                aenderungsBeschreibung = "Startlautstärke ändern",
-                onAuswahl = onStartProzentChange
-            )
+            Text(text.text, style = MaterialTheme.typography.bodyMedium)
+            OutlinedButton(onClick = onHandlung) { Text(text.handlung) }
         }
     }
 }
 
-/**
- * Beschriftete Zeile mit Auswahlknopf rechts - eine Bauart fuer alle drei Wecker-Einstellungen.
- *
- * Zusammengefasst, als der Anstieg die zweite und dritte Zeile dieser Form brauchte: dieselbe
- * Row, dasselbe Dropdown, dieselbe Barrierefreiheits-Falle dreimal nebeneinander waere dreimal
- * die Gelegenheit, sie an einer Stelle zu vergessen.
- *
- * @param aktuellerWert wird auch dann angezeigt, wenn er nicht in [optionen] steht - der Wert kann
- *   aus einem Import oder einer aelteren Version stammen. Ihn stillschweigend als eine der
- *   Optionen darzustellen, waere eine Anzeige, die luegt.
- *
- * Bei sehr schmaler Zeile ([UNTEREINANDER_UNTER]) steht der Auswahlknopf UNTER dem Text - bei
- * 320 dp mit Schrift 1,3 brach die Beschreibung sonst mitten im Wort ("Benachrichtigu|ng").
- */
+/** Der Schalter „Automatische Alarme“ allein - mit seinen beiden Sperrgruenden. */
 @Composable
-private fun AuswahlRow(
-    titel: String,
-    beschreibung: String,
-    optionen: List<Int>,
-    beschriftung: (Int) -> String,
-    aktuellerWert: Int,
-    aenderungsBeschreibung: String,
-    onAuswahl: (Int) -> Unit
+private fun AutomatikKarte(
+    shiftState: ShiftUiState,
+    masterPausePaused: Boolean,
+    onUpdateShiftConfig: (ShiftConfig) -> Unit
 ) {
-    var expanded by remember { mutableStateOf(false) }
-
-    val texte: @Composable (Modifier) -> Unit = { modifier ->
-        Column(modifier = modifier) {
-            Text(titel, style = MaterialTheme.typography.titleMedium)
-            Text(
-                beschreibung,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(SpacingConstants.PADDING_CARD)
+        ) {
+            SwitchRow(
+                title = "Automatische Alarme",
+                description = autoAlarmBeschreibung(masterPausePaused),
+                checked = shiftState.currentShiftConfig?.autoAlarmEnabled ?: false,
+                onCheckedChange = { enabled ->
+                    shiftState.currentShiftConfig?.let { config ->
+                        onUpdateShiftConfig(config.copy(autoAlarmEnabled = enabled))
+                    }
+                },
+                // Zwei Sperrgruende, beide mit sichtbarer Begruendung daneben - siehe
+                // autoAlarmSchalterBedienbar().
+                enabled = autoAlarmSchalterBedienbar(
+                    shiftConfigGeladen = shiftState.currentShiftConfig != null,
+                    masterPausePaused = masterPausePaused
+                ),
+                titleStyle = MaterialTheme.typography.titleMedium
             )
-        }
-    }
-    val auswahl: @Composable (Modifier) -> Unit = { modifier ->
-        Box(modifier = modifier) {
-            OutlinedButton(onClick = { expanded = true }) {
-                Text(beschriftung(aktuellerWert))
-                // Nicht dekorativ: die Beschriftung des Knopfes ist nur der Wert - die
-                // Ueberschrift steht daneben in einer eigenen Spalte und wird nicht mitgelesen.
-                // Ohne diese Beschreibung meldet der Screenreader den Knopf als blosses "5 Min",
-                // ohne zu sagen, was er aendert.
-                Icon(Icons.Default.ArrowDropDown, contentDescription = aenderungsBeschreibung)
-            }
-            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                optionen.forEach { wert ->
-                    DropdownMenuItem(
-                        text = { Text(beschriftung(wert)) },
-                        onClick = {
-                            onAuswahl(wert)
-                            expanded = false
-                        }
-                    )
-                }
-            }
-        }
-    }
-
-    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-        if (maxWidth / LocalDensity.current.fontScale < UNTEREINANDER_UNTER) {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_SMALL)
-            ) {
-                texte(Modifier.fillMaxWidth())
-                auswahl(Modifier.align(Alignment.End))
-            }
-        } else {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                texte(Modifier.weight(1f))
-                auswahl(Modifier)
-            }
         }
     }
 }

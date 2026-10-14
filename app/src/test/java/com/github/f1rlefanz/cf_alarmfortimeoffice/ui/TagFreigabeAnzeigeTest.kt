@@ -1,12 +1,12 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.ui
 
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmInfo
-import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.FREIGEBEN_HINWEIS
-import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.FREIGEBEN_HINWEIS_DETAIL
-import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.FREIGEBEN_HINWEIS_KURZ
-import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.formatiereFreienTag
-import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.freigabeAbschnittSichtbar
-import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.berechneWeckerAnzeige
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.wecker.DIENST_FAELLT_AUS_ERKLAERUNG
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.wecker.DIENST_FAELLT_AUS_KURZ
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.wecker.ZURUECKNEHMEN_ERKLAERUNG
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.wecker.tagUeberschrift
+import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.SkipLage
+import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.baueWeckerTage
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -15,81 +15,61 @@ import java.time.LocalDate
 import java.time.ZoneId
 
 /**
- * Anzeige-Zusicherungen von "Tag freigeben".
+ * Anzeige-Zusicherungen von „Dienst fällt aus“ (bis 1.49 "Tag freigeben") in der Tagesliste.
  *
- * Der wichtigste Test hier ist der Rueckweg: eine Freigabe LOESCHT die Wecker des Tages. War es
- * der einzige, gibt es danach keinen naechsten Wecker mehr - und der Abschnitt duerfte trotzdem
- * nicht verschwinden, sonst ist der Zustand nicht mehr umkehrbar. Genau diese Falle hat das
- * Ueberspringen bis v1.26.2 gehabt.
+ * Der wichtigste Test hier ist der Rueckweg: „Dienst fällt aus“ LOESCHT die Wecker des Tages. War
+ * es der einzige, gibt es danach keinen Wecker mehr - und der Tag duerfte trotzdem nicht aus der
+ * Liste verschwinden, sonst ist „Zurücknehmen“ weg und der Zustand nicht mehr umkehrbar. Genau
+ * diese Falle hat das Ueberspringen bis v1.26.2 gehabt; bis 1.49 hielt sie
+ * `freigabeAbschnittSichtbar` fest, seit #139 die Tagesliste selbst.
  */
 class TagFreigabeAnzeigeTest {
 
+    private val zone: ZoneId = ZoneId.of("Europe/Berlin")
     private val heute: LocalDate = LocalDate.of(2026, 8, 24)
+    private val jetzt: Long = heute.atTime(6, 0).atZone(zone).toInstant().toEpochMilli()
+
+    private fun tage(alarme: List<AlarmInfo>, freieTage: List<LocalDate>) =
+        baueWeckerTage(alarme, freieTage, SkipLage.KEIN, jetzt, zone, emptyMap())
 
     @Test
-    fun `Der Abschnitt bleibt sichtbar, wenn nach der Freigabe kein Wecker mehr uebrig ist`() {
-        assertTrue(freigabeAbschnittSichtbar(naechsterAlarmTag = null, freieTage = listOf(heute)))
+    fun `Der freigegebene Tag bleibt in der Liste, wenn danach kein Wecker mehr uebrig ist`() {
+        val morgen = heute.plusDays(1)
+        val liste = tage(alarme = emptyList(), freieTage = listOf(morgen))
+
+        assertEquals(1, liste.size)
+        assertEquals(morgen, liste.single().datum)
+        assertTrue("Nur ein freigegebener Tag bietet „Zurücknehmen“ an", liste.single().freigegeben)
     }
 
     @Test
     fun `Ohne Wecker und ohne Freigabe gibt es nichts zu zeigen`() {
-        assertFalse(freigabeAbschnittSichtbar(naechsterAlarmTag = null, freieTage = emptyList()))
+        assertTrue(tage(alarme = emptyList(), freieTage = emptyList()).isEmpty())
     }
 
     @Test
-    fun `Mit anstehendem Wecker ist der Abschnitt sichtbar`() {
-        assertTrue(freigabeAbschnittSichtbar(naechsterAlarmTag = heute, freieTage = emptyList()))
+    fun `Die Erklaerung am Knopf nennt, was wegfaellt und was bleibt`() {
+        // Der Text IST die Zusicherung: er muss sagen, was wegfaellt - sonst greift der Nutzer
+        // wieder zur falschen Geste, wie am 24.08.2026 („Nicht stören“ ging zum Schichtbeginn an).
+        assertTrue(DIENST_FAELLT_AUS_ERKLAERUNG.contains("Nicht stören"))
+        assertTrue(DIENST_FAELLT_AUS_ERKLAERUNG.contains("Dimmen"))
+        assertTrue(DIENST_FAELLT_AUS_ERKLAERUNG.contains("Kalender"))
+        assertTrue(DIENST_FAELLT_AUS_ERKLAERUNG.contains("eigenen Wecker bleiben"))
     }
 
     @Test
-    fun `Der Kurztext steht auch im Gesamttext - eine Quelle, keine Dublette`() {
-        assertTrue(FREIGEBEN_HINWEIS.startsWith(FREIGEBEN_HINWEIS_KURZ))
-        assertTrue(FREIGEBEN_HINWEIS.endsWith(FREIGEBEN_HINWEIS_DETAIL))
+    fun `Die Texte sprechen die neuen Namen, nicht die alten`() {
+        listOf(DIENST_FAELLT_AUS_ERKLAERUNG, DIENST_FAELLT_AUS_KURZ, ZURUECKNEHMEN_ERKLAERUNG).forEach { text ->
+            assertFalse(text, text.contains("freigeb", ignoreCase = true))
+            assertFalse(text, text.contains("Überspring", ignoreCase = true))
+        }
+        assertTrue(ZURUECKNEHMEN_ERKLAERUNG.contains("„Zurücknehmen“"))
     }
 
     @Test
-    fun `Der Erklaertext benennt beide Gesten und ihre Wirkung`() {
-        // Der Text IST die Zusicherung: er muss sagen, was jeweils wegfaellt - sonst greift der
-        // Nutzer wieder zur falschen Geste, wie am 24.08.2026.
-        assertTrue(FREIGEBEN_HINWEIS.contains("Überspringen"))
-        assertTrue(FREIGEBEN_HINWEIS.contains("Tag freigeben"))
-        assertTrue(FREIGEBEN_HINWEIS.contains("Nicht stören"))
-        assertTrue(FREIGEBEN_HINWEIS.contains("Kalender"))
-    }
-
-    @Test
-    fun `Ein freigegebener Tag wird mit Wochentag und Datum angezeigt`() {
+    fun `Ein Tag wird mit Wochentag und Datum angezeigt`() {
         // Ohne Wochentag ist ein Datum in einer Wecker-App schwer zu pruefen.
-        val text = formatiereFreienTag(heute)
-        assertTrue(text, text.contains("24.08.2026"))
-        assertTrue(text, text.first().isLetter())
-    }
-
-    @Test
-    fun `Der Tag des naechsten Weckers kommt aus der Weckzeit`() {
-        // Der Knopf gibt den Tag frei, den die Karte darueber anzeigt - dieselbe Auswahl, derselbe
-        // Anker. Waeren es zwei Ableitungen, gaebe der Knopf einen anderen Tag frei als angezeigt.
-        val zone = ZoneId.systemDefault()
-        val weckzeit = heute.atTime(5, 30).atZone(zone).toInstant().toEpochMilli()
-        val anzeige = berechneWeckerAnzeige(
-            alarms = listOf(
-                AlarmInfo(
-                    id = 1,
-                    shiftId = "early",
-                    shiftName = "Frueh",
-                    triggerTime = weckzeit,
-                    formattedTime = "05:30"
-                )
-            ),
-            skippedAlarmId = null,
-            jetzt = weckzeit - 60_000L
-        )
-        assertEquals(heute, anzeige.naechsterEintragTag)
-    }
-
-    @Test
-    fun `Ohne anstehenden Wecker gibt es keinen Tag zum Freigeben`() {
-        val anzeige = berechneWeckerAnzeige(alarms = emptyList(), skippedAlarmId = null, jetzt = 0L)
-        assertEquals(null, anzeige.naechsterEintragTag)
+        val text = tagUeberschrift(heute)
+        assertEquals("Mo 24.08.", text)
     }
 }

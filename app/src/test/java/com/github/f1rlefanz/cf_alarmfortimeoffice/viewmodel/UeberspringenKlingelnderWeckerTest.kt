@@ -65,8 +65,6 @@ class UeberspringenKlingelnderWeckerTest {
         assertEquals(2, ziel?.id)
         assertEquals(ziel?.formattedTime, anzeige.naechsterKlingelnder)
         assertEquals(ziel?.triggerTime, anzeige.naechsterKlingelnderZeitpunkt)
-        assertEquals("Der naechste EINTRAG bleibt der stille", "t1", anzeige.naechsterEintrag)
-        assertTrue(anzeige.naechsterEintragIstStumm)
     }
 
     @Test

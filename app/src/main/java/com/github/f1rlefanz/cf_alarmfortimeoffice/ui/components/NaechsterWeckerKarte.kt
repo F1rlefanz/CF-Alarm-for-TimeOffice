@@ -97,7 +97,7 @@ internal sealed interface NaechsterWeckerAnzeige {
     /**
      * Kein Wecker, der klingelt. [stilleEintraege] > 0 heisst: es STEHT etwas im Bestand, aber nur
      * stille Zeitanker - das darf nicht aussehen wie "nichts gestellt" (gekennzeichnet statt
-     * versteckt, siehe `AlarmUiState.nextAlarmIsSilent`).
+     * versteckt, siehe `AlarmUiState.nextRingingAlarmTime`).
      */
     data class KeinWecker(val stilleEintraege: Int) : NaechsterWeckerAnzeige
 

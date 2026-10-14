@@ -422,8 +422,8 @@ class AlarmViewModelSkipRestoreTest {
         advanceUntilIdle()
 
         assertNull(
-            "Ein uebersprungener Wecker darf nicht als naechster Alarm angekuendigt werden",
-            viewModel.uiState.value.nextAlarmTime
+            "Ein uebersprungener Wecker darf nicht als naechster Wecker angekuendigt werden",
+            viewModel.uiState.value.nextRingingAlarmTriggerTime
         )
     }
 }

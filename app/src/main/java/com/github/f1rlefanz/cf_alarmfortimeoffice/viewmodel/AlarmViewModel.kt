@@ -51,27 +51,17 @@ data class AlarmUiState(
     val isLoading: Boolean = false,
     val activeAlarms: List<AlarmInfo> = emptyList(),
     val hasActiveAlarms: Boolean = false,
-    val nextAlarmTime: String? = null,
     /**
-     * Ist der unter [nextAlarmTime] angekuendigte Eintrag eine STILLE Schicht?
+     * Der naechste Eintrag, der wirklich klingelt (Anzeigetext) - `null`, wenn keiner ansteht. Ein
+     * STILLER Eintrag zaehlt nie: die App bleibt zu seiner Zeit per Konstruktion stumm
+     * (AlarmReceiver steigt bei `isSilent` vor Ton, Vibration, Vollbild und Hue aus). Gezeigt
+     * werden stille Eintraege trotzdem - gekennzeichnet, nicht versteckt - in der Karte "Nächster
+     * Wecker" (Zaehlung) und in der Tagesliste ("Still").
      *
-     * Dann bleibt die App zu diesem Zeitpunkt per Konstruktion stumm (AlarmReceiver steigt bei
-     * `isSilent` vor Ton, Vibration, Vollbild und Hue aus) - die Karte darf ihn also nicht wie
-     * einen klingelnden Wecker anzeigen. Bewusst KEIN Herausfiltern: der Zeitpunkt ist der Anker
-     * fuer Dimmer und DND, der Nutzer muss ihn weiterhin sehen koennen. Also: kennzeichnen, nicht
-     * verstecken.
-     *
-     * „Nicht wecken“ haengt seit 1.48.0 NICHT an diesem Eintrag, sondern an
-     * [nextRingingAlarmTime] - ein stiller Eintrag klingelt ohnehin nicht.
-     */
-    val nextAlarmIsSilent: Boolean = false,
-    /**
-     * Der naechste Eintrag, der wirklich klingelt - `null`, wenn keiner ansteht.
-     *
-     * Zwei Aufgaben. Ist [nextAlarmIsSilent], verdeckt der stille Eintrag sonst den echten
-     * Wecker, und der Nutzer kann nicht ablesen, wann er das naechste Mal geweckt wird. Und es
-     * ist das ZIEL von „Nicht wecken“: `AlarmSkipUseCase.skipNextAlarm()` waehlt nach derselben
+     * Es ist das ZIEL von „Nicht wecken“: `AlarmSkipUseCase.skipNextAlarm()` waehlt nach derselben
      * Regel (`AlarmSkipUseCase.naechsterKlingelnderWecker`) wie die Tagesliste ihren „nächsten“.
+     * Gelesen wird der Text nur noch im Log der Ziel-Nachrechnung; die Oberflaeche nimmt
+     * [nextRingingAlarmTriggerTime].
      */
     val nextRingingAlarmTime: String? = null,
     /**
@@ -80,8 +70,6 @@ data class AlarmUiState(
      * Quelle der Uebersicht ("Nächster Wecker").
      */
     val nextRingingAlarmTriggerTime: Long? = null,
-    /** Wie viele der [activeAlarms] stumm sind - damit "N aktive Alarme" nicht laut behauptet. */
-    val silentAlarmCount: Int = 0,
     val error: String? = null
 )
 
@@ -339,8 +327,8 @@ class AlarmViewModel @Inject constructor(
      * Bleibt ein Eintrag zurueck, ist er NICHT armiert - als "Nächster Alarm" angekuendigt
      * waere er eine Anzeige, die nicht eintritt.
      *
-     * Die stille Schicht wird dagegen NICHT herausgefiltert, sondern gekennzeichnet - warum,
-     * steht bei [AlarmUiState.nextAlarmIsSilent].
+     * Eine stille Schicht ist nie der naechste KLINGELNDE Wecker - siehe
+     * [AlarmUiState.nextRingingAlarmTime].
      */
     private fun uebernehmeAlarmAnzeige(
         bisher: AlarmUiState,
@@ -351,11 +339,8 @@ class AlarmViewModel @Inject constructor(
         return bisher.copy(
             activeAlarms = alarms, // Show all alarms for debugging
             hasActiveAlarms = alarms.isNotEmpty(),
-            nextAlarmTime = anzeige.naechsterEintrag,
-            nextAlarmIsSilent = anzeige.naechsterEintragIstStumm,
             nextRingingAlarmTime = anzeige.naechsterKlingelnder,
-            nextRingingAlarmTriggerTime = anzeige.naechsterKlingelnderZeitpunkt,
-            silentAlarmCount = anzeige.stummeAlarme
+            nextRingingAlarmTriggerTime = anzeige.naechsterKlingelnderZeitpunkt
         )
     }
 
@@ -1775,15 +1760,12 @@ class AlarmViewModel @Inject constructor(
 }
 
 /**
- * Was die App ueber den naechsten Wecker sagen darf - siehe [berechneWeckerAnzeige]. Seit #139 liest
- * die Oberflaeche davon nur noch [naechsterKlingelnderZeitpunkt] (Karte "Nächster Wecker", Ziel von
- * „Nicht wecken“); die uebrigen Felder halten die Pruefrunde-8-Tests zur stillen Schicht fest.
+ * Was die App ueber den naechsten Wecker sagen darf - siehe [berechneWeckerAnzeige]. Seit #139
+ * nur noch der naechste KLINGELNDE Wecker; die Felder fuer den naechsten EINTRAG samt
+ * Stumm-Kennzeichen und Zaehler sind mit der Karte "Alarm-Status" entfallen.
  */
 internal data class WeckerAnzeige(
-    val naechsterEintrag: String?,
-    val naechsterEintragIstStumm: Boolean,
     val naechsterKlingelnder: String?,
-    val stummeAlarme: Int,
     /** Weckzeitpunkt von [naechsterKlingelnder] - das Ziel von „Nicht wecken“. */
     val naechsterKlingelnderZeitpunkt: Long? = null
 )
@@ -1804,10 +1786,11 @@ internal data class WeckerAnzeige(
  * nicht in der Karte, die den naechsten Wecker behauptet.
  *
  * WARUM KENNZEICHNEN UND NICHT FILTERN: der stille Eintrag ist der Zeitanker fuer Dimmer und DND,
- * der Nutzer muss ihn weiterhin sehen. Deshalb bleibt [naechsterEintrag] die unveraenderte Auswahl, sie wird nur als stumm
- * ausgewiesen, und [naechsterKlingelnder] nennt zusaetzlich den naechsten echten Wecker.
+ * der Nutzer muss ihn weiterhin sehen. Seit #139 tun das die Karte "Nächster Wecker" (sie zaehlt
+ * stille Eintraege, wenn kein klingelnder ansteht) und die Tagesliste ("Still"); diese Funktion
+ * nennt nur noch den naechsten ECHTEN Wecker.
  *
- * [naechsterKlingelnder] ist zugleich das ZIEL von „Nicht wecken“ und wird deshalb NICHT hier
+ * [WeckerAnzeige.naechsterKlingelnder] ist zugleich das ZIEL von „Nicht wecken“ und wird deshalb NICHT hier
  * nachgebaut, sondern ueber `AlarmSkipUseCase.naechsterKlingelnderWecker` gerechnet - dieselbe
  * Funktion, mit der `skipNextAlarm()` waehlt. Bis 1.47.1 nahm das Ueberspringen den naechsten
  * EINTRAG, auch einen stillen: die Karte nannte den 05:30-Wecker, der Knopf haette den stillen
@@ -1821,17 +1804,10 @@ internal fun berechneWeckerAnzeige(
     jetzt: Long
 ): WeckerAnzeige {
     val anstehend = anstehendeOhneUebersprungenen(alarms, skippedAlarmId, jetzt)
-    val naechster = anstehend.minByOrNull { it.triggerTime }
     val klingelnder = AlarmSkipUseCase.naechsterKlingelnderWecker(anstehend, jetzt)
     return WeckerAnzeige(
-        naechsterEintrag = naechster?.formattedTime,
-        naechsterEintragIstStumm = naechster?.isSilent == true,
         naechsterKlingelnder = klingelnder?.formattedTime,
-        naechsterKlingelnderZeitpunkt = klingelnder?.triggerTime,
-        // Bezugsgroesse ist bewusst die GANZE Liste: die Karte zaehlt daneben `activeAlarms.size`,
-        // und zwei Zahlen aus verschiedenen Grundmengen waeren wieder eine Anzeige, die nicht
-        // stimmt.
-        stummeAlarme = alarms.count { it.isSilent }
+        naechsterKlingelnderZeitpunkt = klingelnder?.triggerTime
     )
 }
 

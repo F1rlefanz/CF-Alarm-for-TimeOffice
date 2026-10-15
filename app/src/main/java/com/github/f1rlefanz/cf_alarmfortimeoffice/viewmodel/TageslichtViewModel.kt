@@ -16,8 +16,6 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.StandortErgebnis
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.TageslichtEinstellungen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.TageslichtRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.ZeitzonenOrte
-import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tageslicht.OrtBildschirmZustand
-import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tageslicht.StandortFehler
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import dagger.hilt.android.lifecycle.HiltViewModel

@@ -46,6 +46,13 @@ das baut man dieselbe Falle in neuer Form nach.
   oeffnet, haengt sich an dasselbe Muster - sonst verliert der Nutzer seine Eingabe.
 - **Gate-Texte verweisen nicht auf vorige Schritte** („wie eben bei …“): seit „Später“ weiterführt,
   kommt jedes Gate auch direkt nach einem ABGELEHNTEN Vorgänger.
+- **`viewmodel/` importiert nichts aus `ui/`** (#147). Ein Zustandstyp, den das ViewModel baut
+  (z. B. `OrtBildschirmZustand`), liegt in `viewmodel/`; der Bildschirm importiert ihn von dort.
+  Die Kante war zweimal unbemerkt entstanden (#146 `kurzesDatum`, #147); seither prüft sie
+  `tools/invarianten/pruefe_code.py` mit. Dieselbe Prüfung bestimmt die Hintergrundpakete als
+  Rest (alles außer `ui/`, `viewmodel/`) statt über eine feste Liste: `freietage/` und
+  `navigation/` waren dort nie eingetragen und blieben ungeprüft, `tageslicht/` musste von Hand
+  nachgezogen werden.
 
 ## UI-Texte und Compose-Layout — Kurzregeln
 

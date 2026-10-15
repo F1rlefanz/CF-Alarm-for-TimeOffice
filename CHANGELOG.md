@@ -27,7 +27,24 @@ Schreibkonventionen (der Generator verlässt sich darauf):
 - `### 🐛 Behoben` — Rubrik, mit Emoji wie bisher.
 - `- **Kurzfassung:** Erklärung` — ein Eintrag.
 
-## 🆕 Version 1.53.0 (Aktuell – interne Alpha)
+## 🆕 Version 1.54.0 (Aktuell – interne Alpha)
+
+**Stand:** Oktober 2026
+
+_Krank? Ein Schritt für mehrere Tage – und eine Krankmeldung im Kalender erkennt die App selbst._
+
+### ✨ Neu
+
+- **„Dienst fällt aus“ für mehrere Tage:** Im Bereich Wecker öffnet „Tage auswählen: Dienst fällt aus …“ einen Kalender, in dem du den ersten und den letzten Tag antippst (bis zu 31 Tage). Im Blatt eines Tages gibt es dafür „Mehrere Tage …“. Für alle diese Tage gibt es keinen Wecker aus dem Dienstplan, eigene Wecker bleiben. Klappt ein Tag nicht, bleiben die Tage davor frei, und ein Hinweis sagt, bis wann.
+- **Krankmeldung aus dem Kalender:** Ein Schichttyp kann jetzt den Schalter „Krankmeldung“ bekommen (Einstellungen → Schichttypen verwalten), zum Beispiel für „K“. Steht so ein Termin im Kalender, ist der ganze Tag frei – auch wenn die Schicht daneben stehen bleibt. Verschwindet der Termin wieder, kommt der Wecker zurück. Fällt deshalb ein Wecker weg, sagt dir eine Benachrichtigung Bescheid. Ab Werk ist der Schalter aus.
+- **Ausfall auf der Übersicht:** Fällt dein Dienst heute oder morgen aus, steht das ganz oben in der Übersicht, mit „Zurücknehmen“ für eigene Freigaben.
+
+### 🎨 Feinschliff
+
+- **Nächste Schicht:** Die Übersicht nennt jetzt die nächste Schicht, die wirklich stattfindet. Ein ausgefallener Tag wird übersprungen.
+- **Tagesliste:** Ein Tag, der laut Kalender krankgemeldet ist, steht als „Krank (Kalender)“ in der Liste. Er folgt dem Kalender und hat deshalb kein „Zurücknehmen“.
+
+## Version 1.53.0
 
 **Stand:** Oktober 2026
 

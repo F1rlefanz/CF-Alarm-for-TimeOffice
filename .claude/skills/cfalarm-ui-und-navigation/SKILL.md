@@ -69,8 +69,8 @@ das baut man dieselbe Falle in neuer Form nach.
 - **Kein `SnackbarDuration.Indefinite`**: es blockiert über den Mutex des `SnackbarHostState` alle
   übrigen Meldungen samt ihrer `clearError()`-Aufrufe. Bleibende Zustände sind Karten im Status-Tab.
 - **Auf dem ANZEIGEPFAD bekommt ein sicherheitsrelevanter Compose-Parameter KEINEN Default**
-  (`masterPausePaused` in `NaechsterWeckerKarte`, `WeckerTabContent`, `StatusTabContent`;
-  in `NaechsterWeckerKarte` ebenso `autoAlarmEnabled`) — sonst
+  (`masterPausePaused` in `rememberNaechsterWecker`, `WeckerTabContent`, `StatusTabContent`;
+  in `rememberNaechsterWecker` ebenso `autoAlarmEnabled`) — sonst
   fällt ein künftiger Aufrufer wortlos in den alten Fehler zurück. Reine Textfunktionen wie
   `noShiftExplanation()` dürfen einen Default haben; dort ist der Wert ein Zusatz, keine Zusage.
 - **Hilfe gibt es genau einmal: auf der Website (`docs/`).** Die App verweist nur, über
@@ -149,6 +149,13 @@ das baut man dieselbe Falle in neuer Form nach.
   ist „Dienst fällt aus“ nicht mehr erreichbar. Heute bleibt, solange der Dienst laeuft; ein
   kuenftiger Tag entsteht nie aus einer Spanne allein. Dienstzeiten nur ueber
   `ui/components/Dienstzeit.kt` („ganztägig“ ueber Kalendertage, nicht ueber 24 h — Zeitumstellung).
+- **Die Uebersicht ordnet „Nächster Wecker“ und „Nächste Schicht“ nach Zeit** (#141,
+  `uebersichtReihenfolge` in `HomeTabContent.kt`): frueher oben, Gleichstand Wecker. Verglichen
+  wird der Zeitpunkt, den die Wecker-Karte NENNT (`NaechsterWeckerStand.zeitpunkt`, eine Rechnung
+  fuer Karte und Reihenfolge), mit dem Beginn der Schicht, die die Schicht-Karte ZEIGT. **Fehlt
+  einer, bleibt die Schicht oben — darauf stuetzen sich `NO_SHIFT_HINWEIS_PAUSIERT` und der
+  `AUTHORIZATION_LOST`-Text** („die Karte darunter“). Wer einen Text auf eine Position stuetzt,
+  muss zeigen, dass in SEINEM Zustand ein Zeitpunkt fehlt.
 - **Gleichrangige Knoepfe nebeneinander ueber `KnopfZeile` (`ui/components`), nicht `Row` +
   `weight(1f)`**: die Gewichtung kuerzte die Beschriftung mit Auslassung („Bea…“, „Neue R…“ bei
   320 dp + Schrift 1,3, Emulator 14.10.2026). `KnopfZeile` misst die natuerlichen Breiten und

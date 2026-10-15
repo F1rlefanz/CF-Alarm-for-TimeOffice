@@ -144,7 +144,8 @@ falschen Zustand, am falschen Ort, in der falschen Richtung oder gar nicht geren
 - **Ein neuer Compose-Parameter für einen sicherheitsrelevanten Zustand bekommt KEINEN Default.**
   `masterPausePaused: Boolean = false` hätte einen künftigen Aufrufer wortlos in den alten Fehler
   (Pause unsichtbar) zurückfallen lassen, ohne dass Compiler oder Test anschlagen. Auf dem
-  Anzeigepfad (`NaechsterWeckerKarte` — dort auch `autoAlarmEnabled` —, `WeckerTabContent`,
+  Anzeigepfad (`rememberNaechsterWecker` — dort auch `autoAlarmEnabled`; die Karte selbst bekommt
+  seit #141 den fertig gerechneten Stand —, `WeckerTabContent`,
   `StatusTabContent`) ist der Parameter
   deshalb pflichtig.
 

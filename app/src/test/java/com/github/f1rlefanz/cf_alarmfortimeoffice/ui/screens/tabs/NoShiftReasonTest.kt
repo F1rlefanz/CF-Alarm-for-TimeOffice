@@ -1,5 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.istKrankmeldung
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -306,9 +307,9 @@ class NoShiftReasonTest {
             alarmTime = java.time.LocalTime.MIDNIGHT,
             isSickDay = true
         )
-        assertTrue(istKrankTermin("K", listOf(krank)))
-        assertFalse(istKrankTermin("F", listOf(krank)))
-        assertFalse(istKrankTermin("K", listOf(krank.copy(isEnabled = false))))
-        assertFalse(istKrankTermin("K", listOf(krank.copy(isSickDay = false))))
+        assertTrue(listOf(krank).istKrankmeldung("K"))
+        assertFalse(listOf(krank).istKrankmeldung("F"))
+        assertFalse(listOf(krank.copy(isEnabled = false)).istKrankmeldung("K"))
+        assertFalse(listOf(krank.copy(isSickDay = false)).istKrankmeldung("K"))
     }
 }

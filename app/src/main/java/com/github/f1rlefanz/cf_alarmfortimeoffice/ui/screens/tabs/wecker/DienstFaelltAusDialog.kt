@@ -20,7 +20,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.github.f1rlefanz.cf_alarmfortimeoffice.freietage.TagFreigabeUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.KnopfZeile
-import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.kurzesDatum
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.text.kurzesDatum
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset

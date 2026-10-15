@@ -9,7 +9,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.model.reinerSchichtname
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.LetzterSchichtStand
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpan
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.dienstzeitText
-import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.kurzesDatum
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.text.kurzesDatum
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.AlarmSkipUiState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.Kaertchen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.SchichtFolgen

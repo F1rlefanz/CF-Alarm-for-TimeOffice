@@ -138,4 +138,10 @@ private const val WORD_START = "(?<![\\p{L}\\p{N}_])"
 /** Dasselbe rechts des Musters. Siehe [WORD_START]. */
 private const val WORD_END = "(?![\\p{L}\\p{N}_])"
 
-
+/**
+ * #142/#146: Ist [titel] eine Krankmeldung? Die EINE Regel - nur aktive Krank-Typen, Keyword-Treffer.
+ * `ShiftRecognitionEngine` (Krank hat Vorrang vor jeder Schicht) und die Karten im Home-Tab fragen
+ * beide hier, damit die Oberflaeche nicht anders zaehlt als der Abgleich.
+ */
+fun List<ShiftDefinition>.istKrankmeldung(titel: String): Boolean =
+    any { it.isEnabled && it.isSickDay && it.matchesKeywords(titel) }

@@ -10,12 +10,11 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.R
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.NotificationDeliverability
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.text.kurzesDatum
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
-import java.time.format.TextStyle
-import java.util.Locale
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -54,15 +53,7 @@ open class KrankmeldungNotifier @Inject constructor(
         /** Bis zu so vielen nicht zusammenhaengenden Tagen nennt der Titel jeden einzeln. */
         private const val MAX_AUFGEZAEHLTE_TAGE = 3
 
-        private val TAG_MONAT: DateTimeFormatter = DateTimeFormatter.ofPattern("dd.MM.")
         private val UHRZEIT: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
-
-        // #142: eigene Kopie von `ui.components.kurzesDatum` ("Mo 20.10.") - `alarm/` darf nichts
-        // aus `ui.` importieren (tools/invarianten/pruefe_code.py, Schichtrichtung): diese Klasse
-        // laeuft im Hintergrund und im Direct-Boot-Prozess.
-        private fun kurzesDatum(datum: LocalDate): String =
-            datum.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.GERMAN).removeSuffix(".") +
-                " " + datum.format(TAG_MONAT)
 
         /**
          * PURE, TESTBAR: Titel und Text der Meldung.

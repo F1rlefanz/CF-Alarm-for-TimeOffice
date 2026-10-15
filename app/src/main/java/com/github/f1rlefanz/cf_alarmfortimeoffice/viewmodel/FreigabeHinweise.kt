@@ -1,6 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel
 
-import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.kurzesDatum
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.text.kurzesDatum
 import java.time.LocalDate
 
 /**

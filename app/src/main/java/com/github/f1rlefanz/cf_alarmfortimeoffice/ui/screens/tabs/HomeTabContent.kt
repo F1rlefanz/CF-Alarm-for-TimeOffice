@@ -42,7 +42,8 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.LetzterSchichtStand
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpan
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftInfo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.NaechsterWeckerKarte
-import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.kurzesDatum
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.istKrankmeldung
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.text.kurzesDatum
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.rememberNaechsterWecker
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.schichtTerminText
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.wecker.KRANK_KALENDER_ZURUECK
@@ -88,14 +89,6 @@ internal enum class NoShiftReason {
     NUR_KRANKMELDUNG,
     ONLY_PAST_SHIFTS
 }
-
-/**
- * #142: Ist [titel] eine Krankmeldung? Dieselbe Frage und derselbe Vorrang wie in der Engine
- * (`ShiftRecognitionEngine`: Krank vor Schicht, nur aktive Typen), damit die Karte nicht anders
- * zaehlt als der Sync.
- */
-internal fun istKrankTermin(titel: String, definitionen: List<ShiftDefinition>): Boolean =
-    definitionen.any { it.isEnabled && it.isSickDay && it.matchesKeywords(titel) }
 
 /**
  * PURE, TESTBAR: Leitet den Grund aus den vorhandenen UI-Zustaenden ab.
@@ -642,7 +635,7 @@ private fun NaechsteSchichtKarte(
                                 // nahe, "K" als Schicht-Muster einzutragen.
                                 sampleEventTitles = calendarState.events
                                     .map { it.title }
-                                    .filterNot { istKrankTermin(it, shiftConfig?.definitions.orEmpty()) }
+                                    .filterNot { shiftConfig?.definitions.orEmpty().istKrankmeldung(it) }
                                     .distinct()
                                     .take(3),
                                 autoAlarmEnabled = shiftConfig?.autoAlarmEnabled != false,
@@ -700,7 +693,7 @@ fun HomeTabContent(
                 ?.count { it.isEnabled && !it.isSickDay } ?: 0,
             recognizedShiftCount = shiftState.recognizedShifts.size,
             krankTerminCount = calendarState.events.count { event ->
-                istKrankTermin(event.title, shiftState.currentShiftConfig?.definitions.orEmpty())
+                shiftState.currentShiftConfig?.definitions.orEmpty().istKrankmeldung(event.title)
             }
         )
         // #142: beide Quellen - auch eine Krankmeldung aus dem Kalender laesst die Schicht ausfallen.

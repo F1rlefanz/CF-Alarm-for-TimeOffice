@@ -96,6 +96,14 @@ das baut man dieselbe Falle in neuer Form nach.
   wird (kein Stups vom Kalender). Die alte DND-Namensliste `dnd_oncall_shifts` übernimmt
   `RufbereitschaftMigration` einmalig (App-Start, 6h-Wartung, Import einer alten Datei);
   idempotent über die Existenz des Altschlüssels, gelöscht erst nach belegtem Erfolg.
+- **Krankmeldung ist ebenfalls ein Flag am Schichttyp (`ShiftDefinition.isSickDay`, #142)**, aber
+  mit umgekehrter Wirkung: ein solcher Termin gibt den Tag FREI. Die Engine liefert Krank-Treffer
+  getrennt (`erkenne()` → `Erkennung.krankTermine`, Vorrang vor jeder Schicht im selben Termin,
+  derselbe Cache, dieselbe Epoche) - `getAllMatchingShifts` enthält sie NICHT. Wer einen neuen
+  Konsumenten der Erkennung baut, bekommt Krank also nur, wenn er danach fragt. Der Kalender-
+  Schlüssel `krank_tage_kalender` wird NUR in `syncAlarms()` geschrieben, also nur aus
+  vollständigen Listen; Mischsemantik (Vergangenheit/Horizont/beendete zeitgebundene Termine) und
+  Weckzeit-Anker im Wecker-Skill (Hergang „Tag freigeben“, Abschnitte zu #142).
 - **Die Vorausschau ist eine Nutzereinstellung** (`KalenderVorausschauPrefs`, `kalender_vorausschau_tage`
   im @MainDataStore, 7..90, Standard 14 — NICHT in `ShiftConfig`, ein Alt-JSON mit dem längst entfernten
   Feld `daysAhead` belebte sonst einen vergessenen Wert). Ersatzwert 14 bei Lesefehler, nie geschrieben. EINMAL pro Abruf

@@ -83,6 +83,13 @@ das baut man dieselbe Falle in neuer Form nach.
   (`eventId.isEmpty()`). Tagesanker ist überall die WECKZEIT — in `FreieTageStore.tagVon`,
   `TagFreigabeUseCase.gehoertZuTag`, `AlarmUseCase.istTagFreigegeben` und
   `berechneWeckerAnzeige`. Hergang in `reference/tag-freigeben.md`.
+- **Freigaben haben ZWEI Quellen und EINE Wirkung (#142)**: Hand (`freigegebene_tage`, nur
+  `TagFreigabeUseCase`) und Krank laut Kalender (`krank_tage_kalender`, nur `syncAlarms()`).
+  `FreieTageStore.freieTage` liefert die VEREINIGUNG - Gate, Backstop, Snooze-Backstop, Dimmer,
+  DND und Rufbereitschaft lesen nur sie, keiner braucht einen Krank-Zweig. Gate und Backstop
+  lesen denselben GESPEICHERTEN Stand, nie eine "Wahrheit dieses Laufs". Ein Zeitraum ("Dienst
+  fällt aus" von/bis) ist eine Folge von Einzeltagen: bricht ein Tag, bleiben die vorherigen frei,
+  die Neben-Ketten laufen EINMAL am Ende. Hergang in `reference/tag-freigeben.md`.
 - **Stille Schicht (`isSilent`) gated NUR die Wecker-AUSLÖSUNG**, nicht die `AlarmInfo` selbst;
   `alarmTime` bleibt ein nicht-nullables Pflichtfeld. Fail-safe: Lookup-Fehler = NICHT still.
   **Im KALT gestarteten Prozess fehlt die `AlarmInfo`** (der Bestand wirft den gerade klingelnden

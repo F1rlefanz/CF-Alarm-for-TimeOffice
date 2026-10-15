@@ -246,6 +246,8 @@ Vollständige Regellisten und Belege in den Skills oben. Was hier steht, gilt im
   löscht die Freigabe einen Wecker, den kein Kalender rekonstruieren kann — und der Backstop
   verhindert zusätzlich, dass an dem Tag überhaupt einer gestellt werden kann. Auch ein
   schwebender Snooze (Anker: die Weckzeit im Snooze-Merker).
+- **Freigaben: Hand + Krank laut Kalender, `freieTage` liefert die VEREINIGUNG** (#142) - jeder
+  Leser liest nur sie; den Kalender-Schlüssel schreibt NUR `syncAlarms()`. Hergang im Wecker-Skill.
 
 ### Wecken, Vollbild, Snooze
 

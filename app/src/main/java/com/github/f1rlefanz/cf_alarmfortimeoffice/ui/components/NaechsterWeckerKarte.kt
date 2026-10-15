@@ -103,6 +103,12 @@ internal sealed interface NaechsterWeckerAnzeige {
     data class KeinWecker(val stilleEintraege: Int) : NaechsterWeckerAnzeige
 
     data class Naechster(
+        /**
+         * Wann es klingelt (Epoch-ms) - die Uhrzeit, die [uhrzeit] nennt. Die Uebersicht ordnet
+         * danach die Karten (#141, [uebersichtReihenfolge]); sie vergleicht also genau das, was
+         * die Karte zeigt, auch einen schwebenden Snooze.
+         */
+        val zeitpunkt: Long,
         /** "Morgen, Mi 14.10." - siehe [weckerTagText]. */
         val tag: String,
         /** "05:30" */
@@ -170,6 +176,7 @@ internal fun naechsterWeckerAnzeige(
             val alarm = activeAlarms.firstOrNull { it.triggerTime == zeitpunkt && !it.isSilent }
             val wann = Instant.ofEpochMilli(zeitpunkt).atZone(zone)
             NaechsterWeckerAnzeige.Naechster(
+                zeitpunkt = zeitpunkt,
                 tag = weckerTagText(wann.toLocalDate(), heute),
                 uhrzeit = DateTimeFormatter.ofPattern(DateTimeFormats.TIME_ONLY).format(wann),
                 schicht = alarm?.let { schichtZeile(it, zone) }
@@ -193,6 +200,7 @@ private fun fruehestesSchlummern(schlummern: List<Schlummern>, jetzt: Long): Sch
 private fun schlummerAnzeige(s: Schlummern, zone: ZoneId, heute: LocalDate): NaechsterWeckerAnzeige.Naechster {
     val wann = Instant.ofEpochMilli(s.bis).atZone(zone)
     return NaechsterWeckerAnzeige.Naechster(
+        zeitpunkt = s.bis,
         tag = weckerTagText(wann.toLocalDate(), heute) + TRENNER + SCHLUMMERT_KARTE,
         uhrzeit = DateTimeFormatter.ofPattern(DateTimeFormats.TIME_ONLY).format(wann),
         schicht = reinerSchichtname(s.schichtName).takeIf { it.isNotBlank() }
@@ -298,24 +306,30 @@ internal fun naechsterWeckerZusatz(
     else -> null
 }
 
+/** Was die Karte zeigt - einmal gerechnet, siehe [rememberNaechsterWecker]. */
+internal data class NaechsterWeckerStand(
+    val anzeige: NaechsterWeckerAnzeige,
+    val zusatz: String?
+) {
+    /** Der Zeitpunkt, den die Karte nennt; `null` bei Pause, Laden und ohne klingelnden Wecker. */
+    val zeitpunkt: Long? get() = (anzeige as? NaechsterWeckerAnzeige.Naechster)?.zeitpunkt
+}
+
 /**
- * Die Karte selbst. Die GANZE Karte springt in den Wecker-Tab; "Alle gestellten Wecker →" ist die
- * Beschriftung dieses einen Ziels, kein zweiter Knopf (zwei Ziele fuer eine Handlung waeren eins
- * zu viel). Bewusst KEIN "Nicht wecken" hier: eine Zeile, die das Ziel eines Knopfs nennt, muss
- * beim Tippen nachgerechnet werden - das macht die Wecker-Liste, nicht die Uebersicht.
+ * Rechnet, was die Karte "Nächster Wecker" zeigt. Getrennt von der Karte, weil die Uebersicht
+ * denselben Zeitpunkt fuer die Reihenfolge der Karten braucht (#141) - eine zweite Rechnung
+ * dort koennte einen anderen Wecker meinen als die Karte nennt.
  *
  * @param masterPausePaused ohne Default (sicherheitsrelevanter Anzeigeparameter, ui-Skill).
  * @param autoAlarmEnabled ohne Default, aus demselben Grund.
  */
 @Composable
-fun NaechsterWeckerKarte(
+internal fun rememberNaechsterWecker(
     alarmState: AlarmUiState,
     skipState: AlarmSkipUiState,
     masterPausePaused: Boolean,
-    autoAlarmEnabled: Boolean,
-    onAlleWecker: () -> Unit,
-    modifier: Modifier = Modifier
-) {
+    autoAlarmEnabled: Boolean
+): NaechsterWeckerStand {
     val zone = ZoneId.systemDefault()
     // Neu gerechnet beim Zurueckkehren in die App, nach der naechsten Weckzeit bzw. dem Ende eines
     // Schlummerns (ein Tick) - und mit den schwebenden Snoozes (rememberWeckerStand).
@@ -339,6 +353,25 @@ fun NaechsterWeckerKarte(
         skip = skip,
         jetzt = jetzt
     )
+    return NaechsterWeckerStand(anzeige, zusatz)
+}
+
+/**
+ * Die Karte selbst. Die GANZE Karte springt in den Wecker-Tab; "Alle gestellten Wecker →" ist die
+ * Beschriftung dieses einen Ziels, kein zweiter Knopf (zwei Ziele fuer eine Handlung waeren eins
+ * zu viel). Bewusst KEIN "Nicht wecken" hier: eine Zeile, die das Ziel eines Knopfs nennt, muss
+ * beim Tippen nachgerechnet werden - das macht die Wecker-Liste, nicht die Uebersicht.
+ *
+ * [stand] kommt aus [rememberNaechsterWecker]; Pause und Automatik stecken dort, ohne Default.
+ */
+@Composable
+internal fun NaechsterWeckerKarte(
+    stand: NaechsterWeckerStand,
+    onAlleWecker: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val anzeige = stand.anzeige
+    val zusatz = stand.zusatz
 
     Card(
         modifier = modifier.fillMaxWidth(),

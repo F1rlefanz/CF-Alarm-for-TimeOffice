@@ -13,6 +13,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.PlzLand
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.PlzTabelle
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.SonnenstandRechner
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.StandortErgebnis
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.StandortZeitzone
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.TageslichtEinstellungen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.TageslichtRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.ZeitzonenOrte
@@ -289,7 +290,9 @@ class TageslichtViewModel internal constructor(
             standortLaeuft = status.laeuft,
             standortFehler = status.fehler,
             genutztPlz = if (ort?.quelle == OrtQuelle.PLZ) e.plz else null,
-            genutztName = if (ort?.quelle == OrtQuelle.PLZ) ort.bezeichnung else null
+            genutztName = if (ort?.quelle == OrtQuelle.PLZ) ort.bezeichnung else null,
+            standortPasstNichtZurZeitzone = ort?.quelle == OrtQuelle.STANDORT &&
+                !StandortZeitzone.passt(ort.laenge, z, Instant.ofEpochMilli(jetzt()))
         )
     }
 

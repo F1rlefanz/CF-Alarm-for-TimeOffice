@@ -147,6 +147,15 @@ fun OrtFuerTageslichtScreen(
                     zustand.standortUebernommenAm?.let {
                         Text(stringResource(R.string.tageslicht_standort_uebernommen, it), style = MaterialTheme.typography.bodyMedium)
                     }
+                    // #144: nennt beide Knoepfe dieser Karte wortgleich; steht VOR dem
+                    // Begruendungssatz, der direkt ueber "Standort übernehmen" bleiben muss
+                    if (zustand.standortPasstNichtZurZeitzone) {
+                        Text(
+                            stringResource(R.string.tageslicht_standort_passt_nicht, zustand.zeitzone),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
                     // Der Begruendungssatz steht DIREKT ueber dem Knopf, der den Systemdialog
                     // ausloest (Play: Begruendung im Zusammenhang, vor der Anfrage). Nichts dazwischen.
                     Text(

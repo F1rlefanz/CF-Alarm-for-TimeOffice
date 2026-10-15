@@ -450,6 +450,43 @@ class TageslichtViewModelTest {
         }
     }
 
+    // --- Standort passt nicht zur Zeitzone (#144) ----------------------------------------
+
+    @Test
+    fun `Standort in Kalifornien bei Europe Berlin zeigt den Zeitzonen-Hinweis`() = runTest(dispatcher) {
+        val start = TageslichtEinstellungen(GespeicherterStandort(378, -1224, jetzt), PlzLand.DE, "80")
+        with(Aufbau(repo = FakeRepo(start))) {
+            beobachte(); advanceUntilIdle()
+            assertEquals(OrtQuelle.STANDORT, z.genutzt)
+            assertTrue(z.standortPasstNichtZurZeitzone)
+
+            // Nach dem Entfernen gilt die PLZ - der Hinweis gehoert nur zum Standort
+            vm.standortEntfernen(); advanceUntilIdle()
+            assertEquals(OrtQuelle.PLZ, z.genutzt)
+            assertFalse(z.standortPasstNichtZurZeitzone)
+        }
+    }
+
+    @Test
+    fun `Standort in Muenchen passt zur Zeitzone - kein Hinweis`() = runTest(dispatcher) {
+        val start = TageslichtEinstellungen(GespeicherterStandort(481, 116, jetzt), null, null)
+        with(Aufbau(repo = FakeRepo(start))) {
+            beobachte(); advanceUntilIdle()
+            assertEquals(OrtQuelle.STANDORT, z.genutzt)
+            assertFalse(z.standortPasstNichtZurZeitzone)
+        }
+    }
+
+    @Test
+    fun `Zeitzonen-Hinweis folgt der Zone des Geraets, nicht dem Ort allein`() = runTest(dispatcher) {
+        // Derselbe Kalifornien-Standort ist unter America/Los_Angeles richtig
+        val start = TageslichtEinstellungen(GespeicherterStandort(378, -1224, jetzt), null, null)
+        with(Aufbau(repo = FakeRepo(start), zone = ZoneId.of("America/Los_Angeles"))) {
+            beobachte(); advanceUntilIdle()
+            assertFalse(z.standortPasstNichtZurZeitzone)
+        }
+    }
+
     private fun assertUngefaehr(erwartet: String, ist: String?) {
         assertNotNull(ist)
         val minuten = ChronoUnit.MINUTES.between(LocalTime.parse(erwartet), LocalTime.parse(ist))

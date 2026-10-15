@@ -34,7 +34,12 @@ data class OrtBildschirmZustand(
      */
     val genutztPlz: String? = null,
     /** Regionsname zu [genutztPlz]; `null` = wie [plzRegion]. */
-    val genutztName: String? = null
+    val genutztName: String? = null,
+    /**
+     * Der GENUTZTE Standort liegt weit ausserhalb der Zeitzone (`StandortZeitzone`) - die
+     * Sonnenzeiten gelten fuer einen fremden Ort (#144). Nur bei [OrtQuelle.STANDORT].
+     */
+    val standortPasstNichtZurZeitzone: Boolean = false
 )
 
 /** Warum "Standort übernehmen" nichts uebernommen hat - jeder Fall nennt den Ausweg PLZ. */

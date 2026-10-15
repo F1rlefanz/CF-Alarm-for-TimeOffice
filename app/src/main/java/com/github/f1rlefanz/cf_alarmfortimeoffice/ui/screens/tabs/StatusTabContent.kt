@@ -289,7 +289,9 @@ fun StatusTabContent(
         StatusCard(
             title = "Kalender",
             isOk = calendarState.selectedCalendarIds.isNotEmpty() &&
-                calendarState.calendarAuthorizationValid == true &&
+                // Ungeprueft (#148) ist kein Fehler: kein rotes Icon fuer einen normalen Start -
+                // der Text daneben sagt "wird geprüft", StatusCard kennt kein Neutral.
+                !calendarState.kalenderZugriffVerloren &&
                 !calendarState.kalenderNichtErreichbar &&
                 !nichtAbrufbareKalender,
             details = when {

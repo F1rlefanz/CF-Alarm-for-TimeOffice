@@ -111,6 +111,11 @@ class AlarmReceiver : BroadcastReceiver() {
          * Der Vergleich ist EXAKT: ein manueller Wecker heisst "... (Manuell)" und trifft so nie
          * eine Definition; eine inzwischen umbenannte Schicht trifft auch keine.
          *
+         * Der Name ist KEINE Identitaet: die UI laesst gleichnamige Definitionen zu, und die
+         * Erkennung ordnet ueber Keywords zu, nicht ueber den Namen. Deshalb EINSTIMMIGKEIT statt
+         * Erstbester - still nur, wenn ALLE gleichnamigen still sind. Sonst kann der Wecker aus
+         * der lauten entstanden sein, und eine stille (ggf. deaktivierte) davor machte ihn stumm.
+         *
          * Fail-safe wie der Skip-Check daneben: nichts gefunden, Lesefehler, Direct Boot vor
          * Entsperrung ([definitionen] = null) - der Alarm gilt NICHT als still. Im Zweifel
          * wecken statt versehentlich stumm bleiben.
@@ -123,7 +128,8 @@ class AlarmReceiver : BroadcastReceiver() {
             if (alarmInfo != null) {
                 alarmInfo.isSilent
             } else {
-                schichtName != null && definitionen?.firstOrNull { it.name == schichtName }?.isSilent == true
+                val treffer = if (schichtName == null) emptyList() else definitionen.orEmpty().filter { it.name == schichtName }
+                treffer.isNotEmpty() && treffer.all { it.isSilent }
             }
 
         /**

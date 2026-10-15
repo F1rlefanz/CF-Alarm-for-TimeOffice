@@ -38,6 +38,12 @@ object DndPermissionHelper {
         val intent = Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
-        context.startActivity(intent)
+        // Wie alle Einstiege in Systemeinstellungen: eine fehlende Ziel-Activity (manche
+        // Hersteller-ROMs) darf nicht aus einem onClick heraus die App beenden.
+        try {
+            context.startActivity(intent)
+        } catch (e: Exception) {
+            Logger.w(LogTags.DND, "Einstellung fuer Benachrichtigungszugriff nicht erreichbar", e)
+        }
     }
 }

@@ -76,6 +76,21 @@ class AlarmReceiverSilentGateTest {
     }
 
     @Test
+    fun `gleichnamige Definitionen mit widerspruechlichem Stille-Flag - klingeln, egal in welcher Reihenfolge`() {
+        // Der Name ist keine Identitaet: die UI laesst Dubletten zu, und die Erkennung ordnet
+        // ueber Keywords zu. Der Wecker kann aus der LAUTEN entstanden sein - also im Zweifel wecken.
+        val stillZuerst = listOf(definition("AD1", isSilent = true), definition("AD1", isSilent = false))
+        assertFalse(AlarmReceiver.isSilentAlarm(null, "AD1", stillZuerst))
+        assertFalse(AlarmReceiver.isSilentAlarm(null, "AD1", stillZuerst.reversed()))
+    }
+
+    @Test
+    fun `gleichnamige Definitionen, alle still - still`() {
+        val beideStill = listOf(definition("AD1", isSilent = true), definition("AD1", isSilent = true))
+        assertTrue(AlarmReceiver.isSilentAlarm(null, "AD1", beideStill))
+    }
+
+    @Test
     fun `liegt die AlarmInfo vor, zaehlt sie - nicht die Definition`() {
         // Schnappschuss beim Anlegen gewinnt; die Definition ist nur Rueckfall.
         assertFalse(AlarmReceiver.isSilentAlarm(alarm(isSilent = false), "AD1", definitionen))

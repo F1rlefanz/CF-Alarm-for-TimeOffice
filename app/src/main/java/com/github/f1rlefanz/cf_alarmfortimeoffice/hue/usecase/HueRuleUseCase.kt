@@ -882,15 +882,18 @@ private fun HueSchedule.hellZeitpunktFuer(weckzeit: Long, stand: TageslichtStand
 }
 
 /**
- * [laeuftBeiTageslicht] plus die INFO-Zeile, wenn die Regel entfaellt - fuer die Pfade, die
- * tatsaechlich schalten wuerden. Im Release-Log stehen nur Regel, Schwelle und Uhrzeit, nie der
- * Ort (der steht allein im Debug-Log, siehe [HueRuleUseCase.tageslichtStand]).
+ * [laeuftBeiTageslicht] plus eine WARN-Zeile, wenn die Regel entfaellt - fuer die Pfade, die
+ * tatsaechlich schalten wuerden. Bewusst WARN, nicht INFO: das Release-Datei-Log nimmt erst WARN+
+ * (siehe `Logger.i`), und „Licht ging nicht an, weil es schon hell war" ist genau der Fall, den
+ * ein Tester meldet. Die Zeile traegt nur Regel, Schwelle und Uhrzeit, nie den Ort (der steht
+ * allein im Debug-Log, siehe [HueRuleUseCase.tageslichtStand]); sie faellt je Regel und Wecker
+ * hoechstens einmal je schaltendem Pfad an (Vorab-Rampe, Weckzeit).
  */
 internal fun HueSchedule.laeuftBeiTageslichtMitLog(weckzeit: Long, stand: TageslichtStand): Boolean {
     val hell = hellZeitpunktFuer(weckzeit, stand) ?: return true
     if (weckzeit < hell) return true
     val uhrzeit = Instant.ofEpochMilli(hell).atZone(stand.zone).toLocalTime()
         .format(DateTimeFormatter.ofPattern("HH:mm"))
-    Logger.i(LogTags.HUE_USECASE, "Regel $id entfaellt: Weckzeit nach $hellAb ($uhrzeit)")
+    Logger.w(LogTags.HUE_USECASE, "Regel $id entfaellt: Weckzeit nach $hellAb ($uhrzeit)")
     return false
 }

@@ -566,4 +566,86 @@ class ShiftRecognitionEngineTest {
             repo.recognitionThread!!.startsWith("DefaultDispatcher-worker")
         )
     }
+
+    // --- #142: Krankmeldungs-Typen ---
+
+    private fun krank(name: String = "Krank", keywords: List<String> = listOf("K"), enabled: Boolean = true) =
+        definition(name, keywords, enabled).copy(isSickDay = true)
+
+    @Test
+    fun `Krank-Definition erzeugt keinen Schichttreffer`() = runTest {
+        val config = ShiftConfig(autoAlarmEnabled = true, definitions = listOf(krank()))
+        val engine = newEngine(GatedShiftConfigRepository(config))
+        val k = event("K")
+
+        assertTrue("Ein Krank-Termin ist keine Schicht", engine.getAllMatchingShifts(listOf(k)).isEmpty())
+        assertEquals(listOf(k), engine.erkenne(listOf(k)).krankTermine)
+    }
+
+    /**
+     * Die Krank-Definition steht absichtlich HINTER der Schicht-Definition: die bisherige Regel
+     * "erste passende Definition gewinnt" haette sonst eine Schicht erkannt und genau fuer den
+     * Krank-Tag einen Wecker gestellt.
+     */
+    @Test
+    fun `Krank hat Vorrang - ein Termin, der Krank und eine Schicht trifft, zaehlt nur als Krank`() = runTest {
+        val config = ShiftConfig(
+            autoAlarmEnabled = true,
+            definitions = listOf(definition("Fruehschicht", listOf("FS")), krank(keywords = listOf("K")))
+        )
+        val engine = newEngine(GatedShiftConfigRepository(config))
+        val beides = event("FS K")
+        val nurSchicht = event("FS", day = 11)
+
+        val erkennung = engine.erkenne(listOf(beides, nurSchicht))
+
+        assertEquals(listOf(nurSchicht), erkennung.schichten.map { it.calendarEvent })
+        assertEquals(listOf(beides), erkennung.krankTermine)
+    }
+
+    @Test
+    fun `deaktivierte Krank-Definition erkennt nichts`() = runTest {
+        val config = ShiftConfig(
+            autoAlarmEnabled = true,
+            definitions = listOf(krank(enabled = false), definition("Fruehschicht", listOf("FS")))
+        )
+        val engine = newEngine(GatedShiftConfigRepository(config))
+
+        val erkennung = engine.erkenne(listOf(event("FS K")))
+
+        assertTrue("Deaktiviert heisst: keine Krankmeldung", erkennung.krankTermine.isEmpty())
+        assertEquals("Die Schicht wird dann normal erkannt", 1, erkennung.schichten.size)
+    }
+
+    @Test
+    fun `Schicht- und Krank-Treffer kommen aus demselben gecachten Lauf`() = runTest {
+        val config = ShiftConfig(
+            autoAlarmEnabled = true,
+            definitions = listOf(definition("Fruehschicht", listOf("FS")), krank())
+        )
+        val repo = GatedShiftConfigRepository(config)
+        val engine = newEngine(repo)
+        val events = listOf(event("FS"), event("K", day = 11))
+
+        val schichten = engine.getAllMatchingShifts(events)
+        val krankTermine = engine.erkenne(events).krankTermine
+
+        assertEquals(1, schichten.size)
+        assertEquals(1, krankTermine.size)
+        assertEquals("Beide Listen muessen aus EINEM Konfigurations-Read stammen", 1, repo.loadCount)
+    }
+
+    @Test
+    fun `Invalidierung gilt auch fuer Krank-Treffer`() = runTest {
+        val config = ShiftConfig(autoAlarmEnabled = true, definitions = listOf(krank()))
+        val repo = GatedShiftConfigRepository(config)
+        val engine = newEngine(repo)
+        val events = listOf(event("K"))
+
+        engine.erkenne(events).krankTermine
+        engine.clearRecognitionCache()
+        engine.erkenne(events).krankTermine
+
+        assertEquals("Nach clearRecognitionCache() muss auch die Krank-Liste neu entstehen", 2, repo.loadCount)
+    }
 }

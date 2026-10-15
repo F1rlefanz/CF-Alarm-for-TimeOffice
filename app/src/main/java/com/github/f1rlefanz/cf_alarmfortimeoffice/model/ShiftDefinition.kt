@@ -22,7 +22,13 @@ data class ShiftDefinition(
     // (service/RufbereitschaftAbfrage) und den Cutoff von "Nicht stoeren" (dnd/DndOnCallCutoffResolver).
     // Hergang: Skill cfalarm-kalender-und-schichten, reference/kalender-datenfluss.md.
     // Unabhaengig von [isSilent]: eine Rufbereitschaft kann still sein (typisch) oder klingeln.
-    val isOnCall: Boolean = false
+    val isOnCall: Boolean = false,
+    // #142 "Krankmeldung": ein Termin dieses Typs ist KEINE Schicht, er gibt den ganzen Kalendertag
+    // frei (FreieTageStore, Kalender-Schluessel). Default false -> alte JSONs lesen sich unveraendert,
+    // kein Formatbump. Eine AELTERE App liest das Feld nicht (ignoreUnknownKeys) und haelt den Typ fuer
+    // eine normale Schicht - bewusst akzeptiert, dokumentiert im Kalender-Skill.
+    // alarmTime bleibt formal Pflicht (Serialisierung), hat bei isSickDay aber keine Bedeutung.
+    val isSickDay: Boolean = false
 ) {
     /**
      * Get alarm time as formatted string for display

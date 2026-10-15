@@ -14,8 +14,15 @@ import java.time.Duration
 import java.time.LocalDateTime
 
 /**
+ * #142: Ergebnis EINES Erkennungslaufs - Schichttreffer und Krank-Termine aus demselben Stand.
+ * Ein gemeinsames Objekt statt zweier Laeufe: sonst koennte eine Konfigurationsaenderung zwischen
+ * beiden Abfragen einen Termin in BEIDE Listen oder in KEINE stecken.
+ */
+data class Erkennung(val schichten: List<ShiftMatch>, val krankTermine: List<CalendarEvent>)
+
+/**
  * @param recognitionDispatcher der Dispatcher, auf dem die Erkennung wirklich rechnet - siehe
- *        [getAllMatchingShifts]. Per Vorgabe [Dispatchers.Default]; der Parameter existiert, damit
+ *        [erkenne]. Per Vorgabe [Dispatchers.Default]; der Parameter existiert, damit
  *        Tests die Erkennung im virtuellen Zeitplan halten koennen (die Nebenlaeufigkeits-Tests um
  *        Mutex und Epoche brauchen eine deterministische Reihenfolge).
  */
@@ -29,10 +36,13 @@ class ShiftRecognitionEngine(
      * Veroeffentlichungszeit und die [cacheEpoch], unter der er entstanden ist. Eine einzige
      * `@Volatile`-Referenz ist unteilbar, drei einzelne Felder waeren es nicht.
      * Hergang: Skill cfalarm-kalender-und-schichten, reference/schichterkennung.md.
+     *
+     * #142: [erkennung] traegt Schicht- UND Krank-Treffer in EINEM Objekt - beide Listen teilen
+     * damit dieselbe Epoche und denselben Veroeffentlichungszeitpunkt.
      */
     private data class RecognitionCache(
         val eventsHash: Int,
-        val matches: List<ShiftMatch>,
+        val erkennung: Erkennung,
         val publishedAt: Long,
         val epoch: Int
     )
@@ -121,7 +131,16 @@ class ShiftRecognitionEngine(
         Logger.d(LogTags.SHIFT_RECOGNITION, "🔄 ADAPTIVE-CACHE-CLEAR: Recognition cache cleared due to configuration change (change #$configChangeCount)")
     }
     
-    suspend fun getAllMatchingShifts(events: List<CalendarEvent>): List<ShiftMatch> {
+    /** Unveraenderter Vertrag fuer alle bisherigen Konsumenten: OHNE Krank-Treffer (#142, Review S4). */
+    suspend fun getAllMatchingShifts(events: List<CalendarEvent>): List<ShiftMatch> = erkenne(events).schichten
+
+    /**
+     * Der EINE Erkennungslauf (#142): Schicht- und Krank-Treffer aus demselben Konfigurationsstand,
+     * hinter demselben Mutex, mit derselben Epoche. Wer beide Listen braucht (`syncAlarms()`), ruft
+     * DIESE Funktion genau einmal - zwei getrennte Aufrufe koennten zwischen sich eine
+     * Invalidierung sehen.
+     */
+    suspend fun erkenne(events: List<CalendarEvent>): Erkennung {
         // PERFORMANCE: Calculate hash of input to prevent duplicate processing
         val eventsHash = events.hashCode()
 
@@ -153,14 +172,14 @@ class ShiftRecognitionEngine(
 
                     if (cacheAge < adaptiveCacheValidity) {
                         cacheHitCount++
-                        Logger.d(LogTags.SHIFT_RECOGNITION, "✅ ADAPTIVE-CACHE-HIT: Same events processed recently (${cacheAge}ms ago, validity=${adaptiveCacheValidity}ms), returning cached ${snapshot.matches.size} matches (hit #$cacheHitCount)")
-                        return@withLock snapshot.matches
+                        Logger.d(LogTags.SHIFT_RECOGNITION, "✅ ADAPTIVE-CACHE-HIT: Same events processed recently (${cacheAge}ms ago, validity=${adaptiveCacheValidity}ms), returning cached ${snapshot.erkennung.schichten.size} matches + ${snapshot.erkennung.krankTermine.size} Krank-Termine (hit #$cacheHitCount)")
+                        return@withLock snapshot.erkennung
                     } else {
                         Logger.d(LogTags.SHIFT_RECOGNITION, "⏰ ADAPTIVE-CACHE-EXPIRED: Cache is ${cacheAge}ms old (validity=${adaptiveCacheValidity}ms), needs refresh")
                     }
                 }
 
-                val matches = performRecognition(events)
+                val erkennung = performRecognition(events)
 
                 // ERST JETZT veroeffentlichen - Ergebnis und Cache-Schluessel gemeinsam als EIN
                 // Objekt, nachdem die Erkennung wirklich fertig ist. Schlaegt `performRecognition`
@@ -176,7 +195,7 @@ class ShiftRecognitionEngine(
                 // Lauf aus.
                 cache = RecognitionCache(
                     eventsHash = eventsHash,
-                    matches = matches,
+                    erkennung = erkennung,
                     publishedAt = System.currentTimeMillis(),
                     epoch = epochAtStart
                 )
@@ -184,13 +203,13 @@ class ShiftRecognitionEngine(
                     Logger.d(LogTags.SHIFT_RECOGNITION, "🔄 CACHE-STALE: Konfiguration wurde waehrend der Erkennung geaendert (Epoche $epochAtStart -> $cacheEpoch), Ergebnis wird nicht als frisch gecacht")
                 }
 
-                Logger.d(LogTags.SHIFT_RECOGNITION, "✅ ADAPTIVE-RECOGNITION: Completed with ${matches.size} matches (cache validity: ${getAdaptiveCacheValidity()}ms)")
-                matches
+                Logger.d(LogTags.SHIFT_RECOGNITION, "✅ ADAPTIVE-RECOGNITION: Completed with ${erkennung.schichten.size} matches + ${erkennung.krankTermine.size} Krank-Termine (cache validity: ${getAdaptiveCacheValidity()}ms)")
+                erkennung
             }
         }
     }
     
-    private suspend fun performRecognition(events: List<CalendarEvent>): List<ShiftMatch> {
+    private suspend fun performRecognition(events: List<CalendarEvent>): Erkennung {
         // Ein gescheiterter Read darf NICHT zu "0 Definitionen" degradieren - "leer" loescht in
         // syncAlarms() ALLE Alarme. getOrThrow() reicht den Fehler durch, der Cache bleibt
         // unangetastet. Hergang: Skill cfalarm-kalender-und-schichten, reference/schichterkennung.md.
@@ -200,7 +219,11 @@ class ShiftRecognitionEngine(
         // gefiltert, NICHT in `ShiftConfig.findDefinitionFor()`: ein BESTEHENDER Alarm aus der
         // Zeit vor dem Deaktivieren behielte sonst seine Regeln nicht. Hergang: Skill cfalarm-kalender-und-schichten, reference/schichterkennung.md.
         val shiftDefinitions = allDefinitions.filter { it.isEnabled }
+        // #142: Krankmeldungs-Typen sind KEINE Schichten - getrennt, bevor die Schleife laeuft.
+        val krankDefinitionen = shiftDefinitions.filter { it.isSickDay }
+        val schichtDefinitionen = shiftDefinitions.filterNot { it.isSickDay }
         val matches = mutableListOf<ShiftMatch>()
+        val krank = mutableListOf<CalendarEvent>()
 
         val skipped = allDefinitions.size - shiftDefinitions.size
         if (skipped > 0) {
@@ -217,7 +240,14 @@ class ShiftRecognitionEngine(
         // sind das mehrere hundert weggeworfene Zeichenketten pro Durchlauf. Was wirklich
         // gebraucht wird, steht ohnehin im Treffer-Log und in der Zusammenfassung darunter.
         for (event in events) {
-            for (definition in shiftDefinitions) {
+            // #142 KRANK HAT VORRANG, unabhaengig von der Reihenfolge der Definitionen: ein Termin, der
+            // Krank UND eine Schicht trifft, ist eine Krankmeldung und erzeugt KEINEN Schichttreffer -
+            // sonst entstuende fuer genau den Tag, den die Krankmeldung freigeben soll, ein Wecker.
+            if (krankDefinitionen.any { it.matchesKeywords(event.title) }) {
+                krank += event
+                continue
+            }
+            for (definition in schichtDefinitionen) {
                 if (definition.matchesKeywords(event.title)) {
                     val alarmTime = calculateAlarmTime(event, definition)
                     matches.add(
@@ -233,8 +263,8 @@ class ShiftRecognitionEngine(
             }
         }
 
-        Logger.i(LogTags.SHIFT_RECOGNITION, "Recognition complete: Found ${matches.size} shifts")
-        return matches.sortedBy { it.calculatedAlarmTime }
+        Logger.i(LogTags.SHIFT_RECOGNITION, "Recognition complete: Found ${matches.size} shifts, ${krank.size} Krank-Termine")
+        return Erkennung(matches.sortedBy { it.calculatedAlarmTime }, krank)
     }
     
     private fun calculateAlarmTime(event: CalendarEvent, definition: ShiftDefinition): LocalDateTime {

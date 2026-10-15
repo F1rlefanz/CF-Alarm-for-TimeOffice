@@ -75,12 +75,7 @@ data class ShiftSpan(
  *   ohne dass geschrieben wird (Master-Pause, Automatik aus). `null` bei einem Bestand aus einer
  *   Version vor diesem Merker - der Zeitpunkt ist dann unbekannt, nicht "jetzt".
  */
-data class LetzterSchichtStand(val spans: List<ShiftSpan>, val stand: Long?) {
-
-    /** Die naechste noch nicht begonnene Schicht - dieselbe Regel wie `ShiftUiState.upcomingShift`. */
-    fun naechsteNach(now: Long): ShiftSpan? =
-        spans.filter { it.startTime > now }.minByOrNull { it.startTime }
-}
+data class LetzterSchichtStand(val spans: List<ShiftSpan>, val stand: Long?)
 
 /**
  * Persistenter Bestand der erkannten Schichtspannen im bestehenden [MainDataStore] (kein neuer

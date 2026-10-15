@@ -3,7 +3,9 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.usecase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FakeFeedNeueinlesenStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FakeKalenderVorausschauPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FakeSyncHorizonStore
+import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.KrankmeldungNotifier
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.ShiftChangeNotifier
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.ZeitkettenArmierer
 import com.github.f1rlefanz.cf_alarmfortimeoffice.freietage.freieTageStoreMit
 import com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPausePrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmInfo
@@ -146,7 +148,9 @@ class TagFreigabeSyncGateTest {
         FakeSyncHorizonStore(),
         FakeFeedNeueinlesenStore(),
         freieTageStoreMit(freieTage),
-        FakeKalenderVorausschauPrefs(FakeKalenderVorausschauPrefs.UEBER_ALLE_TESTDATEN_TAGE)
+        FakeKalenderVorausschauPrefs(FakeKalenderVorausschauPrefs.UEBER_ALLE_TESTDATEN_TAGE),
+        dagger.Lazy { mock<ZeitkettenArmierer>() },
+        mock<KrankmeldungNotifier>()
     )
 
     private fun managerMit(protokoll: MutableList<String>): AlarmManagerService {

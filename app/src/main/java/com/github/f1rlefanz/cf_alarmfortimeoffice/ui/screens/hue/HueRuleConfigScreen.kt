@@ -160,7 +160,8 @@ fun HueRuleConfigScreen(
     val ortText = ortBeschreibung(tageslichtStand)
 
     val availableShiftPatterns = remember(shiftState.currentShiftConfig) {
-        shiftState.currentShiftConfig?.definitions?.filter { it.isEnabled }?.map { it.name } ?: emptyList()
+        // #142: Krankmeldungs-Typen wecken nie - eine Lichtregel auf sie liefe ins Leere.
+        shiftState.currentShiftConfig?.definitions?.filter { it.isEnabled && !it.isSickDay }?.map { it.name } ?: emptyList()
     }
 
     fun baueRegel(id: String): HueScheduleRule = form.toRule(

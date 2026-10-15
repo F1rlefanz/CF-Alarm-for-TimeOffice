@@ -71,7 +71,9 @@ class DndViewModel @Inject constructor(
      * sofort sichtbar werden. */
     val shiftNames: StateFlow<List<String>> =
         shiftUseCase.shiftConfig
-            .map { config -> config.definitions.map { it.name } }
+            // #142: ein Krankmeldungs-Typ hat keine Dienstzeit - als Regelmuster/Ausnahme
+            // waehlbar, wuerde er nie greifen.
+            .map { config -> config.definitions.filterNot { it.isSickDay }.map { it.name } }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     fun setFollowDimmerEnabled(enabled: Boolean) = viewModelScope.launch {

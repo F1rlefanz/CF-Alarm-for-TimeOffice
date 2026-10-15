@@ -66,6 +66,12 @@ class DeviceLocalFlagsGuardTest {
     }
 
     @Test
+    fun `die offenen Krankmeldungs-Benachrichtigungen sind geraetelokal`() {
+        // #142: mitgereist meldete das neue Geraet Krank-Tage, deren Wecker es nie hatte.
+        assertTrue(DeviceLocalFlagsGuard.isDeviceLocalKey("krank_tage_zu_melden"))
+    }
+
+    @Test
     fun `alle vier geraetelokalen Onboarding-Flags werden erkannt`() {
         assertTrue(DeviceLocalFlagsGuard.isDeviceLocalKey("battery_prompt_dismissed"))
         assertTrue(DeviceLocalFlagsGuard.isDeviceLocalKey("unused_app_restrictions_dismissed"))

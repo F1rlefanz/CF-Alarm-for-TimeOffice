@@ -282,6 +282,57 @@ internal const val ZURUECKNEHMEN_ERKLAERUNG: String =
     "„Zurücknehmen“ stellt die Wecker dieses Tages wieder aus dem Dienstplan, und „Nicht stören“ " +
         "und Dimmen richten sich wieder nach dem Dienst."
 
+/** Das Etikett eines Tages, den der Nutzer selbst freigegeben hat (nur Hand-Quelle). */
+internal const val DIENST_FAELLT_AUS_ETIKETT: String = "Dienst fällt aus"
+
+/**
+ * #142: das Etikett eines Tages, den ein Krank-Termin im Kalender freigibt - auch wenn der Nutzer
+ * ihn ZUSAETZLICH selbst freigegeben hat (BEIDE): wirksam bleibt er, solange der Termin steht.
+ */
+internal const val KRANK_KALENDER_ETIKETT: String = "Krank (Kalender)"
+
+/** #142: Kurzform auf der Karte eines Tages, den der Kalender freigibt (KALENDER und BEIDE). */
+internal const val KRANK_KALENDER_KURZ: String =
+    "Laut Kalender krankgemeldet – kein Wecker aus dem Dienstplan."
+
+/**
+ * #142: statt „Zurücknehmen“ an einem NUR vom Kalender freigegebenen Tag. Den Kalender-Schluessel
+ * schreibt allein `syncAlarms()`; ein Knopf hier taete sichtbar nichts. Belegt durch die
+ * Mischsemantik in `FreieTageStore.mischeKalenderKrank`: verschwindet der Termin, faellt der Tag
+ * beim naechsten Sync aus der Menge, und der Wecker entsteht neu. Einzige Ausnahme: ein
+ * zeitgebundener Termin von HEUTE, der schon vorbei ist - sein Fehlen ist kein Loeschen, der Tag
+ * bleibt bis Mitternacht frei (der Wecker des Tages ist dann meist ohnehin verstrichen).
+ */
+internal const val KRANK_KALENDER_ZURUECK: String =
+    "Verschwindet der Eintrag aus dem Kalender, kommt der Wecker zurück."
+
+/**
+ * #142: direkt unter „Zurücknehmen“ auf der Karte eines Tages mit BEIDEN Quellen - sonst erwartet
+ * man nach dem Tippen einen Wecker, den der Kalender-Schluessel weiter unterdrueckt.
+ */
+internal const val BEIDE_KNOPF_HINWEIS: String =
+    "Nimmt nur deine eigene Freigabe zurück. Laut Kalender bleibt der Tag frei."
+
+/** #142: im Bottom-Sheet eines Tages mit BEIDEN Quellen, statt [ZURUECKNEHMEN_ERKLAERUNG]. */
+internal const val ZURUECKNEHMEN_ERKLAERUNG_BEIDE: String =
+    "„Zurücknehmen“ nimmt nur deine eigene Freigabe zurück. Der Tag bleibt frei, weil er laut " +
+        "Kalender krankgemeldet ist."
+
+/**
+ * #142: im Bottom-Sheet eines NUR vom Kalender freigegebenen Tages. Dieselben Wirkungen wie
+ * [DIENST_FAELLT_AUS_ERKLAERUNG], weil Gate, Backstop und `filtereSpannen` die Vereinigung beider
+ * Quellen lesen.
+ */
+internal const val KRANK_KALENDER_ERKLAERUNG: String =
+    "Laut Kalender krankgemeldet. Für diesen Tag wird kein Wecker aus dem Dienstplan gestellt, " +
+        "nachts gilt die Regel für freie Tage. Eigene Wecker bleiben."
+
+/**
+ * #142: zweiter Knopf im Bottom-Sheet eines Diensttages neben „Dienst fällt aus“ - oeffnet den
+ * Zeitraum-Dialog mit diesem Tag als Beginn.
+ */
+internal const val MEHRERE_TAGE_KNOPF: String = "Mehrere Tage …"
+
 /**
  * Der Satz unter der Liste (Variante A): „Nicht wecken“ steht nur am naechsten klingelnden
  * Wecker, weil es genau einen Skip-Platz gibt und `skipNextAlarm` immer den naechsten trifft.
@@ -328,11 +379,15 @@ internal fun nichtWeckenHinweis(tage: List<WeckerTag>): String? {
 }
 
 /**
- * Der Textknopf unter der Liste: dieselbe Geste wie „Dienst fällt aus“ am Tag, fuer einen Tag, der
- * NICHT in der Liste steht (noch kein Wecker, nach der Vorausschau). Bewusst ohne „anderen“
+ * Der Textknopf unter der Liste: dieselbe Geste wie „Dienst fällt aus“ am Tag, fuer Tage, die
+ * NICHT in der Liste stehen (noch kein Wecker, nach der Vorausschau). Bewusst ohne „anderen“
  * Dienst/„spaeteren“ Tag - auch heute ist ein moeglicher Tag.
+ *
+ * #142: oeffnet den Zeitraum-Dialog (`DienstFaelltAusDialog`) mit Beginn = heute - deshalb
+ * „Tage“. Der Wortlaut steht auch auf der Website (`docs/advanced-setup.html`, geprueft von
+ * `tools/doku/pruefe_hilfe.py`).
  */
-internal const val ANDERER_TAG_KNOPF: String = "Tag auswählen: Dienst fällt aus …"
+internal const val ANDERER_TAG_KNOPF: String = "Tage auswählen: Dienst fällt aus …"
 
 // ---- Klang ------------------------------------------------------------------------------
 

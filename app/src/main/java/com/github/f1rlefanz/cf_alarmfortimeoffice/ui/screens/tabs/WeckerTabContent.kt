@@ -28,11 +28,11 @@ import androidx.compose.ui.unit.dp
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.ProbeZustand
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.WecktonAnstieg
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
-import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.DatePickerDialog
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.SwitchRow
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.rememberWeckerStand
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.wecker.ANDERER_TAG_KNOPF
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.wecker.Abschnittstitel
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.wecker.DienstFaelltAusDialog
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.wecker.KlangKarte
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.wecker.TagDetails
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.wecker.TagKarte
@@ -52,6 +52,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.SchichtWirkung
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.ShiftUiState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.TagFreigabeUiState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.baueWeckerTage
+import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.sichtbarerFreigabeHinweis
 import java.time.LocalDate
 import java.time.ZoneId
 
@@ -128,6 +129,8 @@ fun WeckerTabContent(
     onCancelSkip: () -> Unit,
     /** „Dienst fällt aus“. */
     onTagFreigeben: (LocalDate) -> Unit,
+    /** #142 „Dienst fällt aus“ für einen Zeitraum. */
+    onZeitraumFreigeben: (von: LocalDate, bis: LocalDate) -> Unit,
     /** „Zurücknehmen“. */
     onFreigabeZuruecknehmen: (LocalDate) -> Unit,
     onSnoozeMinutesChange: (Int) -> Unit,
@@ -162,7 +165,8 @@ fun WeckerTabContent(
         alarmState.activeAlarms,
         spannen,
         alarmState.nextRingingAlarmTriggerTime,
-        tagFreigabeState.freieTage,
+        // #142: beide Quellen, nicht nur ihre Vereinigung - das Etikett haengt an der Quelle.
+        tagFreigabeState.quellen,
         skipLage,
         wirkungen,
         stand
@@ -170,7 +174,7 @@ fun WeckerTabContent(
         baueWeckerTage(
             alarme = alarmState.activeAlarms,
             spannen = spannen,
-            freieTage = tagFreigabeState.freieTage,
+            freigaben = tagFreigabeState.quellen,
             skip = skipLage,
             schlummern = stand.schlummern,
             jetzt = maxOf(stand.jetzt, System.currentTimeMillis()),
@@ -183,18 +187,20 @@ fun WeckerTabContent(
     // waehrend einer laeuft, kehrt jeder Tap wortlos zurueck. Also sind waehrenddessen ALLE
     // Knoepfe gesperrt, nicht nur der des laufenden Vorgangs.
     val gesperrt = skipState.isLoading || tagFreigabeState.isLoading
+    // #142: Beginn des offenen Zeitraum-Dialogs als Epochentag (null = zu) - ueberlebt das Drehen.
+    var zeitraumBeginn by rememberSaveable { mutableStateOf<Long?>(null) }
     val aktionen = TagesAktionen(
         gesperrt = gesperrt,
         skipLaeuft = skipState.isLoading,
         onNichtWecken = onSkipNextAlarm,
         onDochWecken = onCancelSkip,
         onDienstFaelltAus = onTagFreigeben,
-        onZuruecknehmen = onFreigabeZuruecknehmen
+        onZuruecknehmen = onFreigabeZuruecknehmen,
+        onMehrereTage = { zeitraumBeginn = it.toEpochDay() }
     )
 
     // Der geoeffnete Tag als Epochentag: ein LocalDate laesst sich nicht im Bundle sichern.
     var offenerTag by rememberSaveable { mutableStateOf<Long?>(null) }
-    var datumsauswahlOffen by rememberSaveable { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -219,11 +225,28 @@ fun WeckerTabContent(
         // Ausgang des letzten Vorgangs, sofern er nicht einfach aufging. Steht AUSSERHALB der
         // Liste: nach einem „Nicht wecken“ oder „Dienst fällt aus“ kann es den Tag, an dem
         // getippt wurde, nicht mehr geben - die Meldung verschwaende mit ihm.
-        listOfNotNull(skipState.restoreNotice, tagFreigabeState.hinweis).forEach { meldung ->
+        skipState.restoreNotice?.let { meldung ->
             Text(
                 meldung,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.warning
+            )
+        }
+        // #142: eine Erfolgsmeldung ist keine Warnung und gilt nur, solange ihr Zeitraum laeuft.
+        sichtbarerFreigabeHinweis(
+            tagFreigabeState.hinweis,
+            tagFreigabeState.hinweisErfolgBis,
+            LocalDate.now(),
+            aufUebersicht = false
+        )?.let { meldung ->
+            Text(
+                meldung,
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (tagFreigabeState.hinweisErfolgBis != null) {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                } else {
+                    MaterialTheme.colorScheme.warning
+                }
             )
         }
 
@@ -255,7 +278,7 @@ fun WeckerTabContent(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-        TextButton(onClick = { datumsauswahlOffen = true }, enabled = !gesperrt) {
+        TextButton(onClick = { zeitraumBeginn = heute.toEpochDay() }, enabled = !gesperrt) {
             Text(ANDERER_TAG_KNOPF)
         }
 
@@ -293,17 +316,15 @@ fun WeckerTabContent(
         }
     }
 
-    if (datumsauswahlOffen) {
-        DatePickerDialog(
-            selectedDate = heute,
-            onDateSelected = { gewaehlt ->
-                datumsauswahlOffen = false
-                onTagFreigeben(gewaehlt)
+    zeitraumBeginn?.let { epochentag ->
+        DienstFaelltAusDialog(
+            beginn = LocalDate.ofEpochDay(epochentag),
+            heute = heute,
+            onFreigeben = { von, bis ->
+                zeitraumBeginn = null
+                onZeitraumFreigeben(von, bis)
             },
-            onDismiss = { datumsauswahlOffen = false },
-            // Kein Tag in der Vergangenheit: die Freigabe wuerde beim naechsten Lesen sofort
-            // weggeraeumt, der Tap bliebe wirkungslos. Begruendung an fruehesterTag.
-            fruehesterTag = heute
+            onAbbrechen = { zeitraumBeginn = null }
         )
     }
 }

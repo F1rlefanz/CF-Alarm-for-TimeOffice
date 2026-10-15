@@ -15,6 +15,7 @@ import kotlinx.coroutines.withContext
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
+import java.time.temporal.ChronoUnit
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -49,6 +50,24 @@ data class TagFreigabeResult(
 )
 
 /**
+ * #142: Ergebnis eines Zeitraums. [freigegebenBis] = letzter erfolgreich freigegebener Tag (null =
+ * keiner); [fehler] = Fehler des ERSTEN gescheiterten Tags ([FreigabeZurueckgenommenException]
+ * bleibt mit Identitaet erhalten - das ViewModel stellt damit die stumm gewordenen Wecker wieder).
+ *
+ * Bewusst KEIN `Result`: ein Teilerfolg ist weder Erfolg noch Fehlschlag. Die Tage bis
+ * [freigegebenBis] SIND freigegeben (Eigentuemer-Entscheidung #142), und die Rueckmeldung muss
+ * genau das sagen koennen - ein `Result.failure` verschwiege sie.
+ */
+data class TagFreigabeZeitraumResult(
+    val von: LocalDate,
+    val bis: LocalDate,
+    val freigegebenBis: LocalDate?,
+    val geloeschteWecker: Int,
+    val ueberspringenAufgehoben: Boolean,
+    val fehler: Throwable?
+)
+
+/**
  * "Tag freigeben": ein Kalendertag, an dem laut Dienstplan Dienst waere, findet nicht statt.
  *
  * Anders als `AlarmSkipUseCase` (nur der WECKER faellt weg) faellt hier der DIENST weg und mit ihm
@@ -60,6 +79,12 @@ data class TagFreigabeResult(
  * Der Kalendertermin bleibt unangetastet. Die Freigabe ist eine Aussage des NUTZERS ueber den
  * Dienstplan, kein Abbild des Dienstplans - deshalb liegt sie in einem eigenen Speicher und nicht
  * als Feld an der Spanne (die wird bei jedem Sync vollstaendig ersetzt).
+ *
+ * #142 - ZEITRAUM UND ZWEI QUELLEN: [freigebenZeitraum] gibt mehrere Tage in einem Schritt frei
+ * (ein einzelner Tag ist der Zeitraum mit von == bis, es gibt nur EINE Schrittfolge). Neben den
+ * Freigaben des Nutzers ("Hand") traegt der [FreieTageStore] die Kalender-Krank-Tage, die NUR
+ * `AlarmUseCase.syncAlarms()` schreibt. Dieser UseCase schreibt und nimmt ausschliesslich
+ * Hand-Freigaben zurueck; die Anzeige liest beide Quellen getrennt ueber [freigabeQuellen].
  */
 @Singleton
 class TagFreigabeUseCase @Inject constructor(
@@ -88,24 +113,117 @@ class TagFreigabeUseCase @Inject constructor(
             if (alarm.eventId.isEmpty()) return false
             return Instant.ofEpochMilli(alarm.triggerTime).atZone(zone).toLocalDate() == datum
         }
+
+        /**
+         * #142, Eigentuemer-Entscheidung: hoechstens so viele Tage auf einmal. Gilt im UseCase UND
+         * im Dialog (`DienstFaelltAusDialog`) - der Picker selbst kann die Grenze nicht erzwingen,
+         * er sieht immer nur einen einzelnen Tag, nie den Beginn des Zeitraums.
+         */
+        const val MAX_ZEITRAUM_TAGE = 31
     }
 
-    val freieTage: Flow<Set<LocalDate>> = store.freieTage
+    /** #142: beide Quellen getrennt - die Anzeige muss "Hand" und "Kalender" unterscheiden. */
+    val freigabeQuellen: Flow<FreigabeQuellen> = store.freigabeQuellen
+
+    suspend fun freigabeQuellenNow(): FreigabeQuellen = store.freigabeQuellenNow()
 
     /**
-     * Gibt [datum] frei: Markierung setzen, Wecker des Tages abraeumen, ein kollidierendes
-     * Ueberspringen aufheben, Neben-Ketten neu anwerfen.
+     * #142: gibt [von] bis [bis] (beide einschliesslich) frei, Tag fuer Tag aufsteigend, je Tag die
+     * volle Einzeltag-Schrittfolge ([freigebenEinTag]).
+     *
+     * Beim ERSTEN gescheiterten Tag ist Schluss: die Tage davor BLEIBEN freigegeben
+     * (Eigentuemer-Entscheidung), der gescheiterte Tag ist wie bisher zurueckgerollt, die Tage
+     * danach sind nicht angefasst. Die Neben-Ketten laufen GENAU EINMAL am Ende - auch im
+     * Fehlerfall, denn die frueheren Tage stehen ja.
+     */
+    suspend fun freigebenZeitraum(
+        von: LocalDate,
+        bis: LocalDate,
+        zone: ZoneId = ZoneId.systemDefault()
+    ): TagFreigabeZeitraumResult {
+        // Pruefung VOR allem anderen, auch vor dem try/finally: ein abgewiesener Zeitraum darf
+        // nichts anfassen, auch die Neben-Ketten nicht.
+        val anzahlTage = ChronoUnit.DAYS.between(von, bis) + 1
+        if (bis.isBefore(von) || anzahlTage > MAX_ZEITRAUM_TAGE) {
+            return TagFreigabeZeitraumResult(
+                von = von,
+                bis = bis,
+                freigegebenBis = null,
+                geloeschteWecker = 0,
+                ueberspringenAufgehoben = false,
+                fehler = IllegalArgumentException(
+                    "Zeitraum $von bis $bis ungueltig: Ende vor Beginn oder mehr als $MAX_ZEITRAUM_TAGE Tage"
+                )
+            )
+        }
+
+        // #142: DIE GANZE SCHLEIFE IST NICHT ABBRECHBAR. Der Nutzer tippt "Freigeben" und legt das
+        // Handy weg - der viewModelScope stirbt. Ein Abbruch zwischen zwei Tagen hinterliesse einen
+        // halben Zeitraum ohne jede Rueckmeldung, und die Neben-Ketten liefen gar nicht.
+        return withContext(NonCancellable) {
+            var markiert = false
+            var freigegebenBis: LocalDate? = null
+            var geloeschteWecker = 0
+            var ueberspringenAufgehoben = false
+            var fehler: Throwable? = null
+            try {
+                var tag = von
+                while (!tag.isAfter(bis)) {
+                    val ergebnis = freigebenEinTag(tag, zone) { markiert = true }
+                    val tagesErgebnis = ergebnis.getOrNull()
+                    if (tagesErgebnis == null) {
+                        fehler = ergebnis.exceptionOrNull()
+                        break
+                    }
+                    freigegebenBis = tag
+                    geloeschteWecker += tagesErgebnis.geloeschteWecker
+                    ueberspringenAufgehoben = ueberspringenAufgehoben || tagesErgebnis.ueberspringenAufgehoben
+                    tag = tag.plusDays(1)
+                }
+            } finally {
+                // 6. Neben-Ketten neu anwerfen: Dimmer und DND rechnen ihre Fenster erst beim
+                // naechsten Tick neu, und der kann Stunden entfernt liegen. Ohne das bliebe "Nicht
+                // stoeren" waehrend der gerade freigegebenen Schicht weiter an - genau der gemeldete
+                // Vorfall. Vorbild: `AlarmMaintenanceService.rescheduleSideChannels`.
+                //
+                // #142: EINMAL fuer den ganzen Zeitraum statt je Tag, und auch dann, wenn ein Tag
+                // gescheitert ist - sobald irgendeine Markierung geschrieben wurde, denn die Tage
+                // davor stehen. Ein zurueckgerollter Tag schadet dabei nicht: armiere() rechnet
+                // die Fenster nur aus dem aktuellen Stand neu.
+                if (markiert) werfeNebenkettenAn()
+            }
+            TagFreigabeZeitraumResult(
+                von = von,
+                bis = bis,
+                freigegebenBis = freigegebenBis,
+                geloeschteWecker = geloeschteWecker,
+                ueberspringenAufgehoben = ueberspringenAufgehoben,
+                fehler = fehler
+            )
+        }
+    }
+
+    /**
+     * Gibt EINEN Tag frei: Markierung setzen, Wecker des Tages abraeumen, ein kollidierendes
+     * Ueberspringen aufheben. Die Neben-Ketten wirft [freigebenZeitraum] einmal fuer alle Tage an.
      *
      * Die Schrittfolge ist die von `AlarmSkipUseCase.skipNextAlarm()`, und zwar aus denselben
      * Gruenden - siehe die Begruendungen an den einzelnen Schritten.
+     *
+     * @param markiert laeuft, sobald die Markierung geschrieben ist - ab da muessen die Neben-Ketten
+     *   laufen, auch wenn der Tag danach scheitert und zurueckgerollt wird.
      */
-    suspend fun freigeben(datum: LocalDate, zone: ZoneId = ZoneId.systemDefault()): Result<TagFreigabeResult> {
+    private suspend fun freigebenEinTag(
+        datum: LocalDate,
+        zone: ZoneId,
+        markiert: () -> Unit
+    ): Result<TagFreigabeResult> {
         // Wie beim Ueberspringen: die Ruecknahme muss den Aufrufer MIT IHRER IDENTITAET erreichen.
         // SafeExecutor verwandelt jede Exception in einen AppError - `alarmIds` und
         // `freigabeZurueckgenommen` waeren unterwegs verloren, also genau die Angaben, mit denen
         // das ViewModel die stumm gewordenen Wecker wieder stellt.
         var ruecknahme: FreigabeZurueckgenommenException? = null
-        val ergebnis = SafeExecutor.safeExecute("TagFreigabeUseCase.freigeben") {
+        val ergebnis = SafeExecutor.safeExecute("TagFreigabeUseCase.freigebenEinTag") {
             // 1. Ist der Bestand gar nicht speicherbar, kann diese Freigabe nicht gelingen - und
             // zwar STILL: `deleteAlarm()` raeumt dann nur den Arbeitsspeicher und meldet trotzdem
             // Erfolg, waehrend Preferences-Datei und Direct-Boot-Spiegel den Wecker weitertragen.
@@ -132,6 +250,7 @@ class TagFreigabeUseCase @Inject constructor(
                 // das Gate weg. Umgekehrt (erst loeschen, dann markieren) waere derselbe Absturz
                 // ein spurlos verschwundener Wecker, den nichts wiederherstellt.
                 store.freigeben(datum)
+                markiert()
 
                 // 3. Je Wecker: erst cancelSystemAlarm, dann deleteAlarm. DIE REIHENFOLGE IST
                 // PFLICHT - umgekehrt entsteht ein armierter Alarm, den weder Bestand noch
@@ -198,18 +317,6 @@ class TagFreigabeUseCase @Inject constructor(
                 }
             }
 
-            // 6. Neben-Ketten neu anwerfen: Dimmer und DND rechnen ihre Fenster erst beim naechsten
-            // Tick neu, und der kann Stunden entfernt liegen. Ohne das bliebe "Nicht stoeren"
-            // waehrend der gerade freigegebenen Schicht weiter an - genau der gemeldete Vorfall.
-            // Vorbild: `AlarmMaintenanceService.rescheduleSideChannels`.
-            //
-            // EBENFALLS NICHT ABBRECHBAR, und zwar aus genau diesem Grund: schliesst der Nutzer die
-            // App direkt nach dem Tippen (der Normalfall - man gibt frei und legt das Handy weg),
-            // stirbt der viewModelScope hier. Die Markierung stuende dann, die Wecker waeren weg,
-            // und "Nicht stoeren" liefe bis zum naechsten Tick weiter - also genau der Zustand,
-            // gegen den diese ganze Funktion gebaut ist.
-            withContext(NonCancellable) { werfeNebenkettenAn() }
-
             TagFreigabeResult(
                 datum = datum,
                 geloeschteWecker = betroffene.size,
@@ -220,13 +327,17 @@ class TagFreigabeUseCase @Inject constructor(
     }
 
     /**
-     * Nimmt die Freigabe zurueck. Die Wecker baut der Aufrufer ueber einen Kalender-Refresh neu
-     * auf - denselben Weg geht `cancelSkip` im `AlarmViewModel`.
+     * Nimmt die Freigaben [tage] zurueck. Die Wecker baut der Aufrufer ueber einen
+     * Kalender-Refresh neu auf - denselben Weg geht `cancelSkip` im `AlarmViewModel`.
+     *
+     * #142: NUR Hand-Freigaben. Die Kalender-Krank-Tage gehoeren dem Sync - ein Tag, den beide
+     * Quellen tragen, bleibt deshalb frei, solange der Krank-Termin im Kalender steht. Viele Tage
+     * (Ausfall-Karte der Uebersicht) gehen in EINEM Schreibvorgang, armiert wird EINMAL.
      */
-    suspend fun zuruecknehmen(datum: LocalDate): Result<Unit> =
-        SafeExecutor.safeExecute("TagFreigabeUseCase.zuruecknehmen") {
+    suspend fun zuruecknehmenTage(tage: Set<LocalDate>): Result<Unit> =
+        SafeExecutor.safeExecute("TagFreigabeUseCase.zuruecknehmenTage") {
             withContext(NonCancellable) {
-                store.zuruecknehmen(datum)
+                store.zuruecknehmenAlle(tage)
                 werfeNebenkettenAn()
             }
         }

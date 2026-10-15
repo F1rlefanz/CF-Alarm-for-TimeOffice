@@ -2,6 +2,7 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel
 
 import android.content.Context
 import com.github.f1rlefanz.cf_alarmfortimeoffice.freietage.FreieTageStore
+import com.github.f1rlefanz.cf_alarmfortimeoffice.freietage.FreigabeQuellen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.MANUELLER_ALARM_SUFFIX
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmInfo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
@@ -31,10 +32,24 @@ import java.time.ZoneId
  * (geloescht). Die Spanne bleibt in allen dreien. Ihr Tagesanker ist derselbe
  * ([FreieTageStore.tagVon], die Weckzeit).
  */
+/**
+ * #142: woher die Freigabe eines Tages kommt - nur fuer die ANZEIGE (Etikett, Text, ob
+ * „Zurücknehmen“ etwas bewirkt). Die Wirkung ist fuer alle drei dieselbe: Gate und Backstop lesen
+ * die Vereinigung beider Quellen.
+ */
+enum class FreigabeArt {
+    /** Nur „Dienst fällt aus“ des Nutzers. */
+    HAND,
+    /** Nur ein Krank-Termin im Kalender - „Zurücknehmen“ kann daran nichts aendern. */
+    KALENDER,
+    /** Beides: „Zurücknehmen“ nimmt nur die eigene Freigabe, der Tag bleibt laut Kalender frei. */
+    BEIDE
+}
+
 data class WeckerTag(
     val datum: LocalDate,
-    /** `true`: der Nutzer hat diesen Tag freigegeben („Dienst fällt aus“). */
-    val freigegeben: Boolean,
+    /** #142: Quelle der Freigabe, `null` = Diensttag. */
+    val freigabe: FreigabeArt?,
     /** Nach Weckzeit sortiert; bei einem freigegebenen Tag ohne eigene Wecker leer. */
     val eintraege: List<WeckerEintrag>,
     /**
@@ -44,7 +59,10 @@ data class WeckerTag(
     val schichten: List<TagesSchicht>,
     /** Was die Dienste dieses Tages ausserhalb des Weckers ausloesen - siehe [kaertchenFuer]. */
     val kaertchen: List<Kaertchen>
-)
+) {
+    /** Frei, gleich aus welcher Quelle - fuer alle Leser, die nur das wissen muessen. */
+    val freigegeben: Boolean get() = freigabe != null
+}
 
 /**
  * Eine Schicht des Tages mit Dienstzeit als Epoch-Millis; 0 = unbekannt (wie in `AlarmInfo`).
@@ -212,6 +230,10 @@ data class SkipLage(
  *   Tag, den man vor sich hat). Gehoert er zu einem freigegebenen Tag und ist nicht manuell, fehlt
  *   er: der Backstop im `AlarmReceiver` laesst ihn ohnehin nicht klingeln.
  *
+ * - #142: ZWEI Quellen der Freigabe ([freigaben]: Hand und Kalender-Krank). Fuer alles, was
+ *   WIRKT (Zeile in der Liste, „Entfällt“, Snooze, Kaertchen), zaehlt die Vereinigung - dieselbe wie
+ *   bei Gate und Backstop. Die Quelle selbst ([FreigabeArt]) traegt nur die Anzeige.
+ *
  * @param spannen der zuletzt geschriebene Stand des `ShiftSpanStore` (`ShiftUiState.letzterSchichtStand`).
  * @param wirkungen Schichtname (rein, ohne „(Manuell)“) -> [SchichtWirkung]. Fehlt ein Name,
  *   bekommt seine Schicht kein Kaertchen.
@@ -220,7 +242,9 @@ internal fun baueWeckerTage(
     alarme: List<AlarmInfo>,
     // Bewusst OHNE Default, wie [wirkungen]: vergessen hiesse still „keine Dienste“.
     spannen: List<ShiftSpan>,
-    freieTage: Collection<LocalDate>,
+    // Bewusst OHNE Default: vergessen hiesse still „kein Tag frei“ - und die Liste zeigte Wecker
+    // als „Weckt“, die Gate und Backstop nie klingeln lassen.
+    freigaben: FreigabeQuellen,
     skip: SkipLage,
     // Bewusst OHNE Default, wie [wirkungen]: vergessen hiesse still „nichts schlummert“.
     schlummern: List<Schlummern>,
@@ -240,7 +264,7 @@ internal fun baueWeckerTage(
             !(skip.aktiv && (alarm.id == skip.alarmId || alarm.triggerTime == skipZeit))
     }
     val naechster = AlarmSkipUseCase.naechsterKlingelnderWecker(anstehend, jetzt)
-    val freiAbHeute = freieTage.filterTo(HashSet()) { !it.isBefore(heute) }
+    val freiAbHeute = freigaben.alle.filterTo(HashSet()) { !it.isBefore(heute) }
 
     val eintraegeJeTag = HashMap<LocalDate, MutableList<WeckerEintrag>>()
     for (alarm in anstehend) {
@@ -263,7 +287,7 @@ internal fun baueWeckerTage(
             WeckerEintrag.Uebersprungen(skipZeit, uhrzeitVon(skipZeit, zone))
     }
 
-    val freieTageAlle = freieTage.toHashSet()
+    val freieTageAlle = freigaben.alle
     for (s in schlummern) {
         if (s.bis <= jetzt) continue
         val ankerTag = s.weckzeit?.let { tagVon(it, zone) }
@@ -280,11 +304,12 @@ internal fun baueWeckerTage(
 
     return (eintraegeJeTag.keys + freiAbHeute + heuteMitDienst).sorted().map { datum ->
         val eintraege = eintraegeJeTag[datum].orEmpty().sortedBy { it.triggerTime }
-        val freigegeben = datum in freiAbHeute
+        val freigabe = if (datum in freiAbHeute) artVon(datum, freigaben) else null
+        val freigegeben = freigabe != null
         val schichten = schichtenDesTages(eintraege, spannenJeTag[datum].orEmpty())
         WeckerTag(
             datum = datum,
-            freigegeben = freigegeben,
+            freigabe = freigabe,
             eintraege = eintraege,
             schichten = schichten,
             // Freigegeben: `FreieTageStore.filtereSpannen` nimmt die Spannen dieses Tages aus
@@ -294,6 +319,17 @@ internal fun baueWeckerTage(
                 wirkungen
             ).let { alle -> if (lichtMoeglich(eintraege)) alle else alle - Kaertchen.LICHT }
         )
+    }
+}
+
+/** #142: die Quelle der Freigabe eines Tages, der in mindestens einer der beiden Mengen steht. */
+private fun artVon(datum: LocalDate, freigaben: FreigabeQuellen): FreigabeArt {
+    val hand = datum in freigaben.hand
+    val kalender = datum in freigaben.kalender
+    return when {
+        hand && kalender -> FreigabeArt.BEIDE
+        kalender -> FreigabeArt.KALENDER
+        else -> FreigabeArt.HAND
     }
 }
 

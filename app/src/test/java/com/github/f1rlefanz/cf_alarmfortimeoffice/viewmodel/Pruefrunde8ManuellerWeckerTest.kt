@@ -249,6 +249,25 @@ class Pruefrunde8ManuellerWeckerTest {
     }
 
     @Test
+    fun `ein Krankmeldungs-Typ ist keine waehlbare Schicht fuer einen manuellen Wecker`() = runTest {
+        // #142: seine Weckzeit (00:00) ist bedeutungslos - gewaehlt stellte er einen Mitternachtswecker.
+        val krank = ShiftDefinition(
+            id = "sick",
+            name = "Krank",
+            keywords = listOf("K"),
+            alarmTime = LocalTime.MIDNIGHT,
+            isSickDay = true
+        )
+        val viewModel = buildViewModel(ShiftConfig(definitions = listOf(fruehAlt, krank, spaet)))
+        advanceUntilIdle()
+
+        assertEquals(
+            listOf("early", "late"),
+            viewModel.manualAlarmState.value.availableShifts.map { it.id }
+        )
+    }
+
+    @Test
     fun `eine neu angelegte Schichtdefinition erscheint sofort in der Auswahl`() = runTest {
         val viewModel = buildViewModel(ShiftConfig(definitions = listOf(fruehAlt)))
         advanceUntilIdle()

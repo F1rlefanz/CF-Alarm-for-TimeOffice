@@ -86,6 +86,13 @@ class MainActivity : ComponentActivity() {
         const val EINSTIEG_KALENDER_WARNUNG = "kalender_warnung"
 
         /**
+         * #142 „Krankmeldung erkannt" - gesetzt von `KrankmeldungNotifier.zeige()`. Ziel ist der
+         * Wecker-Tab: dort zeigt die Tagesliste die freien Tage mit dem Etikett „Krank (Kalender)".
+         * Kein Neuladen noetig - die Liste haengt an reaktiven Flows (Bestand und Freigabe-Quellen).
+         */
+        const val EINSTIEG_KRANKMELDUNG = "krankmeldung"
+
+        /**
          * Der Intent, mit dem eine Benachrichtigung die App an eine Stelle schickt - fuer JEDEN
          * Absender eines [EXTRA_EINSTIEG] derselbe.
          *
@@ -379,6 +386,11 @@ class MainActivity : ComponentActivity() {
                 // Stand von vor dem Ausfall halten. Ein doppelter Abruf ist harmlos - der
                 // Generation-Counter laesst den neueren gewinnen.
                 calendarViewModel.refreshData(forceRefresh = true)
+            }
+
+            EINSTIEG_KRANKMELDUNG -> {
+                Logger.business(LogTags.NAVIGATION, "Einstieg aus der Krankmeldung -> Wecker-Tab")
+                navigationViewModel.navigateToMainWithTab(MainTab.WECKER)
             }
 
             else -> Unit

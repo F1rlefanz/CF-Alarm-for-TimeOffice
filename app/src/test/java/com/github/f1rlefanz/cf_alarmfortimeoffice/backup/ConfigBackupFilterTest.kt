@@ -1,5 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.backup
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.freietage.FreieTageStore
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -131,6 +132,20 @@ class ConfigBackupFilterTest {
         ).forEach { key ->
             assertFalse("'$key' ist abgeleiteter Laufzeitzustand", ConfigBackupFilter.isExportable(key))
         }
+    }
+
+    /**
+     * #142: die Krank-Tage laut Kalender sind aus DIESEM Kalender abgeleitet. Importiert wuerden
+     * sie auf einem anderen Geraet fremde Wecker still unterdruecken.
+     */
+    @Test
+    fun `Kalender-Krank-Tage reisen nicht mit`() {
+        assertEquals("Laufzeitzustand", ConfigBackupFilter.exclusionReason(FreieTageStore.KEY_KRANK_KALENDER_NAME))
+        assertFalse(ConfigBackupFilter.isExportable(FreieTageStore.KEY_KRANK_KALENDER_NAME))
+        // Der Begleitzustand ebenso: gemerkte Termin-Enden und ausstehende Meldungen.
+        assertFalse(ConfigBackupFilter.isExportable(FreieTageStore.KEY_KRANK_ZEITGEBUNDEN_ENDE_NAME))
+        assertFalse(ConfigBackupFilter.isExportable(FreieTageStore.KEY_KRANK_ZU_MELDEN_NAME))
+        assertFalse(ConfigBackupFilter.isExportable(FreieTageStore.KEY_KRANK_ANKER_NAME))
     }
 
     /**

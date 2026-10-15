@@ -13,6 +13,8 @@
 - Die Direct-Boot-Grenze, bewusst akzeptiert
 - Hue braucht keinen eigenen Zweig
 - Was am Emulator gemessen wurde
+- Mehrere Tage in einem Schritt (#142)
+- Krank aus dem Kalender: die zweite Quelle (#142)
 
 ---
 
@@ -186,5 +188,107 @@ Ausgangslage nachgestellt (S2 12:48–20:00 GMT laufend, Trigger „Während der
 
 **Nebenbefund aus dem Test:** Ein Tag in der VERGANGENHEIT ließ sich freigeben und blieb stehen.
 Zwei Antworten: der Store filtert schon beim Lesen, und die Datumsauswahl bietet vergangene Tage
-gar nicht mehr an (`DatePickerDialog(fruehesterTag = …)`). Ein Bedienelement, das sichtbar nichts
+gar nicht mehr an (seit #142 `DienstFaelltAusDialog`, früheste Auswahl = heute). Ein Bedienelement, das sichtbar nichts
 tut, ist schlimmer als eines, das nicht angeboten wird.
+
+## Mehrere Tage in einem Schritt (#142)
+
+**Der Anlass:** wer eine Woche krank ist, musste „Dienst fällt aus“ fünfmal einzeln wählen. Der
+Eigentümer wollte ein Enddatum (kein „bis auf Weiteres“ - ein vergessenes offenes Ende ist ein
+verschlafener erster Arbeitstag) und den Knopf im bestehenden Ablauf, keine zweite Geste.
+
+- **Ein Zeitraum ist eine Folge von Einzeltagen**, kein eigener Speichertyp:
+  `TagFreigabeUseCase.freigebenZeitraum` geht je Tag dieselbe Schrittfolge wie bisher
+  (Persistenz-Sperre, Markierung zuerst, cancel→delete, Snoozes, Skip). Damit gilt jede Regel oben
+  unverändert für jeden Tag. Höchstens 31 Tage: der Picker kann die Grenze nicht erzwingen
+  (`SelectableDates` sieht nur einen Tag), also prüft der Dialog nach der Auswahl.
+- **Teilfehler: die vorherigen Tage BLEIBEN frei** (Eigentümer-Entscheidung 15.10.2026). Der
+  gescheiterte Tag wird wie bisher zurückgerollt und seine Wecker neu gestellt, spätere Tage werden
+  nicht angefasst, und der Hinweis nennt, bis wann freigegeben ist. „Alles oder nichts“ wurde
+  verworfen: das Zurücknehmen kann selbst scheitern, der Zustand würde unklarer statt klarer.
+  **Ist der gescheiterte Tag zugleich Krank laut Kalender, weist der Backstop das Wiederstellen
+  ab** - dann darf der Text nicht „diese Wecker klingeln“ sagen (Review S6, eigener Text).
+- **Die Neben-Ketten laufen EINMAL am Ende**, auch im Fehlerfall, in `NonCancellable` - wie beim
+  Einzeltag, damit „Nicht stören“ nicht weiterläuft, wenn der Nutzer die App sofort schließt.
+- **Der Picker liefert UTC-Mitternacht.** Umgerechnet wird über `ZoneOffset.UTC`, nie über
+  `ZoneId.systemDefault()` - sonst wählt man in Berlin den Vortag. Dieselbe Falle saß im alten
+  `DatePickerDialog` und ist mit behoben.
+- **Der Dialog ist ein eigener Vollbild-Dialog**, nicht der M3-`DatePickerDialog`: der erzwingt
+  360 dp Breite und schnitt bei 320 dp ab (Review). Zurück schließt ihn (`onDismissRequest`).
+- **Die Übersicht zeigt einen laufenden Ausfall** (Block freier Tage, der heute oder morgen
+  enthält, `laufenderAusfall`) ganz OBEN - vor den #141-Karten, deren „Karte darunter“-Texte sonst
+  falsch würden. Bei Master-Pause entfällt sie (die Pause hat ihre eigene Anzeige, und eigene
+  Wecker bleiben dort NICHT). „Zurücknehmen“ dort nimmt die eigenen Freigaben DES Blocks zurück.
+- **„Nächste Schicht“ überspringt ausgefallene Tage** (`naechsteStattfindendeSchicht`, Anker
+  Weckzeit, offline ebenso). Vorher stand unter „Dienst fällt aus bis So 18.10.“ die Schicht vom
+  Sa 17.10. - am Emulator aufgefallen, galt für Einzeltage schon seit 1.50.0.
+
+## Krank aus dem Kalender: die zweite Quelle (#142)
+
+**Der Anlass:** TimeOffice trägt eine Krankmeldung uneinheitlich ein - mal ERSETZT sie die Schicht
+(dann räumt der Abgleich den Wecker schon immer weg), mal steht „K“ NEBEN der Schicht, und der
+Wecker klingelte weiter. Gelöst über einen Schalter am Schichttyp (`ShiftDefinition.isSickDay`,
+„Krankmeldung“); jeder Nutzer verbindet ihn über sein eigenes Muster. Ab Werk aus.
+
+- **Eine Wahrheit, zwei Schlüssel.** `syncAlarms()` schreibt die Krank-Tage in
+  `krank_tage_kalender`, `freieTage` liefert die Vereinigung mit den Hand-Freigaben. Verworfen:
+  (a) Krank als zeitliche Überschneidung „Spanne ∩ Termin“ - jeder Leser bräuchte eigene Logik,
+  der Backstop Kalenderdaten; (b) Krank in den Hand-Schlüssel schreiben - ein verschwundener Termin
+  wäre vom Nutzerwillen nicht mehr zu trennen; (c) ein Krank-Flag an der `ShiftSpan` - die
+  Hand-Tage blieben ein zweiter Leseweg, und der Backstop müsste zu jedem Wecker die Spanne suchen.
+  `zuruecknehmen` fasst nur den Hand-Schlüssel an; ein Tag in beiden bleibt frei, solange eine
+  Quelle ihn trägt.
+- **Die Engine trennt** (`ShiftRecognitionEngine.erkenne` → `Erkennung(schichten, krankTermine)`,
+  ein Cache-Objekt, ein Mutex, eine Epoche). Krank hat Vorrang vor jeder Schicht im selben Termin.
+  `getAllMatchingShifts` liefert keine Krank-Treffer mehr - deshalb ändert sich kein Konsument
+  (Nächste Schicht, Boot-Weckpunkte, Diagnose). Ein Krank-Typ erzeugt keinen Wecker und keine
+  Spanne; Listen zur Typauswahl (manueller Wecker, Dimmer, DND, Hue) blenden ihn aus.
+- **Tage auffächern:** ein mehrtägiger Termin ist EIN Treffer. Ganztägig endet er um 23:59 des
+  letzten Tages; zeitgebunden mit Ende exakt 00:00 zählt der Folgetag NICHT (Review S3). Ein
+  zeitgebundener Termin über Mitternacht gibt beide Tage frei (bewusst, Datumsgranularität).
+- **Weckzeit-Anker (Review M1):** eine Schicht kurz nach Mitternacht hat ihre Weckzeit am Vortag -
+  ohne Anker klingelte sie in der kranken Nacht. Frei wird deshalb auch der Weckzeit-Tag jeder
+  Schicht, die an einem Krank-Tag BEGINNT, auch eines schon gestellten Weckers (ersetzt TimeOffice
+  die Schicht durch „K“, kennt nur noch der Wecker seinen Beginn). **Der Anker wird mit seiner
+  Quelle gespeichert** (`krank_tage_kalender_anker`, „anker>quelle“): im ersten Wurf galt er nur
+  einen Abgleich lang - der Lauf löscht genau den Wecker, aus dem er stammt, und der nächste Lauf
+  hätte den Vortag wieder herausgenommen (Prüfrunde 2: Wecker im Wechsel gelöscht und neu
+  gestellt). Er gilt, solange die Quelle Krank-Tag ist, nicht länger. **Bekannter Rest:**
+  Datumsgranularität wie bei Hand-Freigaben - eine andere Schicht mit Weckzeit an diesem Vortag
+  fällt mit aus, und die Tagesliste zeigt den Vortag als „Krank (Kalender)“.
+- **Mischsemantik beim Schreiben** (`mischeKalenderKrank`, ein `edit{}`): Tage `< heute` bleiben
+  (Rückschau, Nacht über Mitternacht), Tage `>= heute` bis vor den Horizont-Tag werden ERSETZT
+  (Termin weg → Tag weg, auch HEUTE; Review M2: ganztägig ist bis 23:59 in jeder Lesung sichtbar),
+  Tage ab dem Horizont-Tag (der Tag, der `horizontEnde` enthält) bleiben - nicht gelesen ist nicht
+  gelöscht. **Ausnahme:** ein heute schon BEENDETER zeitgebundener Termin fehlt in jeder späteren
+  Lesung (der Abruf beginnt bei jetzt) - sein Ende wird gemerkt
+  (`krank_tage_kalender_zeitgebunden_ende`), und heute bleibt frei. Verschwindet er VOR seinem Ende,
+  gilt er als gelöscht. Eine leere Eventliste (Abwahl) räumt alles ab heute; Master-Pause und
+  Automatik aus lassen den Schlüssel unangetastet (Richtung „hell“).
+- **Neben-Ketten:** ändert sich die Krank-Menge, ruft `syncAlarms` `armiere("KRANK")` - NACH dem
+  Mutex (die Ketten lesen Alarme), im `finally` unabbrechbar. Der Vordergrund-Sync armiert sonst
+  nur bei geänderten Spannen, der Vorab-Refresh-Worker gar nicht (Review M3).
+  `dagger.Lazy<ZeitkettenArmierer>` bricht den Zyklus über `DimScheduleUseCase` → `IAlarmUseCase`
+  und fasst beim Bauen des Graphen nichts an.
+- **Meldung (`KrankmeldungNotifier`, ID 2204):** Auslöser sind NEU hinzugekommene Krank-Tage mit
+  Wecker oder Schicht; „Schicht entfernt“ wird für Wecker an Krank-Tagen unterdrückt (TimeOffice
+  ersetzt die Schicht durch K - das ist eine Krankmeldung). Der Titel nennt nur echte
+  Kalender-Krank-Tage, nicht den Anker-Vortag; schon von Hand freigegebene Tage werden nicht
+  gemeldet. **Vorgemerkt im Lock, quittiert erst nach ZUGESTELLTER Meldung**
+  (`krank_tage_zu_melden`) - der Diff kommt nur einmal vorbei. Der allererste Abgleich meldet
+  nicht (leerer Bestand UND noch nie ein vollständiger Sync).
+- **Gerätegrenze:** alle Krank-Schlüssel sind Laufzeitzustand (`ConfigBackupFormat`);
+  `krank_tage_zu_melden` ist zusätzlich gerätelokal (`DeviceLocalFlagsGuard`) - mitgereist meldete
+  das neue Gerät Tage, deren Wecker es nie hatte. Ein älteres App-Release liest einen Krank-Typ aus
+  einem Export als normale Schicht (kein Formatbump, bewusst nicht gelöst).
+
+**Prüfrunden:** Spec-Review (Fable) 3 Muss- und 6 Soll-Punkte, alle übernommen. Runde 1 nach der
+Umsetzung 18 Rohbefunde / 15 bestätigt, Runde 2 auf unverändertem Code 10 / 9 - eine Runde ohne
+neuen Befund steht für #142 also noch aus.
+
+**Am Emulator gemessen (15.10.2026):** Zeitraum Sa 17.–So 18.10. → beide Wecker aus
+`dumpsys alarm`, Mo 19.10. und 02.11. bleiben; Übersicht-Karte „Dienst fällt ab morgen aus, bis So
+18.10.“, „Zurücknehmen“ dort → beide Wecker zurück. Krank-Typ „CFTEST“, ganztägiger Termin Sa 17.10.
+in einem ausgewählten Kalender → `Krank laut Kalender: +[2026-10-17]`, Wecker 05:30 weg,
+Benachrichtigung „Krankmeldung erkannt: Sa 17.10. / Der Wecker um 05:30 entfällt.“, Tagesliste
+„Krank (Kalender)“ ohne Knopf; Termin gelöscht → `-[2026-10-17]`, Wecker wieder gestellt.

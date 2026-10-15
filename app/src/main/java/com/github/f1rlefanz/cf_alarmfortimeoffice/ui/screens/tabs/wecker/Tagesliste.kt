@@ -42,7 +42,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.reinerSchichtname
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.CompactContentPadding
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.KnopfZeile
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
+import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.FreigabeArt
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.Kaertchen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.SchichtWirkung
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.WeckerEintrag
@@ -64,7 +66,9 @@ internal class TagesAktionen(
     val onNichtWecken: (angezeigtesZiel: Long) -> Unit,
     val onDochWecken: () -> Unit,
     val onDienstFaelltAus: (LocalDate) -> Unit,
-    val onZuruecknehmen: (LocalDate) -> Unit
+    val onZuruecknehmen: (LocalDate) -> Unit,
+    /** #142: oeffnet den Zeitraum-Dialog mit diesem Tag als Beginn. */
+    val onMehrereTage: (LocalDate) -> Unit
 )
 
 /**
@@ -105,8 +109,10 @@ internal fun TagKarte(
                 EintragZeile(eintrag, mehrereSchichten, aktionen)
             }
 
-            if (tag.freigegeben) {
-                InhaltUndBedienung(
+            // #142: je Quelle eigener Text. „Zurücknehmen“ nur, wo es eine eigene Freigabe gibt -
+            // den Kalender-Schluessel schreibt allein der Sync, ein Knopf dort taete nichts.
+            when (tag.freigabe) {
+                FreigabeArt.HAND -> InhaltUndBedienung(
                     inhalt = { modifier ->
                         Text(
                             DIENST_FAELLT_AUS_KURZ,
@@ -124,6 +130,26 @@ internal fun TagKarte(
                         onClick = { aktionen.onZuruecknehmen(tag.datum) }
                     )
                 }
+                FreigabeArt.KALENDER -> {
+                    GedaempfterText(KRANK_KALENDER_KURZ)
+                    GedaempfterText(KRANK_KALENDER_ZURUECK)
+                }
+                FreigabeArt.BEIDE -> {
+                    InhaltUndBedienung(
+                        inhalt = { modifier -> GedaempfterText(KRANK_KALENDER_KURZ, modifier) },
+                        untereinanderAusrichtung = Alignment.Start
+                    ) {
+                        KartenKnopf(
+                            text = "Zurücknehmen",
+                            laeuft = false,
+                            enabled = !aktionen.gesperrt,
+                            onClick = { aktionen.onZuruecknehmen(tag.datum) }
+                        )
+                    }
+                    // Direkt unter dem Knopf (Skill: ein Hinweis zu einem Knopf steht unter IHM).
+                    GedaempfterText(BEIDE_KNOPF_HINWEIS)
+                }
+                null -> Unit
             }
 
             if (tag.kaertchen.isNotEmpty()) {
@@ -154,7 +180,12 @@ private fun TagKopf(tag: WeckerTag, heute: LocalDate) {
         relativerTag(tag.datum, heute)?.let {
             Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        if (tag.freigegeben) Etikett("Dienst fällt aus", EtikettTon.GEDAEMPFT)
+        // #142: BEIDE traegt das Kalender-Etikett - wirksam bleibt der Tag, solange der Termin steht.
+        when (tag.freigabe) {
+            FreigabeArt.HAND -> Etikett(DIENST_FAELLT_AUS_ETIKETT, EtikettTon.GEDAEMPFT)
+            FreigabeArt.KALENDER, FreigabeArt.BEIDE -> Etikett(KRANK_KALENDER_ETIKETT, EtikettTon.GEDAEMPFT)
+            null -> Unit
+        }
     }
     if (tag.schichten.isNotEmpty()) {
         Text(
@@ -344,29 +375,57 @@ internal fun TagDetails(
 
             HorizontalDivider()
 
-            if (tag.freigegeben) {
-                Text(ZURUECKNEHMEN_ERKLAERUNG, style = MaterialTheme.typography.bodyMedium)
-                OutlinedButton(
-                    onClick = {
-                        aktionen.onZuruecknehmen(tag.datum)
-                        onSchliessen()
-                    },
-                    enabled = !aktionen.gesperrt
-                ) { Text("Zurücknehmen") }
-            } else {
-                Text("Dienst fällt aus", style = MaterialTheme.typography.titleSmall)
-                Text(
-                    DIENST_FAELLT_AUS_ERKLAERUNG,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                OutlinedButton(
-                    onClick = {
-                        aktionen.onDienstFaelltAus(tag.datum)
-                        onSchliessen()
-                    },
-                    enabled = !aktionen.gesperrt
-                ) { Text("Dienst fällt aus") }
+            when (tag.freigabe) {
+                FreigabeArt.HAND, FreigabeArt.BEIDE -> {
+                    Text(
+                        // #142: bei BEIDEN Quellen sagt der Text, dass der Tag trotzdem frei bleibt.
+                        if (tag.freigabe == FreigabeArt.BEIDE) ZURUECKNEHMEN_ERKLAERUNG_BEIDE else ZURUECKNEHMEN_ERKLAERUNG,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    OutlinedButton(
+                        onClick = {
+                            aktionen.onZuruecknehmen(tag.datum)
+                            onSchliessen()
+                        },
+                        enabled = !aktionen.gesperrt
+                    ) { Text("Zurücknehmen") }
+                }
+                // #142: kein Knopf - den Kalender-Schluessel schreibt allein der Sync.
+                FreigabeArt.KALENDER -> {
+                    Text(KRANK_KALENDER_ERKLAERUNG, style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        KRANK_KALENDER_ZURUECK,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                null -> {
+                    Text("Dienst fällt aus", style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        DIENST_FAELLT_AUS_ERKLAERUNG,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    // KnopfZeile statt Row + weight: bei 320 dp mit Schrift 1,3 stehen die beiden
+                    // Knoepfe untereinander, statt „Mehrere T…“ zu kuerzen (Skill UI).
+                    KnopfZeile {
+                        OutlinedButton(
+                            onClick = {
+                                aktionen.onDienstFaelltAus(tag.datum)
+                                onSchliessen()
+                            },
+                            enabled = !aktionen.gesperrt
+                        ) { Text("Dienst fällt aus") }
+                        // #142: derselbe Anlass fuer mehrere Tage - der Dialog beginnt mit DIESEM Tag.
+                        OutlinedButton(
+                            onClick = {
+                                aktionen.onMehrereTage(tag.datum)
+                                onSchliessen()
+                            },
+                            enabled = !aktionen.gesperrt
+                        ) { Text(MEHRERE_TAGE_KNOPF) }
+                    }
+                }
             }
         }
     }
@@ -403,6 +462,17 @@ private fun WirkungenDesTages(tag: WeckerTag, wirkungen: Map<String, SchichtWirk
             }
         }
     }
+}
+
+/** Ein Satz in der gedaempften Farbe der Kartentexte. */
+@Composable
+private fun GedaempfterText(text: String, modifier: Modifier = Modifier) {
+    Text(
+        text,
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = modifier
+    )
 }
 
 /** Dieselben Symbole wie an der Stelle, die die Funktion einstellt (Tab bzw. Einstellung). */

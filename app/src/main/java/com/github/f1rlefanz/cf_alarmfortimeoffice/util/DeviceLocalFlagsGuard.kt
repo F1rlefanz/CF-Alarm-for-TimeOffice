@@ -67,7 +67,11 @@ object DeviceLocalFlagsGuard {
         "timeoffice_health_prompt_dismissed",
         "oem_hint_shown*",
         "calendar_unavailable_notified",
-        "calendar_unavailable_last_failed"
+        "calendar_unavailable_last_failed",
+        // #142: die noch offenen Krankmeldungs-Benachrichtigungen. Mitgereist meldete das neue
+        // Geraet Tage, deren Wecker es nie hatte - es leitet seine Krank-Tage beim ersten Abgleich
+        // ohnehin selbst aus dem Kalender ab.
+        "krank_tage_zu_melden"
     )
 
     /**

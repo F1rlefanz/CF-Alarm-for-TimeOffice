@@ -145,6 +145,46 @@ class ShiftConfigSerializationTest {
         assertTrue(decoded.definitions.isEmpty())
     }
 
+    // ---- #142: Krankmeldung ----
+
+    @Test
+    fun `Eine Definition ohne isSickDay liest sich als normale Schicht`() {
+        // Gespeicherte Konfigurationen vor #142 kennen das Feld nicht - der Default MUSS "keine
+        // Krankmeldung" sein, sonst wuerde jede bestehende Schicht ihren Tag freigeben.
+        val altesJson = """
+            {
+                "id": "early_shift",
+                "name": "Frühschicht",
+                "keywords": ["F"],
+                "alarmTime": "05:30",
+                "isEnabled": true
+            }
+        """.trimIndent()
+
+        val decoded = json.decodeFromString(ShiftDefinition.serializer(), altesJson)
+
+        assertFalse(decoded.isSickDay)
+    }
+
+    @Test
+    fun `isSickDay ueberlebt Speichern und Lesen`() {
+        val original = ShiftDefinition(
+            id = "krank",
+            name = "Krank",
+            keywords = listOf("K"),
+            alarmTime = LocalTime.of(0, 0),
+            isSickDay = true
+        )
+
+        val decoded = json.decodeFromString(
+            ShiftDefinition.serializer(),
+            json.encodeToString(ShiftDefinition.serializer(), original)
+        )
+
+        assertEquals(original, decoded)
+        assertTrue(decoded.isSickDay)
+    }
+
     @Test
     fun `getDefaultConfig liefert die erwarteten vier Schicht-Definitionen mit korrekten Weckzeiten`() {
         val config = ShiftConfig.getDefaultConfig()

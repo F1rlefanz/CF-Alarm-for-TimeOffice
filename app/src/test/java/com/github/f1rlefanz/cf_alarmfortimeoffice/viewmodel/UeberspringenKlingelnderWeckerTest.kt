@@ -1,5 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.freietage.FreigabeQuellen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmInfo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.wecker.DIENST_FAELLT_AUS_ERKLAERUNG
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.AlarmSkipUseCase
@@ -134,7 +135,7 @@ class UeberspringenKlingelnderWeckerTest {
     }
 
     private fun wecker(alarme: List<AlarmInfo>, jetzt: Long, zone: ZoneId): List<WeckerEintrag.Wecker> =
-        baueWeckerTage(alarme, emptyList(), emptyList(), SkipLage.KEIN, emptyList(), jetzt, zone, emptyMap())
+        baueWeckerTage(alarme, emptyList(), FreigabeQuellen.LEER, SkipLage.KEIN, emptyList(), jetzt, zone, emptyMap())
             .flatMap { it.eintraege }
             .filterIsInstance<WeckerEintrag.Wecker>()
 

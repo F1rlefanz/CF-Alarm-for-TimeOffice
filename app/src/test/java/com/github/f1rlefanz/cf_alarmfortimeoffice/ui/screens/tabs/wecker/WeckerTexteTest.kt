@@ -4,6 +4,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.AlarmPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.ProbeFehler
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.ProbeZustand
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.SchlummerEingabe
+import com.github.f1rlefanz.cf_alarmfortimeoffice.freietage.FreigabeQuellen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmInfo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.LetzterSchichtStand
@@ -211,6 +212,8 @@ class WeckerTexteTest {
         assertTrue(NICHT_WECKEN_NUR_NAECHSTER.contains("„Dienst fällt aus“"))
         // Der Knopf unter der Liste nennt dieselbe Geste wie am Tag ...
         assertTrue(ANDERER_TAG_KNOPF.contains("Dienst fällt aus"))
+        // ... und seit #142 mehrere Tage (er oeffnet den Zeitraum-Dialog).
+        assertTrue(ANDERER_TAG_KNOPF.startsWith("Tage auswählen"))
         // ... und rahmt sie nicht als Ausweg fuer „spaetere“/„andere“ Dienste (Eigentuemer 14.10.2026).
         listOf(NICHT_WECKEN_NUR_NAECHSTER, NUR_EIN_WECKER_AUSLASSEN, ANDERER_TAG_KNOPF).forEach { text ->
             assertFalse(text, text.contains("späterer Dienst"))
@@ -237,7 +240,7 @@ class WeckerTexteTest {
     private val tag = 24 * 60 * 60 * 1000L
 
     private fun liste(vararg alarme: AlarmInfo, skip: SkipLage = SkipLage.KEIN) =
-        baueWeckerTage(alarme.toList(), emptyList(), emptyList(), skip, emptyList(), jetzt, ZoneId.of("UTC"), emptyMap())
+        baueWeckerTage(alarme.toList(), emptyList(), FreigabeQuellen.LEER, skip, emptyList(), jetzt, ZoneId.of("UTC"), emptyMap())
 
     private fun wecker(id: Int, abstand: Long, still: Boolean = false) = AlarmInfo(
         id = id, shiftId = "s$id", shiftName = "Früh", triggerTime = jetzt + abstand,

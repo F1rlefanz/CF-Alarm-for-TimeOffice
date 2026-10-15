@@ -29,6 +29,8 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 internal class HueSunriseExecutor(
     private val lightUseCase: IHueLightUseCaseAdvanced,
     private val ladeStand: suspend () -> TageslichtStand,
+    /** [HueRuleUseCase.fruehAusFuer] - derselbe Weg wie im Weckzeit-Pfad, damit beide Timer gleich enden. */
+    private val fruehAusFuer: suspend (List<HueSchedule>, Long?) -> FruehAus?,
     private val loadRules: suspend () -> Result<List<HueSchedule>>
 ) {
 
@@ -79,7 +81,7 @@ internal class HueSunriseExecutor(
             if (minutenBisWecker != null && succeeded > 0) {
                 try {
                     lightUseCase.scheduleBridgeAutoOff(
-                        HueRuleUseCase.vorabAutoAusZiele(sunriseRules, minutenBisWecker),
+                        HueRuleUseCase.vorabAutoAusZiele(sunriseRules, minutenBisWecker, fruehAusFuer(sunriseRules, weckzeit)),
                         shiftName
                     ).onFailure { errors.add("Vorab-Auto-Aus fehlgeschlagen: ${it.message}") }
                 } catch (e: kotlinx.coroutines.CancellationException) {

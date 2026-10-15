@@ -39,6 +39,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.ErrorMessage
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.LoadingScreen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.hue.rememberLocalNetworkPermissionGate
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.cards.AutoOffCard
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.cards.autoAusUrteilText
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.cards.RuleBasicInfoCard
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.cards.ManuellCard
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.cards.RuleModeCard
@@ -158,6 +159,8 @@ fun HueRuleConfigScreen(
     val tageslichtZeile = tageslichtUrteil(naechsteWeckzeit, tageslichtStand, form.hellAb)
         ?.let { tageslichtUrteilText(it) }
     val ortText = ortBeschreibung(tageslichtStand)
+    // #143: Zeile fuer "Auto-Aus spaetestens bei Tageslicht", gleiche Weckzeit wie oben.
+    val autoAusZeile = form.autoAusUrteil(naechsteWeckzeit, tageslichtStand)?.let { autoAusUrteilText(it) }
 
     val availableShiftPatterns = remember(shiftState.currentShiftConfig) {
         // #142: Krankmeldungs-Typen wecken nie - eine Lichtregel auf sie liefe ins Leere.
@@ -355,8 +358,13 @@ fun HueRuleConfigScreen(
                         szenenRaeume = form.szenen.map { it.groupName }
                             .takeIf { form.modus == HueRuleModus.SZENE }
                             .orEmpty(),
+                        ausBeiHell = form.ausBeiHell,
+                        ohneOrt = tageslichtStand?.let { it.ort == null },
+                        ausBeiHellBeispiel = autoAusZeile,
                         onAutoOffEnabledChange = { form = form.copy(autoOffEnabled = it) },
-                        onAutoOffMinutesChange = { form = form.copy(autoOffMinutes = it) }
+                        onAutoOffMinutesChange = { form = form.copy(autoOffMinutes = it) },
+                        onAusBeiHellChange = { form = form.copy(ausBeiHell = it) },
+                        onOrtEinstellen = onOrtAendern
                     )
                 }
             }

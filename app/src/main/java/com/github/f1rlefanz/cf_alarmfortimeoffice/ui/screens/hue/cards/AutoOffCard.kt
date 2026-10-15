@@ -16,6 +16,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.SwitchRow
 import androidx.compose.ui.res.pluralStringResource
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.HellAb
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.AutoAusUrteil
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.uhrzeitKurz
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.weckzeitKurz
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tageslicht.AutoAusBisHellWahl
 
 /**
  * Eigene Karte "Automatisch ausschalten" (auto-off) - Schalter als Kartenueberschrift, plus
@@ -34,6 +39,9 @@ import androidx.compose.ui.res.pluralStringResource
  *        einzige ehrliche Ruecknahme ist "Raum aus". Bei einer Raum-Szene sind das dieselben
  *        Lampen; beruehrt sie nur einen Teil des Raums, geht mehr aus als anging. Der Text sagt
  *        das - er behauptet nichts anderes.
+ * @param ausBeiHell "spaetestens, wenn es hell wird" (#143) - nur mit Dauer sichtbar, sie kuerzt
+ *        die Dauer. [ohneOrt] `null` = Ort noch nicht geladen; [ausBeiHellBeispiel] die fertige
+ *        Zeile fuer den naechsten Wecker.
  */
 @Composable
 internal fun AutoOffCard(
@@ -41,8 +49,13 @@ internal fun AutoOffCard(
     autoOffMinutes: Int,
     sunriseActive: Boolean,
     szenenRaeume: List<String> = emptyList(),
+    ausBeiHell: HellAb = HellAb.IMMER,
+    ohneOrt: Boolean? = null,
+    ausBeiHellBeispiel: String? = null,
     onAutoOffEnabledChange: (Boolean) -> Unit,
-    onAutoOffMinutesChange: (Int) -> Unit
+    onAutoOffMinutesChange: (Int) -> Unit,
+    onAusBeiHellChange: (HellAb) -> Unit = {},
+    onOrtEinstellen: () -> Unit = {}
 ) {
     Card {
         Column(
@@ -95,7 +108,37 @@ internal fun AutoOffCard(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                AutoAusBisHellWahl(
+                    wahl = ausBeiHell,
+                    onWahl = onAusBeiHellChange,
+                    ohneOrt = ohneOrt,
+                    beispiel = ausBeiHellBeispiel,
+                    onOrtEinstellen = onOrtEinstellen
+                )
             }
         }
+    }
+}
+
+/**
+ * Die Zeile fuer den naechsten Wecker (#143): gekuerzt ("aus um 07:00 bei Dämmerung statt um
+ * 07:30"), nicht gekuerzt, weil es erst spaeter hell wird, oder nicht, weil es beim Wecken schon
+ * hell ist. Rechnung in `HueRuleFormState.autoAusUrteil`, hier nur der Text.
+ */
+@Composable
+internal fun autoAusUrteilText(urteil: AutoAusUrteil): String {
+    val ereignis = stringResource(
+        if (urteil.ereignis == HellAb.DAEMMERUNG) R.string.tageslicht_ereignis_daemmerung
+        else R.string.tageslicht_ereignis_sonnenaufgang
+    )
+    val wecker = weckzeitKurz(urteil.weckzeit, urteil.zone)
+    val aus = uhrzeitKurz(urteil.ausUm, urteil.zone)
+    val hell = uhrzeitKurz(urteil.hellZeitpunkt, urteil.zone)
+    return when {
+        urteil.schonHell -> stringResource(R.string.tageslicht_autoaus_schon_hell, wecker, aus, ereignis, hell)
+        urteil.gekuerzt -> stringResource(
+            R.string.tageslicht_autoaus_gekuerzt, wecker, aus, ereignis, uhrzeitKurz(urteil.nachDauerUm, urteil.zone)
+        )
+        else -> stringResource(R.string.tageslicht_autoaus_dauer, wecker, aus, ereignis, hell)
     }
 }

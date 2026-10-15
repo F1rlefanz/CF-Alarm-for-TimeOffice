@@ -295,3 +295,26 @@ Ort) — auf INFO stuende im Release-Log nichts, und „Licht ging nicht an“ w
 nachvollziehbar (Runde 4 zu #140). Bekannte Restluecke: `HueConfigRepository` liest ohne
 `coerceInputValues`; ein unbekannter `HellAb`-Wert aus einer neueren Version macht die
 Regelliste unlesbar (dokumentiert in `HellAb`).
+
+## Auto-Aus spaetestens bei Tageslicht (#143, Oktober 2026)
+
+Das Licht geht zum FRUEHEREN von Auto-Aus-Dauer und Daemmerung/Sonnenaufgang des Wecktags aus.
+Die drei offenen Fragen aus dem Issue, so entschieden (mit dem Eigentuemer, 15.10.2026):
+
+- **Je Regel waehlbar, nicht an „Nur bei Dunkelheit“ gekoppelt.** Die Wahl sitzt in der
+  Auto-Aus-Karte (gleiche Knopf-Mechanik wie der Dimmer-Nachlauf „Bis Daemmerung“, ein gemeinsames
+  `SpaetestensBeiHellWahl`), weil sie die Dauer kuerzt und ohne Dauer nichts bedeutet.
+- **Eine von Hand umgestellte Lampe geht trotzdem aus** - wie beim bisherigen Auto-Aus: der
+  Bridge-Timer schickt schlicht `{"on": false}`. Eine zweite Logik („nur wenn noch im Regelzustand“)
+  braeuchte einen Zustandsvergleich zur Ausloesezeit, den der Timer nicht kann.
+- **Vorab-Rampe und Weckzeit-Pfad enden auf derselben Minute**, weil beide ueber `fruehAusFuer`
+  rechnen; der Weckzeit-Pfad ersetzt den Vorab-Timer je Ziel wie bisher.
+
+Weitere Entscheidungen: Ist es zur Weckzeit SCHON hell, gilt die Dauer (Licht war gewollt; wer
+im Hellen keins will, nimmt „Nur bei Dunkelheit“) - anders als beim Dimmer-Nachlauf, der dann an
+der Weckzeit endet. Eine Rampe ab Weckzeit wird nie mittendrin abgeschaltet (Untergrenze
+Rampenende). Ein Snooze nach dem Hellwerden schaltet nach 1 min aus (Untergrenze des Timers).
+Gerundet wird AUF (`aufgerundeteMinuten`), der Timer endet nie vor dem Hell-Zeitpunkt. Ein
+tatsaechliches Vorziehen loggt EINE WARN-Zeile je Regel (Release-Log) - nicht schon das Tragen der
+Wahl, das waere Rauschen. Downgrade: `HueConfigRepository` liest mit `ignoreUnknownKeys`, das neue
+Feld faellt in aelteren Versionen still weg.

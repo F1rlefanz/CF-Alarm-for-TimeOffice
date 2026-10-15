@@ -10,6 +10,9 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueTimeRange
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.SunriseConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.TargetType
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.modus
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.aufgerundeteMinuten
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.hellNachWeckzeit
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.kuerzeAutoAus
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.util.HueColorConverter
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.HellAb
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.TageslichtStand
@@ -58,6 +61,8 @@ internal data class HueRuleFormState(
     // Querschnittlich: betrifft, was auch immer das Licht angeschaltet hat
     val autoOffEnabled: Boolean = false,
     val autoOffMinutes: Int = 30,
+    // Zusatz zum Auto-Aus (#143): spaetestens, wenn es hell wird. Default IMMER = nur die Dauer.
+    val ausBeiHell: HellAb = HellAb.IMMER,
 
     // Querschnittlich wie Auto-Aus: gilt fuer alle drei Modi (#140). Default IMMER = wie bisher.
     val hellAb: HellAb = HellAb.IMMER,
@@ -188,7 +193,10 @@ internal fun HueRuleFormState.toRule(
         enabled = enabled,
         timeRanges = listOf(HueTimeRange(actions = aktionen)),
         sunrise = if (modus == HueRuleModus.SONNENAUFGANG) sunrise.copy(enabled = true) else null,
-        hellAb = hellAb
+        hellAb = hellAb,
+        // Ohne Auto-Aus-Dauer gibt es nichts zu kuerzen - dann auch keine gespeicherte Wahl, die
+        // in der Liste etwas behauptet, das nicht wirkt.
+        ausBeiHell = if (autoOffDauer != null) ausBeiHell else HellAb.IMMER
     )
 }
 
@@ -235,7 +243,8 @@ internal fun HueScheduleRule.toFormState(): HueRuleFormState {
         sunrise = sunrise ?: SunriseConfig(),
         autoOffEnabled = autoOff != null,
         autoOffMinutes = autoOff ?: 30,
-        hellAb = hellAb
+        hellAb = hellAb,
+        ausBeiHell = ausBeiHell
     )
 }
 
@@ -294,6 +303,55 @@ internal fun tageslichtUrteil(weckzeit: Long?, stand: TageslichtStand?, hellAb: 
         ereignis = hellAb,
         hellZeitpunkt = hell,
         laeuft = weckzeit < hell,
+        zone = stand.zone
+    )
+}
+
+/**
+ * Was „Auto-Aus spaetestens bei Tageslicht“ (#143) beim naechsten Wecker bewirkt - Grundlage der
+ * Zeile in der Auto-Aus-Karte.
+ *
+ * @property ausUm wann das Licht ausgeht (Epoch-ms), gerechnet ab der Weckzeit.
+ * @property nachDauerUm wann es ohne die Kuerzung ausginge.
+ * @property hellZeitpunkt der Hell-Zeitpunkt des Wecktags.
+ * @property schonHell `true` = es ist zur Weckzeit schon hell, die Dauer gilt.
+ */
+internal data class AutoAusUrteil(
+    val weckzeit: Long,
+    val ereignis: HellAb,
+    val hellZeitpunkt: Long,
+    val ausUm: Long,
+    val nachDauerUm: Long,
+    val schonHell: Boolean,
+    val zone: ZoneId
+) {
+    val gekuerzt: Boolean get() = ausUm < nachDauerUm
+}
+
+/**
+ * PURE: das Urteil fuer [weckzeit], oder `null`, wenn es nichts Wahres zu sagen gibt (Wahl
+ * [HellAb.IMMER], kein Auto-Aus, keine Weckzeit, Stand nicht geladen, kein Ort, kein Ereignis).
+ *
+ * Dieselbe Rechnung wie die Laufzeit (`kuerzeAutoAus` im `HueRuleUseCase`), gezaehlt ab der
+ * Weckzeit: eine Rampe ab Weckzeit verschiebt Rampenende und Dauer um ihre Laenge, eine Vorab-Rampe
+ * ist zur Weckzeit schon fertig.
+ */
+internal fun HueRuleFormState.autoAusUrteil(weckzeit: Long?, stand: TageslichtStand?): AutoAusUrteil? {
+    if (ausBeiHell == HellAb.IMMER || !schaltetEin || !autoOffEnabled) return null
+    if (weckzeit == null || stand == null || stand.ort == null) return null
+    val wecktag = Instant.ofEpochMilli(weckzeit).atZone(stand.zone).toLocalDate()
+    val hell = stand.hellZeitpunkt(wecktag, ausBeiHell) ?: return null
+    val rampenEnde = if (modus == HueRuleModus.SONNENAUFGANG && !sunrise.startBeforeAlarm) sunrise.durationMinutes else 0
+    val nachDauer = rampenEnde + autoOffMinutes
+    val bisHell = hellNachWeckzeit(ausBeiHell, weckzeit, stand)?.let { aufgerundeteMinuten(weckzeit, it) }
+    val minuten = kuerzeAutoAus(nachDauer, rampenEnde, bisHell)
+    return AutoAusUrteil(
+        weckzeit = weckzeit,
+        ereignis = ausBeiHell,
+        hellZeitpunkt = hell,
+        ausUm = weckzeit + minuten * 60_000L,
+        nachDauerUm = weckzeit + nachDauer * 60_000L,
+        schonHell = bisHell == null,
         zone = stand.zone
     )
 }

@@ -48,7 +48,17 @@ class HueRuleUseCase @Inject constructor(
      * UseCase. Den Tageslicht-Stand holt sie ueber [tageslichtStand] - denselben, nie werfenden
      * Weg wie alle anderen Aufrufer.
      */
-    private val sunriseExecutor = HueSunriseExecutor(lightUseCase, ladeStand = { tageslichtStand() }) { getAllRules() }
+    private val sunriseExecutor = HueSunriseExecutor(
+        lightUseCase,
+        ladeStand = { tageslichtStand() },
+        fruehAusFuer = ::fruehAusFuer
+    ) { getAllRules() }
+
+    /**
+     * Ab wann der Bridge-Timer des Auto-Aus zaehlt (#143). Test-Naht wie `AlarmUseCase.uhr` - kein
+     * Konstruktor-Parameter, sonst muesste Hilt eine Funktion binden.
+     */
+    internal var jetzt: () -> Long = System::currentTimeMillis
 
     companion object {
         private const val MAX_RULES_PER_SHIFT = 10
@@ -79,11 +89,20 @@ class HueRuleUseCase @Inject constructor(
         /**
          * Auto-Aus-Ziele von BEREITS AUSGEWAEHLTEN Regeln - bewusst OHNE eigenen Schicht-Filter
          * (die Auswahl gehoert allein [findApplicableRules]), sonst verloeren UNIVERSAL-Regeln ihr
-         * Auto-Aus. Besitzt nur den Rechenweg inkl. Sonnenaufgangs-Versatz.
+         * Auto-Aus. Besitzt nur den Rechenweg inkl. Sonnenaufgangs-Versatz und der Kuerzung bis
+         * zum Hell-Zeitpunkt ([HueSchedule.ausBeiHell], #143; ohne [fruehAus] keine Kuerzung).
          * Hergang: Skill cfalarm-hue, reference/hue-api-und-regeln.md
          */
-        internal fun autoOffTargetsOf(rules: List<HueSchedule>): List<AutoOffTarget> {
+        internal fun autoOffTargetsOf(
+            rules: List<HueSchedule>,
+            fruehAus: FruehAus? = null,
+            minutenBisWecker: Int = 0
+        ): List<AutoOffTarget> {
             return try {
+                // Gezaehlt wird ab JETZT. Im Weckzeit-Pfad ist das die Weckzeit, in der Vorab-Rampe
+                // liegt der Wecker noch [vorlauf] Minuten voraus. Ein verspaeteter Worker (negativ)
+                // schaltet nie VOR der Regeldauer aus.
+                val vorlauf = minutenBisWecker.coerceAtLeast(0)
                 rules.asSequence()
                     // Only the light actions' `duration` decides whether auto-off applies -
                     // sunrise rules included (auto-off then counts from the ramp's end state).
@@ -93,9 +112,22 @@ class HueRuleUseCase @Inject constructor(
                         val sunriseOffsetMinutes = rule.sunrise
                             ?.takeIf { it.enabled && !it.startBeforeAlarm }
                             ?.durationMinutes ?: 0
-                        rule.lightActions.asSequence()
+                        val rampenEnde = vorlauf + sunriseOffsetMinutes
+                        // #143: spaetestens, wenn es hell wird - EINMAL je Regel ausgewertet.
+                        val f = fruehAus
+                        val hell = f?.let { hellNachWeckzeit(rule.ausBeiHell, it.weckzeit, it.stand) }
+                        val bisHell = if (f != null && hell != null) aufgerundeteMinuten(f.jetzt, hell) else null
+                        var vorgezogen = false
+                        val ziele = rule.lightActions
                             .filter { action -> action.on == true && (action.duration ?: 0) > 0 && action.targetId.isNotBlank() }
-                            .map { action -> AutoOffTarget(action.targetId, action.isGroup, action.duration!! + sunriseOffsetMinutes) }
+                            .map { action ->
+                                val nachDauer = rampenEnde + action.duration!!
+                                val minuten = kuerzeAutoAus(nachDauer, rampenEnde, bisHell)
+                                if (minuten < nachDauer) vorgezogen = true
+                                AutoOffTarget(action.targetId, action.isGroup, minuten)
+                            }
+                        if (vorgezogen && f != null && hell != null) rule.logVorgezogen(hell, f.stand)
+                        ziele.asSequence()
                     }
                     .distinct()
                     .toList()
@@ -107,8 +139,9 @@ class HueRuleUseCase @Inject constructor(
 
         /**
          * Auto-Aus fuer eine Vorab-Rampe, die GERADE gestartet ist - gezaehlt ab JETZT, deshalb
-         * die Minuten bis zur Weckzeit obendrauf. Endet also zum selben Zeitpunkt wie das Auto-Aus,
-         * das der Weckzeit-Pfad spaeter anlegt.
+         * die Minuten bis zur Weckzeit obendrauf, gekuerzt auf den Hell-Zeitpunkt (#143, [fruehAus]
+         * aus [fruehAusFuer], derselbe Weg wie im Weckzeit-Pfad). Endet also zum selben Zeitpunkt
+         * wie das Auto-Aus, das der Weckzeit-Pfad spaeter anlegt.
          *
          * WARUM (Krankheitstag-Pruefung, 14.10.2026): Laeuft die Rampe schon und der Nutzer tippt
          * „Dienst fällt aus“ oder „Nicht wecken“, wird der Wecker geloescht und feuert nie - der
@@ -122,8 +155,11 @@ class HueRuleUseCase @Inject constructor(
          * Auto-Aus fuer diese Ziele), schaltet er erst NACH Weckzeit plus Regeldauer aus - genau
          * das, was die Regel ohnehin verspricht.
          */
-        internal fun vorabAutoAusZiele(rules: List<HueSchedule>, minutenBisWecker: Int): List<AutoOffTarget> =
-            autoOffTargetsOf(rules).map { it.copy(delayMinutes = it.delayMinutes + minutenBisWecker.coerceAtLeast(0)) }
+        internal fun vorabAutoAusZiele(
+            rules: List<HueSchedule>,
+            minutenBisWecker: Int,
+            fruehAus: FruehAus? = null
+        ): List<AutoOffTarget> = autoOffTargetsOf(rules, fruehAus, minutenBisWecker)
     }
     
     override suspend fun getAllRules(): Result<List<HueSchedule>> {
@@ -308,7 +344,7 @@ class HueRuleUseCase @Inject constructor(
             // `errors` (und im Log), aber die Regelausfuehrung selbst gilt als erfolgt - das
             // Licht ist ja an.
             try {
-                val autoOffTargets = autoOffTargetsOf(applicableRules)
+                val autoOffTargets = autoOffTargetsOf(applicableRules, fruehAusFuer(applicableRules, weckzeit))
                 lightUseCase.scheduleBridgeAutoOff(autoOffTargets, shift.shiftDefinition.name)
                     .onFailure { errors.add("Bridge-Zeitplan fuer Auto-Aus fehlgeschlagen: ${it.message}") }
             } catch (e: Exception) {
@@ -353,6 +389,15 @@ class HueRuleUseCase @Inject constructor(
             "Tageslicht-Ort: ${stand.ort?.let { "${it.quelle} ${it.bezeichnung ?: ""} (${it.breite}, ${it.laenge})" } ?: "keiner"}, Zone ${stand.zone}"
         )
         return stand
+    }
+
+    /**
+     * Zeitbasis fuer „Auto-Aus spaetestens bei Tageslicht“ (#143), `null` = keine Kuerzung. Den Ort
+     * nur lesen, wenn eine Regel die Wahl ueberhaupt traegt; ohne Weckzeit kein Wecktag.
+     */
+    internal suspend fun fruehAusFuer(rules: List<HueSchedule>, weckzeit: Long?): FruehAus? {
+        if (weckzeit == null || rules.none { it.ausBeiHell != HellAb.IMMER }) return null
+        return FruehAus(jetzt(), weckzeit, tageslichtStand())
     }
 
     override suspend fun executeSunrisePreAlarm(
@@ -897,3 +942,51 @@ internal fun HueSchedule.laeuftBeiTageslichtMitLog(weckzeit: Long, stand: Tagesl
     Logger.w(LogTags.HUE_USECASE, "Regel $id entfaellt: Weckzeit nach $hellAb ($uhrzeit)")
     return false
 }
+
+// --- Auto-Aus spaetestens bei Tageslicht (#143) ----------------------------------------------
+
+/**
+ * Zeitbasis fuer die Kuerzung des Auto-Aus: [jetzt] ist der Moment, ab dem der Bridge-Timer zaehlt,
+ * [weckzeit] der Wecker, an dessen Morgen der Hell-Zeitpunkt haengt (beim Snooze die urspruengliche
+ * Weckzeit, wie bei der Tageslicht-Bedingung).
+ */
+internal class FruehAus(val jetzt: Long, val weckzeit: Long, val stand: TageslichtStand)
+
+/**
+ * PURE, die eine Rechnung fuer Laufzeit UND Editorzeile: Auto-Aus nach [nachDauer] Minuten, aber
+ * frueher, wenn es nach [bisHell] Minuten hell wird - nie vor dem Rampenende [rampenEnde] und nie
+ * vor einer Minute (kuerzester Bridge-Timer). [bisHell] `null` = keine Kuerzung.
+ */
+internal fun kuerzeAutoAus(nachDauer: Int, rampenEnde: Int, bisHell: Int?): Int =
+    if (bisHell == null) nachDauer else minOf(nachDauer, maxOf(rampenEnde, bisHell, 1))
+
+/**
+ * Hell-Zeitpunkt (Epoch-ms) des Wecktags fuer [wahl], aber NUR, wenn er NACH der Weckzeit liegt -
+ * sonst `null`, und es gilt die Dauer: ist es zur Weckzeit schon hell, war das Licht trotzdem
+ * gewollt (wer das nicht will, nimmt „Nur bei Dunkelheit“). Ebenfalls `null`: [HellAb.IMMER], kein
+ * Ort, kein Ereignis an diesem Tag, Rechenfehler. Wirft nie.
+ */
+internal fun hellNachWeckzeit(wahl: HellAb, weckzeit: Long, stand: TageslichtStand): Long? {
+    if (wahl == HellAb.IMMER) return null
+    return try {
+        val wecktag = Instant.ofEpochMilli(weckzeit).atZone(stand.zone).toLocalDate()
+        stand.hellZeitpunkt(wecktag, wahl)?.takeIf { it > weckzeit }
+    } catch (e: Exception) {
+        Logger.w(LogTags.HUE_USECASE, "Hell-Zeitpunkt fuer das Auto-Aus nicht berechenbar - es gilt die Dauer", e)
+        null
+    }
+}
+
+/**
+ * WARN-Zeile, wenn das Auto-Aus tatsaechlich VORGEZOGEN wird (Release-Log nimmt erst WARN+):
+ * „Licht ging frueh aus“ ist genau der Fall, den ein Tester meldet. Ohne Ort, nur Regel, Schwelle
+ * und Uhrzeit.
+ */
+private fun HueSchedule.logVorgezogen(hell: Long, stand: TageslichtStand) {
+    val uhrzeit = Instant.ofEpochMilli(hell).atZone(stand.zone).toLocalTime()
+        .format(DateTimeFormatter.ofPattern("HH:mm"))
+    Logger.w(LogTags.HUE_USECASE, "Regel $id: Auto-Aus vorgezogen auf $ausBeiHell ($uhrzeit)")
+}
+
+/** Minuten von [von] bis [bis], aufgerundet - ein Timer endet nie VOR dem Hell-Zeitpunkt. */
+internal fun aufgerundeteMinuten(von: Long, bis: Long): Int = Math.floorDiv(bis - von + 59_999, 60_000L).toInt()

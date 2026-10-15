@@ -1,5 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tageslicht
 
+import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
@@ -55,9 +56,62 @@ fun NachlaufBisHellWahl(
     ohneOrt: Boolean?,
     beispiel: String?,
     onOrtEinstellen: () -> Unit
+) = SpaetestensBeiHellWahl(
+    texte = SpaetestensTexte(
+        titel = R.string.tageslicht_dimmer_titel,
+        immer = R.string.tageslicht_wahl_immer,
+        daemmerung = R.string.tageslicht_dimmer_bis_daemmerung,
+        sonnenaufgang = R.string.tageslicht_dimmer_bis_sonnenaufgang,
+        hinweis = R.string.tageslicht_dimmer_hinweis,
+        ohneOrt = R.string.tageslicht_ohne_ort_dimmer
+    ),
+    wahl = wahl, onWahl = onWahl, ohneOrt = ohneOrt, beispiel = beispiel, onOrtEinstellen = onOrtEinstellen
+)
+
+/**
+ * Hue-Auto-Aus "spaetestens, wenn es hell wird" (#143). Dieselbe Mechanik wie
+ * [NachlaufBisHellWahl] - beide kuerzen eine Dauer auf den Hell-Zeitpunkt des Wecktags, und
+ * dieselbe Frage soll an beiden Stellen gleich aussehen.
+ */
+@Composable
+fun AutoAusBisHellWahl(
+    wahl: HellAb,
+    onWahl: (HellAb) -> Unit,
+    ohneOrt: Boolean?,
+    beispiel: String?,
+    onOrtEinstellen: () -> Unit
+) = SpaetestensBeiHellWahl(
+    texte = SpaetestensTexte(
+        titel = R.string.tageslicht_autoaus_titel,
+        immer = R.string.tageslicht_autoaus_nur_dauer,
+        daemmerung = R.string.tageslicht_autoaus_daemmerung,
+        sonnenaufgang = R.string.tageslicht_autoaus_sonnenaufgang,
+        hinweis = R.string.tageslicht_autoaus_hinweis,
+        ohneOrt = R.string.tageslicht_ohne_ort_autoaus
+    ),
+    wahl = wahl, onWahl = onWahl, ohneOrt = ohneOrt, beispiel = beispiel, onOrtEinstellen = onOrtEinstellen
+)
+
+private class SpaetestensTexte(
+    @StringRes val titel: Int,
+    @StringRes val immer: Int,
+    @StringRes val daemmerung: Int,
+    @StringRes val sonnenaufgang: Int,
+    @StringRes val hinweis: Int,
+    @StringRes val ohneOrt: Int
+)
+
+@Composable
+private fun SpaetestensBeiHellWahl(
+    texte: SpaetestensTexte,
+    wahl: HellAb,
+    onWahl: (HellAb) -> Unit,
+    ohneOrt: Boolean?,
+    beispiel: String?,
+    onOrtEinstellen: () -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(stringResource(R.string.tageslicht_dimmer_titel), style = MaterialTheme.typography.bodyMedium)
+        Text(stringResource(texte.titel), style = MaterialTheme.typography.bodyMedium)
         FlowRow(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp)
@@ -65,9 +119,9 @@ fun NachlaufBisHellWahl(
             HellAb.entries.forEach { option ->
                 val label = stringResource(
                     when (option) {
-                        HellAb.IMMER -> R.string.tageslicht_wahl_immer
-                        HellAb.DAEMMERUNG -> R.string.tageslicht_dimmer_bis_daemmerung
-                        HellAb.SONNENAUFGANG -> R.string.tageslicht_dimmer_bis_sonnenaufgang
+                        HellAb.IMMER -> texte.immer
+                        HellAb.DAEMMERUNG -> texte.daemmerung
+                        HellAb.SONNENAUFGANG -> texte.sonnenaufgang
                     }
                 )
                 if (option == wahl) {
@@ -79,10 +133,10 @@ fun NachlaufBisHellWahl(
         }
         if (wahl != HellAb.IMMER && ohneOrt != null) {
             if (ohneOrt) {
-                OhneOrtHinweis(stringResource(R.string.tageslicht_ohne_ort_dimmer), onOrtEinstellen)
+                OhneOrtHinweis(stringResource(texte.ohneOrt), onOrtEinstellen)
             } else {
                 Text(
-                    stringResource(R.string.tageslicht_dimmer_hinweis),
+                    stringResource(texte.hinweis),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

@@ -280,7 +280,7 @@
     <string name="hue_preview_scene">🎬 Szene «%1$s» im Raum %2$s</string>
     <string name="hue_preview_sunrise_before">vor dem Alarm</string>
     <string name="hue_preview_sunrise_at">ab Alarmzeit</string>
-    <string name="hue_preview_manual_brightness"> mit %1$d%% Helligkeit</string>
+    <string name="hue_preview_manual_brightness">mit %1$d%% Helligkeit</string>
     <string name="hue_preview_manual_kelvin">, %1$d K</string>
     <string name="hue_preview_manual_color">, %1$s</string>
     <string name="hue_preview_status">Status: %1$s</string>
@@ -516,5 +516,17 @@
     <string name="tageslicht_etikett_dunkel">nur bei Dunkelheit</string>
     <string name="tageslicht_ereignis_daemmerung">Dämmerung</string>
     <string name="tageslicht_ereignis_sonnenaufgang">Sonnenaufgang</string>
+    <!-- Hue-Auto-Aus: spaetestens, wenn es hell wird (#143) -->
+    <string name="tageslicht_autoaus_titel">Früher aus, wenn es hell wird</string>
+    <string name="tageslicht_autoaus_nur_dauer">Nur nach Dauer</string>
+    <string name="tageslicht_autoaus_daemmerung">Spätestens bei Dämmerung</string>
+    <string name="tageslicht_autoaus_sonnenaufgang">Spätestens bei Sonnenaufgang</string>
+    <string name="tageslicht_autoaus_hinweis">Maßgeblich ist der Morgen des Wecktags. Wird es nach dem Wecken hell, bevor die Zeit oben um ist, geht das Licht schon dann aus – nach einem Sonnenaufgang frühestens am Ende der Rampe. Ist es beim Wecken schon hell, gilt die Zeit oben.</string>
+    <string name="tageslicht_autoaus_gekuerzt">Nächster Wecker %1$s → aus um %2$s bei %3$s statt um %4$s</string>
+    <string name="tageslicht_autoaus_dauer">Nächster Wecker %1$s → aus um %2$s, %3$s erst um %4$s</string>
+    <string name="tageslicht_autoaus_schon_hell">Nächster Wecker %1$s → aus um %2$s, %3$s war schon um %4$s</string>
+    <string name="tageslicht_autoaus_vorschau_daemmerung">, spätestens bei Dämmerung</string>
+    <string name="tageslicht_autoaus_vorschau_sonnenaufgang">, spätestens bei Sonnenaufgang</string>
+    <string name="tageslicht_ohne_ort_autoaus">Kein Ort eingestellt – es gilt die Zeit oben.</string>
 
 </resources>

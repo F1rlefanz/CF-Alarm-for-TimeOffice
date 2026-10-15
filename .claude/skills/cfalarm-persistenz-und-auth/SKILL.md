@@ -164,4 +164,6 @@ das baut man dieselbe Falle in neuer Form nach.
   nicht im Export. Grund: einzelne DataStore-Schluessel lassen sich nicht vom Android-Backup
   ausnehmen. Land + PLZ reisen dagegen mit (Export und Backup).
 - **Die PLZ-Tabellen erzeugt `tools/tageslicht/baue_plz_tabelle.py` aus GeoNames (CC BY 4.0)** —
-  Assets nicht von Hand bearbeiten, Zips nicht committen; Lizenz in `licenses/`.
+  Assets nicht von Hand bearbeiten, Zips nicht committen; Lizenz in `licenses/`. Regionsname =
+  Ort mit den MEISTEN PLZ der Region, nicht der naechste am Schwerpunkt (der liegt oft in einem Dorf:
+  "93" hiess am Fairphone "Altenthann" statt "Regensburg", 1.52.1).

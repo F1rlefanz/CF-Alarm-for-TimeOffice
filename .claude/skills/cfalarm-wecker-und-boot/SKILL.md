@@ -85,6 +85,11 @@ das baut man dieselbe Falle in neuer Form nach.
   `berechneWeckerAnzeige`. Hergang in `reference/tag-freigeben.md`.
 - **Stille Schicht (`isSilent`) gated NUR die Wecker-AUSLÖSUNG**, nicht die `AlarmInfo` selbst;
   `alarmTime` bleibt ein nicht-nullables Pflichtfeld. Fail-safe: Lookup-Fehler = NICHT still.
+  **Im KALT gestarteten Prozess fehlt die `AlarmInfo`** (der Bestand wirft den gerade klingelnden
+  Wecker beim Laden weg) - dann entscheidet die AKTUELLE Schichtdefinition zum Intent-Schichtnamen,
+  exakt verglichen (`AlarmReceiver.isSilentAlarm`, seit 1.52.1; vorher klingelte eine stille Schicht
+  nach naechtlichem Prozess-Ende). **Kein Intent-Extra "still"**: es koennte veralten und einen Wecker
+  stumm halten, der wieder klingeln soll. Manuelle Wecker ("... (Manuell)") treffen nie eine Definition.
 - **„Deine Schicht beginnt um" zeigt `AlarmInfo.shiftStartTime`, nicht `triggerTime`.** Die Falle
   liegt im Re-Arming-Pfad `scheduleSystemAlarm()`, nicht in der Erstplanung.
 - **Der Delta-Sync hat pro Event ein eigenes `try/catch`, das `CancellationException` weiterwirft.**

@@ -169,6 +169,16 @@ class TagFreigabeUseCaseTest {
         armierer = armierer,
     )
 
+    /**
+     * Ein Tag = der Zeitraum mit von == bis, als `Result` wie frueher die (entfernte) Huelle
+     * `freigeben(datum)` - die Faelle unten pruefen die Einzeltag-Schrittfolge.
+     */
+    private suspend fun TagFreigabeUseCase.einTagFreigeben(datum: LocalDate, zone: ZoneId): Result<TagFreigabeResult> {
+        val ergebnis = freigebenZeitraum(datum, datum, zone)
+        ergebnis.fehler?.let { return Result.failure(it) }
+        return Result.success(TagFreigabeResult(datum, ergebnis.geloeschteWecker, ergebnis.ueberspringenAufgehoben))
+    }
+
     // --- Tages-Anker ---
 
     @Test
@@ -195,7 +205,7 @@ class TagFreigabeUseCaseTest {
         val repo = FakeAlarmRepository(listOf(weckerAm(1, tag), weckerAm(2, tag.plusDays(1))))
         val store = storeMit(mutableSetOf())
         val ergebnis = sut(repo, store, FakeSkipUseCase(AlarmSkipState()), alarmManagerMit())
-            .freigeben(tag, zone)
+            .einTagFreigeben(tag, zone)
 
         assertTrue(ergebnis.isSuccess)
         assertEquals(1, ergebnis.getOrThrow().geloeschteWecker)
@@ -212,7 +222,7 @@ class TagFreigabeUseCaseTest {
     fun `BEIDE Schichten eines Tages verlieren ihren Wecker`() = runTest {
         val repo = FakeAlarmRepository(listOf(weckerAm(1, tag, 5), weckerAm(2, tag, 13)))
         val ergebnis = sut(repo, storeMit(mutableSetOf()), FakeSkipUseCase(AlarmSkipState()), alarmManagerMit())
-            .freigeben(tag, zone)
+            .einTagFreigeben(tag, zone)
 
         assertEquals(2, ergebnis.getOrThrow().geloeschteWecker)
         assertTrue(repo.current.isEmpty())
@@ -226,7 +236,7 @@ class TagFreigabeUseCaseTest {
         val repo = FakeAlarmRepository(listOf(weckerAm(1, tag)), persistenzGesperrt = true)
         val tage = mutableSetOf<LocalDate>()
         val ergebnis = sut(repo, storeMit(tage), FakeSkipUseCase(AlarmSkipState()), alarmManagerMit())
-            .freigeben(tag, zone)
+            .einTagFreigeben(tag, zone)
 
         assertTrue(ergebnis.isFailure)
         assertTrue("Nichts angefasst", protokoll.isEmpty())
@@ -239,7 +249,7 @@ class TagFreigabeUseCaseTest {
         val repo = FakeAlarmRepository(listOf(weckerAm(1, tag)), loeschenScheitert = true)
         val tage = mutableSetOf<LocalDate>()
         val ergebnis = sut(repo, storeMit(tage), FakeSkipUseCase(AlarmSkipState()), alarmManagerMit())
-            .freigeben(tag, zone)
+            .einTagFreigeben(tag, zone)
 
         val fehler = ergebnis.exceptionOrNull()
         assertTrue("Der Aufrufer muss den Typ sehen", fehler is FreigabeZurueckgenommenException)
@@ -259,7 +269,7 @@ class TagFreigabeUseCaseTest {
         val repo = FakeAlarmRepository(listOf(weckerAm(1, tag)), ersteLoeschFehler = 1)
         val tage = mutableSetOf<LocalDate>()
         val ergebnis = sut(repo, storeMit(tage), FakeSkipUseCase(AlarmSkipState()), alarmManagerMit())
-            .freigeben(tag, zone)
+            .einTagFreigeben(tag, zone)
 
         assertTrue(ergebnis.isSuccess)
         assertEquals(setOf(tag), tage)
@@ -274,7 +284,7 @@ class TagFreigabeUseCaseTest {
         val repo = FakeAlarmRepository(listOf(weckerAm(1, tag)), gesperrtNachLoeschen = true)
         val tage = mutableSetOf<LocalDate>()
         val ergebnis = sut(repo, storeMit(tage), FakeSkipUseCase(AlarmSkipState()), alarmManagerMit())
-            .freigeben(tag, zone)
+            .einTagFreigeben(tag, zone)
 
         assertTrue(ergebnis.exceptionOrNull() is FreigabeZurueckgenommenException)
         assertTrue("Markierung muss weg sein", tage.isEmpty())
@@ -295,7 +305,7 @@ class TagFreigabeUseCaseTest {
             )
         )
         val ergebnis = sut(FakeAlarmRepository(listOf(wecker)), storeMit(mutableSetOf()), skip, alarmManagerMit())
-            .freigeben(tag, zone)
+            .einTagFreigeben(tag, zone)
 
         assertTrue(skip.cancelAufgerufen)
         assertTrue(ergebnis.getOrThrow().ueberspringenAufgehoben)
@@ -314,7 +324,7 @@ class TagFreigabeUseCaseTest {
         val ergebnis = sut(
             FakeAlarmRepository(listOf(weckerAm(1, tag), fremderWecker)),
             storeMit(mutableSetOf()), skip, alarmManagerMit()
-        ).freigeben(tag, zone)
+        ).einTagFreigeben(tag, zone)
 
         assertFalse(skip.cancelAufgerufen)
         assertFalse(ergebnis.getOrThrow().ueberspringenAufgehoben)
@@ -326,7 +336,7 @@ class TagFreigabeUseCaseTest {
         // Gate im Sync sorgt dafuer, dass daraus nie ein Wecker entsteht.
         val tage = mutableSetOf<LocalDate>()
         val ergebnis = sut(FakeAlarmRepository(emptyList()), storeMit(tage), FakeSkipUseCase(AlarmSkipState()), alarmManagerMit())
-            .freigeben(tag.plusDays(10), zone)
+            .einTagFreigeben(tag.plusDays(10), zone)
 
         assertTrue(ergebnis.isSuccess)
         assertEquals(0, ergebnis.getOrThrow().geloeschteWecker)
@@ -343,7 +353,7 @@ class TagFreigabeUseCaseTest {
         val repo = FakeAlarmRepository(listOf(weckerAm(1, tag), manueller))
 
         val ergebnis = sut(repo, storeMit(mutableSetOf()), FakeSkipUseCase(AlarmSkipState()), alarmManagerMit())
-            .freigeben(tag, zone)
+            .einTagFreigeben(tag, zone)
 
         assertEquals(1, ergebnis.getOrThrow().geloeschteWecker)
         assertEquals(listOf(99), repo.current.map { it.id })
@@ -499,6 +509,6 @@ class TagFreigabeUseCaseTest {
         assertEquals(listOf("ruecknahme:${listOf(tag, tag.plusDays(1))}"), protokoll)
         verify(armierer, times(1)).armiere(eq("FREIGABE"), any(), any())
         // Der Kalender-Schluessel gehoert dem Sync - die Ruecknahme fasst ihn nicht an.
-        verify(store, never()).setzeKalenderKrankTage(any(), any(), anyOrNull(), any(), any())
+        verify(store, never()).setzeKalenderKrankTage(any(), any(), anyOrNull(), any(), any(), any())
     }
 }

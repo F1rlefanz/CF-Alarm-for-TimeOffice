@@ -113,11 +113,13 @@ object ConfigBackupFilter {
         // DIESES Kalenders. Importiert wuerden sie fremde Wecker still unterdruecken, und der
         // naechste eigene Sync baut sie ohnehin neu auf.
         FreieTageStore.KEY_KRANK_KALENDER_NAME,
-        // #142: Begleitzustand dazu - die Enden zeitgebundener Krank-Termine von heute und die noch
-        // ausstehenden Krankmeldungen. Beides beschreibt Termine und Wecker DIESES Geraets;
-        // importiert meldete das neue Geraet eine Krankmeldung, die es nie gesehen hat.
+        // #142: Begleitzustand dazu - die Enden zeitgebundener Krank-Termine von heute, die noch
+        // ausstehenden Krankmeldungen und die gemerkten Weckzeit-Anker. Alles beschreibt Termine
+        // und Wecker DIESES Geraets; importiert meldete das neue Geraet eine Krankmeldung, die es
+        // nie gesehen hat, oder hielte einen Vortag frei, an dem dort ein anderer Dienst liegt.
         FreieTageStore.KEY_KRANK_ZEITGEBUNDEN_ENDE_NAME,
         FreieTageStore.KEY_KRANK_ZU_MELDEN_NAME,
+        FreieTageStore.KEY_KRANK_ANKER_NAME,
         // Der offene Raeumauftrag nach einer Kalender-Abwahl. Er beschreibt einen unfertigen
         // Vorgang auf DIESEM Geraet ("hier stehen noch Wecker eines abgewaehlten Dienstplans"),
         // keine Einstellung - und importiert wuerde er auf dem neuen Geraet einen Raeumlauf

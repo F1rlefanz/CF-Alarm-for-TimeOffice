@@ -361,4 +361,43 @@ class FreieTageStoreTest {
         store.quittiereKrankMeldung(setOf(a))
         assertTrue(store.offeneKrankMeldungNow(jetzt).isEmpty())
     }
+
+    // --- #142: gemerkte Weckzeit-Anker ---
+
+    @Test
+    fun `Ein gemerkter Anker haelt seinen Tag, solange die Quelle Krank-Tag bleibt`() = runTest {
+        val montag = jetzt.plusDays(1)
+        val dienstag = jetzt.plusDays(2)
+        val store = freieTageStoreImSpeicher()
+
+        store.setzeKalenderKrankTage(setOf(montag, dienstag), jetzt, jetzt.plusDays(14), anker = setOf(KrankAnker(montag, dienstag)))
+        // Der Wecker, aus dem der Anker stammte, ist geloescht - der Lauf kennt nur noch den Dienstag.
+        val aenderung = store.setzeKalenderKrankTage(setOf(dienstag), jetzt, jetzt.plusDays(14))
+
+        assertEquals(KrankTageAenderung.KEINE, aenderung)
+        assertEquals(setOf(montag, dienstag), store.freigabeQuellenNow().kalender)
+
+        // Der Krank-Termin ist weg: der Anker faellt mit, nichts bleibt haengen.
+        store.setzeKalenderKrankTage(emptySet(), jetzt, jetzt.plusDays(14))
+        assertTrue(store.freigabeQuellenNow().kalender.isEmpty())
+        store.setzeKalenderKrankTage(setOf(dienstag), jetzt, jetzt.plusDays(14))
+        assertEquals("Der Anker ist vergessen", setOf(dienstag), store.freigabeQuellenNow().kalender)
+    }
+
+    @Test
+    fun `Anker mit Quelle hinter dem Horizont bleibt - nicht gelesen ist nicht geloescht`() {
+        val horizont = heute.plusDays(5)
+        val anker = KrankAnker(horizont.minusDays(1), horizont)
+        val alt = setOf(FreieTageStore.ankerAlsText(anker))
+        // Die Quelle steht unangetastet im gemischten Schluessel (ab dem Horizont-Tag bleibt der alte Stand).
+        assertEquals(setOf(anker), FreieTageStore.mischeAnker(alt, emptySet(), setOf(horizont.toString()), heute))
+        assertTrue(FreieTageStore.mischeAnker(alt, emptySet(), emptySet(), heute).isEmpty())
+    }
+
+    @Test
+    fun `pruneAnker verwirft Verstrichenes und Unlesbares`() {
+        val gestern = FreieTageStore.ankerAlsText(KrankAnker(heute.minusDays(1), heute))
+        val vorgestern = FreieTageStore.ankerAlsText(KrankAnker(heute.minusDays(2), heute.minusDays(1)))
+        assertEquals(setOf(gestern), FreieTageStore.pruneAnker(setOf(gestern, vorgestern, "kaputt", "2026-08-24>x"), heute))
+    }
 }

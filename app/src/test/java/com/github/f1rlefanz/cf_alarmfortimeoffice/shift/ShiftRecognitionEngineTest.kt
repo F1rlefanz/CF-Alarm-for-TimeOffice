@@ -579,7 +579,7 @@ class ShiftRecognitionEngineTest {
         val k = event("K")
 
         assertTrue("Ein Krank-Termin ist keine Schicht", engine.getAllMatchingShifts(listOf(k)).isEmpty())
-        assertEquals(listOf(k), engine.erkenneKrankTreffer(listOf(k)))
+        assertEquals(listOf(k), engine.erkenne(listOf(k)).krankTermine)
     }
 
     /**
@@ -628,7 +628,7 @@ class ShiftRecognitionEngineTest {
         val events = listOf(event("FS"), event("K", day = 11))
 
         val schichten = engine.getAllMatchingShifts(events)
-        val krankTermine = engine.erkenneKrankTreffer(events)
+        val krankTermine = engine.erkenne(events).krankTermine
 
         assertEquals(1, schichten.size)
         assertEquals(1, krankTermine.size)
@@ -642,9 +642,9 @@ class ShiftRecognitionEngineTest {
         val engine = newEngine(repo)
         val events = listOf(event("K"))
 
-        engine.erkenneKrankTreffer(events)
+        engine.erkenne(events).krankTermine
         engine.clearRecognitionCache()
-        engine.erkenneKrankTreffer(events)
+        engine.erkenne(events).krankTermine
 
         assertEquals("Nach clearRecognitionCache() muss auch die Krank-Liste neu entstehen", 2, repo.loadCount)
     }

@@ -131,10 +131,7 @@ data class TagFreigabeUiState(
      * ([sichtbarerFreigabeHinweis]); `null` = Fehlertext (oder kein Hinweis).
      */
     val hinweisErfolgBis: LocalDate? = null
-) {
-    /** Vereinigung, sortiert - fuer Leser, die nur "frei ja/nein" brauchen. */
-    val freieTage: List<LocalDate> get() = quellen.alle.sorted()
-}
+)
 
 /**
  * State für manuelle Alarm-Erstellung nach Schichttausch
@@ -516,8 +513,7 @@ class AlarmViewModel @Inject constructor(
     }
 
     /**
-     * Beobachtet die freigegebenen Tage, #142: beide Quellen getrennt. Die sortierte Vereinigung
-     * liefert [TagFreigabeUiState.freieTage] - ein `Set` hat keine verlaessliche Reihenfolge.
+     * Beobachtet die freigegebenen Tage, #142: beide Quellen getrennt.
      */
     private fun observeFreieTage() {
         viewModelScope.launch {

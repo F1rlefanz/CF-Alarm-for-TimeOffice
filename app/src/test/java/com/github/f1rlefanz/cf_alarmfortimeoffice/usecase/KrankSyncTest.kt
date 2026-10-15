@@ -115,18 +115,26 @@ class KrankSyncTest {
 
     private class FakeShiftChangeNotifier : ShiftChangeNotifier(mock(), mock()) {
         var geloeschtGemeldet = 0
-        override suspend fun notifyCreated(new: AlarmInfo) = Unit
+        val angelegtGemeldet = mutableListOf<AlarmInfo>()
+        override suspend fun notifyCreated(new: AlarmInfo) {
+            angelegtGemeldet += new
+        }
         override suspend fun notifyUpdated(old: AlarmInfo, new: AlarmInfo) = Unit
         override suspend fun notifyDeleted(old: AlarmInfo) {
             geloeschtGemeldet++
         }
     }
 
-    /** Zeichnet die Meldungen auf, statt eine Benachrichtigung zu bauen. */
+    /**
+     * Zeichnet die Meldungen auf, statt eine Benachrichtigung zu bauen. [zustellbar] = false spielt
+     * blockierte Benachrichtigungen nach (der Versuch wird trotzdem aufgezeichnet).
+     */
     private class FakeKrankmeldungNotifier : KrankmeldungNotifier(mock()) {
         val meldungen = mutableListOf<Pair<List<LocalDate>, List<LocalTime>>>()
-        override fun melde(tage: List<LocalDate>, weckzeiten: List<LocalTime>) {
+        var zustellbar = true
+        override fun melde(tage: List<LocalDate>, weckzeiten: List<LocalTime>): Boolean {
             meldungen += tage to weckzeiten
+            return zustellbar
         }
     }
 
@@ -193,7 +201,8 @@ class KrankSyncTest {
         bestand: List<AlarmInfo> = emptyList(),
         hand: Set<LocalDate> = emptySet(),
         kalender: Set<LocalDate> = emptySet(),
-        pausiert: Boolean = false
+        pausiert: Boolean = false,
+        horizont: FakeSyncHorizonStore = FakeSyncHorizonStore()
     ): Aufbau {
         val protokoll = mutableListOf<String>()
         val repo = RecordingAlarmRepository(bestand, protokoll)
@@ -214,7 +223,7 @@ class KrankSyncTest {
                 kotlinx.coroutines.runBlocking { whenever(it.pausedNow()).thenReturn(pausiert) }
             },
             spanStore,
-            FakeSyncHorizonStore(),
+            horizont,
             FakeFeedNeueinlesenStore(),
             store,
             FakeKalenderVorausschauPrefs(FakeKalenderVorausschauPrefs.UEBER_ALLE_TESTDATEN_TAGE),
@@ -559,4 +568,144 @@ class KrankSyncTest {
         assertFalse(a.krankNotifier.meldungen.isEmpty())
         assertEquals(listOf(tag), a.krankNotifier.meldungen.single().first)
     }
+
+    // --- #142 Fix-Runde: Anker bleiben stabil, Quittung nur nach Zustellung, Uhr, Frueh-Ausstiege ---
+
+    @Test
+    fun `Automatik aus laesst den Kalender-Schluessel unangetastet`() = runTest {
+        val a = aufbau(kalender = setOf(tag))
+
+        a.sut.syncAlarms(listOf(schicht("ev1", tag)), config.copy(autoAlarmEnabled = false))
+
+        assertEquals(setOf(tag), a.store.freigabeQuellenNow().kalender)
+        verify(a.armierer, never()).armiere(any(), any(), any())
+    }
+
+    @Test
+    fun `Der Weckzeit-Anker aus dem Bestand haelt ueber den naechsten Sync hinaus`() = runTest {
+        val montag = tag
+        val dienstag = tag.plusDays(1)
+        val anderer = tag.plusDays(4)
+        val a = aufbau()
+        a.sut.syncAlarms(listOf(schicht("evF", montag), nachtschichtAm(dienstag), schicht("ev2", anderer)), config)
+        assertEquals("Fruehdienst und Nachtwecker am Montag", 2, a.repo.current.count { tagVon(it) == montag })
+
+        // TimeOffice ersetzt die Nachtschicht durch "K" - nur noch der Bestand kennt den Anker.
+        val events = listOf(schicht("evF", montag), krankGanztaegig("k1", dienstag), schicht("ev2", anderer))
+        a.sut.syncAlarms(events, config)
+        assertEquals(setOf(montag, dienstag), a.store.freigabeQuellenNow().kalender)
+        assertTrue("Kein Wecker am Montag", a.repo.current.none { tagVon(it) == montag })
+        a.schichtNotifier.angelegtGemeldet.clear()
+
+        // Der naechste Lauf sieht den geloeschten Nachtwecker nicht mehr - der Montag muss bleiben.
+        a.sut.syncAlarms(events, config)
+
+        assertEquals(setOf(montag, dienstag), a.store.freigabeQuellenNow().kalender)
+        assertTrue("Der Fruehdienst-Wecker darf nicht zurueckkommen", a.repo.current.none { tagVon(it) == montag })
+        assertTrue(
+            "Keine 'Neue Schicht erkannt': ${a.schichtNotifier.angelegtGemeldet}",
+            a.schichtNotifier.angelegtGemeldet.isEmpty()
+        )
+        verify(a.armierer, times(1)).armiere(any(), any(), any())
+    }
+
+    @Test
+    fun `Faellt die Krankmeldung weg, faellt der gemerkte Anker mit`() = runTest {
+        val montag = tag
+        val dienstag = tag.plusDays(1)
+        val anderer = tag.plusDays(4)
+        val a = aufbau()
+        a.sut.syncAlarms(listOf(schicht("evF", montag), nachtschichtAm(dienstag), schicht("ev2", anderer)), config)
+        a.sut.syncAlarms(listOf(schicht("evF", montag), krankGanztaegig("k1", dienstag), schicht("ev2", anderer)), config)
+
+        a.sut.syncAlarms(listOf(schicht("evF", montag), schicht("ev2", anderer)), config)
+
+        assertTrue("Im Zweifel klingeln", a.store.freigabeQuellenNow().kalender.isEmpty())
+        assertEquals(listOf("evF"), a.repo.current.filter { tagVon(it) == montag }.map { it.eventId })
+    }
+
+    @Test
+    fun `Eine nicht zugestellte Krankmeldung bleibt vorgemerkt und kommt nach`() = runTest {
+        val a = aufbau()
+        val anderer = tag.plusDays(2)
+        a.sut.syncAlarms(listOf(schicht("ev1", tag), schicht("ev2", anderer)), config)
+        val events = listOf(krankGanztaegig("k1", tag), schicht("ev2", anderer))
+
+        a.krankNotifier.zustellbar = false
+        assertTrue(a.sut.syncAlarms(events, config).isSuccess)
+
+        assertEquals("Versucht wurde es", 1, a.krankNotifier.meldungen.size)
+        assertEquals("Nicht zugestellt = nicht quittiert", setOf(tag), a.store.offeneKrankMeldungNow(LocalDate.now(zone)))
+
+        a.krankNotifier.zustellbar = true
+        a.sut.syncAlarms(events, config)
+
+        assertEquals(2, a.krankNotifier.meldungen.size)
+        assertEquals(listOf(tag), a.krankNotifier.meldungen.last().first)
+        assertTrue(a.store.offeneKrankMeldungNow(LocalDate.now(zone)).isEmpty())
+    }
+
+    @Test
+    fun `Leerer Bestand nach einem frueheren Sync ist kein allererster Lauf`() = runTest {
+        // Eine lange Krankschreibung hat den Bestand geleert - ein frueherer Sync lief aber.
+        val a = aufbau(horizont = FakeSyncHorizonStore(letzterSync = millis(tag.minusDays(30), LocalTime.NOON)))
+
+        a.sut.syncAlarms(listOf(schicht("ev1", tag), krankGanztaegig("k1", tag), schicht("ev2", tag.plusDays(3))), config)
+
+        assertEquals(listOf(listOf(tag) to emptyList<LocalTime>()), a.krankNotifier.meldungen)
+    }
+
+    @Test
+    fun `zeitgebundeneEnden merkt nur zeitgebundene Termine mit echtem Ende`() {
+        val zeitgebunden = krankZeitgebunden(tag)
+        val bisMitternacht = zeitgebunden.copy(id = "k2", endTime = LocalDateTime.of(tag.plusDays(1), LocalTime.MIDNIGHT))
+
+        assertEquals(
+            setOf(LocalDateTime.of(tag, LocalTime.of(16, 0))),
+            AlarmUseCase.zeitgebundeneEnden(listOf(zeitgebunden, bisMitternacht, krankGanztaegig("k3", tag)))
+        )
+    }
+
+    private fun krankZeitgebunden(datum: LocalDate) = CalendarEvent(
+        id = "kZ",
+        title = "K",
+        startTime = LocalDateTime.of(datum, LocalTime.of(8, 0)),
+        endTime = LocalDateTime.of(datum, LocalTime.of(16, 0)),
+        calendarId = "test"
+    )
+
+    @Test
+    fun `Ein heute schon beendeter Krank-Termin haelt den Tag bis zum Abend frei`() = runTest {
+        val a = aufbau()
+        // Nachtschicht am Folgetag: Weckzeit heute 23:30 - genau der Wecker, der trotz Krankmeldung
+        // klingeln wuerde, wenn der Tag nach dem Ende des Termins wieder Diensttag waere.
+        a.sut.uhr = { tag.atTime(7, 0) }
+        a.sut.syncAlarms(listOf(krankZeitgebunden(tag), nachtschichtAm(tag.plusDays(1))), config)
+        assertEquals(setOf(tag), a.store.freigabeQuellenNow().kalender)
+        assertTrue(a.repo.current.isEmpty())
+
+        // 17 Uhr: der Abruf beginnt bei jetzt, der Termin ist nicht mehr darin - abgelaufen, nicht geloescht.
+        a.sut.uhr = { tag.atTime(17, 0) }
+        a.sut.syncAlarms(listOf(nachtschichtAm(tag.plusDays(1))), config)
+
+        assertEquals(setOf(tag), a.store.freigabeQuellenNow().kalender)
+        assertTrue("Die Nachtschicht darf heute nicht klingeln: ${a.protokoll}", a.repo.current.isEmpty())
+    }
+
+    @Test
+    fun `Ein geloeschter, noch laufender Krank-Termin gibt den Tag zurueck`() = runTest {
+        val a = aufbau()
+        a.sut.uhr = { tag.atTime(7, 0) }
+        a.sut.syncAlarms(listOf(krankZeitgebunden(tag), nachtschichtAm(tag.plusDays(1))), config)
+
+        // 12 Uhr: der Termin liefe noch bis 16 Uhr - fehlt er, wurde er geloescht (Review M2).
+        a.sut.uhr = { tag.atTime(12, 0) }
+        a.sut.syncAlarms(listOf(nachtschichtAm(tag.plusDays(1))), config)
+
+        assertTrue(a.store.freigabeQuellenNow().kalender.isEmpty())
+        assertEquals(1, a.repo.current.size)
+    }
+
+    private fun tagVon(alarm: AlarmInfo): LocalDate =
+        java.time.Instant.ofEpochMilli(alarm.triggerTime).atZone(zone).toLocalDate()
 }

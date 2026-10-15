@@ -39,7 +39,7 @@ internal fun freieTageStoreMit(tage: Set<LocalDate>): FreieTageStore {
         whenever(store.freieTage).thenReturn(flowOf(tage))
         whenever(store.freigabeQuellenNow()).thenReturn(FreigabeQuellen(tage, emptySet()))
         whenever(store.freigabeQuellen).thenReturn(flowOf(FreigabeQuellen(tage, emptySet())))
-        whenever(store.setzeKalenderKrankTage(any(), any(), anyOrNull(), any(), any())).thenReturn(KrankTageAenderung.KEINE)
+        whenever(store.setzeKalenderKrankTage(any(), any(), anyOrNull(), any(), any(), any())).thenReturn(KrankTageAenderung.KEINE)
         whenever(store.offeneKrankMeldungNow(any())).thenReturn(emptySet())
     }
     return store

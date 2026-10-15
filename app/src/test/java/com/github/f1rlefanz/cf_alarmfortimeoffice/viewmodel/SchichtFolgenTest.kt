@@ -401,9 +401,12 @@ class SchichtFolgenTest {
     }
 
     @Test
-    fun `ViewModel liest erst beim Abo und zeigt fuer eine deaktivierte Schicht keine Zeile`() =
+    fun `ViewModel liest erst beim Abo und zeigt fuer deaktivierte Schicht und Krank-Typ keine Zeile`() =
         runTest(dispatcher) {
-            val config = ShiftConfig(definitions = listOf(def("AD1"), def("Frei", enabled = false)))
+            // #142: ein Krankmeldungs-Typ spannt keine Schicht auf - keine Zeile ueber Dimmen/Licht/DND.
+            val config = ShiftConfig(
+                definitions = listOf(def("AD1"), def("Frei", enabled = false), def("Krank").copy(isSickDay = true))
+            )
             val shiftUseCase = mock<IShiftUseCase>()
             whenever(shiftUseCase.shiftConfig).thenReturn(flowOf(config))
             shiftUseCase.stub {
@@ -452,7 +455,7 @@ class SchichtFolgenTest {
             advanceUntilIdle()
 
             val zeilen = vm.schichtFolgen.value
-            assertEquals(setOf("id-AD1"), zeilen.keys) // die deaktivierte Schicht fehlt
+            assertEquals(setOf("id-AD1"), zeilen.keys) // die deaktivierte Schicht und der Krank-Typ fehlen
             assertEquals(
                 "Dimmen: eigene Regel · Licht: 1 Regel · Nicht stören: Dienstzeit",
                 zeilen.getValue("id-AD1").lesbar()

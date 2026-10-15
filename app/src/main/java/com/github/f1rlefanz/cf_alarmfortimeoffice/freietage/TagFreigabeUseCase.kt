@@ -128,24 +128,6 @@ class TagFreigabeUseCase @Inject constructor(
     suspend fun freigabeQuellenNow(): FreigabeQuellen = store.freigabeQuellenNow()
 
     /**
-     * Gibt [datum] frei - der Zeitraum mit von == bis. Bewusst nur eine Huelle: eine zweite Kopie
-     * der Schrittfolge liefe frueher oder spaeter auseinander (#142).
-     */
-    suspend fun freigeben(datum: LocalDate, zone: ZoneId = ZoneId.systemDefault()): Result<TagFreigabeResult> {
-        val ergebnis = freigebenZeitraum(datum, datum, zone)
-        // Identitaet des Fehlers erhalten: das ViewModel braucht `alarmIds` und
-        // `freigabeZurueckgenommen` der FreigabeZurueckgenommenException.
-        ergebnis.fehler?.let { return Result.failure(it) }
-        return Result.success(
-            TagFreigabeResult(
-                datum = datum,
-                geloeschteWecker = ergebnis.geloeschteWecker,
-                ueberspringenAufgehoben = ergebnis.ueberspringenAufgehoben
-            )
-        )
-    }
-
-    /**
      * #142: gibt [von] bis [bis] (beide einschliesslich) frei, Tag fuer Tag aufsteigend, je Tag die
      * volle Einzeltag-Schrittfolge ([freigebenEinTag]).
      *

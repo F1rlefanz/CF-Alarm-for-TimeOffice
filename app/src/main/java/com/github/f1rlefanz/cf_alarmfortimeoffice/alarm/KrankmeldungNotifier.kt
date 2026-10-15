@@ -98,10 +98,13 @@ open class KrankmeldungNotifier @Inject constructor(
     /**
      * Zeigt die Meldung. Wirft nie in den Sync - der Aufrufer (`AlarmUseCase`) faengt trotzdem,
      * dieselbe Haltung wie beim [ShiftChangeNotifier].
+     *
+     * @return `true` nur, wenn die Meldung nachweislich abgesetzt wurde ([zeige]). Der Aufrufer
+     *   quittiert die Vormerkung NUR dann - eine blockierte Zustellung holt der naechste Sync nach.
      */
-    open fun melde(tage: List<LocalDate>, weckzeiten: List<LocalTime>) {
+    open fun melde(tage: List<LocalDate>, weckzeiten: List<LocalTime>): Boolean {
         val m = meldung(tage, weckzeiten)
-        zeige(m.titel, m.text)
+        return zeige(m.titel, m.text)
     }
 
     /** @return `true`, wenn die Meldung nachweislich abgesetzt wurde. */

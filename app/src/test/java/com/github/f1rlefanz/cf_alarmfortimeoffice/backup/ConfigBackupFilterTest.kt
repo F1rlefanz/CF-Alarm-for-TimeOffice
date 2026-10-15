@@ -145,6 +145,7 @@ class ConfigBackupFilterTest {
         // Der Begleitzustand ebenso: gemerkte Termin-Enden und ausstehende Meldungen.
         assertFalse(ConfigBackupFilter.isExportable(FreieTageStore.KEY_KRANK_ZEITGEBUNDEN_ENDE_NAME))
         assertFalse(ConfigBackupFilter.isExportable(FreieTageStore.KEY_KRANK_ZU_MELDEN_NAME))
+        assertFalse(ConfigBackupFilter.isExportable(FreieTageStore.KEY_KRANK_ANKER_NAME))
     }
 
     /**

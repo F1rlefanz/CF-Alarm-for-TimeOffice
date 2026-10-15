@@ -8,6 +8,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.SyncHorizonStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.ZeitkettenArmierer
 import com.github.f1rlefanz.cf_alarmfortimeoffice.error.SafeExecutor
 import com.github.f1rlefanz.cf_alarmfortimeoffice.freietage.FreieTageStore
+import com.github.f1rlefanz.cf_alarmfortimeoffice.freietage.KrankAnker
 import com.github.f1rlefanz.cf_alarmfortimeoffice.freietage.KrankTageAenderung
 import com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPausePrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmInfo
@@ -275,22 +276,32 @@ class AlarmUseCase @Inject constructor(
          * geraeumten Wecker als "Schicht entfernt", und die Krankmeldung zaehlte ihn nicht.
          * Manuelle Wecker nehmen nicht teil (`eventId` leer), ebenso einer ohne bekannten
          * Schichtbeginn - von ihm ist nicht zu sagen, an welchem Tag sein Dienst beginnt.
+         *
+         * Zurueck kommen die Anker MIT ihrer Quelle ([KrankAnker]): der Store merkt sie sich
+         * ([FreieTageStore.KEY_KRANK_ANKER_NAME]). Die Quelle "Bestand" verbraucht sich naemlich
+         * durch genau die Loeschung, die sie ausloest - ohne Gedaechtnis fiele der Vortag beim
+         * naechsten Sync wieder heraus. Anker am Krank-Tag selbst (Schicht beginnt am Tag ihrer
+         * Weckzeit) sind keine: der Tag steht ohnehin in [rohTage].
          */
-        internal fun mitWeckzeitAnker(
+        internal fun weckzeitAnker(
             rohTage: Set<LocalDate>,
             schichtTreffer: List<ShiftMatch>,
-            bestand: List<AlarmInfo> = emptyList(),
-            zone: ZoneId = ZoneId.systemDefault()
-        ): Set<LocalDate> =
-            rohTage + schichtTreffer
-                .filter { it.calendarEvent.startTime.toLocalDate() in rohTage }
-                .map { it.calculatedAlarmTime.toLocalDate() } +
-                bestand
-                    .filter {
-                        it.eventId.isNotEmpty() && it.shiftStartTime > 0 &&
-                            tagVon(it.shiftStartTime, zone) in rohTage
-                    }
-                    .map { tagVon(it.triggerTime, zone) }
+            bestand: List<AlarmInfo>,
+            zone: ZoneId
+        ): Set<KrankAnker> =
+            (
+                schichtTreffer
+                    .filter { it.calendarEvent.startTime.toLocalDate() in rohTage }
+                    .map { KrankAnker(it.calculatedAlarmTime.toLocalDate(), it.calendarEvent.startTime.toLocalDate()) } +
+                    bestand
+                        .filter {
+                            it.eventId.isNotEmpty() && it.shiftStartTime > 0 &&
+                                tagVon(it.shiftStartTime, zone) in rohTage
+                        }
+                        .map { KrankAnker(tagVon(it.triggerTime, zone), tagVon(it.shiftStartTime, zone)) }
+                )
+                .filter { it.anker != it.quelle }
+                .toSet()
 
         private fun tagVon(millis: Long, zone: ZoneId): LocalDate =
             Instant.ofEpochMilli(millis).atZone(zone).toLocalDate()
@@ -330,8 +341,8 @@ class AlarmUseCase @Inject constructor(
             schichtTreffer: List<ShiftMatch>,
             jetzt: Long,
             zone: ZoneId,
-            hand: Set<LocalDate> = emptySet(),
-            rohTage: Set<LocalDate> = hinzu
+            hand: Set<LocalDate>,
+            rohTage: Set<LocalDate>
         ): KrankMeldungInhalt? {
             val neu = hinzu.filter { it >= heute && it !in hand }.toSet()
             if (neu.isEmpty()) return null
@@ -387,6 +398,13 @@ class AlarmUseCase @Inject constructor(
      * Maintenance-Service als "nichts zu tun" fehldeutete.
      */
     private val alarmSyncMutex = Mutex()
+
+    /**
+     * #142: die Wanduhr der Krank-Logik (heute, "schon vorbei", Meldung). Nur fuer Tests
+     * austauschbar - ein heute schon beendeter zeitgebundener Krank-Termin ist ohne sie nicht
+     * end-to-end pruefbar. Bewusst kein Konstruktor-Parameter: Hilt kennt keine Kotlin-Defaults.
+     */
+    internal var uhr: () -> LocalDateTime = { LocalDateTime.now() }
 
     override suspend fun syncAlarms(
         events: List<CalendarEvent>,
@@ -455,7 +473,7 @@ class AlarmUseCase @Inject constructor(
                     // #142: Dieser Zweig liegt VOR horizontEnde. Die leere Liste ist die
                     // ausdrueckliche Kalender-Abwahl (kein Aufrufer reicht eine unvollstaendige
                     // durch) - also auch jeden Kalender-Krank-Tag ab heute raeumen.
-                    schreibeKalenderKrank(emptySet(), LocalDate.now(ZoneId.systemDefault()), horizontTag = null, emptySet())
+                    schreibeKalenderKrank(emptySet(), uhr().toLocalDate(), horizontTag = null, emptySet(), emptySet())
                         ?.let { krankNachlauf = KrankNachlauf(it, meldung = null) }
                     return@safeExecute clearInternalAlarms(keepManualAlarms = true)
                 }
@@ -509,7 +527,14 @@ class AlarmUseCase @Inject constructor(
                 // Meldung ist laestig, eine verschwiegene echte Aenderung kostet Vertrauen - die
                 // Richtung ist bewusst so gewaehlt und im SyncHorizonStore begruendet. Den
                 // Unterschied haelt der Store selbst im Log fest.
-                val letzterVollstaendigerSync = syncHorizonStore.letzterVollstaendigerSync().getOrNull()
+                val horizontGelesen = syncHorizonStore.letzterVollstaendigerSync()
+                val letzterVollstaendigerSync = horizontGelesen.getOrNull()
+                // #142: "allererster Lauf" fuer die Krankmeldung - leerer Bestand ALLEIN reicht
+                // nicht: eine lange Krankschreibung leert ihn auch, und dann verschluckte die
+                // Heuristik jede weitere Krankmeldung samt Vormerkung. Erst wenn auch noch nie ein
+                // vollstaendiger Sync lief, ist es eine Neuinstallation. Ein LESEFEHLER des Merkers
+                // zaehlt als "nicht erster" - lieber eine Meldung zu viel (wie beim Horizont).
+                val ersterKrankLauf = isFirstSync && horizontGelesen.isSuccess && letzterVollstaendigerSync == null
 
                 // Bis wohin hat die uebergebene Liste den Kalender UEBERHAUPT gelesen (#51)? Ein
                 // Wecker dahinter ist "nicht gelesen", nicht "Termin geloescht" - siehe
@@ -521,8 +546,8 @@ class AlarmUseCase @Inject constructor(
                 val horizontEnde = abrufHorizontEnde
                     ?: (syncStartedAt + kalenderVorausschauPrefs.tageNow() * MS_PRO_TAG)
 
-                // #142: EIN Erkennungslauf, EIN Stand fuer Schicht- und Krank-Treffer. Zwei Aufrufe
-                // der duennen Huellen koennten eine Cache-Invalidierung dazwischen sehen - dann
+                // #142: EIN Erkennungslauf, EIN Stand fuer Schicht- und Krank-Treffer. Zwei getrennte
+                // Aufrufe koennten eine Cache-Invalidierung dazwischen sehen - dann
                 // stuende ein Termin in beiden Listen oder in keiner.
                 val erkennung = shiftRecognitionEngine.erkenne(events)
                 val shiftMatches = erkennung.schichten
@@ -531,11 +556,14 @@ class AlarmUseCase @Inject constructor(
                 // Schichttreffer" (ein Kalender mit NUR Krank-Terminen muss die Tage trotzdem
                 // freigeben) und vor den Spannen und dem Gate.
                 val zone = ZoneId.systemDefault()
-                val heute = LocalDate.now(zone)
+                val jetztKrank = uhr()
+                val heute = jetztKrank.toLocalDate()
                 val rohTage = rohKrankTage(erkennung.krankTermine)
                 // Anker auch ueber den Bestand: ersetzt TimeOffice die Nachtschicht durch "K",
-                // kennt nur noch der gestellte Wecker seinen Schichtbeginn.
-                val krankTage = mitWeckzeitAnker(rohTage, shiftMatches, existingAlarms, zone)
+                // kennt nur noch der gestellte Wecker seinen Schichtbeginn. Der Store merkt sich
+                // die Anker - der naechste Lauf sieht den hier geloeschten Wecker nicht mehr.
+                val anker = weckzeitAnker(rohTage, shiftMatches, existingAlarms, zone)
+                val krankTage = rohTage + anker.map { it.anker }
                 // Der Tag, der horizontEnde enthaelt, gilt als NICHT gelesen (Review S2, analog
                 // SyncHorizonStore.istJenseitsDesAbrufs) - Tage ab dort bleiben, wie sie waren.
                 val horizontTag = Instant.ofEpochMilli(horizontEnde).atZone(zone).toLocalDate()
@@ -544,7 +572,7 @@ class AlarmUseCase @Inject constructor(
                 // kommt nur einmal vorbei).
                 val freigaben = withContext(NonCancellable) {
                     val aenderung = schreibeKalenderKrank(
-                        krankTage, heute, horizontTag, zeitgebundeneEnden(erkennung.krankTermine)
+                        krankTage, heute, horizontTag, zeitgebundeneEnden(erkennung.krankTermine), anker
                     )
                     // #142: ab hier gilt "frei = Hand + Kalender(neu)" fuer den Rest des Laufs - EIN
                     // Lesevorgang NACH dem Schreiben. Derselbe Store, den der Backstop in
@@ -557,13 +585,13 @@ class AlarmUseCase @Inject constructor(
                         // Neuinstallation mit laengst bekannten Krankmeldungen. Die noch offenen
                         // Tage eines frueheren, gescheiterten oder abgebrochenen Laufs laufen mit
                         // durch - steht ihr Wecker noch im Bestand, nennt die Meldung ihn.
-                        val meldung = if (isFirstSync) {
+                        val meldung = if (ersterKrankLauf) {
                             null
                         } else {
                             krankMeldungFuer(
                                 aenderung.hinzu + freieTageStore.offeneKrankMeldungNow(heute),
                                 heute, existingAlarms, shiftMatches,
-                                System.currentTimeMillis(), zone,
+                                jetztKrank.atZone(zone).toInstant().toEpochMilli(), zone,
                                 hand = gelesen.hand,
                                 rohTage = rohTage
                             )
@@ -1462,10 +1490,11 @@ class AlarmUseCase @Inject constructor(
         neu: Set<LocalDate>,
         heute: LocalDate,
         horizontTag: LocalDate?,
-        zeitgebundeneEnden: Set<LocalDateTime>
+        zeitgebundeneEnden: Set<LocalDateTime>,
+        anker: Set<KrankAnker>
     ): KrankTageAenderung? =
         try {
-            freieTageStore.setzeKalenderKrankTage(neu, heute, horizontTag, zeitgebundeneEnden, LocalDateTime.now())
+            freieTageStore.setzeKalenderKrankTage(neu, heute, horizontTag, zeitgebundeneEnden, uhr(), anker)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -1517,11 +1546,17 @@ class AlarmUseCase @Inject constructor(
         }
         if (!syncErfolgreich) return
         try {
-            val offen = freieTageStore.offeneKrankMeldungNow(LocalDate.now())
+            val offen = freieTageStore.offeneKrankMeldungNow(uhr().toLocalDate())
             val tage = (offen + nachlauf.meldung?.tage.orEmpty()).sorted()
             if (tage.isEmpty()) return
-            krankmeldungNotifier.melde(tage, nachlauf.meldung?.weckzeiten.orEmpty())
-            freieTageStore.quittiereKrankMeldung(tage.toSet())
+            // Quittiert wird NUR eine zugestellte Meldung - sonst verschwaende der Wecker ohne
+            // Nachricht, obwohl die Vormerkung genau das verhindern soll. Bleibt die Zustellung
+            // gesperrt, raeumt aufraeumen() den Tag weg, sobald er vorbei ist.
+            if (krankmeldungNotifier.melde(tage, nachlauf.meldung?.weckzeiten.orEmpty())) {
+                freieTageStore.quittiereKrankMeldung(tage.toSet())
+            } else {
+                Logger.w(LogTags.ALARM, "⚠️ Krankmeldung nicht zugestellt - bleibt vorgemerkt, der naechste Sync meldet nach")
+            }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

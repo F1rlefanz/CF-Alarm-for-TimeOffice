@@ -39,6 +39,12 @@ data class KrankTageAenderung(val hinzu: Set<LocalDate>, val weg: Set<LocalDate>
 }
 
 /**
+ * #142: ein Weckzeit-Anker - [anker] ist der Tag der WECKZEIT einer Schicht, die an [quelle] (einem
+ * Krank-Tag laut Kalender) BEGINNT. Beispiel: Nachtschicht Di 00:30, Wecker Mo 23:30 -> Mo<-Di.
+ */
+data class KrankAnker(val anker: LocalDate, val quelle: LocalDate)
+
+/**
  * Die vom Nutzer FREIGEGEBENEN Kalendertage: laut Dienstplan steht eine Schicht, der Dienst findet
  * aber nicht statt (Freigabe, Tausch, Krankmeldung). **Ueberspringen betrifft den WECKER, eine
  * Freigabe den DIENST** - deshalb ein eigener Speicher. **Gebunden an das DATUM**, nicht an
@@ -96,6 +102,24 @@ class FreieTageStore @Inject constructor(
         const val KEY_KRANK_ZU_MELDEN_NAME = "krank_tage_zu_melden"
 
         private val KEY_KRANK_ZU_MELDEN = stringSetPreferencesKey(KEY_KRANK_ZU_MELDEN_NAME)
+
+        /**
+         * #142: die Herkunft der Weckzeit-Anker ("anker>quelle", siehe [KrankAnker]).
+         *
+         * WARUM ES DAS GIBT: Der Hauptfall des Ankers ist "TimeOffice ersetzt die Nachtschicht durch
+         * K" - dann kennt nur noch der gestellte Wecker seinen Schichtbeginn. Genau diesen Wecker
+         * loescht der Lauf aber, der den Anker setzt. Ohne Gedaechtnis fiele der Vortag beim
+         * NAECHSTEN Sync wieder heraus: ein anderer Wecker dieses Tages entstuende neu (samt "Neue
+         * Schicht erkannt"), und ob er klingelte, hinge nur davon ab, ob zwischen zwei Syncs seine
+         * Weckzeit lag. Ein gemerkter Anker gilt, solange seine Quelle Krank-Tag bleibt - nicht
+         * laenger: faellt die Krankmeldung weg, faellt der Vortag mit (im Zweifel klingeln).
+         * Oeffentlich fuer `ConfigBackupFormat`.
+         */
+        const val KEY_KRANK_ANKER_NAME = "krank_tage_kalender_anker"
+
+        private val KEY_KRANK_ANKER = stringSetPreferencesKey(KEY_KRANK_ANKER_NAME)
+
+        private const val ANKER_TRENNER = ">"
 
         /**
          * Rueckschau beim Aufraeumen - **`heute - 1`, nicht `heute`**.
@@ -157,6 +181,44 @@ class FreieTageStore @Inject constructor(
             // Dazwischen (heute bis vor den Horizont-Tag) ERSETZT der neue Stand den alten - auch
             // HEUTE: ist der Termin weg, ist heute wieder Diensttag (Review M2, im Zweifel klingeln).
             return prune((behalten + neu.map { it.toString() }).toSet(), heute)
+        }
+
+        /**
+         * #142: Welche Weckzeit-Anker gelten nach diesem Lauf? Die NEUEN dieses Laufs, dazu jeder
+         * gemerkte, dessen Quelle im gemischten Kalender-Schluessel [basis] steht (also weiter
+         * Krank-Tag ist - gelesen oder, hinter dem Horizont, unangetastet). Faellt die Quelle weg,
+         * faellt der Anker mit. Verstrichenes (Anker vor gestern) und Unlesbares fliegt raus.
+         */
+        internal fun mischeAnker(
+            alt: Set<String>,
+            neu: Set<KrankAnker>,
+            basis: Set<String>,
+            heute: LocalDate
+        ): Set<KrankAnker> {
+            val gueltigAlt = alt.mapNotNull { parseAnkerOderNull(it) }
+                .filter { it.quelle.toString() in basis }
+            val grenze = heute.minusDays(RUECKSCHAU_TAGE)
+            return (gueltigAlt + neu).filter { !it.anker.isBefore(grenze) }.toSet()
+        }
+
+        internal fun ankerAlsText(anker: KrankAnker): String = "${anker.anker}$ANKER_TRENNER${anker.quelle}"
+
+        /** `null` statt Wurf, wie [parseOderNull]. */
+        internal fun parseAnkerOderNull(roh: String): KrankAnker? {
+            val teile = roh.split(ANKER_TRENNER)
+            if (teile.size != 2) return null
+            val anker = parseOderNull(teile[0]) ?: return null
+            val quelle = parseOderNull(teile[1]) ?: return null
+            return KrankAnker(anker, quelle)
+        }
+
+        /** Raeumt verstrichene und unlesbare Anker - Gegenstueck zu [prune] fuer [KEY_KRANK_ANKER_NAME]. */
+        internal fun pruneAnker(roh: Set<String>, heute: LocalDate): Set<String> {
+            val grenze = heute.minusDays(RUECKSCHAU_TAGE)
+            return roh.filter { eintrag ->
+                val anker = parseAnkerOderNull(eintrag)
+                anker != null && !anker.anker.isBefore(grenze)
+            }.toSet()
         }
 
         /**
@@ -328,9 +390,12 @@ class FreieTageStore @Inject constructor(
      * `edit{}` (Read-Modify-Write), Mischsemantik in [mischeKalenderKrank]. Geschrieben wird nur
      * bei einer echten Aenderung.
      *
+     * @param neu die Krank-Tage dieser Lesung, INKLUSIVE der Anker-Tage dieses Laufs.
      * @param zeitgebundeneEnden die Enden der zeitgebundenen Krank-Termine DIESER Lesung - im
      *        selben `edit{}` gemerkt, damit ein heute schon beendeter Termin heute nicht als
      *        geloescht gilt ([KEY_KRANK_ZEITGEBUNDEN_ENDE_NAME]).
+     * @param anker die Weckzeit-Anker DIESES Laufs - gemerkt, damit der Vortag auch dann frei
+     *        bleibt, wenn der Wecker, aus dem der Anker stammt, geloescht ist ([KEY_KRANK_ANKER_NAME]).
      * @return was sich am Kalender-Schluessel geaendert hat.
      */
     suspend fun setzeKalenderKrankTage(
@@ -338,14 +403,21 @@ class FreieTageStore @Inject constructor(
         heute: LocalDate,
         horizontTag: LocalDate?,
         zeitgebundeneEnden: Set<LocalDateTime> = emptySet(),
-        jetzt: LocalDateTime = LocalDateTime.now()
+        jetzt: LocalDateTime = LocalDateTime.now(),
+        anker: Set<KrankAnker> = emptySet()
     ): KrankTageAenderung {
         var aenderung = KrankTageAenderung.KEINE
         dataStore.edit { p ->
             val alt = p[KEY_KRANK_KALENDER] ?: emptySet()
             val altEnden = p[KEY_KRANK_ZEITGEBUNDEN_ENDE] ?: emptySet()
-            val gemischt = mischeKalenderKrank(alt, neu, heute, horizontTag, heuteAbgelaufen(altEnden, jetzt))
+            val altAnker = p[KEY_KRANK_ANKER] ?: emptySet()
+            val basis = mischeKalenderKrank(alt, neu, heute, horizontTag, heuteAbgelaufen(altEnden, jetzt))
+            val gueltigeAnker = mischeAnker(altAnker, anker, basis, heute)
+            // Gemerkte Anker halten ihren Tag auch ohne den (inzwischen geloeschten) Wecker frei.
+            val gemischt = prune(basis + gueltigeAnker.map { it.anker.toString() }, heute)
             if (gemischt != alt) p[KEY_KRANK_KALENDER] = gemischt
+            val ankerText = gueltigeAnker.map { ankerAlsText(it) }.toSet()
+            if (ankerText != altAnker) p[KEY_KRANK_ANKER] = ankerText
             val enden = mischeEnden(altEnden, zeitgebundeneEnden, jetzt)
             if (enden != altEnden) p[KEY_KRANK_ZEITGEBUNDEN_ENDE] = enden
             aenderung = aenderungZwischen(alt, gemischt)
@@ -408,13 +480,14 @@ class FreieTageStore @Inject constructor(
      * monatelang keinen freigibt, raeumt nie auf. Deshalb ruft die 6h-Wartung das hier.
      *
      * #142 (Review S5): raeumt BEIDE Schluessel - der Sync behaelt Kalender-Tage vor heute bewusst
-     * (Rueckschau), ohne Prune hier blieben sie liegen. Ebenso die Vormerkung der Meldungen.
+     * (Rueckschau), ohne Prune hier blieben sie liegen. Ebenso die Vormerkung der Meldungen und die
+     * gemerkten Weckzeit-Anker.
      */
     suspend fun aufraeumen(heute: LocalDate) {
         dataStore.edit { p ->
-            for (key in listOf(KEY_FREIE_TAGE, KEY_KRANK_KALENDER, KEY_KRANK_ZU_MELDEN)) {
+            for (key in listOf(KEY_FREIE_TAGE, KEY_KRANK_KALENDER, KEY_KRANK_ZU_MELDEN, KEY_KRANK_ANKER)) {
                 val vorher = p[key] ?: emptySet()
-                val nachher = prune(vorher, heute)
+                val nachher = if (key == KEY_KRANK_ANKER) pruneAnker(vorher, heute) else prune(vorher, heute)
                 if (vorher != nachher) {
                     p[key] = nachher
                     Logger.d(

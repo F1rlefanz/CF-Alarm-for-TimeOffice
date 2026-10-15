@@ -134,13 +134,10 @@ class ShiftRecognitionEngine(
     /** Unveraenderter Vertrag fuer alle bisherigen Konsumenten: OHNE Krank-Treffer (#142, Review S4). */
     suspend fun getAllMatchingShifts(events: List<CalendarEvent>): List<ShiftMatch> = erkenne(events).schichten
 
-    /** #142: die Termine, die einen Krankmeldungs-Typ treffen. Aus DEMSELBEN gecachten Lauf. */
-    suspend fun erkenneKrankTreffer(events: List<CalendarEvent>): List<CalendarEvent> = erkenne(events).krankTermine
-
     /**
      * Der EINE Erkennungslauf (#142): Schicht- und Krank-Treffer aus demselben Konfigurationsstand,
      * hinter demselben Mutex, mit derselben Epoche. Wer beide Listen braucht (`syncAlarms()`), ruft
-     * DIESE Funktion genau einmal - zwei Aufrufe der duennen Huellen koennten zwischen sich eine
+     * DIESE Funktion genau einmal - zwei getrennte Aufrufe koennten zwischen sich eine
      * Invalidierung sehen.
      */
     suspend fun erkenne(events: List<CalendarEvent>): Erkennung {

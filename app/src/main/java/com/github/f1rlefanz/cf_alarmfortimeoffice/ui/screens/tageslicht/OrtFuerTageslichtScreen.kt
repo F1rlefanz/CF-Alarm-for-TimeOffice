@@ -1,5 +1,8 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tageslicht
 
+import android.provider.Settings
+import android.net.Uri
+import android.content.Intent
 import android.Manifest
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -344,6 +347,28 @@ private fun StandortHinweis(zustand: OrtBildschirmZustand) {
         style = MaterialTheme.typography.bodySmall,
         color = if (fehler != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
     )
+    // Ausweg dorthin, wo es sich aendern laesst: nach einer DAUERHAFTEN Ablehnung zeigt Android den
+    // Berechtigungsdialog nie wieder, "Standort übernehmen" scheitert dann still sofort - ohne diesen
+    // Knopf gaebe es aus der App heraus keinen Weg mehr zur Freigabe.
+    val context = LocalContext.current
+    when (fehler) {
+        StandortFehler.ABGELEHNT -> CompactOutlinedButton(
+            onClick = {
+                context.startActivity(
+                    Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", context.packageName, null))
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                )
+            },
+            text = stringResource(R.string.tageslicht_app_einstellungen)
+        )
+        StandortFehler.ABGESCHALTET -> CompactOutlinedButton(
+            onClick = {
+                context.startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            },
+            text = stringResource(R.string.tageslicht_standort_einstellungen)
+        )
+        else -> Unit
+    }
 }
 
 /**

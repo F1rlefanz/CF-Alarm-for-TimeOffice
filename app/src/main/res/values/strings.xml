@@ -477,8 +477,10 @@
     <string name="tageslicht_genauer_oben">Wird nicht genutzt, weil oben ein genauerer Ort eingestellt ist.</string>
     <string name="tageslicht_ort_einstellen">Ort einstellen</string>
     <string name="tageslicht_standort_laeuft">Standort wird ermittelt …</string>
-    <string name="tageslicht_standort_abgelehnt">Ohne Standort-Berechtigung geht es auch: nutze die Postleitzahl.</string>
+    <string name="tageslicht_standort_abgelehnt">Ohne Standort-Berechtigung geht es auch: nutze die Postleitzahl. Oder erlaube den Standort unter „App-Einstellungen“ → Berechtigungen.</string>
     <string name="tageslicht_standort_fehlgeschlagen">Der Standort ließ sich nicht ermitteln. Versuch es später noch einmal oder nutze die Postleitzahl.</string>
+    <string name="tageslicht_app_einstellungen">App-Einstellungen</string>
+    <string name="tageslicht_standort_einstellungen">Standort-Einstellungen</string>
     <string name="tageslicht_standort_abgeschaltet">Die Standortermittlung ist in den Android-Einstellungen ausgeschaltet. Schalte sie dort ein oder nutze die Postleitzahl.</string>
     <string name="tageslicht_plz_quelle">Postleitzahl-Orte: GeoNames, CC BY 4.0</string>
 

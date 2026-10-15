@@ -18,7 +18,10 @@ AGGREGATION je Praefix (2 Stellen; fuer DE zusaetzlich 3 Stellen):
  3. Ausreisser verwerfen: PLZ, die weiter als AUSREISSER_KM vom koordinatenweisen MEDIAN der
     Region liegen. Der Median ist robust, das Mittel danach genau.
  4. Schwerpunkt = Mittel der verbliebenen PLZ-Punkte.
- 5. Name = Ort der PLZ, die dem Schwerpunkt am naechsten liegt (stabil und lesbar). Ortsnamen
+ 5. Name = der Ort mit den MEISTEN PLZ der Region (Gleichstand: naeher am Schwerpunkt, dann
+    alphabetisch). Bis 1.52.0 war es der Ort naechst dem Schwerpunkt - am Fairphone hiess die
+    Region 93 dadurch "Altenthann" statt "Regensburg" (15.10.2026): der Schwerpunkt einer
+    Region liegt oft in einem Dorf, die Stadt hat dagegen die meisten Postleitzahlen. Ortsnamen
     mit "Postfach" sind nachrangig: AT fuehrt Postfach-PLZ ("1201 Wien Postfach") MIT
     Genauigkeitsangabe, Punkt 1 laesst sie durch - als Regionsname ist "Wien Postfach" unsinnig.
     Sie zaehlen weiter fuer den Schwerpunkt (ihre Koordinaten sind die des Orts).
@@ -102,12 +105,17 @@ def _region(praefix, plz_liste, punkte):
         return None
     breite = sum(punkte[p][0] for p in behalten) / len(behalten)
     laenge = sum(punkte[p][1] for p in behalten) / len(behalten)
-    # Postfach-Namen nachrangig (Modul-Kopf Punkt 5): erst eine PLZ mit echtem Ortsnamen
-    naechste = min(behalten, key=lambda p: (
-        all(_ist_postfach(o[0]) for o in punkte[p][2]),
-        _km(breite, laenge, punkte[p][0], punkte[p][1]), p))
-    orte = punkte[naechste][2]
-    name = min(orte, key=lambda o: (_ist_postfach(o[0]), _km(breite, laenge, o[1], o[2]), o[0]))[0]
+    # Modul-Kopf Punkt 5: Ort mit den meisten PLZ; je PLZ zaehlt ein Name hoechstens einmal.
+    anzahl = defaultdict(int)
+    naehe = {}
+    for p in behalten:
+        for ort in {o[0] for o in punkte[p][2]}:
+            anzahl[ort] += 1
+        for o in punkte[p][2]:
+            km = _km(breite, laenge, o[1], o[2])
+            if o[0] not in naehe or km < naehe[o[0]]:
+                naehe[o[0]] = km
+    name = min(anzahl, key=lambda ort: (_ist_postfach(ort), -anzahl[ort], naehe[ort], ort))
     return Region(praefix, breite, laenge, name)
 
 

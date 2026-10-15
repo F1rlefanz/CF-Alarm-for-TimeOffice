@@ -16,6 +16,7 @@ das baut man dieselbe Falle in neuer Form nach.
 
 - `reference/navigation.md` — BackHandler, Onboarding-Gates, Rueckweg aus Unterscreens
 - `reference/ui-texte-und-layout.md` — Textregeln und die Compose-Layout-Fallen
+- `reference/pflichtregeln-aus-claude-md.md` — die Pflichtregeln aus der CLAUDE.md im vollen Wortlaut, mit Begründung
 
 ---
 

@@ -17,6 +17,7 @@ das baut man dieselbe Falle in neuer Form nach.
 - `reference/dimmer.md` — Ein-Quellen-Modell und warum es drei Quellen gab, Fensteraufloesung,
   Anker, Modellmigration, Vorschau-Scopes, Korrektur-Override
 - `reference/dnd.md` — AutomaticZenRule, Policy, Dienstzeit-Fenster, Rufbereitschaft-Cutoff
+- `reference/pflichtregeln-aus-claude-md.md` — die Pflichtregeln aus der CLAUDE.md im vollen Wortlaut, mit Begründung
 
 ---
 

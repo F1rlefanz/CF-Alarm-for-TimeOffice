@@ -17,6 +17,7 @@ das baut man dieselbe Falle in neuer Form nach.
 - `reference/kalender-datenfluss.md` — Laden, Vollstaendigkeit, Lazy-Praefix, Aenderungs-Notification
 - `reference/schichterkennung.md` — Musterabgleich, Wortgrenzen, Cache-Epoche, Konfigurations-Reads
 - `reference/timeoffice.md` — die externe App, aus der der Dienstplan kommt
+- `reference/pflichtregeln-aus-claude-md.md` — die Pflichtregeln aus der CLAUDE.md im vollen Wortlaut, mit Begründung
 
 ---
 

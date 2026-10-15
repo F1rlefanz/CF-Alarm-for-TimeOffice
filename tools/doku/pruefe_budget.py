@@ -49,8 +49,11 @@ import sys
 # eine halbe Stunde kostet - nicht wenn es einen ganzen Tag kostet.
 # Gegenprobe an der echten Historie: FAIL_CLAUDE_MD haette am 03.08.2026 (46.276)
 # angeschlagen, also VOR dem Sprung auf 107k. Genau das war das Ziel.
-WARN_CLAUDE_MD = 30_000
-FAIL_CLAUDE_MD = 40_000
+# 15.10.2026: Pflichtregeln auf ihren Kernsatz gekuerzt (Wortlaut in den Skills unter
+# reference/pflichtregeln-aus-claude-md.md), ~30k -> ~19k. Schwellen nachgezogen, damit
+# das Signal wieder kommt, bevor die Datei zurueckwaechst.
+WARN_CLAUDE_MD = 22_000
+FAIL_CLAUDE_MD = 26_000
 
 WARN_BESCHREIBUNGEN = 9_000      # Summe aller description-Zeilen
 FAIL_BESCHREIBUNGEN = 14_000

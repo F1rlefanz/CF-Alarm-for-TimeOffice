@@ -169,8 +169,9 @@ internal fun RulePreviewCard(
                             pluralStringResource(R.plurals.hue_count_lights_dativ, form.selectedLightIds.size, form.selectedLightIds.size),
                             pluralStringResource(R.plurals.hue_count_groups_dativ, form.selectedGroupIds.size, form.selectedGroupIds.size)
                         )
+                        // Leerzeichen im Code: Android trimmt es aus der Ressource ("1 Gruppemit 50%").
                         val helligkeit = if (form.on) {
-                            stringResource(R.string.hue_preview_manual_brightness, form.brightness * 100 / 254)
+                            " " + stringResource(R.string.hue_preview_manual_brightness, form.brightness * 100 / 254)
                         } else ""
                         val farbe = when {
                             !form.on -> ""

@@ -280,7 +280,7 @@
     <string name="hue_preview_scene">🎬 Szene «%1$s» im Raum %2$s</string>
     <string name="hue_preview_sunrise_before">vor dem Alarm</string>
     <string name="hue_preview_sunrise_at">ab Alarmzeit</string>
-    <string name="hue_preview_manual_brightness"> mit %1$d%% Helligkeit</string>
+    <string name="hue_preview_manual_brightness">mit %1$d%% Helligkeit</string>
     <string name="hue_preview_manual_kelvin">, %1$d K</string>
     <string name="hue_preview_manual_color">, %1$s</string>
     <string name="hue_preview_status">Status: %1$s</string>

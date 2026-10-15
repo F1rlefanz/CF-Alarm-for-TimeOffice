@@ -254,6 +254,35 @@ class GitSicht(unittest.TestCase):
         self.assertTrue(ausliefern, begruendung)
         self.assertEqual([b for _, b in commits], ["chore(deps): Bump okhttp"])
 
+    def _commit_an(self, nachricht, *pfade):
+        for pfad in pfade:
+            ziel = self.pfad / pfad
+            ziel.parent.mkdir(parents=True, exist_ok=True)
+            ziel.write_text(nachricht, encoding="utf-8")
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", nachricht)
+
+    def test_reine_testquellen_halten_die_wartung_nicht_an(self):
+        """Unit- und Geraetetests landen nicht in der APK (15.10.2026: das Markieren der
+        Kerntests haette sonst den naechsten Dependabot-Sammel-Release angehalten)."""
+        self.commit("chore(release): v1.0.2 (versionCode 2)", code=2)
+        self._commit_an("test(kerntests): markiert",
+                        "app/src/test/java/XTest.kt", "app/src/androidTest/java/YTest.kt")
+        self._commit_an("chore(deps): Bump okhttp", "gradle/libs.versions.toml")
+
+        ausliefern, commits, begruendung = sammel_release_modul.ermitteln()
+        self.assertTrue(ausliefern, begruendung)
+        self.assertEqual([b for _, b in commits], ["chore(deps): Bump okhttp"])
+
+    def test_test_commit_mit_produktivcode_blockiert_weiterhin(self):
+        self.commit("chore(release): v1.0.2 (versionCode 2)", code=2)
+        self._commit_an("test(alarm): Test und Fix", "app/src/test/java/XTest.kt",
+                        "app/src/main/java/X.kt")
+
+        ausliefern, _, begruendung = sammel_release_modul.ermitteln()
+        self.assertFalse(ausliefern)
+        self.assertIn("KEINE Wartung", begruendung)
+
     def test_inhaltlicher_commit_an_der_app_blockiert_trotz_doku_rauschen(self):
         """Die Reihenfolge der beiden Fragen darf einen echten Blocker nicht wegfiltern."""
         self.commit("chore(release): v1.0.2 (versionCode 2)", code=2)

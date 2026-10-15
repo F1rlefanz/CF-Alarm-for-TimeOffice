@@ -179,7 +179,7 @@ das baut man dieselbe Falle in neuer Form nach.
   „Dienst fällt aus“ tippte und die App wegwischte, bekam das Licht trotzdem — ohne Auto-Aus, weil
   kein Wecker mehr klingelte (Review 14.10.2026). Alte Jobs ohne Weckzeit laufen wie bisher.
 - **Die Vorab-Rampe legt ihr Auto-Aus sofort auf der Bridge an** (Minuten bis Weckzeit +
-  Regeldauer, `HueRuleUseCase.vorabAutoAusZiele`); feuert der Wecker, ersetzt
+  Regeldauer, ggf. gekuerzt auf den Hell-Zeitpunkt, `HueRuleUseCase.vorabAutoAusZiele`); feuert der Wecker, ersetzt
   `scheduleBridgeAutoOff` den Zeitplan — je ZIEL; Timer anderer Ziele bleiben stehen (sonst blieb eine Rampe, deren Regel zur Weckzeit wegfiel, ohne Auto-Aus an). Sonst blieb ein Licht an, dessen Rampe schon lief,
   als der Tag freigegeben wurde. Regeln ohne Auto-Aus-Dauer bleiben bewusst an (wie nach jedem Wecker).
 - **`IHueConfigRepository.getConfiguration()` emittiert bei JEDER Änderung des @HueDataStore** — die
@@ -193,4 +193,13 @@ das baut man dieselbe Falle in neuer Form nach.
   Bedingung lief dann still ins Leere — Review 14.10.2026). Verglichen wird die **Weckzeit** (strikt `<`) mit dem Hell-Zeitpunkt
   **des Wecktags**, auch bei der Sonnenaufgangs-Rampe: ganz oder gar nicht. `SchichtFolgen` zaehlt
   nur. **Ein kuenftiger fuenfter Hue-Pfad muss die Bedingung mit anwenden** (wie die stille Schicht).
-  Kein Ort/Lesefehler = Regel laeuft. Auto-Aus bei Sonnenaufgang ist bewusst NICHT Teil davon.
+  Kein Ort/Lesefehler = Regel laeuft. Das Auto-Aus bei Tageslicht ist NICHT Teil davon, sondern
+  eine eigene Wahl je Regel (`ausBeiHell`, #143, naechste Regel).
+- **„Auto-Aus spaetestens bei Tageslicht“ (#143, `HueScheduleRule.ausBeiHell`) hat EINEN
+  Rechenweg:** `fruehAusFuer()` → `autoOffTargetsOf()` → `kuerzeAutoAus()`, fuer Weckzeit-Pfad UND
+  Vorab-Rampe (der `HueSunriseExecutor` bekommt `fruehAusFuer` hereingereicht, keine Kopie) - nur
+  so enden beide Timer auf derselben Minute. `FruehAus` trennt `jetzt` (ab da zaehlt der Timer)
+  von `weckzeit` (deren Morgen den Hell-Zeitpunkt stellt); beim Snooze ist das Absicht. Gekuerzt
+  wird nur, wenn es NACH der Weckzeit hell wird (sonst Dauer), nie vor dem Rampenende, nie unter
+  1 min; kein Ort/keine Weckzeit = Dauer. Die Editorzeile (`HueRuleFormState.autoAusUrteil`) nutzt
+  dieselben Funktionen. Gespeichert wird die Wahl nur mit Auto-Aus-Dauer.

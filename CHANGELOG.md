@@ -27,7 +27,17 @@ Schreibkonventionen (der Generator verlässt sich darauf):
 - `### 🐛 Behoben` — Rubrik, mit Emoji wie bisher.
 - `- **Kurzfassung:** Erklärung` — ein Eintrag.
 
-## 🆕 Version 1.54.0 (Aktuell – interne Alpha)
+## 🆕 Version 1.55.0 (Aktuell – interne Alpha)
+
+**Stand:** Oktober 2026
+
+_Ein Standort aus dem Urlaub fällt jetzt auf._
+
+### ✨ Neu
+
+- **Hinweis, wenn der Standort nicht passt:** Hast du unter „Ort für Tageslicht“ einen Standort übernommen, der weit außerhalb der Zeitzone deines Geräts liegt – zum Beispiel im Urlaub –, stimmen die Sonnenzeiten nicht. Das sagt dir jetzt ein Hinweis auf der Karte „Standort“: Tippe erneut auf „Standort übernehmen“ oder auf „Standort entfernen“ und nutze die Postleitzahl. Von selbst verworfen wird nichts.
+
+## Version 1.54.0
 
 **Stand:** Oktober 2026
 

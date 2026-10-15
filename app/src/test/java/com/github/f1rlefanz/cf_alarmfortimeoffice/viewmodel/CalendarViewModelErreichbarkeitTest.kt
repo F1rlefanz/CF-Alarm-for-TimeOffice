@@ -27,6 +27,7 @@ import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -145,7 +146,7 @@ class CalendarViewModelErreichbarkeitTest {
         advanceUntilIdle()
 
         val state = vm.uiState.value
-        assertTrue("Ein Funkloch belegt keinen verlorenen Zugriff", state.calendarAuthorizationValid)
+        assertEquals("Ein Funkloch belegt keinen verlorenen Zugriff", true, state.calendarAuthorizationValid)
         assertTrue("Der Zustand muss sichtbar werden", state.kalenderNichtErreichbar)
         verify(alarmUseCase, never()).syncAlarms(any(), any(), anyOrNull())
     }
@@ -160,9 +161,9 @@ class CalendarViewModelErreichbarkeitTest {
         advanceUntilIdle()
 
         val state = vm.uiState.value
-        assertFalse(
+        assertTrue(
             "Ein 401 muss weiter zum Knopf \"Kalender-Zugriff erneuern\" fuehren",
-            state.calendarAuthorizationValid
+            state.kalenderZugriffVerloren
         )
         assertFalse(state.kalenderNichtErreichbar)
     }
@@ -181,7 +182,7 @@ class CalendarViewModelErreichbarkeitTest {
         advanceUntilIdle()
 
         val state = vm.uiState.value
-        assertTrue(state.calendarAuthorizationValid)
+        assertEquals(true, state.calendarAuthorizationValid)
         assertFalse(state.kalenderNichtErreichbar)
         assertTrue(
             "Der fehlende Kalender muss beim Namen auftauchen koennen (Status-Tab, Entfernen)",
@@ -222,7 +223,7 @@ class CalendarViewModelErreichbarkeitTest {
 
         val state = vm.uiState.value
         assertFalse("Wieder online muss der Hinweis verschwinden", state.kalenderNichtErreichbar)
-        assertTrue(state.calendarAuthorizationValid)
+        assertEquals(true, state.calendarAuthorizationValid)
     }
 
     @Test

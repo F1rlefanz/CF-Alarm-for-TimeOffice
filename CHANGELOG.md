@@ -27,7 +27,17 @@ Schreibkonventionen (der Generator verlässt sich darauf):
 - `### 🐛 Behoben` — Rubrik, mit Emoji wie bisher.
 - `- **Kurzfassung:** Erklärung` — ein Eintrag.
 
-## 🆕 Version 1.56.0 (Aktuell – interne Alpha)
+## 🆕 Version 1.56.1 (Aktuell – interne Alpha)
+
+**Stand:** Oktober 2026
+
+_Kein falscher Alarm mehr beim Öffnen der App._
+
+### 🐛 Behoben
+
+- **„Kalender-Autorisierung verloren“ beim Öffnen:** Direkt nach dem Start zeigte die Übersicht manchmal ein bis zwei Sekunden lang diese rote Warnung samt „Kalender-Zugriff erneuern“, obwohl der Zugriff in Ordnung war. Solange die App den Kalender noch prüft, steht dort jetzt „Wird geladen …“ (im System-Status „Kalender-Zugriff wird geprüft …“); die Warnung erscheint nur noch, wenn der Zugriff wirklich fehlt.
+
+## Version 1.56.0
 
 **Stand:** Oktober 2026
 

@@ -1,5 +1,9 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tageslicht
 
+import android.provider.Settings
+import android.net.Uri
+import android.content.Context
+import android.content.Intent
 import android.Manifest
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -49,6 +53,8 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.SimpleBackTopApp
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.hilfe.HilfeThema
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.wecker.Etikett
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.wecker.EtikettTon
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.TageslichtViewModel
 
@@ -344,6 +350,40 @@ private fun StandortHinweis(zustand: OrtBildschirmZustand) {
         style = MaterialTheme.typography.bodySmall,
         color = if (fehler != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
     )
+    // Ausweg dorthin, wo es sich aendern laesst: nach einer DAUERHAFTEN Ablehnung zeigt Android den
+    // Berechtigungsdialog nie wieder, "Standort übernehmen" scheitert dann still sofort - ohne diesen
+    // Knopf gaebe es aus der App heraus keinen Weg mehr zur Freigabe.
+    val context = LocalContext.current
+    when (fehler) {
+        StandortFehler.ABGELEHNT -> CompactOutlinedButton(
+            onClick = {
+                oeffneEinstellung(
+                    context,
+                    Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", context.packageName, null))
+                )
+            },
+            text = stringResource(R.string.tageslicht_app_einstellungen)
+        )
+        StandortFehler.ABGESCHALTET -> CompactOutlinedButton(
+            onClick = { oeffneEinstellung(context, Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)) },
+            text = stringResource(R.string.tageslicht_standort_einstellungen)
+        )
+        else -> Unit
+    }
+}
+
+/**
+ * Ein Hilfeknopf darf die App nicht beenden: fehlt fuer die Action eine Activity (eingeschraenktes
+ * oder Arbeitsprofil, abgespeckte Hersteller-ROM), wirft `startActivity` eine
+ * ActivityNotFoundException aus dem onClick - dieselbe Konvention wie `oeffneExactAlarmEinstellung`
+ * in StatusPermissionCards.
+ */
+private fun oeffneEinstellung(context: Context, intent: Intent) {
+    try {
+        context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    } catch (e: Exception) {
+        Logger.w(LogTags.TAGESLICHT, "Einstellungsbildschirm nicht erreichbar: ${intent.action}", e)
+    }
 }
 
 /**

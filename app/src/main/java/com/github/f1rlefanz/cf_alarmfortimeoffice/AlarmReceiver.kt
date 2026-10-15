@@ -101,11 +101,36 @@ class AlarmReceiver : BroadcastReceiver() {
          * umgebende onReceive-Fluss bleibt wegen goAsync()/Hilt Android-gebunden und ungetestet
          * (gleiche Konvention wie AlarmSoundService).
          *
-         * Fail-safe wie der Skip-Check daneben: fehlt die AlarmInfo (Lookup fehlgeschlagen,
-         * Direct Boot vor Entsperrung, o.ae.), gilt der Alarm NICHT als still - im Zweifel
+         * Erste Quelle ist der Bestand. Fehlt die AlarmInfo, weil der Wecker den Prozess KALT
+         * gestartet hat (ueber Nacht beendet - der Normalfall): `AlarmRepository` laedt frisch und
+         * wirft dabei den gerade verstrichenen Wecker weg (`triggerTime > jetzt`, Lockern ist
+         * verworfen, Skill Dimmer). Dann gilt die AKTUELLE Schichtdefinition zum mitgelieferten
+         * Schichtnamen - dieselbe Quelle, aus der `AlarmInfo.isSilent` beim Anlegen stammt.
+         * Bewusst KEIN eigenes Intent-Extra "still": das koennte veralten, und nach Ruecknahme von
+         * "still" bliebe ein Wecker stumm, der klingeln soll - die falsche Richtung.
+         * Der Vergleich ist EXAKT: ein manueller Wecker heisst "... (Manuell)" und trifft so nie
+         * eine Definition; eine inzwischen umbenannte Schicht trifft auch keine.
+         *
+         * Der Name ist KEINE Identitaet: die UI laesst gleichnamige Definitionen zu, und die
+         * Erkennung ordnet ueber Keywords zu, nicht ueber den Namen. Deshalb EINSTIMMIGKEIT statt
+         * Erstbester - still nur, wenn ALLE gleichnamigen still sind. Sonst kann der Wecker aus
+         * der lauten entstanden sein, und eine stille (ggf. deaktivierte) davor machte ihn stumm.
+         *
+         * Fail-safe wie der Skip-Check daneben: nichts gefunden, Lesefehler, Direct Boot vor
+         * Entsperrung ([definitionen] = null) - der Alarm gilt NICHT als still. Im Zweifel
          * wecken statt versehentlich stumm bleiben.
          */
-        fun isSilentAlarm(alarmInfo: AlarmInfo?): Boolean = alarmInfo?.isSilent == true
+        fun isSilentAlarm(
+            alarmInfo: AlarmInfo?,
+            schichtName: String? = null,
+            definitionen: List<ShiftDefinition>? = null
+        ): Boolean =
+            if (alarmInfo != null) {
+                alarmInfo.isSilent
+            } else {
+                val treffer = if (schichtName == null) emptyList() else definitionen.orEmpty().filter { it.name == schichtName }
+                treffer.isNotEmpty() && treffer.all { it.isSilent }
+            }
 
         /**
          * Welche Weckzeit die Tageslicht-Bedingung der Hue-Regeln (#140) zu sehen bekommt. Reine
@@ -380,9 +405,9 @@ class AlarmReceiver : BroadcastReceiver() {
                 // getAllAlarms() sind davon unberuehrt, nur die Wecker-Instanz
                 // (AlarmSoundService) und executeHueRulesForAlarm() werden nicht angestossen.
                 // Die AlarmInfo ist unten nur noch Rueckfall fuer die Hue-Weckzeit (#140), siehe
-                // [geplanteWeckzeit]. BEKANNTE LUECKE: im kalt gestarteten Prozess fehlt sie hier
-                // (der Bestand wirft den gerade verstrichenen Wecker beim Laden weg) - eine stille
-                // Schicht klingelt dann (fail-safe, im Zweifel wecken).
+                // [geplanteWeckzeit]. Im kalt gestarteten Prozess fehlt sie hier (der Bestand wirft
+                // den gerade verstrichenen Wecker beim Laden weg) - die Stille-Pruefung faellt dann
+                // auf die aktuelle Schichtdefinition zurueck (siehe [isSilentAlarm]).
                 var alarmInfo: AlarmInfo? = null
                 if (userUnlocked) {
                     alarmInfo = try {
@@ -396,7 +421,22 @@ class AlarmReceiver : BroadcastReceiver() {
                         null
                     }
 
-                    if (isSilentAlarm(alarmInfo)) {
+                    // Kalter Prozess: Bestand kennt den Wecker nicht mehr -> aktuelle Definition
+                    // (siehe [isSilentAlarm]). Gelesen nur, wenn noetig; Fehler = nicht still.
+                    val definitionen = if (alarmInfo == null) {
+                        try {
+                            shiftUseCase.getCurrentShiftConfig().getOrNull()?.definitions
+                        } catch (c: kotlinx.coroutines.CancellationException) {
+                            throw c
+                        } catch (e: Exception) {
+                            Logger.w(LogTags.ALARM_RECEIVER, "⚠️ SILENT-CHECK: Schichtdefinitionen nicht lesbar, wecke normal", e)
+                            null
+                        }
+                    } else {
+                        null
+                    }
+
+                    if (isSilentAlarm(alarmInfo, shiftName, definitionen)) {
                         Logger.business(
                             LogTags.ALARM_RECEIVER,
                             "🔕 STILLE SCHICHT: Alarm $alarmId ($shiftName) ist als still markiert - kein Ton/Vibration/Vollbild/Hue"

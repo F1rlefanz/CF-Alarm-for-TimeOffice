@@ -99,6 +99,30 @@ class BauePlzTabelleTest(unittest.TestCase):
         self.assertAlmostEqual(r["12"].breite, (48.240 + 48.220 + 48.200 + 48.221) / 4, places=6,
                                msg="Postfach-PLZ zaehlen weiter fuer den Schwerpunkt")
 
+    def test_name_ist_der_ort_mit_den_meisten_plz(self):
+        # Nachbildung von DE "93" (Fairphone, 15.10.2026): der Schwerpunkt liegt neben einem Dorf,
+        # die Stadt hat aber die meisten PLZ - die Region heisst nach der Stadt.
+        zeilen = [
+            zeile("DE", "93047", "Regensburg", 49.020, 12.100),
+            zeile("DE", "93049", "Regensburg", 49.010, 12.080),
+            zeile("DE", "93051", "Regensburg", 49.000, 12.090),
+            zeile("DE", "93177", "Altenthann", 49.090, 12.300),
+            zeile("DE", "93413", "Cham", 49.220, 12.660),
+        ]
+        pfad = baue_zip(self.tmp.name, "DE", zeilen)
+        r = self.regionen(pfad, "DE", mit_drei=False)
+        self.assertEqual(r["93"].name, "Regensburg")
+
+    def test_bei_gleicher_plz_zahl_entscheidet_die_naehe_zum_schwerpunkt(self):
+        # Je Ort eine PLZ (typisch fuer AT/CH-Doerfer): dann wie bisher der Ort naechst dem Schwerpunkt.
+        zeilen = [
+            zeile("AT", "2000", "Fern", 48.60, 16.00),
+            zeile("AT", "2020", "Mitte", 48.50, 16.20),
+            zeile("AT", "2050", "Anders", 48.40, 16.40),
+        ]
+        pfad = baue_zip(self.tmp.name, "AT", zeilen)
+        self.assertEqual(self.regionen(pfad, "AT", mit_drei=False)["20"].name, "Mitte")
+
     def test_nur_postfach_namen_bleiben_als_letzter_ausweg(self):
         pfad = baue_zip(self.tmp.name, "AT", [zeile("AT", "1201", "Wien Postfach", 48.22, 16.39, genauigkeit="1")])
         self.assertEqual(self.regionen(pfad, "AT", mit_drei=False)["12"].name, "Wien Postfach")

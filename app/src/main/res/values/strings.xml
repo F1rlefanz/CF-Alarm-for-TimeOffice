@@ -463,6 +463,7 @@
     <string name="tageslicht_standort_uebernehmen">Standort übernehmen</string>
     <string name="tageslicht_standort_entfernen">Standort entfernen</string>
     <string name="tageslicht_standort_uebernommen">Übernommen am %1$s</string>
+    <string name="tageslicht_standort_passt_nicht">Dieser Standort passt nicht zur Zeitzone des Geräts (%1$s) – die Sonnenzeiten stimmen deshalb nicht. Tippe erneut auf „Standort übernehmen“ oder auf „Standort entfernen“ und nutze die Postleitzahl.</string>
     <string name="tageslicht_stufe_hand">Von Hand</string>
     <string name="tageslicht_stufe_hand_text">Ohne Standort-Berechtigung: Land und Postleitzahl genügen, schon die ersten zwei Ziffern.</string>
     <string name="tageslicht_land_de">Deutschland</string>

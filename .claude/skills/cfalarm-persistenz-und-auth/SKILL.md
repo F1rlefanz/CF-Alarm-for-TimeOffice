@@ -167,3 +167,9 @@ das baut man dieselbe Falle in neuer Form nach.
   Assets nicht von Hand bearbeiten, Zips nicht committen; Lizenz in `licenses/`. Regionsname =
   Ort mit den MEISTEN PLZ der Region, nicht der naechste am Schwerpunkt (der liegt oft in einem Dorf:
   "93" hiess am Fairphone "Altenthann" statt "Regensburg", 1.52.1).
+- **Ein Standort, der nicht zur Zeitzone passt, wird NUR gemeldet, nie verworfen** (#144,
+  `tageslicht/StandortZeitzone`): Hinweis auf dem Ort-Bildschirm, wenn der mittlere Sonnenmittag
+  mehr als 2 h von 12:00 STANDARDzeit abweicht. Gerechnet mit dem Standard-Offset, nicht dem
+  aktuellen — sonst bekaeme die spanische Westkueste im Sommer den Hinweis zu Unrecht. Am Emulator
+  liess sich kein Fremd-Fix einspeisen (`emu geo fix` und Test-Provider blieben bei Muenchen); belegt
+  ist der Hinweis umgekehrt: Standort Muenchen, Zone `cmd alarm set-timezone America/Los_Angeles`.

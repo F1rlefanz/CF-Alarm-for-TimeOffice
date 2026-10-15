@@ -35,10 +35,12 @@ import androidx.compose.ui.unit.dp
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.KalenderVorausschauPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.freietage.Ausfall
 import com.github.f1rlefanz.cf_alarmfortimeoffice.freietage.AusfallQuelle
+import com.github.f1rlefanz.cf_alarmfortimeoffice.freietage.FreieTageStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.freietage.laufenderAusfall
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.LetzterSchichtStand
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpan
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftInfo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.NaechsterWeckerKarte
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.kurzesDatum
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.rememberNaechsterWecker
@@ -55,6 +57,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.TagFreigabeUiState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.sichtbarerFreigabeHinweis
 import java.time.Instant
 import java.time.LocalDate
+import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
@@ -296,9 +299,39 @@ internal fun noShiftExplanation(
 internal fun offlineAngezeigteSchicht(
     reason: NoShiftReason,
     letzterStand: LetzterSchichtStand?,
-    now: Long
+    now: Long,
+    // #142: dieselbe Ausnahme wie [naechsteStattfindendeSchicht] - auch offline nennt die Karte
+    // keine Schicht, die ausfaellt.
+    freieTage: Set<LocalDate> = emptySet(),
+    zone: ZoneId = ZoneId.systemDefault()
 ): ShiftSpan? =
-    if (reason == NoShiftReason.KALENDER_NICHT_ERREICHBAR) letzterStand?.naechsteNach(now) else null
+    if (reason == NoShiftReason.KALENDER_NICHT_ERREICHBAR) {
+        letzterStand?.spans
+            ?.filter { it.startTime > now && FreieTageStore.tagVon(it, zone) !in freieTage }
+            ?.minByOrNull { it.startTime }
+    } else {
+        null
+    }
+
+/**
+ * #142: Die naechste Schicht, die wirklich STATTFINDET. Eine Schicht an einem freigegebenen Tag
+ * (eigene Freigabe oder Krank laut Kalender) faellt aus - nannte die Karte sie trotzdem, stuende
+ * unter "Dienst fällt aus bis So 18.10." ein "Nächste Schicht: Sa 17.10.", und die Reihenfolge
+ * (#141) rechnete mit einem Dienst, der nicht kommt. Anker ist wie an jeder Freigabe-Stelle die
+ * WECKZEIT (`FreieTageStore.tagVon`), nicht der Schichtbeginn.
+ */
+internal fun naechsteStattfindendeSchicht(
+    schichten: List<ShiftInfo>,
+    freieTage: Set<LocalDate>,
+    jetzt: LocalDateTime
+): ShiftInfo? =
+    schichten
+        .filter { it.startTime.isAfter(jetzt) && it.alarmTime.toLocalDate() !in freieTage }
+        .minByOrNull { it.startTime }
+
+/** #142: Es gibt kommende Schichten, aber jede davon faellt aus. */
+internal const val ALLE_SCHICHTEN_FALLEN_AUS =
+    "Alle erkannten Schichten bis zum Ende der Vorausschau fallen aus."
 
 /** In welcher Reihenfolge die Uebersicht "Nächste Schicht" und "Nächster Wecker" zeigt (#141). */
 internal enum class UebersichtReihenfolge { SCHICHT_ZUERST, WECKER_ZUERST }
@@ -500,7 +533,10 @@ private fun NaechsteSchichtKarte(
     shiftState: ShiftUiState,
     masterPausePaused: Boolean,
     reason: NoShiftReason,
-    offlineSchicht: ShiftSpan?
+    offlineSchicht: ShiftSpan?,
+    // #142: die naechste Schicht, die stattfindet ([naechsteStattfindendeSchicht]) - NICHT
+    // `shiftState.upcomingShift`, das kennt keine Freigaben.
+    naechsteSchicht: ShiftInfo?
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -531,9 +567,9 @@ private fun NaechsteSchichtKarte(
                     fontWeight = FontWeight.Bold
                 )
                 
-                if (shiftState.upcomingShift != null) {
+                if (naechsteSchicht != null) {
                     Text(
-                        shiftState.upcomingShift.shiftType.displayName,
+                        naechsteSchicht.shiftType.displayName,
                         style = MaterialTheme.typography.bodyLarge
                     )
                     // Datum und Dienstzeit - dieselbe Formatierung wie im Wecker-Tab
@@ -541,11 +577,20 @@ private fun NaechsteSchichtKarte(
                     val zone = ZoneId.systemDefault()
                     Text(
                         schichtTerminText(
-                            beginn = shiftState.upcomingShift.startTime.atZone(zone).toInstant().toEpochMilli(),
-                            ende = shiftState.upcomingShift.endTime.atZone(zone).toInstant().toEpochMilli(),
+                            beginn = naechsteSchicht.startTime.atZone(zone).toInstant().toEpochMilli(),
+                            ende = naechsteSchicht.endTime.atZone(zone).toInstant().toEpochMilli(),
                             zone = zone
                         ),
                         style = MaterialTheme.typography.bodyMedium
+                    )
+                } else if (shiftState.upcomingShift != null) {
+                    // #142: Schichten stehen an, aber jede faellt aus (Krank bis zum Ende der
+                    // Vorausschau). Ohne diesen Zweig landete die Karte bei "nur vergangene
+                    // Schichten" - eine falsche Begruendung.
+                    Text(
+                        ALLE_SCHICHTEN_FALLEN_AUS,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 } else if (calendarState.isLoading || shiftState.isLoading) {
                     // Beim (ersten) Oeffnen synchronisiert die App den Kalender neu; bis die
@@ -658,10 +703,19 @@ fun HomeTabContent(
                 istKrankTermin(event.title, shiftState.currentShiftConfig?.definitions.orEmpty())
             }
         )
+        // #142: beide Quellen - auch eine Krankmeldung aus dem Kalender laesst die Schicht ausfallen.
+        val freieTage = tagFreigabeState.quellen.hand + tagFreigabeState.quellen.kalender
+        val naechsteSchicht = naechsteStattfindendeSchicht(
+            schichten = shiftState.recognizedShifts,
+            freieTage = freieTage,
+            jetzt = LocalDateTime.now(zone)
+        )
         val offlineSchicht = offlineAngezeigteSchicht(
             reason = reason,
             letzterStand = shiftState.letzterSchichtStand,
-            now = System.currentTimeMillis()
+            now = System.currentTimeMillis(),
+            freieTage = freieTage,
+            zone = zone
         )
         // Statt "N aktive Alarme" die eine Frage: wann klingelt es als Naechstes (#139, P4).
         val naechsterWecker = rememberNaechsterWecker(
@@ -672,14 +726,14 @@ fun HomeTabContent(
         )
         val reihenfolge = uebersichtReihenfolge(
             schichtBeginn = angezeigterSchichtBeginn(
-                naechsteSchicht = shiftState.upcomingShift?.startTime?.atZone(zone)?.toInstant()?.toEpochMilli(),
+                naechsteSchicht = naechsteSchicht?.startTime?.atZone(zone)?.toInstant()?.toEpochMilli(),
                 laedt = calendarState.isLoading || shiftState.isLoading,
                 offlineSchicht = offlineSchicht?.startTime
             ),
             weckerZeitpunkt = naechsterWecker.zeitpunkt
         )
         val schichtKarte: @Composable () -> Unit = {
-            NaechsteSchichtKarte(calendarState, shiftState, masterPausePaused, reason, offlineSchicht)
+            NaechsteSchichtKarte(calendarState, shiftState, masterPausePaused, reason, offlineSchicht, naechsteSchicht)
         }
         val weckerKarte: @Composable () -> Unit = {
             NaechsterWeckerKarte(stand = naechsterWecker, onAlleWecker = onNavigateToWecker)

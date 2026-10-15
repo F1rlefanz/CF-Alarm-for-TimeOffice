@@ -54,6 +54,16 @@ class NaechsteSchichtOfflineTest {
     }
 
     @Test
+    fun `offline ueberspringt eine Schicht an einem freigegebenen Tag`() {
+        // #142: Weckzeit der morgigen Fruehschicht liegt am 02.10. - dieser Tag ist frei.
+        val schicht = offlineAngezeigteSchicht(
+            NoShiftReason.KALENDER_NICHT_ERREICHBAR, stand, now,
+            freieTage = setOf(jetzt.plusDays(1).toLocalDate()), zone = zone
+        )
+        assertEquals("Spätschicht", schicht?.shiftName)
+    }
+
+    @Test
     fun `bei jedem anderen Grund bleibt es beim bisherigen Hinweis`() {
         for (grund in NoShiftReason.entries - NoShiftReason.KALENDER_NICHT_ERREICHBAR) {
             assertNull(grund.name, offlineAngezeigteSchicht(grund, stand, now))

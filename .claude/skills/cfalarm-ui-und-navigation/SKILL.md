@@ -64,6 +64,10 @@ das baut man dieselbe Falle in neuer Form nach.
   Standardkonfiguration prüft — Drift muss auffallen.
 - **Kein Text darf eine Anzeige behaupten, die es nicht gibt, und kein Zustand darf sich als anderer
   ausgeben.** Insbesondere: **eine deaktivierte Schichtdefinition darf keine Weckzeit anzeigen.**
+  Und **„noch nicht geprüft" ist weder „verloren" noch „OK"**: `calendarAuthorizationValid`
+  startete mit `false`, und nach jedem Kaltstart stand 1–2 s „Kalender-Autorisierung verloren"
+  samt Erneuern-Knopf (#148, am Emulator vorher/nachher belegt). Seit 1.56.1 dreiwertig; Anzeigen
+  lesen `kalenderZugriffVerloren` / `kalenderZugriffUngeprueft`, nie das Rohfeld mit `!`.
 - **„Die gestellten Wecker bleiben" nur über `gestellteWeckerBleiben()`** — bei Master-Pause und
   ausgeschalteter Automatik ist keiner gestellt. Drei Offline-Texte hatten den Satz fest verdrahtet
   und widersprachen auf derselben Karte dem Pausenhinweis (Emulator, 01.10.2026).

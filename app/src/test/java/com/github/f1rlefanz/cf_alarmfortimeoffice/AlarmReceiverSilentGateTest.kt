@@ -1,6 +1,8 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice
 
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmInfo
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
+import java.time.LocalTime
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -42,5 +44,40 @@ class AlarmReceiverSilentGateTest {
     @Test
     fun `fehlende AlarmInfo gilt fail-safe als NICHT still - im Zweifel wecken`() {
         assertFalse(AlarmReceiver.isSilentAlarm(null))
+    }
+
+    // --- Kalter Prozess: Bestand kennt den klingelnden Wecker nicht mehr (Review #140) ---
+
+    private fun definition(name: String, isSilent: Boolean) =
+        ShiftDefinition(id = name, name = name, keywords = listOf(name), alarmTime = LocalTime.of(5, 0), isSilent = isSilent)
+
+    private val definitionen = listOf(definition("AD1", isSilent = true), definition("Frühschicht", isSilent = false))
+
+    @Test
+    fun `ohne AlarmInfo entscheidet die aktuelle Definition zum Schichtnamen - still`() {
+        assertTrue(AlarmReceiver.isSilentAlarm(null, "AD1", definitionen))
+    }
+
+    @Test
+    fun `ohne AlarmInfo und mit lauter Definition klingelt er`() {
+        assertFalse(AlarmReceiver.isSilentAlarm(null, "Frühschicht", definitionen))
+    }
+
+    @Test
+    fun `manueller Wecker trifft nie eine Definition - auch nicht die stille gleichen Namens`() {
+        assertFalse(AlarmReceiver.isSilentAlarm(null, "AD1 (Manuell)", definitionen))
+    }
+
+    @Test
+    fun `unbekannter Name, unlesbare Definitionen oder fehlender Name - nicht still`() {
+        assertFalse(AlarmReceiver.isSilentAlarm(null, "Umbenannt", definitionen))
+        assertFalse(AlarmReceiver.isSilentAlarm(null, "AD1", null))
+        assertFalse(AlarmReceiver.isSilentAlarm(null, null, definitionen))
+    }
+
+    @Test
+    fun `liegt die AlarmInfo vor, zaehlt sie - nicht die Definition`() {
+        // Schnappschuss beim Anlegen gewinnt; die Definition ist nur Rueckfall.
+        assertFalse(AlarmReceiver.isSilentAlarm(alarm(isSilent = false), "AD1", definitionen))
     }
 }

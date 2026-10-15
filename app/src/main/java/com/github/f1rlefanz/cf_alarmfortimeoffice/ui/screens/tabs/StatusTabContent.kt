@@ -254,7 +254,7 @@ fun StatusTabContent(
         val calendarActionLabel: String?
         val onCalendarAction: (() -> Unit)?
         when {
-            !calendarState.calendarAuthorizationValid && calendarState.selectedCalendarIds.isNotEmpty() -> {
+            calendarState.kalenderZugriffVerloren -> {
                 calendarActionLabel = "Neu anmelden"
                 onCalendarAction = {
                     authViewModel.requestCalendarAuthorization(context as? android.app.Activity)
@@ -263,6 +263,10 @@ fun StatusTabContent(
             calendarState.selectedCalendarIds.isEmpty() -> {
                 calendarActionLabel = "Kalender wählen"
                 onCalendarAction = onShowCalendarSelection
+            }
+            calendarState.kalenderZugriffUngeprueft -> {
+                calendarActionLabel = null
+                onCalendarAction = null
             }
             // Kein eigener Knopf: der Abgleich hat EINEN Namen an EINER Stelle, der Karte
             // "Kalender-Events" in der Übersicht - der Text unten nennt sie.
@@ -285,13 +289,17 @@ fun StatusTabContent(
         StatusCard(
             title = "Kalender",
             isOk = calendarState.selectedCalendarIds.isNotEmpty() &&
-                calendarState.calendarAuthorizationValid &&
+                // Ungeprueft (#148) ist kein Fehler: kein rotes Icon fuer einen normalen Start -
+                // der Text daneben sagt "wird geprüft", StatusCard kennt kein Neutral.
+                !calendarState.kalenderZugriffVerloren &&
                 !calendarState.kalenderNichtErreichbar &&
                 !nichtAbrufbareKalender,
             details = when {
-                !calendarState.calendarAuthorizationValid && calendarState.selectedCalendarIds.isNotEmpty() ->
+                calendarState.kalenderZugriffVerloren ->
                     "⚠️ Kalender-Autorisierung verloren - Bitte neu anmelden"
                 calendarState.selectedCalendarIds.isEmpty() -> "Kein Kalender ausgewählt"
+                // #148: vor dem ersten Abruf nichts behaupten, weder "verloren" noch "OK".
+                calendarState.kalenderZugriffUngeprueft -> "Kalender-Zugriff wird geprüft …"
                 calendarState.kalenderNichtErreichbar ->
                     (if (gestellteWeckerBleiben(
                             masterPausePaused,
@@ -335,7 +343,7 @@ fun StatusTabContent(
             details = schichtErkennungDetails(
                 erkannt = shiftState.recognizedShifts.size,
                 kalenderNichtErreichbar = calendarState.selectedCalendarIds.isNotEmpty() &&
-                    calendarState.calendarAuthorizationValid &&
+                    calendarState.calendarAuthorizationValid == true &&
                     calendarState.kalenderNichtErreichbar,
                 letzterStand = shiftState.letzterSchichtStand,
                 now = System.currentTimeMillis()

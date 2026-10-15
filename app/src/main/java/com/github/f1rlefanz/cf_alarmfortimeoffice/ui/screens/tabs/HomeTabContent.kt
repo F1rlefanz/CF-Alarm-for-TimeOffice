@@ -584,7 +584,9 @@ private fun NaechsteSchichtKarte(
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                } else if (calendarState.isLoading || shiftState.isLoading) {
+                } else if (calendarState.isLoading || shiftState.isLoading ||
+                    calendarState.kalenderZugriffUngeprueft
+                ) {
                     // Beim (ersten) Oeffnen synchronisiert die App den Kalender neu; bis die
                     // Events da sind, ist noch keine Schicht erkannt. Das ist ein LADEzustand,
                     // kein Fehler - neutraler Hinweis, solange geladen wird.
@@ -681,7 +683,8 @@ fun HomeTabContent(
         val zone = ZoneId.systemDefault()
         val reason = noShiftReason(
             hasSelectedCalendars = calendarState.selectedCalendarIds.isNotEmpty(),
-            calendarAuthorizationValid = calendarState.calendarAuthorizationValid,
+            // Ungeprueft (#148) ist kein verlorener Zugriff - die Karte zeigt dann "Wird geladen".
+            calendarAuthorizationValid = !calendarState.kalenderZugriffVerloren,
             kalenderNichtErreichbar = calendarState.kalenderNichtErreichbar,
             unavailableCalendarCount = calendarState.unavailableCalendarIds.size,
             errorMessage = calendarState.error ?: shiftState.error,
@@ -772,8 +775,7 @@ fun HomeTabContent(
             UebersichtReihenfolge.WECKER_ZUERST -> { weckerKarte(); schichtKarte() }
         }
 
-        val zugriffVerloren =
-            !calendarState.calendarAuthorizationValid && calendarState.selectedCalendarIds.isNotEmpty()
+        val zugriffVerloren = calendarState.kalenderZugriffVerloren
         Card(
             modifier = Modifier.fillMaxWidth(),
             onClick = onShowEventList,

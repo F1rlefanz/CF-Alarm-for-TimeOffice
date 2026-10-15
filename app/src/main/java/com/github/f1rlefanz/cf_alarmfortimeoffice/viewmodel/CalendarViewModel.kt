@@ -90,8 +90,17 @@ data class CalendarUiState(
     val events: List<CalendarEvent> = emptyList(),
     val error: String? = null,
     val hasValidToken: Boolean = false,
-    // PHASE 2 FIX: Track actual Calendar API authorization status
-    val calendarAuthorizationValid: Boolean = false,
+    /**
+     * Ergebnis des letzten Terminabrufs zur Frage "steht der Kalender-Zugriff?" - `null` heisst
+     * NOCH NICHT GEPRUEFT. Gelesen wird er ueber [kalenderZugriffVerloren] und
+     * [kalenderZugriffUngeprueft].
+     *
+     * DREI ZUSTAENDE, nicht zwei (#148): mit dem Startwert `false` zeigte die Uebersicht nach
+     * jedem Kaltstart ein bis zwei Sekunden "Kalender-Autorisierung verloren" samt "Kalender-Zugriff
+     * erneuern", bis der erste Abruf `true` schrieb. Der Startwert darf aber auch nicht `true`
+     * sein (siehe Kommentar in loadEventsForSelectedCalendars) - "ungeprueft" behauptet beides nicht.
+     */
+    val calendarAuthorizationValid: Boolean? = null,
     /**
      * Der letzte Abgleich scheiterte bei ALLEN ausgewaehlten Kalendern, und zwar nur an der
      * Verbindung (Flugmodus, Funkloch, Google nicht erreichbar).
@@ -222,7 +231,19 @@ data class CalendarUiState(
      * vor diesem Zeitpunkt liegen.
      */
     val letzterAbgleich: Long? = null
-)
+) {
+    /**
+     * Ein Abruf hat den verlorenen Zugriff BELEGT - nur dann "Kalender-Autorisierung verloren"
+     * und "Kalender-Zugriff erneuern". Ohne Auswahl gibt es keinen Zugriff, der fehlen koennte;
+     * nach einer Abwahl bleibt der alte Merker stehen, deshalb die Auswahl-Pruefung.
+     */
+    val kalenderZugriffVerloren: Boolean
+        get() = calendarAuthorizationValid == false && selectedCalendarIds.isNotEmpty()
+
+    /** Kalender sind gewaehlt, aber noch kein Abruf ist fertig (Kaltstart) - ein Ladezustand. */
+    val kalenderZugriffUngeprueft: Boolean
+        get() = calendarAuthorizationValid == null && selectedCalendarIds.isNotEmpty()
+}
 
 /**
  * CalendarViewModel - laedt Kalender und Events; die Kalenderauswahl kommt aus

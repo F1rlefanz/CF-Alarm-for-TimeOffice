@@ -19,7 +19,7 @@ class TageslichtStand(val ort: Ort?, val zone: ZoneId) {
      */
     fun hellZeitpunkt(datum: LocalDate, wahl: HellAb): Long? {
         val o = ort ?: return null
-        return SonnenstandRechner.hellAb(datum, o, zone, wahl)?.toEpochMilli()
+        return SonnenstandRechner.hellAb(datum, o, wahl)?.toEpochMilli()
     }
 
     companion object {

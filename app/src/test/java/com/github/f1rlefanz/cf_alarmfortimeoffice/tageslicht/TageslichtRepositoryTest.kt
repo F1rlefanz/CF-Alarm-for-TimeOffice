@@ -332,6 +332,27 @@ class TageslichtRepositoryTest {
         assertEquals(GespeicherterStandort(481, 116, 5L), gesehen[1].standort)
     }
 
+    @Test
+    fun `einstellungen bleiben nach einem Lesefehler im Standort abonniert`() = runTest {
+        // Ein Typkonflikt in der Standort-Datei darf den Flow nicht BEENDEN: sonst erreicht ein
+        // spaeteres "Standort uebernehmen" (das die Datei korrekt neu schreibt) den offenen
+        // Bildschirm nie, und er zeigt weiter "kein Ort"
+        val speicher = FakeSpeicher().apply { wirftBeimLesen = true }
+        val r = repo(speicher = speicher, dispatcher = UnconfinedTestDispatcher(testScheduler))
+
+        val gesehen = mutableListOf<TageslichtEinstellungen>()
+        val job = launch(UnconfinedTestDispatcher(testScheduler)) { r.einstellungen.take(2).toList(gesehen) }
+        assertEquals(listOf(TageslichtEinstellungen.LEER), gesehen)
+
+        speicher.wirftBeimLesen = false
+        r.speichereStandort(48.137, 11.575, jetzt = 5L)
+        advanceUntilIdle()
+
+        assertEquals(2, gesehen.size)
+        assertEquals(GespeicherterStandort(481, 116, 5L), gesehen[1].standort)
+        job.join()
+    }
+
     // ------------------------------------------------------------------ Prefs-Werte
 
     @Test

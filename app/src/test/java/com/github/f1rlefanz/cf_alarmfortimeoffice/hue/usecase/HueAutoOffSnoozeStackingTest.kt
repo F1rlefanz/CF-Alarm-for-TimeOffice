@@ -120,6 +120,33 @@ class HueAutoOffSnoozeStackingTest {
         assertEquals("Genau der erste wurde geloescht", 1, bridge.geloescht.size)
     }
 
+    /**
+     * Review 2 zu #140: Eine Vorab-Rampe (Regel A, Lampe 7) hat ihr Auto-Aus schon beim Start
+     * angelegt. Zur Weckzeit ist A durch die Tageslicht-Bedingung weggefallen, Regel B derselben
+     * Schicht (Gruppe 5) hat ein Auto-Aus. B's Aufruf darf A's Zeitplan NICHT mitraeumen - sonst
+     * bleibt Lampe 7 an, und nichts schaltet sie je aus.
+     */
+    @Test
+    fun `Vorab-Auto-Aus eines anderen Ziels ueberlebt das Auto-Aus zur Weckzeit`() = runTest {
+        val bridge = FakeBridge()
+        val useCase = HueLightUseCase(bridge)
+
+        // Vorab-Rampe von A: Auto-Aus fuer Lampe 7, gezaehlt ab Rampenstart.
+        useCase.scheduleBridgeAutoOff(
+            listOf(AutoOffTarget(targetId = "7", isGroup = false, delayMinutes = 50)),
+            "Frühschicht"
+        )
+        // Weckzeit: nur noch B ist anwendbar.
+        useCase.scheduleBridgeAutoOff(szenenZiel, "Frühschicht")
+
+        assertEquals(
+            "Beide Ziele brauchen ihren Zeitplan",
+            setOf("CFAlarm Auto-Off L7", "CFAlarm Auto-Off G5"),
+            bridge.eigene().map { it.name }.toSet()
+        )
+        assertTrue("Nichts wurde geraeumt", bridge.geloescht.isEmpty())
+    }
+
     @Test
     fun `fremde Zeitplaene bleiben unangetastet`() = runTest {
         val bridge = FakeBridge()

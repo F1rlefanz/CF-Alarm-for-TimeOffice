@@ -118,9 +118,20 @@ class TageslichtRepository internal constructor(
             return@flow
         }
         emitAll(
-            combine(dataStore.data, standortVersion) { prefs, _ -> lese(prefs) }
-                // .catch HINTER .map/combine: sonst faengt es nur Upstream-Fehler, und ein Fehler
-                // beim Auswerten (Standort-Prefs) liefe in die UI (Skill cfalarm-persistenz-und-auth)
+            combine(dataStore.data, standortVersion) { prefs, _ ->
+                // Ein Lesefehler der Standort-Datei degradiert HIER, im Transform: ein .catch
+                // dahinter wuerde den Flow BEENDEN, und das naechste speichereStandort() (das die
+                // Datei korrekt neu schreibt) erreichte den offenen Bildschirm nie mehr.
+                // lese() suspendiert nicht - eine CancellationException kann hier nicht entstehen.
+                try {
+                    lese(prefs)
+                } catch (ex: Exception) {
+                    Logger.w(LogTags.TAGESLICHT, "Ort-Einstellungen nicht lesbar - leer (${ex.javaClass.simpleName})")
+                    TageslichtEinstellungen.LEER
+                }
+            }
+                // Nur noch fuer Upstream-Fehler des DataStore (z. B. IOException beim Lesen) - die
+                // beenden den Flow; Wiederaufnahme ist allgemeines DataStore-Verhalten aller Konsumenten
                 .catch { ex ->
                     if (ex is CancellationException) throw ex
                     Logger.w(LogTags.TAGESLICHT, "Ort-Einstellungen nicht lesbar - leer (${ex.javaClass.simpleName})")

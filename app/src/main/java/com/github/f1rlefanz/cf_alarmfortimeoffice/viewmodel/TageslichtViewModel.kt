@@ -279,8 +279,8 @@ class TageslichtViewModel internal constructor(
 
         return OrtBildschirmZustand(
             genutzt = ort?.quelle,
-            daemmerungHeute = ort?.let { uhrzeit(SonnenstandRechner.daemmerungsBeginn(heute, it.breite, it.laenge, z), z) },
-            sonnenaufgangHeute = ort?.let { uhrzeit(SonnenstandRechner.sonnenaufgang(heute, it.breite, it.laenge, z), z) },
+            daemmerungHeute = ort?.let { uhrzeit(SonnenstandRechner.daemmerungsBeginn(heute, it.breite, it.laenge), z) },
+            sonnenaufgangHeute = ort?.let { uhrzeit(SonnenstandRechner.sonnenaufgang(heute, it.breite, it.laenge), z) },
             standortUebernommenAm = e.standort?.let { DATUM.format(Instant.ofEpochMilli(it.uebernommenAm).atZone(z)) },
             land = land,
             plzEingabe = plz,

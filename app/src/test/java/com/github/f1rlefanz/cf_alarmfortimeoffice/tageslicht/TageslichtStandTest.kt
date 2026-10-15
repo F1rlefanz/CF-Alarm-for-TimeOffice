@@ -29,7 +29,7 @@ class TageslichtStandTest {
     @Test
     fun `mit Ort - Epoch-ms des gewaehlten Ereignisses`() {
         val stand = TageslichtStand(muenchen, berlin)
-        val erwartet = SonnenstandRechner.sonnenaufgang(datum, muenchen.breite, muenchen.laenge, berlin)!!.toEpochMilli()
+        val erwartet = SonnenstandRechner.sonnenaufgang(datum, muenchen.breite, muenchen.laenge)!!.toEpochMilli()
         assertEquals(erwartet, stand.hellZeitpunkt(datum, HellAb.SONNENAUFGANG))
         assertNotNull(stand.hellZeitpunkt(datum, HellAb.DAEMMERUNG))
     }

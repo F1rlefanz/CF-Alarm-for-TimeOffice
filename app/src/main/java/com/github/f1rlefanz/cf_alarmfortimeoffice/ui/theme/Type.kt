@@ -8,6 +8,7 @@ import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.intl.LocaleList
 import androidx.compose.ui.text.style.Hyphens
 import androidx.compose.ui.unit.sp
 import com.github.f1rlefanz.cf_alarmfortimeoffice.R
@@ -40,20 +41,25 @@ private val RobotoFamily = FontFamily.Default
 
 // Silbentrennung fuer Titel und Ueberschriften: deutsche Komposita in grosser Schrift brachen bei
 // 320 dp mitten im Wort ("Benachrichtigunge|n", "Hue-Einstellung|en", Emulator 14.10.2026, ohne
-// Trennstrich). Mit Hyphens.Auto trennt Android ab API 33 nach den Regeln der Textsprache und setzt
-// den Strich; darunter bleibt es beim bisherigen Umbruch. Fliesstext bleibt ohne - dort reicht die
-// Breite fuer ganze Woerter.
+// Trennstrich). Mit Hyphens.Auto trennt Android nach den Regeln der Textsprache und setzt den Strich -
+// auf ALLEN unterstuetzten Geraeten: Compose bildet Hyphens.Auto bis API 32 auf
+// HYPHENATION_FREQUENCY_FULL ab, ab API 33 auf FULL_FAST (nur schneller, nicht "erst ab 33").
+// Fliesstext bleibt ohne - dort reicht die Breite fuer ganze Woerter.
+// Die Trennsprache kommt NUR aus TextStyle.localeList - ohne sie nimmt der Hyphenator die
+// Systemsprache, und auf einem englisch eingestellten Geraet wuerden deutsche Titel nach englischen
+// Mustern getrennt. Die App ist rein deutsch, deshalb fest "de".
+internal val Deutsch = LocaleList("de")
 
 val Typography = Typography(
-    displayLarge = TextStyle(fontFamily = MulishFamily, fontWeight = FontWeight.Light, fontSize = 36.sp, lineHeight = 42.sp, letterSpacing = 0.sp, hyphens = Hyphens.Auto),
-    displayMedium = TextStyle(fontFamily = MulishFamily, fontWeight = FontWeight.Light, fontSize = 30.sp, lineHeight = 36.sp, hyphens = Hyphens.Auto),
+    displayLarge = TextStyle(fontFamily = MulishFamily, fontWeight = FontWeight.Light, fontSize = 36.sp, lineHeight = 42.sp, letterSpacing = 0.sp, hyphens = Hyphens.Auto, localeList = Deutsch),
+    displayMedium = TextStyle(fontFamily = MulishFamily, fontWeight = FontWeight.Light, fontSize = 30.sp, lineHeight = 36.sp, hyphens = Hyphens.Auto, localeList = Deutsch),
 
-    headlineLarge = TextStyle(fontFamily = MulishFamily, fontWeight = FontWeight.Normal, fontSize = 26.sp, lineHeight = 32.sp, hyphens = Hyphens.Auto),
-    headlineMedium = TextStyle(fontFamily = MulishFamily, fontWeight = FontWeight.Normal, fontSize = 22.sp, lineHeight = 28.sp, hyphens = Hyphens.Auto),
+    headlineLarge = TextStyle(fontFamily = MulishFamily, fontWeight = FontWeight.Normal, fontSize = 26.sp, lineHeight = 32.sp, hyphens = Hyphens.Auto, localeList = Deutsch),
+    headlineMedium = TextStyle(fontFamily = MulishFamily, fontWeight = FontWeight.Normal, fontSize = 22.sp, lineHeight = 28.sp, hyphens = Hyphens.Auto, localeList = Deutsch),
 
-    titleLarge = TextStyle(fontFamily = MulishFamily, fontWeight = FontWeight.Medium, fontSize = 20.sp, lineHeight = 26.sp, hyphens = Hyphens.Auto),
-    titleMedium = TextStyle(fontFamily = RobotoFamily, fontWeight = FontWeight.Medium, fontSize = 16.sp, lineHeight = 22.sp, letterSpacing = 0.15.sp, hyphens = Hyphens.Auto),
-    titleSmall = TextStyle(fontFamily = RobotoFamily, fontWeight = FontWeight.Medium, fontSize = 14.sp, lineHeight = 20.sp, letterSpacing = 0.1.sp, hyphens = Hyphens.Auto),
+    titleLarge = TextStyle(fontFamily = MulishFamily, fontWeight = FontWeight.Medium, fontSize = 20.sp, lineHeight = 26.sp, hyphens = Hyphens.Auto, localeList = Deutsch),
+    titleMedium = TextStyle(fontFamily = RobotoFamily, fontWeight = FontWeight.Medium, fontSize = 16.sp, lineHeight = 22.sp, letterSpacing = 0.15.sp, hyphens = Hyphens.Auto, localeList = Deutsch),
+    titleSmall = TextStyle(fontFamily = RobotoFamily, fontWeight = FontWeight.Medium, fontSize = 14.sp, lineHeight = 20.sp, letterSpacing = 0.1.sp, hyphens = Hyphens.Auto, localeList = Deutsch),
 
     bodyLarge = TextStyle(fontFamily = RobotoFamily, fontWeight = FontWeight.Normal, fontSize = 16.sp, lineHeight = 24.sp, letterSpacing = 0.5.sp),
     bodyMedium = TextStyle(fontFamily = RobotoFamily, fontWeight = FontWeight.Normal, fontSize = 14.sp, lineHeight = 20.sp, letterSpacing = 0.25.sp),

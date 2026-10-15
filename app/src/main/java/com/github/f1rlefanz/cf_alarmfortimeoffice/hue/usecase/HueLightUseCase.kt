@@ -268,7 +268,7 @@ class HueLightUseCase @Inject constructor(
         }
 
         return try {
-            clearOwnBridgeSchedules()
+            clearOwnBridgeSchedules(targets.mapTo(HashSet()) { BridgeTimer.scheduleName(it.targetId, it.isGroup) })
 
             // Ein Zeitplan traegt GENAU EIN Command, also einen Zielpfad. Mehrere Ziele heissen
             // deshalb mehrere Zeitpläne. Unkritisch: die Bridge fasst 100 (real gemessen: 98
@@ -310,20 +310,31 @@ class HueLightUseCase @Inject constructor(
     }
 
     /**
-     * Entfernt Auto-Aus-Zeitpläne aus einem frueheren Lauf.
+     * Entfernt Auto-Aus-Zeitpläne aus einem frueheren Lauf - aber NUR fuer die Ziele, die gleich
+     * neu angelegt werden ([ersetzteNamen]).
      *
      * Ohne das legt jeder Snooze einen weiteren Timer an - und der aelteste, laengst laufende
      * schaltet mitten im naechsten Weckvorgang aus. Angefasst wird ausschliesslich, was unser
      * Praefix traegt: auf der Bridge liegen auch Zeitpläne der Hue-App und der Dimmer-Schalter.
      *
+     * WARUM NUR DIE ERSETZTEN ZIELE (Review 2 zu #140, 15.10.2026): Bis dahin raeumte dieser
+     * Lauf ALLE eigenen Zeitplaene. Eine Vorab-Rampe legt ihr Auto-Aus aber schon beim Start an
+     * (`HueRuleUseCase.vorabAutoAusZiele`); faellt ihre Regel zur Weckzeit weg (Ort waehrend der
+     * Rampe gesetzt, Tageslicht-Lesefehler beim Rampenstart, Regel deaktiviert), traegt der
+     * Weckzeit-Pfad ihre Lampen nicht mehr in [scheduleBridgeAutoOff] ein. Hatte eine ANDERE
+     * Regel derselben Schicht ein Auto-Aus, raeumte ihr Aufruf den Vorab-Zeitplan mit weg, ohne
+     * ihn zu ersetzen - die Lampen der Rampe blieben an, und nichts schaltete sie je aus. Ein
+     * Zeitplan fuer ein Ziel, das nicht neu angelegt wird, bleibt deshalb stehen; er loest zu
+     * seiner Zeit aus und raeumt sich per `autodelete` selbst ab.
+     *
      * Fehlschlaege sind hier bewusst nicht fatal - ein nicht abgeraeumter Alt-Timer ist
      * unschoen, aber kein Grund, den neuen gar nicht erst anzulegen.
      */
-    private suspend fun clearOwnBridgeSchedules() {
+    private suspend fun clearOwnBridgeSchedules(ersetzteNamen: Set<String>) {
         lightRepository.getBridgeSchedules().fold(
             onSuccess = { schedules ->
                 schedules
-                    .filter { (_, schedule) -> BridgeTimer.isOwnSchedule(schedule) }
+                    .filter { (_, schedule) -> BridgeTimer.isOwnSchedule(schedule) && schedule.name in ersetzteNamen }
                     .forEach { (id, schedule) ->
                         lightRepository.deleteBridgeSchedule(id)
                             .onSuccess { Logger.d(LogTags.HUE_BRIDGE, "🌉🧹 Alt-Zeitplan '${schedule.name}' (id=$id) entfernt") }

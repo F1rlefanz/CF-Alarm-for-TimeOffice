@@ -37,10 +37,10 @@ class SonnenstandRechnerTest {
     private val tromsoe = Stadt(69.65, 18.96, oslo)
 
     private fun daemmerung(s: Stadt, datum: LocalDate) =
-        SonnenstandRechner.daemmerungsBeginn(datum, s.breite, s.laenge, s.zone)
+        SonnenstandRechner.daemmerungsBeginn(datum, s.breite, s.laenge)
 
     private fun aufgang(s: Stadt, datum: LocalDate) =
-        SonnenstandRechner.sonnenaufgang(datum, s.breite, s.laenge, s.zone)
+        SonnenstandRechner.sonnenaufgang(datum, s.breite, s.laenge)
 
     private fun assertLokal(erwartet: String, ist: Instant?, zone: ZoneId, datum: LocalDate) {
         assertNotNull("Ereignis erwartet um $erwartet", ist)
@@ -107,17 +107,17 @@ class SonnenstandRechnerTest {
     fun `hellAb - IMMER ist keine Schwelle, die anderen waehlen das Ereignis`() {
         val d = LocalDate.parse("2026-10-14")
         val ort = Ort(48.14, 11.58, OrtQuelle.PLZ, "München")
-        assertNull(SonnenstandRechner.hellAb(d, ort, berlin, HellAb.IMMER))
-        assertEquals(daemmerung(muenchen, d), SonnenstandRechner.hellAb(d, ort, berlin, HellAb.DAEMMERUNG))
-        assertEquals(aufgang(muenchen, d), SonnenstandRechner.hellAb(d, ort, berlin, HellAb.SONNENAUFGANG))
+        assertNull(SonnenstandRechner.hellAb(d, ort, HellAb.IMMER))
+        assertEquals(daemmerung(muenchen, d), SonnenstandRechner.hellAb(d, ort, HellAb.DAEMMERUNG))
+        assertEquals(aufgang(muenchen, d), SonnenstandRechner.hellAb(d, ort, HellAb.SONNENAUFGANG))
     }
 
     @Test
     fun `kein Ereignis wird JE Wahl entschieden - Tromsoe Dezember schraenkt nur mit Daemmerung ein`() {
         val d = LocalDate.parse("2026-12-21")
         val ort = Ort(tromsoe.breite, tromsoe.laenge, OrtQuelle.STANDORT, null)
-        assertNotNull(SonnenstandRechner.hellAb(d, ort, oslo, HellAb.DAEMMERUNG))
-        assertNull(SonnenstandRechner.hellAb(d, ort, oslo, HellAb.SONNENAUFGANG))
+        assertNotNull(SonnenstandRechner.hellAb(d, ort, HellAb.DAEMMERUNG))
+        assertNull(SonnenstandRechner.hellAb(d, ort, HellAb.SONNENAUFGANG))
     }
 
     @Test

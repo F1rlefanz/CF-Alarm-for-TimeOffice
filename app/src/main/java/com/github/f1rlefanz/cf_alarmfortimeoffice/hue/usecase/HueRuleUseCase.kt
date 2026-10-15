@@ -116,9 +116,10 @@ class HueRuleUseCase @Inject constructor(
          * nicht, und das Licht blieb an. Ein Abbrechen der Rampe beim Tippen waere kein Ersatz:
          * es haengt am lebenden Prozess. Der Zeitplan liegt auf der Bridge.
          *
-         * Feuert der Wecker doch, ersetzt `scheduleBridgeAutoOff` den Zeitplan (raeumt eigene
-         * Timer vorher ab). Bleibt er stehen, weil die Weckzeit-Regeln kein Auto-Aus-Ziel haben
-         * (dann wird nicht geraeumt), schaltet er erst NACH Weckzeit plus Regeldauer aus - genau
+         * Feuert der Wecker doch, ersetzt `scheduleBridgeAutoOff` den Zeitplan - je ZIEL: geraeumt
+         * wird nur, was fuer dieselbe Lampe/Gruppe neu angelegt wird. Bleibt er stehen (die Regel
+         * ist zur Weckzeit weggefallen, etwa durch Tageslicht, oder die Weckzeit-Regeln haben kein
+         * Auto-Aus fuer diese Ziele), schaltet er erst NACH Weckzeit plus Regeldauer aus - genau
          * das, was die Regel ohnehin verspricht.
          */
         internal fun vorabAutoAusZiele(rules: List<HueSchedule>, minutenBisWecker: Int): List<AutoOffTarget> =

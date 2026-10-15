@@ -4,6 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.experimental.categories.Category
 
 /**
  * Befund 12 (Pruefrunde 6): Ein inexakt gestellter Wecker (`setAndAllowWhileIdle`, der Fallback
@@ -44,6 +45,7 @@ class Pruefrunde6ExactAlarmNotausgangTest {
         assertTrue(p.meldungen.isEmpty())
     }
 
+    @Category(Kerntest::class)
     @Test
     fun `lehnt das System den Vordergrund-Start ab, greift der Notausgang`() {
         val p = Protokoll()
@@ -66,6 +68,7 @@ class Pruefrunde6ExactAlarmNotausgangTest {
         assertEquals(listOf(AlarmReceiver.MELDUNG_DIENST_ABGELEHNT), p.meldungen)
     }
 
+    @Category(Kerntest::class)
     @Test
     fun `scheitert auch der Notausgang, laeuft keine Exception aus onReceive heraus`() {
         val p = Protokoll()

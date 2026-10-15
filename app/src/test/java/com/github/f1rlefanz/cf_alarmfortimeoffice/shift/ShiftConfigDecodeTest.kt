@@ -2,6 +2,7 @@
 
 package com.github.f1rlefanz.cf_alarmfortimeoffice.shift
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.Kerntest
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -9,6 +10,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.format.DateTimeParseException
+import org.junit.experimental.categories.Category
 
 /**
  * Tests fuer [decodeShiftConfig] - die eine Stelle, an der entschieden wird, ob eine
@@ -63,6 +65,7 @@ class ShiftConfigDecodeTest {
         assertEquals(ShiftConfig.getDefaultConfig().definitions.size, decoded.config.definitions.size)
     }
 
+    @Category(Kerntest::class)
     @Test
     fun `abgeschnittenes JSON ist Broken - nicht stillschweigend der Standard`() {
         val raw = json.encodeToString(ShiftConfig.getDefaultConfig()).take(30)

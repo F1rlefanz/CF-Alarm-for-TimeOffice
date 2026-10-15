@@ -1,5 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.usecase
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.Kerntest
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FakeKalenderVorausschauPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.data.TokenData
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.manager.OAuth2TokenManager
@@ -17,6 +18,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.experimental.categories.Category
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.whenever
 import java.time.LocalDateTime
@@ -123,6 +125,7 @@ class CalendarUseCaseFailureSemanticsTest {
         calendarId = "cal-a"
     )
 
+    @Category(Kerntest::class)
     @Test
     fun `alle Kalender gescheitert ergibt Fehler, nicht leeren Erfolg`() = runTest {
         val useCase = useCase(

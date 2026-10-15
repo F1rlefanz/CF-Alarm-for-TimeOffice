@@ -4,6 +4,7 @@ import java.io.File
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.experimental.categories.Category
 
 /**
  * Zwei Zusicherungen des Weck-Bildschirms, die sich ohne Geraet nur an der Quelle festhalten
@@ -59,6 +60,7 @@ class AlarmFullScreenVertragTest {
         )
     }
 
+    @Category(Kerntest::class)
     @Test
     fun `der Wake-Lock wird symmetrisch zu onStart und onStop gehalten`() {
         // DER BEFUND: releaseWakeLock() stand in onStop, acquireWakeLock() nur in onCreate und

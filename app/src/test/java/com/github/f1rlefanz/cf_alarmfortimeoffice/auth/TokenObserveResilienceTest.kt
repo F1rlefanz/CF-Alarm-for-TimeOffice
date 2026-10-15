@@ -1,5 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.auth
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.Kerntest
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
@@ -11,6 +12,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.IOException
+import org.junit.experimental.categories.Category
 
 /**
  * Haelt die beiden Eigenschaften des [DataStoreTokenRepository.observe]-Flows fest, an denen der
@@ -61,6 +63,7 @@ class TokenObserveResilienceTest {
         )
     }
 
+    @Category(Kerntest::class)
     @Test
     fun `ein dauerhafter Lesefehler emittiert KEIN falsches Verlust-Signal`() = runTest {
         val upstream = flow<String> { throw IOException("dauerhaft nicht lesbar") }

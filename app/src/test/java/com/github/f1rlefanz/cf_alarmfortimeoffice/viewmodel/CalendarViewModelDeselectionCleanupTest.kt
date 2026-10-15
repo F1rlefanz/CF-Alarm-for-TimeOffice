@@ -1,6 +1,7 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel
 
 import android.content.Context
+import com.github.f1rlefanz.cf_alarmfortimeoffice.Kerntest
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FakeKalenderVorausschauPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FakeFeedNeueinlesenStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.calendar.PendingDeselectionCleanupStore
@@ -31,6 +32,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import org.junit.experimental.categories.Category
 import org.mockito.kotlin.any
 import org.mockito.kotlin.anyOrNull
 import org.mockito.kotlin.doAnswer
@@ -208,6 +210,7 @@ class CalendarViewModelDeselectionCleanupTest {
      * einen unabgewarteten Collector befuellt. Wuerde dieser Startwert als Abwahl gelten, raeumte
      * JEDER App-Start alle kalenderbasierten Wecker weg, bevor die Auswahl gelesen ist.
      */
+    @Category(Kerntest::class)
     @Test
     fun `der leere Startwert der Kalenderauswahl raeumt KEINE Wecker`() = runTest(dispatcher) {
         val alarmUseCase = mock<IAlarmUseCase>()
@@ -222,6 +225,7 @@ class CalendarViewModelDeselectionCleanupTest {
      * Zweites Netz: ist die Auswahl gerade nicht LESBAR, ist das kein Beleg fuer "nichts
      * ausgewaehlt". Im Zweifel bleiben die Wecker stehen.
      */
+    @Category(Kerntest::class)
     @Test
     fun `bei nicht lesbarer Kalenderauswahl wird NICHT geraeumt`() = runTest(dispatcher) {
         val alarmUseCase = mock<IAlarmUseCase>()
@@ -301,6 +305,7 @@ class CalendarViewModelDeselectionCleanupTest {
      * Zwischenstellung weg, und selbst wenn der else-Zweig liefe, traegt sein Aufraeumen eine
      * inzwischen ueberholte Generation und bricht vor `syncAlarms()` ab.
      */
+    @Category(Kerntest::class)
     @Test
     fun `schnelles Ab- und Wiederanwaehlen kostet keine Wecker`() = runTest(dispatcher) {
         val alarmUseCase = mock<IAlarmUseCase>()
@@ -352,6 +357,7 @@ class CalendarViewModelDeselectionCleanupTest {
      * #127: Das erste Einrichten (Auswahl war nie gefuellt) ist KEINE Abwahl - die Kalenderauswahl
      * zeigt dort den neutralen Hinweis, nicht die Warnkarte vom Abwaehlen und Aufraeumen.
      */
+    @Category(Kerntest::class)
     @Test
     fun `leere Auswahl beim ersten Einrichten gilt nicht als Abwahl`() = runTest(dispatcher) {
         val viewModel = buildViewModel(alarmUseCase = mock())

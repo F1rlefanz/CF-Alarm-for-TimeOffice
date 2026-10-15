@@ -4,6 +4,7 @@ import android.app.AlarmManager
 import android.app.PendingIntent
 import android.content.Context
 import androidx.lifecycle.viewModelScope
+import com.github.f1rlefanz.cf_alarmfortimeoffice.Kerntest
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.CalendarPreAlarmRefreshScheduler
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.AnmeldeWiederherstellung
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.CredentialAuthManager
@@ -37,6 +38,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import org.junit.experimental.categories.Category
 import org.mockito.kotlin.any
 import org.mockito.kotlin.anyOrNull
 import org.mockito.kotlin.doReturn
@@ -190,6 +192,7 @@ class Pruefrunde8AbmeldenRaeumtWeckerTest {
         )
     }
 
+    @Category(Kerntest::class)
     @Test
     fun `abmelden bricht die Wecker ab, loescht sie und stoppt jede Hintergrundkette`() = runTest {
         val f = buildFixture()

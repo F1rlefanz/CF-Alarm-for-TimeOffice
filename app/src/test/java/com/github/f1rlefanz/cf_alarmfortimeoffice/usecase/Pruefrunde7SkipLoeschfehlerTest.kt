@@ -1,5 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.usecase
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.Kerntest
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmInfo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmSkipState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IAlarmRepository
@@ -17,6 +18,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.experimental.categories.Category
 import org.mockito.kotlin.any
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.whenever
@@ -126,6 +128,7 @@ class Pruefrunde7SkipLoeschfehlerTest {
         return m
     }
 
+    @Category(Kerntest::class)
     @Test
     fun `dauerhaft fehlschlagendes Loeschen nimmt das Ueberspringen zurueck und scheitert laut`() = runTest {
         val alarm = futureAlarm(id = 7)

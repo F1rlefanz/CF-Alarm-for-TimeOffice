@@ -4,6 +4,7 @@ import java.io.File
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.experimental.categories.Category
 
 /**
  * Zwei Regressionen, die die adversariale Review ueber den Fixes der Pruefrunde 8 gefunden hat -
@@ -98,6 +99,7 @@ class Pruefrunde8ZweiterWeckerTest {
      * Deshalb fordert der Test jetzt das Gegenteil: erarbeiteter Zustand wird NUR bei einem
      * nachgewiesen ANDEREN Weckvorgang verworfen.
      */
+    @Category(Kerntest::class)
     @Test
     fun `erarbeiteter Zustand wird nur bei einem anderen Weckvorgang verworfen`() {
         val koerper = koerperVon(activity(), "private fun uebernimmAlarmAusIntent()")

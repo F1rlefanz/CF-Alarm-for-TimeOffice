@@ -1,11 +1,13 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.calendar
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.Kerntest
 import com.github.f1rlefanz.cf_alarmfortimeoffice.error.AppError
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
+import org.junit.experimental.categories.Category
 
 /**
  * Pruefrunde 6, Befund 8: eine bei `maxResults` abgeschnittene Eventliste galt als VOLLSTAENDIG.
@@ -22,6 +24,7 @@ import org.junit.Test
  */
 class Pruefrunde6KalenderSeitenTest {
 
+    @Category(Kerntest::class)
     @Test
     fun `alle Seiten werden eingesammelt, nicht nur die erste`() = runTest {
         val pages = listOf(
@@ -49,6 +52,7 @@ class Pruefrunde6KalenderSeitenTest {
         )
     }
 
+    @Category(Kerntest::class)
     @Test
     fun `eine offene Seitenkette wirft, statt still zu kuerzen`() = runTest {
         var calls = 0

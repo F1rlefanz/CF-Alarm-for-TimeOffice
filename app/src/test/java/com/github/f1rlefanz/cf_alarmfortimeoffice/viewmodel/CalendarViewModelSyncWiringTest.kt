@@ -1,6 +1,7 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel
 
 import android.content.Context
+import com.github.f1rlefanz.cf_alarmfortimeoffice.Kerntest
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FakeKalenderVorausschauPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FakeFeedNeueinlesenStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.calendar.PendingDeselectionCleanupStore
@@ -32,6 +33,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import org.junit.experimental.categories.Category
 import org.mockito.kotlin.any
 import org.mockito.kotlin.anyOrNull
 import org.mockito.kotlin.doReturn
@@ -161,6 +163,7 @@ class CalendarViewModelSyncWiringTest {
         )
     }
 
+    @Category(Kerntest::class)
     @Test
     fun `gekuerztes Praefix ohne nachforderbare Liste loest KEINEN Alarm-Sync aus`() = runTest(dispatcher) {
         val alarmUseCase = mock<IAlarmUseCase>()
@@ -197,6 +200,7 @@ class CalendarViewModelSyncWiringTest {
         verify(alarmUseCase).syncAlarms(eq(complete), any(), anyOrNull())
     }
 
+    @Category(Kerntest::class)
     @Test
     fun `ein Teilerfolg beim Nachfordern loest KEINEN Alarm-Sync aus`() = runTest(dispatcher) {
         val alarmUseCase = mock<IAlarmUseCase>()

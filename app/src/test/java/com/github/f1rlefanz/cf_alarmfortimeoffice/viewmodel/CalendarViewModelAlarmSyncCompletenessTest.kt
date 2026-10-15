@@ -1,9 +1,11 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.Kerntest
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.CalendarFetchOutcome
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.experimental.categories.Category
 
 /**
  * Haelt fest, dass die Alarm-Pipeline NUR auf einer nachweislich vollstaendigen Eventliste
@@ -24,6 +26,7 @@ import org.junit.Test
  */
 class CalendarViewModelAlarmSyncCompletenessTest {
 
+    @Category(Kerntest::class)
     @Test
     fun `abgeschnittenes Praefix darf NICHT synchronisiert werden`() {
         // 10 von 13 Events geladen - die 3 spaetesten Schichten fehlen.
@@ -67,6 +70,7 @@ class CalendarViewModelAlarmSyncCompletenessTest {
         )
     }
 
+    @Category(Kerntest::class)
     @Test
     fun `ein fehlgeschlagener Kalender verhindert den Sync auch bei vollem Abruf`() {
         // Der gefaehrlichste Fall: von zwei Kalendern antwortet der private, der

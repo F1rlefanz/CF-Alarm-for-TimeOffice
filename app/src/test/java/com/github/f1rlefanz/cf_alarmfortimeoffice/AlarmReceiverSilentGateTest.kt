@@ -6,6 +6,7 @@ import java.time.LocalTime
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.experimental.categories.Category
 
 /**
  * Unit-Test fuer [AlarmReceiver.isSilentAlarm] - die reine Gate-Entscheidung fuer "Stille
@@ -41,6 +42,7 @@ class AlarmReceiverSilentGateTest {
         assertFalse(AlarmReceiver.isSilentAlarm(alarm(isSilent = false)))
     }
 
+    @Category(Kerntest::class)
     @Test
     fun `fehlende AlarmInfo gilt fail-safe als NICHT still - im Zweifel wecken`() {
         assertFalse(AlarmReceiver.isSilentAlarm(null))
@@ -63,11 +65,13 @@ class AlarmReceiverSilentGateTest {
         assertFalse(AlarmReceiver.isSilentAlarm(null, "Frühschicht", definitionen))
     }
 
+    @Category(Kerntest::class)
     @Test
     fun `manueller Wecker trifft nie eine Definition - auch nicht die stille gleichen Namens`() {
         assertFalse(AlarmReceiver.isSilentAlarm(null, "AD1 (Manuell)", definitionen))
     }
 
+    @Category(Kerntest::class)
     @Test
     fun `unbekannter Name, unlesbare Definitionen oder fehlender Name - nicht still`() {
         assertFalse(AlarmReceiver.isSilentAlarm(null, "Umbenannt", definitionen))
@@ -75,6 +79,7 @@ class AlarmReceiverSilentGateTest {
         assertFalse(AlarmReceiver.isSilentAlarm(null, null, definitionen))
     }
 
+    @Category(Kerntest::class)
     @Test
     fun `gleichnamige Definitionen mit widerspruechlichem Stille-Flag - klingeln, egal in welcher Reihenfolge`() {
         // Der Name ist keine Identitaet: die UI laesst Dubletten zu, und die Erkennung ordnet

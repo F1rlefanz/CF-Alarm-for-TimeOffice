@@ -4,6 +4,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.preferencesOf
+import com.github.f1rlefanz.cf_alarmfortimeoffice.Kerntest
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.CalendarPreAlarmRefreshScheduler
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.CalendarUnavailableNotifier
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.data.TokenData
@@ -23,6 +24,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.experimental.categories.Category
 import org.mockito.kotlin.any
 import org.mockito.kotlin.doReturn
 import org.mockito.kotlin.eq
@@ -97,6 +99,7 @@ class WartungLaedtBeiJedemLaufTest {
         calendarUnavailableNotifier = mock<CalendarUnavailableNotifier>()
     }
 
+    @Category(Kerntest::class)
     @Test
     fun `ein regulaerer Lauf fragt den Kalender ab, auch wenn Puffer und Daten frisch sind`() = runTest {
         val w = wartung()

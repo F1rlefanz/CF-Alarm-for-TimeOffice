@@ -1,7 +1,9 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.alarm
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.Kerntest
 import org.junit.Assert.assertEquals
 import org.junit.Test
+import org.junit.experimental.categories.Category
 
 /**
  * Die Entscheidungstabelle des Vorweckens.
@@ -30,6 +32,7 @@ class VorweckEntscheidungTest {
         )
     }
 
+    @Category(Kerntest::class)
     @Test
     fun `das Vorwecken haengt an keinem gespeicherten Zustand`() {
         // DER KERN DER AENDERUNG VON 1.39.5: Es gibt keine Eingabe mehr, die aus einer Datei

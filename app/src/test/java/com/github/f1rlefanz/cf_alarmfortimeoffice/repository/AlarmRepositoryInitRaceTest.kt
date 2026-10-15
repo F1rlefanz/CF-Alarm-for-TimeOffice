@@ -5,6 +5,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.mutablePreferencesOf
 import androidx.datastore.preferences.core.stringPreferencesKey
+import com.github.f1rlefanz.cf_alarmfortimeoffice.Kerntest
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.DirectBootAlarmStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -15,6 +16,7 @@ import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.experimental.categories.Category
 import org.mockito.kotlin.mock
 
 /**
@@ -66,6 +68,7 @@ class AlarmRepositoryInitRaceTest {
         return seedJson.decodeFromString<List<AlarmInfoData>>(raw).map { it.id }
     }
 
+    @Category(Kerntest::class)
     @Test
     fun `getAllAlarms wartet auf den Init-Load statt faelschlich leer zu liefern`() = runTest {
         val store = storeWith(alarmData(id = 42, offsetMs = 60 * 60 * 1000L))
@@ -81,6 +84,7 @@ class AlarmRepositoryInitRaceTest {
         )
     }
 
+    @Category(Kerntest::class)
     @Test
     fun `deleteAllAlarms wird nicht vom nachtraeglichen Init-Load wieder aufgefuellt`() = runTest {
         // Ein abgelaufener Alarm im Bestand sorgt dafuer, dass der Init-Load selbst SCHREIBT

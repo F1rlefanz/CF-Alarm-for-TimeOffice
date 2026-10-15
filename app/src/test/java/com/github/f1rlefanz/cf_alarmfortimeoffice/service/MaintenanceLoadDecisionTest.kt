@@ -1,8 +1,10 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.service
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.Kerntest
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.experimental.categories.Category
 
 /**
  * Haelt die Sync-Entscheidung der 6h-Wartung NACH dem Laden fest.
@@ -21,16 +23,19 @@ import org.junit.Test
  */
 class MaintenanceLoadDecisionTest {
 
+    @Category(Kerntest::class)
     @Test
     fun `Sync laeuft auch ohne neue Schichten - Aenderungen und Streichungen brauchen ihn`() {
         assertTrue(MaintenanceLoadDecision.shouldSyncAfterLoad(loadedEventCount = 5))
     }
 
+    @Category(Kerntest::class)
     @Test
     fun `schon ein einziges Event genuegt fuer den Sync`() {
         assertTrue(MaintenanceLoadDecision.shouldSyncAfterLoad(loadedEventCount = 1))
     }
 
+    @Category(Kerntest::class)
     @Test
     fun `leere Eventliste synchronisiert NICHT - fail-safe gegen Total-Loeschung`() {
         assertFalse(MaintenanceLoadDecision.shouldSyncAfterLoad(loadedEventCount = 0))

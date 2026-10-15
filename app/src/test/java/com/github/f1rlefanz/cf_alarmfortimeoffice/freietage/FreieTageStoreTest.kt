@@ -1,5 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.freietage
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.Kerntest
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpan
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
@@ -11,6 +12,7 @@ import org.junit.Test
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZoneId
+import org.junit.experimental.categories.Category
 
 /**
  * Reine Logik des Freigabe-Speichers: Aufraeumgrenze, Datums-Anker und der Spannen-Filter.
@@ -62,6 +64,7 @@ class FreieTageStoreTest {
         )
     }
 
+    @Category(Kerntest::class)
     @Test
     fun `Ein unlesbarer Eintrag gilt NICHT als freigegebener Tag`() {
         // Ein Wert, den niemand deuten kann, darf nicht dazu fuehren, dass irgendetwas
@@ -142,6 +145,7 @@ class FreieTageStoreTest {
         assertEquals(iso(heute.minusDays(1), heute.plusDays(2)), gemischt)
     }
 
+    @Category(Kerntest::class)
     @Test
     fun `HEUTE wird ersetzt - verschwindet der Termin, ist heute wieder Diensttag`() {
         // Review M2: ganztaegige Termine sind bis 23,59 Uhr in jeder Lesung sichtbar. Fehlt der

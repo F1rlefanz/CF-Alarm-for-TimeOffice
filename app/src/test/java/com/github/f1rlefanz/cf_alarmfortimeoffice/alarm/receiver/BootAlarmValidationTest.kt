@@ -1,9 +1,11 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.receiver
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.Kerntest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.experimental.categories.Category
 
 /**
  * Boot-Recovery darf nicht auf einem veralteten Alarm-Snapshot loeschen.
@@ -65,6 +67,7 @@ class BootAlarmKennungswechselTest {
     private val spaetdienst = BootAlarmValidation.Weckpunkt(triggerTime = 9_000L, shiftId = "spaet")
     private val lesung = setOf(fruehdienst, spaetdienst)
 
+    @Category(Kerntest::class)
     @Test
     fun `neue Kennung bei gleicher Weckzeit und Schicht loescht den Wecker nicht`() {
         // Genau der belegte Fall: der Termin ist da, nur unter neuer Event-ID.
@@ -80,6 +83,7 @@ class BootAlarmKennungswechselTest {
         )
     }
 
+    @Category(Kerntest::class)
     @Test
     fun `der ganze Bestand ueberlebt ein Feed-Neueinlesen`() {
         // 11 Alarme, 11 neue Kennungen - kein einziger darf geloescht werden.
@@ -140,6 +144,7 @@ class BootAlarmKennungswechselTest {
         )
     }
 
+    @Category(Kerntest::class)
     @Test
     fun `ohne auswertbare Schichterkennung wird nie wegen fehlender Kennung geloescht`() {
         // weckpunkte == null: die Schichterkennung ist gescheitert. "Im Zweifel wecken" - lieber
@@ -171,6 +176,7 @@ class BootAlarmKennungswechselTest {
         )
     }
 
+    @Category(Kerntest::class)
     @Test
     fun `unveraenderter Termin wird ganz normal wiederhergestellt`() {
         assertEquals(
@@ -214,6 +220,7 @@ class BootAlarmHorizontTest {
     private val lesung = setOf(BootAlarmValidation.Weckpunkt(triggerTime = 4_000L, shiftId = "frueh"))
     private val horizont = 100_000L
 
+    @Category(Kerntest::class)
     @Test
     fun `Wecker hinter dem Abruf-Horizont bleibt - er wurde nur nicht gelesen`() {
         assertEquals(

@@ -1,5 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.usecase
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.Kerntest
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FakeFeedNeueinlesenStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FakeKalenderVorausschauPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FakeSyncHorizonStore
@@ -30,6 +31,7 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.experimental.categories.Category
 import org.mockito.kotlin.any
 import org.mockito.kotlin.eq
 import org.mockito.kotlin.mock
@@ -264,6 +266,7 @@ class AlarmUseCaseSkipAndResilienceTest {
         verify(manager, never()).setAlarmFromShiftMatch(any(), any(), any())
     }
 
+    @Category(Kerntest::class)
     @Test
     fun `scheduleSystemAlarm - nicht lesbarer Skip-Status stellt den Alarm trotzdem (im Zweifel wecken)`() = runTest {
         val repo = FakeAlarmRepository(emptyList())
@@ -292,6 +295,7 @@ class AlarmUseCaseSkipAndResilienceTest {
 
     // --- 2. Ein gescheiterter Alarm bricht den Sync nicht ab ---
 
+    @Category(Kerntest::class)
     @Test
     fun `ein abgelehnter Alarm bricht den restlichen Delta-Sync nicht ab`() = runTest {
         // AlarmRepository.saveAlarm lehnt eine inzwischen verstrichene Weckzeit ab. Vorher warf
@@ -387,6 +391,7 @@ class AlarmUseCaseSkipAndResilienceTest {
         }
     }
 
+    @Category(Kerntest::class)
     @Test
     fun `Master-Pause cancelt System-Alarme auch wenn der Repository-Cache noch nicht geladen ist`() = runTest {
         // Vorher las clearInternalAlarms() `activeAlarms.first()`: in einem frisch gestarteten
@@ -484,6 +489,7 @@ class AlarmUseCaseSkipAndResilienceTest {
         assertTrue("${result.exceptionOrNull()}", result.exceptionOrNull() is WeckerNichtArmiertException)
     }
 
+    @Category(Kerntest::class)
     @Test
     fun `deleteAlarm - scheitert der Abbruch, bleibt der Eintrag stehen`() = runTest {
         val repo = FakeAlarmRepository(listOf(existingAlarm(id = 5, eventId = "ev5")))
@@ -501,6 +507,7 @@ class AlarmUseCaseSkipAndResilienceTest {
         )
     }
 
+    @Category(Kerntest::class)
     @Test
     fun `syncAlarms - scheitert der Abbruch eines gestrichenen Termins, bleibt sein Eintrag`() = runTest {
         val repo = FakeAlarmRepository(listOf(existingAlarm(id = 5, eventId = "evWeg")))

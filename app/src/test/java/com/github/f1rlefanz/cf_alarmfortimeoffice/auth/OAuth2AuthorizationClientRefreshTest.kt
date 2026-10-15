@@ -2,6 +2,7 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.auth
 
 import android.app.Activity
 import android.content.Context
+import com.github.f1rlefanz.cf_alarmfortimeoffice.Kerntest
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.data.TokenData
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.data.TokenProvider
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.manager.KalenderAutorisierung
@@ -18,6 +19,7 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.experimental.categories.Category
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.verifyNoInteractions
 import java.util.concurrent.ExecutionException
@@ -93,6 +95,7 @@ class OAuth2AuthorizationClientRefreshTest {
         assertEquals(1, repo.token?.rotationCount)
     }
 
+    @Category(Kerntest::class)
     @Test
     fun `Resolution OFFLINE ist ein Funkloch - voruebergehend, Token bleibt`() = runTest {
         val repo = FakeTokenRepository(abgelaufen())
@@ -116,6 +119,7 @@ class OAuth2AuthorizationClientRefreshTest {
         assertNull(repo.token)
     }
 
+    @Category(Kerntest::class)
     @Test
     fun `eine Resolution, die der Bestaetigungsabruf nicht wiederholt, kostet kein Token`() = runTest {
         // Netzwechsel / verzoegert zurueckgenommenes VALIDATED: der erste Abruf sieht kein Netz,

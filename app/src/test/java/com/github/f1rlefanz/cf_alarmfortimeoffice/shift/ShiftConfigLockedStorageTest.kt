@@ -1,11 +1,13 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.shift
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.Kerntest
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.experimental.categories.Category
 
 /**
  * Der DRITTE Fall der Schicht-Konfiguration: "nichts da, weil der Storage gesperrt war".
@@ -35,6 +37,7 @@ class ShiftConfigLockedStorageTest {
      * DER REGRESSIONSFALL. Ohne die Unterscheidung waere das Ergebnis `NotConfigured` - und damit
      * die Standardkonfiguration als Erfolg.
      */
+    @Category(Kerntest::class)
     @Test
     fun `fehlender Eintrag bei gesperrtem Storage ist KEIN NotConfigured`() {
         val decoded = decodeShiftConfig(json, null, userUnlocked = false)

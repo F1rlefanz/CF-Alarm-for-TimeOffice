@@ -1,5 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.usecase
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.Kerntest
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FakeFeedNeueinlesenStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FeedNeueinlesenStand
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FakeKalenderVorausschauPrefs
@@ -32,6 +33,7 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.experimental.categories.Category
 import org.mockito.kotlin.any
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.never
@@ -283,6 +285,7 @@ class AlarmUseCaseKennungswechselTest {
 
     // --- Tests ---
 
+    @Category(Kerntest::class)
     @Test
     fun `Feed neu eingelesen - 11 Schichten mit neuen Event-IDs erzeugen keine einzige Aenderung`() = runTest {
         // DER REALE FALL vom 20.08.: Created 11 / Deleted 11, Schnittmenge der Event-IDs = null,
@@ -413,6 +416,7 @@ class AlarmUseCaseKennungswechselTest {
             repo.current.find { it.triggerTime == weckzeit(2) })
     }
 
+    @Category(Kerntest::class)
     @Test
     fun `Termin faellt wirklich weg - Loeschung samt Meldung, und vorher wurde gecancelt`() = runTest {
         val bleibt = bestehenderAlarm(id = 601, eventId = "evA", day = 1)
@@ -444,6 +448,7 @@ class AlarmUseCaseKennungswechselTest {
         )
     }
 
+    @Category(Kerntest::class)
     @Test
     fun `zwei Wecker mit gleicher Weckzeit und gleicher Schicht - keine Doppelpaarung, keiner geht verloren`() = runTest {
         // Doppelung im Feed: zwei Termine derselben Schicht am selben Tag. Jeder Kandidat darf
@@ -536,6 +541,7 @@ class AlarmUseCaseKennungswechselTest {
         verify(manager, never()).setAlarmFromShiftMatch(any(), any(), any())
     }
 
+    @Category(Kerntest::class)
     @Test
     fun `ein MANUELLER Wecker zur selben Weckzeit wird NICHT mit uebersprungen`() = runTest {
         // Die Gegenprobe zum Weckzeit-Anker: manuelle Wecker sind von der Kennungsrotation gar
@@ -565,6 +571,7 @@ class AlarmUseCaseKennungswechselTest {
 
     // --- Der nicht lesbare Bestand (Befund B) ---
 
+    @Category(Kerntest::class)
     @Test
     fun `nicht lesbarer Alarm-Bestand bricht den Sync ab statt auf einer erfundenen Leere weiterzurechnen`() = runTest {
         // Frueher war `id = eventId.hashCode()` eine reine Funktion des Events - ein auf leerem
@@ -627,6 +634,7 @@ class AlarmUseCaseKennungswechselTest {
         )
     }
 
+    @Category(Kerntest::class)
     @Test
     fun `gesperrte Persistenz bricht den Sync ab - auch wenn getAllAlarms Erfolg meldet`() = runTest {
         // Die Gegenprobe zum Test darueber, und der Fall, der in der Praxis eintritt:
@@ -656,6 +664,7 @@ class AlarmUseCaseKennungswechselTest {
         assertEquals("Und keine Meldung an den Nutzer", 0, notifier.meldungen)
     }
 
+    @Category(Kerntest::class)
     @Test
     fun `ein uebersprungener MANUELLER Wecker legt keine Schicht zur selben Weckzeit still`() = runTest {
         // Kriterium (b) der Skip-Erkennung vergleicht Weckzeitpunkte. Ohne die Bedingung

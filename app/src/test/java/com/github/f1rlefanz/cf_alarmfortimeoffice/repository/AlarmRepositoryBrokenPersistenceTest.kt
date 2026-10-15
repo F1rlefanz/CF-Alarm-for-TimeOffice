@@ -4,6 +4,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.mutablePreferencesOf
 import androidx.datastore.preferences.core.stringPreferencesKey
+import com.github.f1rlefanz.cf_alarmfortimeoffice.Kerntest
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.DirectBootAlarmEntry
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.DirectBootAlarmStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmInfo
@@ -16,6 +17,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Test
+import org.junit.experimental.categories.Category
 import org.mockito.kotlin.any
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.never
@@ -67,6 +69,7 @@ class AlarmRepositoryBrokenPersistenceTest {
         formattedTime = "t$id"
     )
 
+    @Category(Kerntest::class)
     @Test
     fun `saveAlarm ueberschreibt einen nicht dekodierbaren Bestand nicht`() = runTest {
         val store = storeWithBrokenJson()
@@ -83,6 +86,7 @@ class AlarmRepositoryBrokenPersistenceTest {
         verify(directBoot, never()).saveAll(any<List<DirectBootAlarmEntry>>())
     }
 
+    @Category(Kerntest::class)
     @Test
     fun `ein nicht dekodierbarer Bestand wird zuerst gesichert`() = runTest {
         val store = storeWithBrokenJson()
@@ -112,6 +116,7 @@ class AlarmRepositoryBrokenPersistenceTest {
         verify(directBoot).saveAll(any<List<DirectBootAlarmEntry>>())
     }
 
+    @Category(Kerntest::class)
     @Test
     fun `deleteAllAlarms raeumt auch bei blockierter Persistenz wirklich`() = runTest {
         // Master-Pause/autoAlarmEnabled=false MUSS durchgehen - sonst re-armt ein
@@ -141,6 +146,7 @@ class AlarmRepositoryBrokenPersistenceTest {
      * anderen Wachen liefen ins Leere - `keepManualAlarms` kann nichts schonen, was nicht in der
      * Liste steht, und `isPersistenceBlocked()` meldet nichts ohne gesetzte Sperre.
      */
+    @Category(Kerntest::class)
     @Test
     fun `gesperrter Nutzer - Bestand wird NICHT gelesen und die Persistenz ist gesperrt`() = runTest {
         val store = FakePreferencesDataStore(

@@ -5,6 +5,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.mutablePreferencesOf
 import androidx.datastore.preferences.core.stringPreferencesKey
+import com.github.f1rlefanz.cf_alarmfortimeoffice.Kerntest
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.DirectBootAlarmStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmInfo
 import kotlinx.coroutines.flow.Flow
@@ -18,6 +19,7 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.experimental.categories.Category
 import org.mockito.kotlin.any
 import org.mockito.kotlin.atLeastOnce
 import org.mockito.kotlin.mock
@@ -77,6 +79,7 @@ class AlarmRepositoryTest {
         formattedTime = "t$id"
     )
 
+    @Category(Kerntest::class)
     @Test
     fun `init laedt persistierte zukuenftige Alarme aus dem DataStore`() = runTest {
         val store = storeWith(alarmData(id = 42, offsetMs = 60 * 60 * 1000L))
@@ -183,6 +186,7 @@ class AlarmRepositoryTest {
         assertTrue("isSilent muss den Persist/Reload-Zyklus ueberleben", loaded.first { it.id == 99 }.isSilent)
     }
 
+    @Category(Kerntest::class)
     @Test
     fun `deleteAlarm entfernt aus dem Cache und schreibt den Direct-Boot-Spiegel nach`() = runTest {
         val directBoot = mock<DirectBootAlarmStore>()

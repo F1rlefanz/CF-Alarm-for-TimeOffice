@@ -77,8 +77,8 @@ Es gilt der globale Default aus `~/.claude/CLAUDE.md`. Projekt-spezifisch:
   `cfalarm-release-und-changelog`.
 - **Vor `git merge`/`git push` läuft die Schleuse** (`tools/schleuse/pruefe_schleuse.py`,
   `PreToolUse`-Hook) und prüft mechanisch: Geheimnisse, Skills, Doku-Budget, Changelog-Seite,
-  Code-Invarianten, Aufraeum-Reste, Tests (inkl. androidTest-Uebersetzung), Lint — beim Push
-  von `main` zusätzlich Changelog-Eintrag, Bump und `versionCode` gegen `origin/main`.
+  Code-Invarianten, Kerntests, Aufraeum-Reste, Tests (inkl. androidTest-Uebersetzung), Lint — beim
+  Push von `main` zusätzlich Changelog-Eintrag, Bump und `versionCode` gegen `origin/main`.
   **Ein grüner Lauf ist die untere Schranke, nicht das Ziel**;
   was sie nicht prüfen kann, steht im Skill `cfalarm-arbeit-abschliessen`. Notausgang für den Fall,
   dass die Schleuse selbst kaputt ist: `CFALARM_SCHLEUSE=aus`.
@@ -157,6 +157,9 @@ Hilt-Module, Auth, Alarm, Schichterkennung, Hue, Navigation und Shared State im 
 
 ## Grundregeln
 
+- **Kerntests sind beim Aufräumen tabu.** Die Liste steht in `tools/kerntests/kerntests.txt`,
+  markiert mit `@Category(Kerntest::class)`; nicht löschen, zusammenlegen oder still anpassen.
+  Hergang und Ausnahme (bewusste Verhaltensänderung): Skill `cfalarm-altlasten-abtragen`.
 - **Eine Funktion ohne Bedienoberfläche gibt es für den Nutzer nicht.** Wer eine Fähigkeit einbaut,
   baut die Stelle mit, an der man sie **sieht**, **auslöst** und ihren **Zustand abliest**.
 - **Der Sweep über frisch geschriebenem Code beweist wenig** — jeder Fix schafft neue Prüffläche.

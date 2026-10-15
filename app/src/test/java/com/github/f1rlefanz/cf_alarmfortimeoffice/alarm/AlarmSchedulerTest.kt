@@ -1,5 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.alarm
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.Kerntest
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.CalendarEvent
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
@@ -13,6 +14,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.LocalDateTime
 import java.time.LocalTime
+import org.junit.experimental.categories.Category
 
 /**
  * Echte Unit-Tests für die Wecker-Kernlogik.
@@ -52,6 +54,7 @@ class AlarmSchedulerTest {
         alarmTime = alarm
     )
 
+    @Category(Kerntest::class)
     @Test
     fun `Alarm liegt am selben Tag wenn Weckzeit vor Schichtbeginn`() = runTest {
         // Frühschicht: Weckzeit 05:30, Schicht startet 06:00 -> Wecker 05:30 am selben Tag
@@ -65,6 +68,7 @@ class AlarmSchedulerTest {
         assertEquals(LocalDateTime.of(2025, 1, 20, 5, 30), matches[0].calculatedAlarmTime)
     }
 
+    @Category(Kerntest::class)
     @Test
     fun `Alarm liegt am Vortag wenn Weckzeit nach Schichtbeginn (Mitternachts-Fall)`() = runTest {
         // Schicht startet 00:30, Weckzeit 23:30 -> Wecker am VORTAG 23:30

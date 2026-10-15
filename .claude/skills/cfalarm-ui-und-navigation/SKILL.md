@@ -153,6 +153,10 @@ das baut man dieselbe Falle in neuer Form nach.
   `weight(1f)`**: die Gewichtung kuerzte die Beschriftung mit Auslassung („Bea…“, „Neue R…“ bei
   320 dp + Schrift 1,3, Emulator 14.10.2026). `KnopfZeile` misst die natuerlichen Breiten und
   stellt linksbuendig untereinander, wenn sie nicht passen. Etikett neben einem Namen: `FlowRow`.
+- **Ein umbrechender `Text` VOR Icons in einer `Row` braucht `weight(1f, fill = false)`**: ein
+  umbrechender Text meldet die volle Restbreite, die ungewichteten Icons danach bekommen 0 dp und
+  verschwinden (`Modifier.size` respektiert die Constraints). So fehlten Still-/Rufbereitschafts-
+  Marker genau an der AUSGESCHALTETEN Schicht (`ShiftConfigScreen`, Runde 4 zu #140).
 - **Titel- und Ueberschriften-Stile tragen `Hyphens.Auto`** (`ui/theme/Type.kt`): deutsche
   Komposita brachen dort ohne Trennstrich mitten im Wort („Benachrichtigunge|n“). Fliesstext nicht.
   **Immer mit `localeList = Deutsch`**: Compose setzt die Trennsprache nur aus `TextStyle.localeList`,

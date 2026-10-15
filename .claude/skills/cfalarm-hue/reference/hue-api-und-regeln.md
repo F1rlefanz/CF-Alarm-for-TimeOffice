@@ -290,6 +290,8 @@ vor dem Wecker, ein Vergleich mit ihrem Start liesse dieselbe Regel je nach Ramp
 entscheiden. Ein Abendwecker (vor einem Nachtdienst) liegt nach dem Sonnenaufgang desselben Tages —
 die Regel entfaellt dann, auch wenn es draussen dunkel ist; der Editor sagt das
 (`tageslicht_hue_hinweis_abend`). Verworfen: „ist es JETZT dunkel“ — das haette die Rampe
-mittendrin abbrechen koennen. Bekannte Restluecke: `HueConfigRepository` liest ohne
+mittendrin abbrechen koennen. Das Entfallen loggt `laeuftBeiTageslichtMitLog` auf WARN (ohne
+Ort) — auf INFO stuende im Release-Log nichts, und „Licht ging nicht an“ waere nicht
+nachvollziehbar (Runde 4 zu #140). Bekannte Restluecke: `HueConfigRepository` liest ohne
 `coerceInputValues`; ein unbekannter `HellAb`-Wert aus einer neueren Version macht die
 Regelliste unlesbar (dokumentiert in `HellAb`).

@@ -27,7 +27,17 @@ Schreibkonventionen (der Generator verlässt sich darauf):
 - `### 🐛 Behoben` — Rubrik, mit Emoji wie bisher.
 - `- **Kurzfassung:** Erklärung` — ein Eintrag.
 
-## 🆕 Version 1.52.1 (Aktuell – interne Alpha)
+## 🆕 Version 1.53.0 (Aktuell – interne Alpha)
+
+**Stand:** Oktober 2026
+
+_Die Übersicht zeigt oben, was als Nächstes kommt._
+
+### 🎨 Feinschliff
+
+- **Übersicht in zeitlicher Reihenfolge:** „Nächster Wecker“ und „Nächste Schicht“ ordnen sich nach der Zeit – was zuerst kommt, steht oben. Meist ist das der Wecker, der vor seiner Schicht klingelt. Beginnt ein stiller oder ganztägiger Dienst schon vorher, steht die Schicht oben. Fällt beides auf denselben Zeitpunkt, steht der Wecker oben.
+
+## Version 1.52.1
 
 **Stand:** Oktober 2026
 

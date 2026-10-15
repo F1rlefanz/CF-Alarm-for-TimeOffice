@@ -221,54 +221,75 @@ def pruefe_konstanten():
     return fehler, f"{geprueft} Konstanten-Fundstellen in der Doku stimmen mit dem Code ueberein"
 
 
-# ─────────────────── 6. keine Hintergrundschicht importiert die Oberflaeche ──
-# Die Pakete unterhalb von viewmodel/. ui/ und viewmodel/ selbst stehen NICHT
-# in der Liste - nach unten zu greifen ist erlaubt und geschieht auch (die
-# Oberflaeche liest Konstanten wie HueRuleUseCase.UNIVERSAL_SHIFT_PATTERN
-# bewusst an der Quelle, statt sie zu verdoppeln).
-UNTERE_SCHICHTEN = ("alarm", "auth", "backup", "calendar", "data", "di", "dimmer", "dnd",
-                    "error", "hue", "masterpause", "model", "repository", "service",
-                    "shift", "tageslicht", "usecase", "util")
-
+# ─────────────────── 6. keine Schicht greift nach oben ──────────────────────
+# Drei Stufen: Hintergrund (alles ausser ui/ und viewmodel/) < viewmodel/ < ui/.
+# Nach unten zu greifen ist erlaubt und geschieht auch (die Oberflaeche liest
+# Konstanten wie HueRuleUseCase.UNIVERSAL_SHIFT_PATTERN bewusst an der Quelle,
+# statt sie zu verdoppeln).
+#
+# Die Hintergrundpakete werden NICHT aufgezaehlt, sondern als Rest bestimmt.
+# Bis #147 stand hier eine feste Liste; `freietage` (24.08.) kam zwei Tage
+# nach ihr und blieb ungeprueft, `tageslicht` musste von Hand nachgetragen
+# werden. Ein neues Paket ist jetzt ab seiner ersten Datei geprueft.
 OBERE_SCHICHTEN = ("ui", "viewmodel")
 
 BASISPAKET = "com.github.f1rlefanz.cf_alarmfortimeoffice"
 
+# Wer darf wen nicht importieren. Dateien direkt im Basispaket (MainActivity,
+# AlarmReceiver, ...) haben kein Paket und bleiben aussen vor.
+VERBOTENE_KANTEN = {"viewmodel": ("ui",)}
+
 
 def pruefe_schichtrichtung():
-    """Kein Hintergrund-Paket darf `ui.` oder `viewmodel.` importieren.
+    """Kein Hintergrund-Paket importiert `ui.` oder `viewmodel.`, und `viewmodel/` nicht `ui.`.
 
-    Die Richtung nach unten ist frei; geprueft wird nur die Gegenrichtung. Wer sie bricht,
-    haengt eine Activity-, Composable- oder ViewModel-Klasse an einen Pfad, der ohne
-    Oberflaeche laufen MUSS: `AlarmReceiver`, `AlarmSoundService`, `BootReceiver` und die
-    6h-Wartung laufen bei gesperrtem Geraet, im Direct-Boot-Prozess und ohne sichtbare
-    Activity. Eine statische Referenz von dort in die Oberflaeche ist der kurze Weg zu einem
-    Leak oder zu einem Klassenauflösungsfehler, den kein Unit-Test sieht - er faellt beim
-    Klingeln auf.
+    Hintergrund: wer die Richtung bricht, haengt eine Activity-, Composable- oder
+    ViewModel-Klasse an einen Pfad, der ohne Oberflaeche laufen MUSS: `AlarmReceiver`,
+    `AlarmSoundService`, `BootReceiver` und die 6h-Wartung laufen bei gesperrtem Geraet, im
+    Direct-Boot-Prozess und ohne sichtbare Activity. Eine statische Referenz von dort in die
+    Oberflaeche ist der kurze Weg zu einem Leak oder zu einem Klassenauflösungsfehler, den
+    kein Unit-Test sieht - er faellt beim Klingeln auf.
 
-    Ausnahmefrei: beim Anlegen (22.08.2026) importiert KEINES der 17 unteren Pakete etwas aus
-    ui/ oder viewmodel/. Genau deshalb steht die Pruefung hier - ein Rauchmelder wird nicht
+    viewmodel -> ui (#147): nicht wecker-relevant, aber zweimal unbemerkt entstanden (#146
+    `kurzesDatum`, #147 `OrtBildschirmZustand`). Zustandstypen, die das ViewModel baut,
+    gehoeren nach viewmodel/; die Oberflaeche importiert sie von dort.
+
+    Ausnahmefrei: beim Anlegen (22.08.2026) griff kein Hintergrund-Paket nach oben, seit #147
+    auch kein ViewModel. Genau deshalb steht die Pruefung hier - ein Rauchmelder wird nicht
     erst montiert, wenn es brennt.
     """
-    muster = re.compile(r"^\s*import\s+" + re.escape(BASISPAKET) + r"\.(" +
-                        "|".join(OBERE_SCHICHTEN) + r")\.")
+    alle_oberen = "|".join(OBERE_SCHICHTEN)
     fehler = []
+    hintergrund = set()
     geprueft = 0
     for pfad in kt_dateien():
         rel = kurz(pfad).replace("\\", "/")
-        paket = rel.split("/java/" + BASISPAKET.replace(".", "/") + "/")[-1].split("/")[0]
-        if paket not in UNTERE_SCHICHTEN:
+        teile = rel.split("/java/" + BASISPAKET.replace(".", "/") + "/")[-1].split("/")
+        if len(teile) < 2:
             continue
+        paket = teile[0]
+        verboten = VERBOTENE_KANTEN.get(paket) or (() if paket in OBERE_SCHICHTEN else OBERE_SCHICHTEN)
+        if not verboten:
+            continue
+        if paket not in OBERE_SCHICHTEN:
+            hintergrund.add(paket)
         geprueft += 1
+        muster = re.compile(r"^\s*import\s+" + re.escape(BASISPAKET) + r"\.(" +
+                            "|".join(verboten) + r")\.")
         for i, zeile in enumerate(io.open(pfad, encoding="utf-8")):
             if muster.match(zeile):
-                fehler.append(f"{rel}:{i + 1} importiert die Oberflaeche: {zeile.strip()}. "
-                              "Hintergrundpfade laufen ohne Activity (Direct Boot, gesperrtes "
-                              "Geraet) - was sie brauchen, gehoert nach unten gereicht, nicht "
-                              "von oben geholt.")
-    if geprueft == 0:
+                if paket in OBERE_SCHICHTEN:
+                    grund = ("Ein ViewModel haengt nicht an der Oberflaeche - den Typ nach "
+                             "viewmodel/ verschieben, ui/ importiert ihn von dort.")
+                else:
+                    grund = ("Hintergrundpfade laufen ohne Activity (Direct Boot, gesperrtes "
+                             "Geraet) - was sie brauchen, gehoert nach unten gereicht, nicht "
+                             "von oben geholt.")
+                fehler.append(f"{rel}:{i + 1} greift nach oben: {zeile.strip()}. {grund}")
+    if not hintergrund:
         fehler.append("kein einziges Hintergrund-Paket gefunden - Pruefung greift ins Leere?")
-    return fehler, f"{geprueft} Dateien in {len(UNTERE_SCHICHTEN)} Hintergrund-Paketen, keine greift nach oben"
+    return fehler, (f"{geprueft} Dateien in {len(hintergrund)} Hintergrund-Paketen und "
+                    f"viewmodel/, keine greift nach oben")
 
 
 PRUEFUNGEN = [
@@ -277,7 +298,7 @@ PRUEFUNGEN = [
     ("kein CE-Zugriff im eager Property-Initializer", pruefe_eager_sharedprefs),
     ("setAlarmClock nur im zentralen Wrapper", pruefe_setalarmclock),
     ("dokumentierte Konstanten == Code", pruefe_konstanten),
-    ("keine Hintergrundschicht importiert die Oberflaeche", pruefe_schichtrichtung),
+    ("keine Schicht greift nach oben", pruefe_schichtrichtung),
 ]
 
 

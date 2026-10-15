@@ -27,7 +27,21 @@ Schreibkonventionen (der Generator verlässt sich darauf):
 - `### 🐛 Behoben` — Rubrik, mit Emoji wie bisher.
 - `- **Kurzfassung:** Erklärung` — ein Eintrag.
 
-## 🆕 Version 1.55.0 (Aktuell – interne Alpha)
+## 🆕 Version 1.56.0 (Aktuell – interne Alpha)
+
+**Stand:** Oktober 2026
+
+_Das Hue-Licht kann ausgehen, sobald es draußen hell wird._
+
+### ✨ Neu
+
+- **Licht aus, wenn es hell wird:** Beim automatischen Ausschalten einer Hue-Regel wählst du jetzt zusätzlich „Spätestens bei Dämmerung“ oder „Spätestens bei Sonnenaufgang“. Wird es nach dem Wecken draußen hell, bevor die eingestellte Zeit um ist, geht das Licht schon dann aus – nach einem Sonnenaufgang-Licht frühestens am Ende der Rampe. Ist es beim Wecken schon hell, gilt die eingestellte Zeit. Der Regel-Editor zeigt für den nächsten Wecker, wann das Licht ausgeht. Dafür braucht die App einen „Ort für Tageslicht“ in den Einstellungen.
+
+### 🎨 Feinschliff
+
+- **Regel-Vorschau:** In der Zusammenfassung einer Hue-Regel fehlte vor „mit … % Helligkeit“ ein Leerzeichen.
+
+## Version 1.55.0
 
 **Stand:** Oktober 2026
 

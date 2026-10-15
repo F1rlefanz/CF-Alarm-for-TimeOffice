@@ -2,6 +2,7 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.shift
 
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.CalendarEvent
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.istKrankmeldung
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IShiftConfigRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
@@ -220,7 +221,6 @@ class ShiftRecognitionEngine(
         // Zeit vor dem Deaktivieren behielte sonst seine Regeln nicht. Hergang: Skill cfalarm-kalender-und-schichten, reference/schichterkennung.md.
         val shiftDefinitions = allDefinitions.filter { it.isEnabled }
         // #142: Krankmeldungs-Typen sind KEINE Schichten - getrennt, bevor die Schleife laeuft.
-        val krankDefinitionen = shiftDefinitions.filter { it.isSickDay }
         val schichtDefinitionen = shiftDefinitions.filterNot { it.isSickDay }
         val matches = mutableListOf<ShiftMatch>()
         val krank = mutableListOf<CalendarEvent>()
@@ -243,7 +243,7 @@ class ShiftRecognitionEngine(
             // #142 KRANK HAT VORRANG, unabhaengig von der Reihenfolge der Definitionen: ein Termin, der
             // Krank UND eine Schicht trifft, ist eine Krankmeldung und erzeugt KEINEN Schichttreffer -
             // sonst entstuende fuer genau den Tag, den die Krankmeldung freigeben soll, ein Wecker.
-            if (krankDefinitionen.any { it.matchesKeywords(event.title) }) {
+            if (shiftDefinitions.istKrankmeldung(event.title)) {
                 krank += event
                 continue
             }

@@ -1,11 +1,11 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.text.kurzesDatum
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
-import java.time.format.TextStyle
 import java.time.temporal.ChronoUnit
 import java.util.Locale
 
@@ -23,12 +23,6 @@ import java.util.Locale
 private const val NBSP = ' '
 
 private val UHRZEIT: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm", Locale.GERMAN)
-private val TAG_MONAT: DateTimeFormatter = DateTimeFormatter.ofPattern("dd.MM.", Locale.GERMAN)
-
-/** "Mi 14.10." - Wochentag ohne Punkt, damit er nicht wie ein Satzende aussieht. */
-internal fun kurzesDatum(datum: LocalDate): String =
-    datum.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.GERMAN).removeSuffix(".") +
-        " " + datum.format(TAG_MONAT)
 
 /**
  * PURE, TESTBAR: die Dienstzeit als kurzer Text, `null`, wenn der Beginn unbekannt ist.

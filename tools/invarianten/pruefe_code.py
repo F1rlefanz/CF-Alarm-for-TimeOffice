@@ -229,8 +229,8 @@ def pruefe_konstanten():
 #
 # Die Hintergrundpakete werden NICHT aufgezaehlt, sondern als Rest bestimmt.
 # Bis #147 stand hier eine feste Liste; `freietage` (24.08.) kam zwei Tage
-# nach ihr und blieb ungeprueft, `tageslicht` musste von Hand nachgetragen
-# werden. Ein neues Paket ist jetzt ab seiner ersten Datei geprueft.
+# nach ihr und blieb ungeprueft wie `navigation`, `tageslicht` musste von
+# Hand nachgetragen werden. Ein neues Paket ist jetzt ab seiner ersten Datei geprueft.
 OBERE_SCHICHTEN = ("ui", "viewmodel")
 
 BASISPAKET = "com.github.f1rlefanz.cf_alarmfortimeoffice"

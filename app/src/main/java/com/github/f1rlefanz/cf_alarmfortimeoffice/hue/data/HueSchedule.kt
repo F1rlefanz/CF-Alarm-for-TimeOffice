@@ -27,7 +27,15 @@ data class HueScheduleRule(
      * auch wenn es draussen dunkel ist. Fail-safe: kein Ort / kein Ereignis / keine Weckzeit = laeuft.
      * Default [HellAb.IMMER]: ein Bestand ohne dieses Feld laeuft wie bisher.
      */
-    val hellAb: HellAb = HellAb.IMMER
+    val hellAb: HellAb = HellAb.IMMER,
+    /**
+     * Auto-Aus SPAETESTENS zum gewaehlten Hell-Zeitpunkt des Wecktags (#143), wenn der vor dem
+     * Ende der Auto-Aus-Dauer liegt. Wirkt nur mit Auto-Aus-Dauer, und nur, wenn es erst NACH der
+     * Weckzeit hell wird - ist es zur Weckzeit schon hell, gilt die Dauer. Nie vor dem Ende einer
+     * Sonnenaufgangs-Rampe. Fail-safe: kein Ort / kein Ereignis = Dauer.
+     * Default [HellAb.IMMER] = nur die Dauer, wie bisher.
+     */
+    val ausBeiHell: HellAb = HellAb.IMMER
 ) {
     companion object {
         fun generateId(): String = "rule_${System.currentTimeMillis()}"

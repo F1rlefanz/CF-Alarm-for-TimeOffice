@@ -121,8 +121,14 @@ internal fun RulePreviewCard(
                 // @Composable und darf in einem gewoehnlichen Lambda nicht aufgerufen werden.
                 // Der Abstand steht HIER, nicht in der Ressource: Android trimmt Rand-
                 // Leerzeichen beim Einlesen, am Geraet stand sonst "Wohnzimmer· Auto-Aus".
+                // #143: "spaetestens bei Daemmerung/Sonnenaufgang" haengt am Auto-Aus selbst.
+                val bisHellText = when (form.ausBeiHell) {
+                    HellAb.IMMER -> ""
+                    HellAb.DAEMMERUNG -> stringResource(R.string.tageslicht_autoaus_vorschau_daemmerung)
+                    HellAb.SONNENAUFGANG -> stringResource(R.string.tageslicht_autoaus_vorschau_sonnenaufgang)
+                }
                 val autoOffText = if (form.autoOffEnabled) {
-                    pluralStringResource(R.plurals.hue_preview_autooff_suffix, form.autoOffMinutes, form.autoOffMinutes)
+                    pluralStringResource(R.plurals.hue_preview_autooff_suffix, form.autoOffMinutes, form.autoOffMinutes) + bisHellText
                 } else null
                 val autoOffZusatz = autoOffText?.let { " " + it } ?: ""
 

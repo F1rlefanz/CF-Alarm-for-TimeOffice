@@ -7,7 +7,9 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.DirectBootAlarmStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FakeFeedNeueinlesenStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FakeKalenderVorausschauPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FakeSyncHorizonStore
+import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.KrankmeldungNotifier
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.ShiftChangeNotifier
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.ZeitkettenArmierer
 import com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPausePrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmInfo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
@@ -106,7 +108,9 @@ class Pruefrunde8SignaltrennungTest {
             FakeSyncHorizonStore(),
             FakeFeedNeueinlesenStore(),
             keineFreienTage(),
-            FakeKalenderVorausschauPrefs()
+            FakeKalenderVorausschauPrefs(),
+            dagger.Lazy { mock<ZeitkettenArmierer>() },
+            mock<KrankmeldungNotifier>()
         )
     }
 

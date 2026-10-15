@@ -109,6 +109,15 @@ object ConfigBackupFilter {
         // anderen Dienstplan gehoeren - und still, denn ein unterdrueckter Wecker meldet sich
         // nicht. Dieselbe Abwaegung wie beim Skip-Merker.
         FreieTageStore.KEY_FREIE_TAGE_NAME,
+        // #142: die Krank-Tage laut Kalender - abgeleiteter Laufzeitzustand DIESES Geraets und
+        // DIESES Kalenders. Importiert wuerden sie fremde Wecker still unterdruecken, und der
+        // naechste eigene Sync baut sie ohnehin neu auf.
+        FreieTageStore.KEY_KRANK_KALENDER_NAME,
+        // #142: Begleitzustand dazu - die Enden zeitgebundener Krank-Termine von heute und die noch
+        // ausstehenden Krankmeldungen. Beides beschreibt Termine und Wecker DIESES Geraets;
+        // importiert meldete das neue Geraet eine Krankmeldung, die es nie gesehen hat.
+        FreieTageStore.KEY_KRANK_ZEITGEBUNDEN_ENDE_NAME,
+        FreieTageStore.KEY_KRANK_ZU_MELDEN_NAME,
         // Der offene Raeumauftrag nach einer Kalender-Abwahl. Er beschreibt einen unfertigen
         // Vorgang auf DIESEM Geraet ("hier stehen noch Wecker eines abgewaehlten Dienstplans"),
         // keine Einstellung - und importiert wuerde er auf dem neuen Geraet einen Raeumlauf

@@ -310,6 +310,7 @@ fun MainContentScreen(
                         shiftState = shiftState,
                         alarmState = alarmState,
                         skipState = skipState,
+                        tagFreigabeState = tagFreigabeState,
                         masterPausePaused = masterPausePaused,
                         onJetztAbgleichen = {
                             // Grund wie beim Snackbar-Retry oben.
@@ -319,6 +320,14 @@ fun MainContentScreen(
                         onShowEventList = onShowEventList,
                         onReauthorize = {
                             authViewModel.requestCalendarAuthorization(context as? android.app.Activity)
+                        },
+                        // #142: wie „Zurücknehmen“ im Wecker-Tab - der Bestand muss danach neu aus
+                        // dem Kalender aufgebaut werden, und forceRefresh = true ist Pflicht
+                        // (refreshData(false) macht nur einen Token-Check).
+                        onAusfallZuruecknehmen = { tage ->
+                            alarmViewModel.freigabenZuruecknehmen(tage) {
+                                calendarViewModel.refreshData(forceRefresh = true)
+                            }
                         }
                     )
                 }
@@ -361,6 +370,7 @@ fun MainContentScreen(
                             }
                         },
                         onTagFreigeben = alarmViewModel::tagFreigeben,
+                        onZeitraumFreigeben = alarmViewModel::zeitraumFreigeben,
                         // Wie bei „Doch wecken“: der Bestand muss neu aus dem Kalender aufgebaut
                         // werden, denn „Dienst fällt aus“ hat die Wecker dieses Tages geloescht.
                         // forceRefresh = true ist auch hier Pflicht - refreshData(false) macht

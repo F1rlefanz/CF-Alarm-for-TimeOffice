@@ -63,6 +63,7 @@ fun ShiftEditDialog(
     var isEnabled by remember { mutableStateOf(shift?.isEnabled ?: true) }
     var isSilent by remember { mutableStateOf(shift?.isSilent ?: false) }
     var isOnCall by remember { mutableStateOf(shift?.isOnCall ?: false) }
+    var isSickDay by remember { mutableStateOf(shift?.isSickDay ?: false) }
 
     /**
      * Wird hier gerade eine BESTEHENDE Schicht umbenannt? Massstab ist der Vergleich, den die
@@ -183,13 +184,13 @@ fun ShiftEditDialog(
                                     singleLine = true,
                                     isError = keyword.isBlank(),
                                     // Warnen statt verbieten: einbuchstabige Muster treffen
-                                    // fremde Termine - schichterkennung.md.
+                                    // fremde Termine - schichterkennung.md. #142: bei einer
+                                    // Krankmeldung ist die Folge die UMGEKEHRTE (ein fehlender
+                                    // Wecker), der Text folgt dem Schalter.
                                     supportingText = if (keyword.trim().length == 1) {
                                         {
                                             Text(
-                                                text = "Ein einzelner Buchstabe trifft auch " +
-                                                    "fremde Termine (z. B. \"Kino mit F\") und " +
-                                                    "weckt dich dann an freien Tagen.",
+                                                text = ShiftDefinitionTexte.einBuchstabeWarnung(isSickDay),
                                                 style = MaterialTheme.typography.bodySmall,
                                                 color = MaterialTheme.colorScheme.error
                                             )
@@ -227,8 +228,22 @@ fun ShiftEditDialog(
                             Text("Weiteres Muster hinzufügen")
                         }
                     }
-                    
+
+                    // #142: direkt unter den Mustern, weil er entscheidet, ob die Felder darunter
+                    // (Weckzeit, Stille Schicht, Rufbereitschaft) ueberhaupt etwas bedeuten.
                     item {
+                        SwitchRow(
+                            title = ShiftDefinitionTexte.KRANKMELDUNG_TITEL,
+                            description = ShiftDefinitionTexte.KRANKMELDUNG_HINWEIS,
+                            checked = isSickDay,
+                            onCheckedChange = { isSickDay = it },
+                            titleFontWeight = FontWeight.Normal
+                        )
+                    }
+
+                    // #142: ein Krankmeldungs-Typ stellt nie einen Wecker - Weckzeit, Stille und
+                    // Rufbereitschaft waeren Einstellungen ohne Wirkung und bleiben verborgen.
+                    if (!isSickDay) item {
                         Text(
                             text = "Weckzeit",
                             style = MaterialTheme.typography.titleMedium,
@@ -264,7 +279,7 @@ fun ShiftEditDialog(
 
                     // SwitchRow statt drei handgebauter Zeilen (#132, G2-05): weight(1f) am Text und
                     // 12 dp Abstand - vorher stiess der Text am Schalter an (Bildvergleich 01.10.2026).
-                    item {
+                    if (!isSickDay) item {
                         SwitchRow(
                             title = "Stille Schicht",
                             description = "Kein Ton/Vibration/Vollbild-Wecker - die Zeit bleibt als Anker für Dimmer/DND erhalten",
@@ -274,7 +289,7 @@ fun ShiftEditDialog(
                         )
                     }
 
-                    item {
+                    if (!isSickDay) item {
                         // Der Text erklaert das WARUM, nicht nur das Was: welches Kuerzel eine
                         // Rufbereitschaft ist, weiss nur der Nutzer seiner Station - die App
                         // kann es nicht erraten, und ohne die Begruendung ("kein Stups vom
@@ -298,9 +313,15 @@ fun ShiftEditDialog(
                         // Zeitfenster" will, braucht "Stille Schicht" daruber.
                         SwitchRow(
                             title = "Schichtdefinition aktiviert",
-                            description = "Aus heißt: wird gar nicht erkannt — kein Wecker, aber " +
-                                "auch kein Dimmer- und kein DND-Fenster. Für „kein Wecker, " +
-                                "Zeitfenster trotzdem“ ist „Stille Schicht“ der richtige Schalter.",
+                            // #142: der Stille-Schicht-Verweis passt nicht auf eine Krankmeldung -
+                            // dort kostet "aus" die Tagesfreigabe, nicht ein Zeitfenster.
+                            description = if (isSickDay) {
+                                ShiftDefinitionTexte.KRANKMELDUNG_AKTIVIERT_HINWEIS
+                            } else {
+                                "Aus heißt: wird gar nicht erkannt — kein Wecker, aber " +
+                                    "auch kein Dimmer- und kein DND-Fenster. Für „kein Wecker, " +
+                                    "Zeitfenster trotzdem“ ist „Stille Schicht“ der richtige Schalter."
+                            },
                             checked = isEnabled,
                             onCheckedChange = { isEnabled = it },
                             titleFontWeight = FontWeight.Normal
@@ -329,25 +350,35 @@ fun ShiftEditDialog(
                                 .map { it.trim() }
                                 .filter { it.isNotEmpty() }
                                 .distinct()
-                            
-                            if (name.isNotBlank() && validKeywords.isNotEmpty() && parsedAlarmTime != null) {
+                            // #142: bei Krankmeldung ist die Weckzeit formal (Serialisierung), darf also
+                            // nicht blockieren; Stille/Rufbereitschaft waeren Aussagen ueber einen
+                            // Wecker, den es nie gibt.
+                            val zeit = if (isSickDay) {
+                                parsedAlarmTime ?: shift?.alarmTime ?: LocalTime.MIDNIGHT
+                            } else {
+                                parsedAlarmTime
+                            }
+
+                            if (name.isNotBlank() && validKeywords.isNotEmpty() && zeit != null) {
                                 onSave(
                                     ShiftDefinition(
                                         id = shift?.id ?: UUID.randomUUID().toString(),
                                         name = name.trim(),
                                         keywords = validKeywords,
-                                        alarmTime = parsedAlarmTime,
+                                        alarmTime = zeit,
                                         isEnabled = isEnabled,
-                                        isSilent = isSilent,
-                                        isOnCall = isOnCall
+                                        isSilent = isSilent && !isSickDay,
+                                        isOnCall = isOnCall && !isSickDay,
+                                        isSickDay = isSickDay
                                     )
                                 )
                                 onDismiss()
                             }
                         },
+                        // #142: das verborgene Zeitfeld darf das Speichern nicht grundlos sperren.
                         enabled = name.isNotBlank() &&
                                  keywords.any { it.isNotBlank() } &&
-                                 parsedAlarmTime != null
+                                 (isSickDay || parsedAlarmTime != null)
                     )
                 }
             }
@@ -356,11 +387,48 @@ fun ShiftEditDialog(
 }
 
 /**
- * Nutzertexte des Rufbereitschaft-Schalters - als Konstante, damit ein Test festhalten kann,
- * dass der Text die beiden Wirkungen nennt, die der Schalter WIRKLICH hat (stuendliche
- * Kalender-Abfrage, DND-Cutoff) und nichts verspricht, was es nicht gibt.
+ * Nutzertexte des Schicht-Editors und der Schicht-Karten - als Konstanten, damit ein Test
+ * festhalten kann, dass jeder Text nur die Wirkungen nennt, die der Schalter WIRKLICH hat (beim
+ * Rufbereitschaft-Schalter: stuendliche Kalender-Abfrage, DND-Cutoff), und nichts verspricht,
+ * was es nicht gibt.
  */
 object ShiftDefinitionTexte {
+    // #142: Krankmeldung. "Eigene Wecker bleiben" ist tragend - die Freigabe nimmt manuelle Wecker
+    // aus; ein Text ohne diesen Satz liesse fuerchten, dass auch sie entfallen.
+    const val KRANKMELDUNG_TITEL = "Krankmeldung"
+    const val KRANKMELDUNG_HINWEIS =
+        "Ein Termin dieses Typs gibt den ganzen Tag frei: kein Wecker aus dem Dienstplan, " +
+            "nachts gilt die Regel für freie Tage. Eigene Wecker bleiben."
+    const val KRANKMELDUNG_AKTIVIERT_HINWEIS =
+        "Aus heißt: wird nicht erkannt – ein Termin dieses Typs gibt dann keinen Tag frei."
+    const val KRANKMELDUNG_STATUS = "Krankmeldung – gibt den Tag frei"
+    const val KRANKMELDUNG_AUSGESCHALTET = "Ausgeschaltet – wird nicht erkannt, gibt keinen Tag frei"
+
+    /** Einbuchstabiges Muster bei einer Schicht: ein fremder Termin erzeugt einen Wecker zu viel. */
+    const val EIN_BUCHSTABE_SCHICHT =
+        "Ein einzelner Buchstabe trifft auch fremde Termine (z. B. \"Kino mit F\") und weckt " +
+            "dich dann an freien Tagen."
+
+    /**
+     * #142: dasselbe bei einer Krankmeldung - hier fehlt der Wecker. "K" ist der TimeOffice-Code
+     * und damit der Hauptfall; ein fremder Termin mit "K" als eigenem Wort gibt einen DIENSTTAG
+     * frei. Die Schicht-Warnung ("weckt dich an freien Tagen") nennte das Gegenteil des Risikos.
+     */
+    const val EIN_BUCHSTABE_KRANK =
+        "Ein einzelner Buchstabe trifft auch fremde Termine (z. B. \"Termin bei Dr. K\") und " +
+            "gibt dann einen Diensttag frei – kein Wecker aus dem Dienstplan."
+
+    /** PURE, TESTBAR: die Warnung unter einem einbuchstabigen Muster. */
+    fun einBuchstabeWarnung(isSickDay: Boolean): String =
+        if (isSickDay) EIN_BUCHSTABE_KRANK else EIN_BUCHSTABE_SCHICHT
+
+    /** #142: Loesch-Rueckfrage fuer einen Krankmeldungs-Typ - er hat keine Weckzeit, die entfiele,
+     * wohl aber Tage, die er freigegeben hat und die ihre Wecker zurueckbekommen. */
+    fun krankmeldungLoeschenText(name: String): String =
+        "\"$name\" wird mit allen Mustern gelöscht. Tage, die ein solcher Termin freigegeben " +
+            "hat, bekommen ihre Wecker aus dem Dienstplan zurück. Das lässt sich nicht " +
+            "rückgängig machen."
+
     const val RUFBEREITSCHAFT_HINWEIS =
         "An Tagen mit dieser Schicht kannst du kurzfristig zu einem Dienst abgerufen werden. " +
             "CF-Alarm fragt den Kalender dann stündlich ab statt alle 6 Stunden, damit ein " +

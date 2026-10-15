@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material.icons.filled.PhoneInTalk
 import androidx.compose.material.icons.filled.RestartAlt
+import androidx.compose.material.icons.filled.Sick
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
@@ -52,6 +53,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftCodeSuggester
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.AufklappHinweis
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.ShiftDefinitionTexte
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.ShiftEditDialog
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.hilfe.HilfeKnopf
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.hilfe.HilfeThema
@@ -397,9 +399,15 @@ fun ShiftConfigScreen(
             title = { Text("Schicht löschen?") },
             text = {
                 Text(
-                    "\"${definition.name}\" wird mit allen Mustern und der Weckzeit " +
-                        "${definition.getAlarmTimeFormatted()} gelöscht. Der zugehörige Wecker " +
-                        "entfällt damit sofort. Das lässt sich nicht rückgängig machen."
+                    // #142: ein Krankmeldungs-Typ hat keine Weckzeit, die entfiele - wohl aber
+                    // freigegebene Tage, die ihre Wecker zurueckbekommen.
+                    if (definition.isSickDay) {
+                        ShiftDefinitionTexte.krankmeldungLoeschenText(definition.name)
+                    } else {
+                        "\"${definition.name}\" wird mit allen Mustern und der Weckzeit " +
+                            "${definition.getAlarmTimeFormatted()} gelöscht. Der zugehörige Wecker " +
+                            "entfällt damit sofort. Das lässt sich nicht rückgängig machen."
+                    }
                 )
             },
             confirmButton = {
@@ -503,7 +511,12 @@ fun ShiftConfigScreen(
                             Column(modifier = Modifier.fillMaxWidth()) {
                                 Text(definition.name, fontWeight = FontWeight.Medium)
                                 Text(
-                                    "weckt um ${definition.getAlarmTimeFormatted()}" +
+                                    // #142: eine Krankmeldung weckt nie - "weckt um 00:00" waere gelogen.
+                                    (if (definition.isSickDay) {
+                                        ShiftDefinitionTexte.KRANKMELDUNG_TITEL
+                                    } else {
+                                        "weckt um ${definition.getAlarmTimeFormatted()}"
+                                    }) +
                                         if (definition.keywords.isEmpty()) {
                                             ""
                                         } else {
@@ -681,10 +694,28 @@ private fun ShiftDefinitionCard(
                     // dann die VOLLE Restbreite - ungewichtet bekaemen die Marker-Icons dahinter
                     // 0 dp und verschwaenden genau an der deaktivierten Schicht (Runde 4 zu #140).
                     // Gewichtet misst Row die Icons zuerst, der Text nimmt nur den Rest.
+                    //
+                    // #142: eine Krankmeldung hat keine Weckzeit - ihre Zeile sagt, was sie
+                    // stattdessen tut. Das Symbol ist dekorativ, der Text daneben sagt es.
+                    if (definition.isSickDay) {
+                        Icon(
+                            Icons.Default.Sick,
+                            contentDescription = null,
+                            modifier = Modifier.size(SpacingConstants.ICON_SIZE_SMALL),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.width(SpacingConstants.SPACING_SMALL))
+                    }
                     Text(
                         modifier = Modifier.weight(1f, fill = false),
                         text =
-                        if (definition.isEnabled) {
+                        if (definition.isSickDay) {
+                            if (definition.isEnabled) {
+                                ShiftDefinitionTexte.KRANKMELDUNG_STATUS
+                            } else {
+                                ShiftDefinitionTexte.KRANKMELDUNG_AUSGESCHALTET
+                            }
+                        } else if (definition.isEnabled) {
                             "Alarm: ${definition.getAlarmTimeFormatted()}"
                         } else {
                             "Ausgeschaltet — wird nicht erkannt: kein Wecker, kein Dimmer- " +
@@ -697,7 +728,7 @@ private fun ShiftDefinitionCard(
                             MaterialTheme.colorScheme.error
                         }
                     )
-                    if (definition.isSilent) {
+                    if (definition.isSilent && !definition.isSickDay) {
                         Spacer(modifier = Modifier.width(SpacingConstants.SPACING_SMALL))
                         Icon(
                             Icons.Default.NotificationsOff,
@@ -706,7 +737,7 @@ private fun ShiftDefinitionCard(
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    if (definition.isOnCall) {
+                    if (definition.isOnCall && !definition.isSickDay) {
                         Spacer(modifier = Modifier.width(SpacingConstants.SPACING_SMALL))
                         Icon(
                             Icons.Default.PhoneInTalk,
@@ -719,7 +750,8 @@ private fun ShiftDefinitionCard(
                 // Statuszeile (#70): rein lesend, nicht eigens tippbar, keine Warnfarbe - sie
                 // beschreibt die Konfiguration, sie mahnt nicht. Eine DEAKTIVIERTE Schicht zeigt
                 // keine: ihr Text darueber sagt schon "kein Dimmer- und kein DND-Fenster".
-                if (definition.isEnabled && folgen != null) {
+                // #142: eine Krankmeldung ebenso wenig - sie spannt keine Schicht auf.
+                if (definition.isEnabled && !definition.isSickDay && folgen != null) {
                     Text(
                         folgen.alsText(),
                         style = MaterialTheme.typography.bodySmall,

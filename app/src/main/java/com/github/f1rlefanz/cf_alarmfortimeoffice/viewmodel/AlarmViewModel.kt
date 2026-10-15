@@ -8,6 +8,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.WecktonAnstieg
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.WecktonProbe
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.ZeitkettenArmierer
 import com.github.f1rlefanz.cf_alarmfortimeoffice.error.ErrorHandler
+import com.github.f1rlefanz.cf_alarmfortimeoffice.freietage.FreigabeQuellen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.freietage.FreigabeZurueckgenommenException
 import com.github.f1rlefanz.cf_alarmfortimeoffice.freietage.TagFreigabeUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPausePrefs
@@ -115,12 +116,25 @@ data class AlarmSkipUiState(
  *
  * [hinweis] hat dieselbe Rolle wie `AlarmSkipUiState.restoreNotice`: der schlechteste Fall darf
  * nicht stumm sein. `error` zeigt die Oberflaeche nirgends an.
+ *
+ * #142: [quellen] traegt Hand-Freigaben und Kalender-Krank-Tage GETRENNT - die Anzeige muss
+ * sagen koennen, ob „Zurücknehmen“ einen Tag wirklich zurueckbringt (nur Hand) oder ob er laut
+ * Kalender frei bleibt.
  */
 data class TagFreigabeUiState(
-    val freieTage: List<LocalDate> = emptyList(),
+    val quellen: FreigabeQuellen = FreigabeQuellen.LEER,
     val isLoading: Boolean = false,
-    val hinweis: String? = null
-)
+    val hinweis: String? = null,
+    /**
+     * #142: gesetzt, wenn [hinweis] eine ERFOLGSmeldung ist - der letzte freigegebene Tag. Ein
+     * Erfolg gilt nur, solange sein Zeitraum laeuft, und er ist keine Warnung
+     * ([sichtbarerFreigabeHinweis]); `null` = Fehlertext (oder kein Hinweis).
+     */
+    val hinweisErfolgBis: LocalDate? = null
+) {
+    /** Vereinigung, sortiert - fuer Leser, die nur "frei ja/nein" brauchen. */
+    val freieTage: List<LocalDate> get() = quellen.alle.sorted()
+}
 
 /**
  * State für manuelle Alarm-Erstellung nach Schichttausch
@@ -502,16 +516,16 @@ class AlarmViewModel @Inject constructor(
     }
 
     /**
-     * Beobachtet die freigegebenen Tage. Sortiert, damit die Liste in der Oberflaeche eine
-     * verlaessliche Reihenfolge hat - ein `Set` hat keine.
+     * Beobachtet die freigegebenen Tage, #142: beide Quellen getrennt. Die sortierte Vereinigung
+     * liefert [TagFreigabeUiState.freieTage] - ein `Set` hat keine verlaessliche Reihenfolge.
      */
     private fun observeFreieTage() {
         viewModelScope.launch {
             var versuch = 0
             while (true) {
                 try {
-                    tagFreigabeUseCase.freieTage.collect { tage ->
-                        _tagFreigabeState.update { it.copy(freieTage = tage.sorted()) }
+                    tagFreigabeUseCase.freigabeQuellen.collect { quellen ->
+                        _tagFreigabeState.update { it.copy(quellen = quellen) }
                     }
                 } catch (e: kotlinx.coroutines.CancellationException) {
                     throw e
@@ -556,7 +570,16 @@ class AlarmViewModel @Inject constructor(
      * der zweite denselben, noch nicht geloeschten Eintrag - genau die Verschraenkung, gegen die
      * die Sperre geschrieben ist.
      */
-    fun tagFreigeben(datum: LocalDate) {
+    fun tagFreigeben(datum: LocalDate) = zeitraumFreigeben(datum, datum)
+
+    /**
+     * #142: gibt [von] bis [bis] frei (ein Tag: von == bis). Die Sperre ist dieselbe wie bei
+     * [tagFreigeben] und beim Ueberspringen ([skipVorgangLaeuft]).
+     *
+     * Ein Teilerfolg ist ein eigener Fall: die Tage bis zum gescheiterten BLEIBEN frei
+     * (Eigentuemer-Entscheidung), und der Hinweis sagt genau das ([freigabeHinweis]).
+     */
+    fun zeitraumFreigeben(von: LocalDate, bis: LocalDate) {
         if (skipVorgangLaeuft) {
             Logger.w(LogTags.ALARM, "⏳ Freigabe ignoriert - es laeuft bereits ein Wecker-Vorgang")
             return
@@ -564,47 +587,71 @@ class AlarmViewModel @Inject constructor(
         skipVorgangLaeuft = true
         viewModelScope.launch {
             try {
-                _tagFreigabeState.update { it.copy(isLoading = true, hinweis = null) }
-                tagFreigabeUseCase.freigeben(datum)
-                    .onSuccess { ergebnis ->
-                        Logger.business(
-                            LogTags.ALARM,
-                            "✅ Tag freigegeben: ${ergebnis.datum} (${ergebnis.geloeschteWecker} Wecker entfernt)"
-                        )
-                        val zusatz = if (ergebnis.ueberspringenAufgehoben) {
-                            "„Nicht wecken“ für diesen Tag ist damit zurückgenommen – es wird nicht mehr gebraucht."
-                        } else {
-                            null
-                        }
-                        _tagFreigabeState.update { it.copy(isLoading = false, hinweis = zusatz) }
+                _tagFreigabeState.update { it.copy(isLoading = true, hinweis = null, hinweisErfolgBis = null) }
+                val ergebnis = tagFreigabeUseCase.freigebenZeitraum(von, bis)
+                val fehler = ergebnis.fehler
+                if (fehler == null) {
+                    Logger.business(
+                        LogTags.ALARM,
+                        "✅ Dienst faellt aus: $von bis $bis (${ergebnis.geloeschteWecker} Wecker entfernt)"
+                    )
+                } else {
+                    Logger.e(
+                        LogTags.ALARM,
+                        "❌ Dienst faellt aus $von bis $bis: nur bis ${ergebnis.freigegebenBis} freigegeben",
+                        fehler
+                    )
+                }
+                val wiederherstellung = when (fehler) {
+                    null -> null
+                    // NICHT ABBRECHBAR - gleiche Begruendung wie beim abgebrochenen
+                    // Ueberspringen: die Wecker sind bereits gecancelt, ihre Eintraege aber noch
+                    // im Bestand. Stirbt der viewModelScope hier, bleibt genau der sichtbare,
+                    // stumme Wecker zurueck.
+                    is FreigabeZurueckgenommenException -> withContext(NonCancellable) {
+                        stelleNachAbgebrochenerFreigabeWiederHer(fehler)
                     }
-                    .onFailure { fehler ->
-                        Logger.e(LogTags.ALARM, "❌ Tag freigeben fehlgeschlagen", fehler)
-                        val hinweis = if (fehler is FreigabeZurueckgenommenException) {
-                            // NICHT ABBRECHBAR - gleiche Begruendung wie beim abgebrochenen
-                            // Ueberspringen: die Wecker sind bereits gecancelt, ihre Eintraege
-                            // aber noch im Bestand. Stirbt der viewModelScope hier, bleibt genau
-                            // der sichtbare, stumme Wecker zurueck.
-                            withContext(NonCancellable) {
-                                stelleNachAbgebrochenerFreigabeWiederHer(fehler)
-                            }
-                        } else {
-                            "„Dienst fällt aus“ hat nicht geklappt – an den Weckern hat sich nichts geändert. Bitte noch einmal versuchen."
-                        }
-                        _tagFreigabeState.update { it.copy(isLoading = false, hinweis = hinweis) }
-                    }
+                    else -> Wiederherstellung.NichtsGeaendert
+                }
+                // Der gescheiterte Tag: die Ausnahme kennt ihn; sonst (z. B. gesperrte
+                // Persistenz) ist es der Tag nach dem letzten gelungenen.
+                val fehlerTag = (fehler as? FreigabeZurueckgenommenException)?.datum
+                    ?: if (fehler != null) (ergebnis.freigegebenBis?.plusDays(1) ?: von) else null
+                val hinweis = freigabeHinweis(
+                    von = von,
+                    bis = bis,
+                    freigegebenBis = ergebnis.freigegebenBis,
+                    geloeschteWecker = ergebnis.geloeschteWecker,
+                    ueberspringenAufgehoben = ergebnis.ueberspringenAufgehoben,
+                    fehlerTag = fehlerTag,
+                    wiederherstellung = wiederherstellung
+                )
+                _tagFreigabeState.update {
+                    it.copy(
+                        isLoading = false,
+                        hinweis = hinweis,
+                        hinweisErfolgBis = if (fehler == null && hinweis != null) bis else null
+                    )
+                }
             } finally {
                 skipVorgangLaeuft = false
             }
         }
     }
 
+    /** Nimmt die Freigabe eines Tages zurueck - siehe [freigabenZuruecknehmen]. */
+    fun freigabeZuruecknehmen(datum: LocalDate, onFreigabeAufgehoben: () -> Unit) =
+        freigabenZuruecknehmen(setOf(datum), onFreigabeAufgehoben)
+
     /**
-     * Nimmt eine Freigabe zurueck. [onFreigabeAufgehoben] laeuft ERST DANACH und stoesst den
+     * Nimmt Freigaben zurueck. [onFreigabeAufgehoben] laeuft ERST DANACH und stoesst den
      * Wiederaufbau aus dem Kalenderstand an - dieselbe Reihenfolge wie bei [cancelSkip]: ein Sync
      * davor liefe noch gegen das Gate und baute gar nichts auf.
+     *
+     * #142: nur HAND-Freigaben; ein Tag, der laut Kalender krankgemeldet ist, bleibt frei. Mehrere
+     * Tage (Ausfall-Karte der Uebersicht) in einem Vorgang.
      */
-    fun freigabeZuruecknehmen(datum: LocalDate, onFreigabeAufgehoben: () -> Unit) {
+    fun freigabenZuruecknehmen(tage: Set<LocalDate>, onFreigabeAufgehoben: () -> Unit) {
         if (skipVorgangLaeuft) {
             Logger.w(LogTags.ALARM, "⏳ Ruecknahme ignoriert - es laeuft bereits ein Wecker-Vorgang")
             return
@@ -612,10 +659,10 @@ class AlarmViewModel @Inject constructor(
         skipVorgangLaeuft = true
         viewModelScope.launch {
             try {
-                _tagFreigabeState.update { it.copy(isLoading = true, hinweis = null) }
-                tagFreigabeUseCase.zuruecknehmen(datum)
+                _tagFreigabeState.update { it.copy(isLoading = true, hinweis = null, hinweisErfolgBis = null) }
+                tagFreigabeUseCase.zuruecknehmenTage(tage)
                     .onSuccess {
-                        Logger.business(LogTags.ALARM, "✅ Freigabe zurueckgenommen: $datum")
+                        Logger.business(LogTags.ALARM, "✅ Freigabe zurueckgenommen: ${tage.sorted()}")
                         _tagFreigabeState.update { it.copy(isLoading = false) }
                         onFreigabeAufgehoben()
                     }
@@ -640,11 +687,12 @@ class AlarmViewModel @Inject constructor(
      * kann sie nicht selbst wieder stellen (`AlarmUseCase` haengt fuer sein Gate bereits an ihm,
      * die Gegenrichtung waere ein DI-Zyklus), also tut es diese Stelle.
      *
-     * Jeder Rueckgabetext beschreibt nur, was wirklich passiert ist.
+     * Jeder Rueckgabewert beschreibt nur, was wirklich passiert ist - den Text dazu baut
+     * [freigabeHinweis] (#142).
      */
     private suspend fun stelleNachAbgebrochenerFreigabeWiederHer(
         fehler: FreigabeZurueckgenommenException
-    ): String {
+    ): Wiederherstellung {
         if (!fehler.freigabeZurueckgenommen) {
             // Markierung steht noch: jedes Re-Arming weist der Backstop in scheduleSystemAlarm()
             // ab. Die Wecker kommen zurueck, sobald die Freigabe weg ist - versprechen laesst
@@ -653,7 +701,29 @@ class AlarmViewModel @Inject constructor(
                 LogTags.ALARM,
                 "❌ Freigabe fuer ${fehler.datum} abgebrochen, Markierung liess sich nicht raeumen - kein Re-Arming"
             )
-            return "„Dienst fällt aus“ hat nicht geklappt und ließ sich nicht sauber zurücknehmen. Bitte in der Liste im Bereich „Wecker“ prüfen, ob die Wecker dieses Tages noch stehen."
+            return Wiederherstellung.MarkierungStehtNoch
+        }
+
+        // #142, Review S6: ist der Tag ZUGLEICH laut Kalender krankgemeldet, bleibt er nach der
+        // Ruecknahme der Hand-Markierung trotzdem frei - der Backstop in scheduleSystemAlarm()
+        // weist jedes Re-Arming ab, und "klingeln wie geplant" waere gelogen. Also gar nicht erst
+        // versuchen; die liegengebliebenen Eintraege raeumt das Gate im naechsten Sync (cancel,
+        // dann delete). Ein Lesefehler zaehlt als "nicht krank": dann laeuft das bisherige
+        // Re-Arming, und dessen Bilanz sagt ehrlich, was gestellt wurde.
+        val kalenderKrank = try {
+            fehler.datum in tagFreigabeUseCase.freigabeQuellenNow().kalender
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Logger.w(LogTags.ALARM, "⚠️ Freigabe-Quellen nicht lesbar - Re-Arming wie bisher", e)
+            false
+        }
+        if (kalenderKrank) {
+            Logger.w(
+                LogTags.ALARM,
+                "⚠️ Freigabe fuer ${fehler.datum} abgebrochen, Tag laut Kalender krank - kein Re-Arming"
+            )
+            return Wiederherstellung.KalenderKrank
         }
 
         // EIN FEHLENDER EINTRAG IST EIN MISSLUNGENER, KEIN UEBERGANGENER. `alarmIds` traegt ALLE
@@ -682,13 +752,13 @@ class AlarmViewModel @Inject constructor(
         }
         return if (misslungen == 0) {
             Logger.business(LogTags.ALARM, "✅ Abgebrochene Freigabe zurueckgenommen - Wecker wieder armiert")
-            "„Dienst fällt aus“ hat nicht geklappt. Die Wecker dieses Tages klingeln wie geplant."
+            Wiederherstellung.KlingelnWieGeplant
         } else {
             Logger.e(
                 LogTags.ALARM,
                 "❌ Abgebrochene Freigabe: $misslungen Wecker konnten nicht wieder gestellt werden"
             )
-            "„Dienst fällt aus“ hat nicht geklappt, und $misslungen Wecker dieses Tages stehen jetzt nicht mehr – bitte in der Liste im Bereich „Wecker“ prüfen."
+            Wiederherstellung.Misslungen(misslungen)
         }
     }
 
@@ -1264,7 +1334,11 @@ class AlarmViewModel @Inject constructor(
             try {
                 shiftUseCase.shiftConfig
                     .collect { shiftConfig ->
-                        uebernehmeSchichtdefinitionen(shiftConfig.definitions.filter { it.isEnabled })
+                        // #142: ein Krankmeldungs-Typ ist keine Schicht, fuer die man geweckt
+                        // werden kann - er hat keine echte Weckzeit.
+                        uebernehmeSchichtdefinitionen(
+                            shiftConfig.definitions.filter { it.isEnabled && !it.isSickDay }
+                        )
                     }
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
@@ -1434,7 +1508,8 @@ class AlarmViewModel @Inject constructor(
             // darueber.
             val schicht = if (frischeKonfiguration != null) {
                 val gefunden = frischeKonfiguration.definitions
-                    .firstOrNull { it.id == selectedShift.id && it.isEnabled }
+                    // #142: inzwischen zum Krankmeldungs-Typ geworden = nicht mehr verfuegbar.
+                    .firstOrNull { it.id == selectedShift.id && it.isEnabled && !it.isSickDay }
                 if (gefunden == null) {
                     // Die Definition ist weg oder ausgeschaltet. Nicht mit dem alten Objekt
                     // weitermachen: der Wecker traege eine shiftId, die es nicht mehr gibt, und

@@ -1,5 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.ui
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.freietage.FreigabeQuellen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmInfo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.wecker.DIENST_FAELLT_AUS_ERKLAERUNG
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.wecker.DIENST_FAELLT_AUS_KURZ
@@ -30,7 +31,7 @@ class TagFreigabeAnzeigeTest {
     private val jetzt: Long = heute.atTime(6, 0).atZone(zone).toInstant().toEpochMilli()
 
     private fun tage(alarme: List<AlarmInfo>, freieTage: List<LocalDate>) =
-        baueWeckerTage(alarme, emptyList(), freieTage, SkipLage.KEIN, emptyList(), jetzt, zone, emptyMap())
+        baueWeckerTage(alarme, emptyList(), FreigabeQuellen(freieTage.toSet(), emptySet()), SkipLage.KEIN, emptyList(), jetzt, zone, emptyMap())
 
     @Test
     fun `Der freigegebene Tag bleibt in der Liste, wenn danach kein Wecker mehr uebrig ist`() {

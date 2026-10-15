@@ -63,9 +63,16 @@ class EinstiegIntentTest {
     }
 
     @Test
-    fun `beide Benachrichtigungen bauen ihren Intent ueber den gemeinsamen Einstieg`() {
+    fun `alle Benachrichtigungen bauen ihren Intent ueber den gemeinsamen Einstieg`() {
         val kalender = ohneKommentare("alarm/CalendarUnavailableNotifier.kt")
         val dimmer = ohneKommentare("dimmer/DimCorrectionNotifier.kt")
+        val krank = ohneKommentare("alarm/KrankmeldungNotifier.kt")
+
+        // #142: die Krankmeldung schickt in den Wecker-Tab - ueber denselben Einstieg.
+        assertTrue(
+            "Die Krankmeldung baut ihren Intent selbst - der naechste vergisst MAIN/LAUNCHER",
+            krank.contains("MainActivity.einstiegIntent(context, MainActivity.EINSTIEG_KRANKMELDUNG)")
+        )
 
         assertTrue(
             "Die Kalender-Warnung baut ihren Intent selbst - der naechste vergisst MAIN/LAUNCHER",

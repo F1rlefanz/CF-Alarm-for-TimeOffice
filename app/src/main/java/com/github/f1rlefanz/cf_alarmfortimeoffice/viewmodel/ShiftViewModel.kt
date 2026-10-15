@@ -189,7 +189,10 @@ class ShiftViewModel @Inject constructor(
         dndStand()
     ) { config, dim, hue, dnd ->
         config?.definitions.orEmpty()
-            .filter { it.isEnabled }
+            // #142: ein Krankmeldungs-Typ stellt nie einen Wecker und spannt keine Schicht auf -
+            // DND-, Dimm- oder Licht-Aussagen ueber ihn waeren erfunden. Die Karte zeigt
+            // stattdessen ihre eigene Statuszeile.
+            .filter { it.isEnabled && !it.isSickDay }
             .associate { definition ->
                 definition.id to ermittleSchichtFolgen(
                     definition = definition,

@@ -1,5 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.freietage.FreigabeQuellen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmInfo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.MANUELLER_ALARM_SUFFIX
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
@@ -56,8 +57,13 @@ class WeckerTageTest {
         zone: ZoneId = berlin,
         wirkungen: Map<String, SchichtWirkung> = emptyMap(),
         spannen: List<ShiftSpan> = emptyList(),
-        schlummern: List<Schlummern> = emptyList()
-    ) = baueWeckerTage(alarme, spannen, freieTage, skip, schlummern, jetzt, zone, wirkungen)
+        schlummern: List<Schlummern> = emptyList(),
+        // #142: die zweite Quelle - Tage, die ein Krank-Termin im Kalender freigibt.
+        kalender: List<LocalDate> = emptyList()
+    ) = baueWeckerTage(
+        alarme, spannen, FreigabeQuellen(hand = freieTage.toSet(), kalender = kalender.toSet()),
+        skip, schlummern, jetzt, zone, wirkungen
+    )
 
     private fun WeckerTag.wecker() = eintraege.filterIsInstance<WeckerEintrag.Wecker>()
 
@@ -290,6 +296,54 @@ class WeckerTageTest {
         assertTrue(frei.eintraege.isEmpty())
         assertTrue(frei.kaertchen.isEmpty())
         assertFalse(liste[0].freigegeben)
+    }
+
+    // --- #142: zwei Quellen ---------------------------------------------------------------------
+
+    @Test
+    fun `Kalender-Tag traegt die Quelle KALENDER`() {
+        val liste = tage(
+            listOf(alarm(1, "2026-10-15T05:00"), alarm(2, "2026-10-16T05:00")),
+            freieTage = listOf(LocalDate.of(2026, 10, 15)),
+            kalender = listOf(LocalDate.of(2026, 10, 16))
+        )
+        assertEquals(listOf(FreigabeArt.HAND, FreigabeArt.KALENDER), liste.map { it.freigabe })
+        // Dieselbe Wirkung wie eine Hand-Freigabe: der Dienstwecker entfaellt, Kaertchen gibt es nicht.
+        val krank = liste[1]
+        assertTrue(krank.freigegeben)
+        assertTrue(krank.wecker().single().entfaelltDurchFreigabe)
+        assertTrue(krank.kaertchen.isEmpty())
+    }
+
+    @Test
+    fun `Tag in beiden Quellen traegt BEIDE`() {
+        val tag = LocalDate.of(2026, 10, 15)
+        val liste = tage(freieTage = listOf(tag), kalender = listOf(tag))
+        assertEquals(FreigabeArt.BEIDE, liste.single().freigabe)
+        assertTrue(liste.single().freigegeben)
+    }
+
+    @Test
+    fun `Kalender-Tag ohne Wecker steht trotzdem in der Liste`() {
+        // Der Sync hat den Wecker des Krank-Tages schon geloescht - der Tag muss trotzdem zeigen,
+        // WARUM an ihm nichts klingelt.
+        val liste = tage(
+            listOf(alarm(1, "2026-10-17T05:00")),
+            kalender = listOf(LocalDate.of(2026, 10, 16))
+        )
+        assertEquals(listOf(16, 17), liste.map { it.datum.dayOfMonth })
+        assertEquals(FreigabeArt.KALENDER, liste[0].freigabe)
+        assertTrue(liste[0].eintraege.isEmpty())
+        assertEquals(null, liste[1].freigabe)
+    }
+
+    @Test
+    fun `Snooze eines Kalender-Tages fehlt wie bei einer Hand-Freigabe`() {
+        val heute = LocalDate.of(2026, 10, 14)
+        val bis = ms("2026-10-14T12:10")
+        val weckzeit = ms("2026-10-14T11:50")
+        val liste = tage(kalender = listOf(heute), schlummern = listOf(Schlummern(bis, weckzeit, "Frühschicht", false)))
+        assertTrue(liste.single().eintraege.isEmpty())
     }
 
     @Test

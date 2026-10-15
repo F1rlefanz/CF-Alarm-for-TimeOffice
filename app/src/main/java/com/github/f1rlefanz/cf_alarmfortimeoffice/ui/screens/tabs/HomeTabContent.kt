@@ -1,5 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -32,17 +33,26 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.KalenderVorausschauPrefs
+import com.github.f1rlefanz.cf_alarmfortimeoffice.freietage.Ausfall
+import com.github.f1rlefanz.cf_alarmfortimeoffice.freietage.AusfallQuelle
+import com.github.f1rlefanz.cf_alarmfortimeoffice.freietage.laufenderAusfall
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.LetzterSchichtStand
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpan
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.NaechsterWeckerKarte
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.kurzesDatum
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.rememberNaechsterWecker
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.schichtTerminText
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.wecker.KRANK_KALENDER_ZURUECK
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.warning
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.DateTimeFormats
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.AlarmSkipUiState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.AlarmUiState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.CalendarUiState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.ShiftUiState
+import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.TagFreigabeUiState
+import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.sichtbarerFreigabeHinweis
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -66,8 +76,23 @@ internal enum class NoShiftReason {
     SHIFT_CONFIG_NOT_LOADED,
     NO_SHIFT_TYPES,
     NO_PATTERN_MATCH,
+    /**
+     * #142: ALLE Termine sind Krankmeldungen. Die Engine laesst Krank-Treffer bewusst aus den
+     * Schichten heraus - ohne diesen Fall hiesse es "kein Erkennungsmuster passt (im Kalender
+     * steht: K)", und der Rat, "K" als Muster einzutragen, braechte die Wecker an Krank-Tagen
+     * zurueck.
+     */
+    NUR_KRANKMELDUNG,
     ONLY_PAST_SHIFTS
 }
+
+/**
+ * #142: Ist [titel] eine Krankmeldung? Dieselbe Frage und derselbe Vorrang wie in der Engine
+ * (`ShiftRecognitionEngine`: Krank vor Schicht, nur aktive Typen), damit die Karte nicht anders
+ * zaehlt als der Sync.
+ */
+internal fun istKrankTermin(titel: String, definitionen: List<ShiftDefinition>): Boolean =
+    definitionen.any { it.isEnabled && it.isSickDay && it.matchesKeywords(titel) }
 
 /**
  * PURE, TESTBAR: Leitet den Grund aus den vorhandenen UI-Zustaenden ab.
@@ -86,7 +111,8 @@ internal fun noShiftReason(
     eventCount: Int,
     shiftConfigLoaded: Boolean,
     enabledShiftTypeCount: Int,
-    recognizedShiftCount: Int
+    recognizedShiftCount: Int,
+    krankTerminCount: Int = 0
 ): NoShiftReason = when {
     !hasSelectedCalendars -> NoShiftReason.NO_CALENDAR_SELECTED
     !calendarAuthorizationValid -> NoShiftReason.AUTHORIZATION_LOST
@@ -103,6 +129,10 @@ internal fun noShiftReason(
     eventCount == 0 -> NoShiftReason.NO_EVENTS
     !shiftConfigLoaded -> NoShiftReason.SHIFT_CONFIG_NOT_LOADED
     enabledShiftTypeCount == 0 -> NoShiftReason.NO_SHIFT_TYPES
+    // #142: nur wenn WIRKLICH jeder Termin eine Krankmeldung ist - steht daneben ein
+    // unerkannter Termin, bleibt die Frage nach dem Muster die richtige.
+    recognizedShiftCount == 0 && krankTerminCount > 0 && krankTerminCount >= eventCount ->
+        NoShiftReason.NUR_KRANKMELDUNG
     recognizedShiftCount == 0 -> NoShiftReason.NO_PATTERN_MATCH
     else -> NoShiftReason.ONLY_PAST_SHIFTS
 }
@@ -237,6 +267,10 @@ internal fun noShiftExplanation(
             }
             append(". Erkennungsmuster $SCHICHTTYPEN_ORT prüfen.")
         }
+        NoShiftReason.NUR_KRANKMELDUNG ->
+            // Kein Rat zu Erkennungsmustern: "K" IST erkannt - als Krankmeldung.
+            "Im Kalender stehen in den nächsten $vorausschauTage Tagen nur Krankmeldungen – " +
+                "kein Dienst, kein Wecker aus dem Dienstplan."
         NoShiftReason.ONLY_PAST_SHIFTS ->
             "Alle erkannten Schichten liegen bereits in der Vergangenheit."
     }
@@ -353,6 +387,107 @@ internal fun abgleichZeitText(
     }
 }
 
+// ---- Laufender Ausfall (#142) -------------------------------------------------------------
+
+/**
+ * #142: die zweite Zeile der Ausfall-Karte - Wortlaut der Spec. "Nachts gilt die Regel fuer freie
+ * Tage": `FreieTageStore.filtereSpannen` nimmt die Spannen freier Tage aus Dimmer und "Nicht
+ * stören". Ohne eigene FREI-Regel wirkt dort die allgemeine Regel oder keine - bewusst so
+ * akzeptiert (im Skill notiert).
+ */
+internal const val AUSFALL_TEXT: String =
+    "Kein Wecker aus dem Dienstplan, eigene Wecker bleiben. Nachts gilt die Regel für freie Tage."
+
+/**
+ * #142: direkt unter "Zurücknehmen", wenn der Block auch Kalender-Tage enthaelt - die nimmt der
+ * Knopf nicht zurueck (den Kalender-Schluessel schreibt allein `syncAlarms()`).
+ */
+internal const val AUSFALL_GEMISCHT_HINWEIS: String =
+    "„Zurücknehmen“ nimmt nur deine eigene Freigabe zurück. Tage, die laut Kalender krankgemeldet " +
+        "sind, bleiben frei."
+
+/**
+ * PURE, TESTBAR: die Ueberschrift der Ausfall-Karte. [Ausfall.von] ist immer heute oder morgen
+ * (`laufenderAusfall`). Ist eine eigene Freigabe beteiligt, heisst der Block "Dienst fällt aus";
+ * "krankgemeldet" nur, wenn der Kalender die einzige Quelle ist.
+ */
+internal fun ausfallTitel(ausfall: Ausfall, heute: LocalDate): String {
+    val morgen = heute.plusDays(1)
+    val bis = kurzesDatum(ausfall.bis)
+    val einTag = ausfall.von == ausfall.bis
+    return if (ausfall.quelle == AusfallQuelle.KALENDER) {
+        when {
+            einTag && ausfall.von == heute -> "Heute krankgemeldet (laut Kalender)"
+            einTag && ausfall.von == morgen -> "Morgen krankgemeldet (laut Kalender)"
+            ausfall.von == heute -> "Krankgemeldet bis $bis (laut Kalender)"
+            else -> "Ab morgen krankgemeldet, bis $bis (laut Kalender)"
+        }
+    } else {
+        when {
+            einTag && ausfall.von == heute -> "Dienst fällt heute aus"
+            einTag && ausfall.von == morgen -> "Dienst fällt morgen aus"
+            ausfall.von == heute -> "Dienst fällt aus bis $bis"
+            else -> "Dienst fällt ab morgen aus, bis $bis"
+        }
+    }
+}
+
+/** PURE, TESTBAR: bietet die Karte "Zurücknehmen" an? Nur fuer eigene Freigaben im Block. */
+internal fun ausfallZuruecknehmbar(ausfall: Ausfall): Boolean = ausfall.handTage.isNotEmpty()
+
+/**
+ * PURE, TESTBAR: der Satz unter dem Knopf bzw. an seiner Stelle. Reiner Kalender-Block: kein Knopf,
+ * stattdessen, wie der Wecker zurueckkommt; gemischter Block: was der Knopf NICHT zuruecknimmt.
+ * Reine Hand-Freigabe: nichts.
+ */
+internal fun ausfallHinweis(ausfall: Ausfall): String? = when (ausfall.quelle) {
+    AusfallQuelle.HAND -> null
+    AusfallQuelle.KALENDER -> KRANK_KALENDER_ZURUECK
+    AusfallQuelle.GEMISCHT -> AUSFALL_GEMISCHT_HINWEIS
+}
+
+/**
+ * #142: der laufende Ausfall, ganz oben in der Uebersicht. Neutral (Rand, keine Warnfarbe): er ist
+ * zeitlich begrenzt und kein Fehler - der sichtbare Unterschied zur Master-Pause, die alles anhaelt.
+ */
+@Composable
+private fun AusfallKarte(
+    ausfall: Ausfall,
+    heute: LocalDate,
+    gesperrt: Boolean,
+    onZuruecknehmen: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(SpacingConstants.PADDING_CARD),
+            verticalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_SMALL)
+        ) {
+            Text(
+                ausfallTitel(ausfall, heute),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+            Text(AUSFALL_TEXT, style = MaterialTheme.typography.bodyMedium)
+            if (ausfallZuruecknehmbar(ausfall)) {
+                OutlinedButton(onClick = onZuruecknehmen, enabled = !gesperrt) { Text("Zurücknehmen") }
+            }
+            ausfallHinweis(ausfall)?.let {
+                Text(
+                    it,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
 /**
  * Die Karte "Nächste Schicht". Eigene Funktion, seit die Uebersicht sie vor ODER nach "Nächster
  * Wecker" stellt (#141, [uebersichtReihenfolge]). [reason] und [offlineSchicht] rechnet der
@@ -458,8 +593,11 @@ private fun NaechsteSchichtKarte(
                                 errorMessage = ladeFehler,
                                 // Nur eine kleine Kostprobe: die Karte soll erklaeren, nicht den
                                 // Kalender abbilden (dafuer gibt es "Antippen fuer Details").
+                                // #142: ohne Krankmeldungen - "(im Kalender steht: K)" legte
+                                // nahe, "K" als Schicht-Muster einzutragen.
                                 sampleEventTitles = calendarState.events
                                     .map { it.title }
+                                    .filterNot { istKrankTermin(it, shiftConfig?.definitions.orEmpty()) }
                                     .distinct()
                                     .take(3),
                                 autoAlarmEnabled = shiftConfig?.autoAlarmEnabled != false,
@@ -482,11 +620,15 @@ fun HomeTabContent(
     shiftState: ShiftUiState,
     alarmState: AlarmUiState,
     skipState: AlarmSkipUiState,
+    // #142: bewusst OHNE Default (Anzeigepfad) - vergessen hiesse still "keine Ausfall-Karte".
+    tagFreigabeState: TagFreigabeUiState,
     masterPausePaused: Boolean,
     onJetztAbgleichen: () -> Unit,
     onNavigateToWecker: () -> Unit,
     onShowEventList: () -> Unit,
-    onReauthorize: () -> Unit
+    onReauthorize: () -> Unit,
+    /** #142: nimmt die eigenen Freigaben des laufenden Ausfalls zurueck. */
+    onAusfallZuruecknehmen: (Set<LocalDate>) -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -508,8 +650,13 @@ fun HomeTabContent(
             errorMessage = calendarState.error ?: shiftState.error,
             eventCount = calendarState.events.size,
             shiftConfigLoaded = shiftState.currentShiftConfig != null,
-            enabledShiftTypeCount = shiftState.currentShiftConfig?.definitions?.count { it.isEnabled } ?: 0,
-            recognizedShiftCount = shiftState.recognizedShifts.size
+            // #142: ein Krankmeldungs-Typ ist kein Schichttyp, fuer den ein Wecker entsteht.
+            enabledShiftTypeCount = shiftState.currentShiftConfig?.definitions
+                ?.count { it.isEnabled && !it.isSickDay } ?: 0,
+            recognizedShiftCount = shiftState.recognizedShifts.size,
+            krankTerminCount = calendarState.events.count { event ->
+                istKrankTermin(event.title, shiftState.currentShiftConfig?.definitions.orEmpty())
+            }
         )
         val offlineSchicht = offlineAngezeigteSchicht(
             reason = reason,
@@ -537,6 +684,41 @@ fun HomeTabContent(
         val weckerKarte: @Composable () -> Unit = {
             NaechsterWeckerKarte(stand = naechsterWecker, onAlleWecker = onNavigateToWecker)
         }
+        // #142: ganz OBEN, VOR den beiden #141-Karten - deren Texte "die Karte darunter" beziehen
+        // sich aufeinander und bleiben so wahr. Bei Master-Pause/Automatik aus entfaellt der
+        // Hinweis: dort bleiben keine eigenen Wecker (gestellteWeckerBleiben), und die Pause hat
+        // ihre eigene Anzeige.
+        val heute = LocalDate.now(zone)
+        val ausfall = if (gestellteWeckerBleiben(
+                masterPausePaused,
+                shiftState.currentShiftConfig?.autoAlarmEnabled != false
+            )
+        ) {
+            laufenderAusfall(tagFreigabeState.quellen.hand, tagFreigabeState.quellen.kalender, heute)
+        } else {
+            null
+        }
+        ausfall?.let {
+            AusfallKarte(
+                ausfall = it,
+                heute = heute,
+                // Dieselbe Wiedereintrittssperre wie im Wecker-Tab (skipVorgangLaeuft).
+                gesperrt = tagFreigabeState.isLoading || skipState.isLoading,
+                onZuruecknehmen = { onAusfallZuruecknehmen(it.handTage) }
+            )
+        }
+        // Der Ausgang eines Zuruecknehmens von HIER muss auch hier stehen - sonst saehe man einen
+        // Fehlschlag nur, wenn man zufaellig in den Wecker-Tab wechselt. #142: nur FEHLER - eine
+        // Erfolgsmeldung sagt die Ausfall-Karte selbst, und nur, solange sie gilt.
+        sichtbarerFreigabeHinweis(
+            tagFreigabeState.hinweis,
+            tagFreigabeState.hinweisErfolgBis,
+            heute,
+            aufUebersicht = true
+        )?.let {
+            Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.warning)
+        }
+
         // Ohne Animation (#141): die Karten tauschen den Platz nur bei neuen Daten oder beim
         // Zurueckkehren in die App, nicht waehrend man hinsieht.
         when (reihenfolge) {

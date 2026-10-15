@@ -26,7 +26,8 @@ class NoShiftReasonTest {
         eventCount: Int = 5,
         shiftConfigLoaded: Boolean = true,
         enabledShiftTypeCount: Int = 5,
-        recognizedShiftCount: Int = 2
+        recognizedShiftCount: Int = 2,
+        krankTerminCount: Int = 0
     ) = noShiftReason(
         hasSelectedCalendars = hasSelectedCalendars,
         calendarAuthorizationValid = calendarAuthorizationValid,
@@ -36,7 +37,8 @@ class NoShiftReasonTest {
         eventCount = eventCount,
         shiftConfigLoaded = shiftConfigLoaded,
         enabledShiftTypeCount = enabledShiftTypeCount,
-        recognizedShiftCount = recognizedShiftCount
+        recognizedShiftCount = recognizedShiftCount,
+        krankTerminCount = krankTerminCount
     )
 
     @Test
@@ -272,5 +274,41 @@ class NoShiftReasonTest {
         val texts = NoShiftReason.entries.map { noShiftExplanation(it, errorMessage = "X") }
         texts.forEach { assertTrue("Leerer Erklaertext", it.isNotBlank()) }
         assertEquals("Zwei Gruende duerfen nicht denselben Text zeigen", texts.size, texts.distinct().size)
+    }
+
+    // --- #142: nur Krankmeldungen im Kalender ---
+
+    @Test
+    fun `Stehen nur Krankmeldungen im Kalender, heisst es nicht kein Muster passt`() {
+        assertEquals(
+            NoShiftReason.NUR_KRANKMELDUNG,
+            reason(eventCount = 3, recognizedShiftCount = 0, krankTerminCount = 3)
+        )
+        val text = noShiftExplanation(NoShiftReason.NUR_KRANKMELDUNG, vorausschauTage = 14)
+        assertTrue(text.contains("nur Krankmeldungen"))
+        assertFalse("Kein Rat, \"K\" als Schicht-Muster einzutragen: $text", text.contains("Erkennungsmuster"))
+    }
+
+    @Test
+    fun `Steht neben Krankmeldungen ein unerkannter Termin, bleibt die Muster-Frage`() {
+        assertEquals(
+            NoShiftReason.NO_PATTERN_MATCH,
+            reason(eventCount = 4, recognizedShiftCount = 0, krankTerminCount = 3)
+        )
+    }
+
+    @Test
+    fun `Krankmeldung wird wie in der Engine erkannt - nur aktive Krank-Typen`() {
+        val krank = com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition(
+            id = "sick",
+            name = "Krank",
+            keywords = listOf("K"),
+            alarmTime = java.time.LocalTime.MIDNIGHT,
+            isSickDay = true
+        )
+        assertTrue(istKrankTermin("K", listOf(krank)))
+        assertFalse(istKrankTermin("F", listOf(krank)))
+        assertFalse(istKrankTermin("K", listOf(krank.copy(isEnabled = false))))
+        assertFalse(istKrankTermin("K", listOf(krank.copy(isSickDay = false))))
     }
 }

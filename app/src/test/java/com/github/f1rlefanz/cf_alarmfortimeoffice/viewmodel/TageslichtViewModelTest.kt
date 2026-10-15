@@ -11,8 +11,6 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.PlzTabelle
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.StandortErgebnis
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.TageslichtEinstellungen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.TageslichtStand
-import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tageslicht.OrtBildschirmZustand
-import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tageslicht.StandortFehler
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi

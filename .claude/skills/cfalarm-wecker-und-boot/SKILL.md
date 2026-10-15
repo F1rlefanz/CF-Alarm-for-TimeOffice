@@ -90,6 +90,9 @@ das baut man dieselbe Falle in neuer Form nach.
   exakt verglichen (`AlarmReceiver.isSilentAlarm`, seit 1.52.1; vorher klingelte eine stille Schicht
   nach naechtlichem Prozess-Ende). **Kein Intent-Extra "still"**: es koennte veralten und einen Wecker
   stumm halten, der wieder klingeln soll. Manuelle Wecker ("... (Manuell)") treffen nie eine Definition.
+  **Der Name ist keine Identitaet** (gleichnamige Definitionen sind speicherbar, die Erkennung
+  ordnet ueber Keywords zu): still nur, wenn ALLE gleichnamigen still sind - nie `firstOrNull`,
+  sonst macht eine stille Dublette davor den Wecker aus der lauten stumm.
 - **„Deine Schicht beginnt um" zeigt `AlarmInfo.shiftStartTime`, nicht `triggerTime`.** Die Falle
   liegt im Re-Arming-Pfad `scheduleSystemAlarm()`, nicht in der Erstplanung.
 - **Der Delta-Sync hat pro Event ein eigenes `try/catch`, das `CancellationException` weiterwirft.**

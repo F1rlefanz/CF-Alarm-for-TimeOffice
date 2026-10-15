@@ -71,6 +71,7 @@ class NaechsterWeckerKarteTest {
 
         assertEquals(
             NaechsterWeckerAnzeige.Naechster(
+                zeitpunkt = t,
                 tag = "Morgen, Mi 14.10.",
                 uhrzeit = "05:30",
                 schicht = "Frühdienst${TRENNER}06:00–14:12"
@@ -274,6 +275,8 @@ class NaechsterWeckerKarteTest {
         a as NaechsterWeckerAnzeige.Naechster
         assertTrue(a.tag.endsWith(SCHLUMMERT_KARTE))
         assertEquals("Frühschicht", a.schicht)
+        // Die Uebersicht ordnet nach diesem Zeitpunkt (#141) - er muss der des Snooze sein.
+        assertEquals(bis, a.zeitpunkt)
     }
 
     @Test

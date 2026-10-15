@@ -35,6 +35,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.KalenderVorausschauPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.LetzterSchichtStand
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpan
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.NaechsterWeckerKarte
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.rememberNaechsterWecker
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.schichtTerminText
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.DateTimeFormats
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
@@ -109,7 +110,9 @@ internal fun noShiftReason(
 /**
  * Der Zusatz fuer die Master-Pause. Bewusst kurz und ohne den Weg zurueck: den nennt die
  * Karte "Nächster Wecker" unmittelbar darunter (`ALARM_STATUS_PAUSIERT_AUSWEG`) - derselbe Zustand
- * soll nicht zweimal ausfuehrlich auf demselben Bildschirm stehen.
+ * soll nicht zweimal ausfuehrlich auf demselben Bildschirm stehen. "Darunter" haelt, obwohl die
+ * Uebersicht die Karten seit #141 nach Zeit ordnet: pausiert nennt die Wecker-Karte keinen
+ * Zeitpunkt, und dann bleibt die Schicht oben ([uebersichtReihenfolge]).
  */
 internal const val NO_SHIFT_HINWEIS_PAUSIERT: String =
     "Hinweis: Alles ist pausiert — es wird kein Wecker gestellt."
@@ -184,7 +187,8 @@ internal fun noShiftExplanation(
         NoShiftReason.AUTHORIZATION_LOST ->
             // KEINE Positionsangabe ("in der Karte darunter"): direkt unter dieser Karte liegt die
             // Karte "Nächster Wecker", die stattdessen in den Wecker-Tab springt - der Erneuern-Knopf
-            // sitzt erst eine Karte weiter. Wie bei den anderen Gruenden die Beschriftung nennen,
+            // sitzt erst eine Karte weiter (ohne Schicht kein Zeitpunkt, die Reihenfolge bleibt
+            // also fest, siehe uebersichtReihenfolge). Wie bei den anderen Gruenden die Beschriftung nennen,
             // die im Screen wirklich steht (Karte "Kalender-Events", Knopf darin).
             "Kalender-Zugriff abgelaufen — in der Karte \"Kalender-Events\" auf " +
                 "\"Kalender-Zugriff erneuern\" tippen."
@@ -262,6 +266,40 @@ internal fun offlineAngezeigteSchicht(
 ): ShiftSpan? =
     if (reason == NoShiftReason.KALENDER_NICHT_ERREICHBAR) letzterStand?.naechsteNach(now) else null
 
+/** In welcher Reihenfolge die Uebersicht "Nächste Schicht" und "Nächster Wecker" zeigt (#141). */
+internal enum class UebersichtReihenfolge { SCHICHT_ZUERST, WECKER_ZUERST }
+
+/**
+ * PURE, TESTBAR: Was zuerst kommt, steht oben (#141, Eigentuemer 15.10.2026).
+ *
+ * WARUM NICHT EINFACH TAUSCHEN: meist klingelt der Wecker vor seiner Schicht (05:30 vor 06:00),
+ * und er gehoerte nach oben. Ein stiller Abrufdienst ab Fr 00:00 mit dem naechsten Wecker erst
+ * Sa 05:30 stuende bei festem Tausch aber unter dem spaeteren Termin.
+ *
+ * - Verglichen wird der Schichtbeginn (ganztaegig: 00:00) mit dem Zeitpunkt, den die Wecker-Karte
+ *   NENNT (auch ein schwebender Snooze) - nie eine eigene Auswahl.
+ * - Gleichstand: der Wecker steht oben.
+ * - Fehlt einer der Zeitpunkte (Pause, kein klingelnder Wecker, keine Schicht erkannt, Laden),
+ *   bleibt die bisherige Reihenfolge: Schicht oben. DARAUF STUETZEN SICH ZWEI TEXTE der
+ *   Schicht-Karte ([NO_SHIFT_HINWEIS_PAUSIERT] und der Grund [NoShiftReason.AUTHORIZATION_LOST]):
+ *   in diesen Zustaenden hat mindestens eine Karte keinen Zeitpunkt, die Wecker-Karte steht also
+ *   sicher darunter.
+ */
+internal fun uebersichtReihenfolge(schichtBeginn: Long?, weckerZeitpunkt: Long?): UebersichtReihenfolge =
+    if (schichtBeginn != null && weckerZeitpunkt != null && weckerZeitpunkt <= schichtBeginn) {
+        UebersichtReihenfolge.WECKER_ZUERST
+    } else {
+        UebersichtReihenfolge.SCHICHT_ZUERST
+    }
+
+/**
+ * PURE, TESTBAR: Der Beginn der Schicht, die die Karte "Nächste Schicht" gerade zeigt - dieselbe
+ * Zweigfolge wie die Karte (erkannte Schicht, sonst Laden, sonst der Offline-Stand). Zeigt die
+ * Karte keine Schicht, gibt es keinen Zeitpunkt.
+ */
+internal fun angezeigterSchichtBeginn(naechsteSchicht: Long?, laedt: Boolean, offlineSchicht: Long?): Long? =
+    naechsteSchicht ?: if (laedt) null else offlineSchicht
+
 /**
  * PURE, TESTBAR: Der Hinweis unter einer offline angezeigten Schicht. Er sagt, dass der Stand
  * ALT ist, und WORAUF sich der Zeitpunkt bezieht: die Schichtliste, nicht einen Kalender-Abgleich
@@ -315,6 +353,129 @@ internal fun abgleichZeitText(
     }
 }
 
+/**
+ * Die Karte "Nächste Schicht". Eigene Funktion, seit die Uebersicht sie vor ODER nach "Nächster
+ * Wecker" stellt (#141, [uebersichtReihenfolge]). [reason] und [offlineSchicht] rechnet der
+ * Aufrufer, weil er daraus auch den Zeitpunkt fuer die Reihenfolge nimmt
+ * ([angezeigterSchichtBeginn]) - eine Rechnung, damit Karte und Reihenfolge dieselbe Schicht meinen.
+ */
+@Composable
+private fun NaechsteSchichtKarte(
+    calendarState: CalendarUiState,
+    shiftState: ShiftUiState,
+    masterPausePaused: Boolean,
+    reason: NoShiftReason,
+    offlineSchicht: ShiftSpan?
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(SpacingConstants.PADDING_CARD),
+            horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_LARGE),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                Icons.Default.Work,
+                // dekorativ: Text daneben sagt es bereits ("Nächste Schicht")
+                contentDescription = null,
+                modifier = Modifier.size(SpacingConstants.ICON_SIZE_EXTRA_LARGE),
+                tint = MaterialTheme.colorScheme.primary
+            )
+            
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    "Nächste Schicht",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                
+                if (shiftState.upcomingShift != null) {
+                    Text(
+                        shiftState.upcomingShift.shiftType.displayName,
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                    // Datum und Dienstzeit - dieselbe Formatierung wie im Wecker-Tab
+                    // („ganztägig“ statt einer Uhrzeit 00:00, die es nicht gibt).
+                    val zone = ZoneId.systemDefault()
+                    Text(
+                        schichtTerminText(
+                            beginn = shiftState.upcomingShift.startTime.atZone(zone).toInstant().toEpochMilli(),
+                            ende = shiftState.upcomingShift.endTime.atZone(zone).toInstant().toEpochMilli(),
+                            zone = zone
+                        ),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                } else if (calendarState.isLoading || shiftState.isLoading) {
+                    // Beim (ersten) Oeffnen synchronisiert die App den Kalender neu; bis die
+                    // Events da sind, ist noch keine Schicht erkannt. Das ist ein LADEzustand,
+                    // kein Fehler - neutraler Hinweis, solange geladen wird.
+                    Text(
+                        "Wird geladen …",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else {
+                    // Nicht nur "Keine Schicht erkannt", sondern WARUM: der Satz allein galt fuer
+                    // sechs verschiedene Ursachen und liess den Nutzer ohne Anhaltspunkt zurueck.
+                    val shiftConfig = shiftState.currentShiftConfig
+                    val ladeFehler = calendarState.error ?: shiftState.error
+                    if (offlineSchicht != null) {
+                        // Offline: der letzte bekannte Stand statt "Keine Schicht erkannt" -
+                        // als alt gekennzeichnet, siehe offlineAngezeigteSchicht().
+                        Text(
+                            offlineSchicht.shiftName,
+                            style = MaterialTheme.typography.bodyLarge
+                        )
+                        Text(
+                            schichtTerminText(offlineSchicht.startTime, offlineSchicht.endTime, ZoneId.systemDefault()),
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Text(
+                            offlineStandHinweis(
+                                stand = shiftState.letzterSchichtStand?.stand,
+                                masterPausePaused = masterPausePaused,
+                                autoAlarmEnabled = shiftConfig?.autoAlarmEnabled != false
+                            ),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else {
+                        Text(
+                            "Keine Schicht erkannt",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            noShiftExplanation(
+                                reason = reason,
+                                errorMessage = ladeFehler,
+                                // Nur eine kleine Kostprobe: die Karte soll erklaeren, nicht den
+                                // Kalender abbilden (dafuer gibt es "Antippen fuer Details").
+                                sampleEventTitles = calendarState.events
+                                    .map { it.title }
+                                    .distinct()
+                                    .take(3),
+                                autoAlarmEnabled = shiftConfig?.autoAlarmEnabled != false,
+                                masterPausePaused = masterPausePaused,
+                                vorausschauTage = calendarState.vorausschauTage
+                            ),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
 @Composable
 fun HomeTabContent(
     calendarState: CalendarUiState,
@@ -338,138 +499,50 @@ fun HomeTabContent(
             .padding(bottom = 88.dp),
         verticalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_LARGE)
     ) {
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surface
-            ),
-            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(SpacingConstants.PADDING_CARD),
-                horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_LARGE),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    Icons.Default.Work,
-                    // dekorativ: Text daneben sagt es bereits ("Nächste Schicht")
-                    contentDescription = null,
-                    modifier = Modifier.size(SpacingConstants.ICON_SIZE_EXTRA_LARGE),
-                    tint = MaterialTheme.colorScheme.primary
-                )
-                
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        "Nächste Schicht",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
-                    
-                    if (shiftState.upcomingShift != null) {
-                        Text(
-                            shiftState.upcomingShift.shiftType.displayName,
-                            style = MaterialTheme.typography.bodyLarge
-                        )
-                        // Datum und Dienstzeit - dieselbe Formatierung wie im Wecker-Tab
-                        // („ganztägig“ statt einer Uhrzeit 00:00, die es nicht gibt).
-                        val zone = ZoneId.systemDefault()
-                        Text(
-                            schichtTerminText(
-                                beginn = shiftState.upcomingShift.startTime.atZone(zone).toInstant().toEpochMilli(),
-                                ende = shiftState.upcomingShift.endTime.atZone(zone).toInstant().toEpochMilli(),
-                                zone = zone
-                            ),
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                    } else if (calendarState.isLoading || shiftState.isLoading) {
-                        // Beim (ersten) Oeffnen synchronisiert die App den Kalender neu; bis die
-                        // Events da sind, ist noch keine Schicht erkannt. Das ist ein LADEzustand,
-                        // kein Fehler - neutraler Hinweis, solange geladen wird.
-                        Text(
-                            "Wird geladen …",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    } else {
-                        // Nicht nur "Keine Schicht erkannt", sondern WARUM: der Satz allein galt fuer
-                        // sechs verschiedene Ursachen und liess den Nutzer ohne Anhaltspunkt zurueck.
-                        val shiftConfig = shiftState.currentShiftConfig
-                        val ladeFehler = calendarState.error ?: shiftState.error
-                        val reason = noShiftReason(
-                            hasSelectedCalendars = calendarState.selectedCalendarIds.isNotEmpty(),
-                            calendarAuthorizationValid = calendarState.calendarAuthorizationValid,
-                            kalenderNichtErreichbar = calendarState.kalenderNichtErreichbar,
-                            unavailableCalendarCount = calendarState.unavailableCalendarIds.size,
-                            errorMessage = ladeFehler,
-                            eventCount = calendarState.events.size,
-                            shiftConfigLoaded = shiftConfig != null,
-                            enabledShiftTypeCount = shiftConfig?.definitions?.count { it.isEnabled } ?: 0,
-                            recognizedShiftCount = shiftState.recognizedShifts.size
-                        )
-                        val offlineSchicht = offlineAngezeigteSchicht(
-                            reason = reason,
-                            letzterStand = shiftState.letzterSchichtStand,
-                            now = System.currentTimeMillis()
-                        )
-                        if (offlineSchicht != null) {
-                            // Offline: der letzte bekannte Stand statt "Keine Schicht erkannt" -
-                            // als alt gekennzeichnet, siehe offlineAngezeigteSchicht().
-                            Text(
-                                offlineSchicht.shiftName,
-                                style = MaterialTheme.typography.bodyLarge
-                            )
-                            Text(
-                                schichtTerminText(offlineSchicht.startTime, offlineSchicht.endTime, ZoneId.systemDefault()),
-                                style = MaterialTheme.typography.bodyMedium
-                            )
-                            Text(
-                                offlineStandHinweis(
-                                    stand = shiftState.letzterSchichtStand?.stand,
-                                    masterPausePaused = masterPausePaused,
-                                    autoAlarmEnabled = shiftConfig?.autoAlarmEnabled != false
-                                ),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        } else {
-                            Text(
-                                "Keine Schicht erkannt",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Text(
-                                noShiftExplanation(
-                                    reason = reason,
-                                    errorMessage = ladeFehler,
-                                    // Nur eine kleine Kostprobe: die Karte soll erklaeren, nicht den
-                                    // Kalender abbilden (dafuer gibt es "Antippen fuer Details").
-                                    sampleEventTitles = calendarState.events
-                                        .map { it.title }
-                                        .distinct()
-                                        .take(3),
-                                    autoAlarmEnabled = shiftConfig?.autoAlarmEnabled != false,
-                                    masterPausePaused = masterPausePaused,
-                                    vorausschauTage = calendarState.vorausschauTage
-                                ),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
+        val zone = ZoneId.systemDefault()
+        val reason = noShiftReason(
+            hasSelectedCalendars = calendarState.selectedCalendarIds.isNotEmpty(),
+            calendarAuthorizationValid = calendarState.calendarAuthorizationValid,
+            kalenderNichtErreichbar = calendarState.kalenderNichtErreichbar,
+            unavailableCalendarCount = calendarState.unavailableCalendarIds.size,
+            errorMessage = calendarState.error ?: shiftState.error,
+            eventCount = calendarState.events.size,
+            shiftConfigLoaded = shiftState.currentShiftConfig != null,
+            enabledShiftTypeCount = shiftState.currentShiftConfig?.definitions?.count { it.isEnabled } ?: 0,
+            recognizedShiftCount = shiftState.recognizedShifts.size
+        )
+        val offlineSchicht = offlineAngezeigteSchicht(
+            reason = reason,
+            letzterStand = shiftState.letzterSchichtStand,
+            now = System.currentTimeMillis()
+        )
         // Statt "N aktive Alarme" die eine Frage: wann klingelt es als Naechstes (#139, P4).
-        NaechsterWeckerKarte(
+        val naechsterWecker = rememberNaechsterWecker(
             alarmState = alarmState,
             skipState = skipState,
             masterPausePaused = masterPausePaused,
-            autoAlarmEnabled = shiftState.currentShiftConfig?.autoAlarmEnabled != false,
-            onAlleWecker = onNavigateToWecker
+            autoAlarmEnabled = shiftState.currentShiftConfig?.autoAlarmEnabled != false
         )
+        val reihenfolge = uebersichtReihenfolge(
+            schichtBeginn = angezeigterSchichtBeginn(
+                naechsteSchicht = shiftState.upcomingShift?.startTime?.atZone(zone)?.toInstant()?.toEpochMilli(),
+                laedt = calendarState.isLoading || shiftState.isLoading,
+                offlineSchicht = offlineSchicht?.startTime
+            ),
+            weckerZeitpunkt = naechsterWecker.zeitpunkt
+        )
+        val schichtKarte: @Composable () -> Unit = {
+            NaechsteSchichtKarte(calendarState, shiftState, masterPausePaused, reason, offlineSchicht)
+        }
+        val weckerKarte: @Composable () -> Unit = {
+            NaechsterWeckerKarte(stand = naechsterWecker, onAlleWecker = onNavigateToWecker)
+        }
+        // Ohne Animation (#141): die Karten tauschen den Platz nur bei neuen Daten oder beim
+        // Zurueckkehren in die App, nicht waehrend man hinsieht.
+        when (reihenfolge) {
+            UebersichtReihenfolge.SCHICHT_ZUERST -> { schichtKarte(); weckerKarte() }
+            UebersichtReihenfolge.WECKER_ZUERST -> { weckerKarte(); schichtKarte() }
+        }
 
         val zugriffVerloren =
             !calendarState.calendarAuthorizationValid && calendarState.selectedCalendarIds.isNotEmpty()

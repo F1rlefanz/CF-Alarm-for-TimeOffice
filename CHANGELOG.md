@@ -27,7 +27,22 @@ Schreibkonventionen (der Generator verlässt sich darauf):
 - `### 🐛 Behoben` — Rubrik, mit Emoji wie bisher.
 - `- **Kurzfassung:** Erklärung` — ein Eintrag.
 
-## 🆕 Version 1.52.0 (Aktuell – interne Alpha)
+## 🆕 Version 1.52.1 (Aktuell – interne Alpha)
+
+**Stand:** Oktober 2026
+
+_Eine stille Schicht bleibt jetzt zuverlässig still, und der Ort für Tageslicht nennt Regionen so, wie man sie kennt._
+
+### 🐛 Behoben
+
+- **Stille Schicht klingelte manchmal doch:** Hatte Android die App über Nacht beendet, erkannte sie beim Wecken nicht mehr, dass die Schicht als still markiert ist, und klingelte. Jetzt bleibt eine stille Schicht auch dann still. Im Zweifel – etwa wenn zwei Schichten denselben Namen tragen und nur eine still ist – klingelt der Wecker weiterhin.
+- **Regionsname bei der Postleitzahl:** Statt eines kleinen Orts nahe der Regionsmitte steht jetzt der größte Ort der Region da – bei „93“ also „Region Regensburg“.
+
+### 🎨 Feinschliff
+
+- **Standort abgelehnt oder Ortung aus:** Unter dem Hinweis gibt es jetzt einen Knopf, der direkt in die passende Einstellung führt („App-Einstellungen“ bzw. „Standort-Einstellungen“).
+
+## Version 1.52.0
 
 **Stand:** Oktober 2026
 

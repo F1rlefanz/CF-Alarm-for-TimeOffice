@@ -47,7 +47,24 @@
              Dieser Kommentar steht bewusst VOR dem BEGIN-Marker und ueberlebt deshalb. -->
         <!-- CHANGELOG:BEGIN -->
         <div class="content-card">
-            <h3>🆕 Version 1.52.0 <small>(Aktuell – interne Alpha)</small></h3>
+            <h3>🆕 Version 1.52.1 <small>(Aktuell – interne Alpha)</small></h3>
+            <p><strong>Stand:</strong> Oktober 2026</p>
+            <p><em>Eine stille Schicht bleibt jetzt zuverlässig still, und der Ort für Tageslicht nennt Regionen so, wie man sie kennt.</em></p>
+
+            <h4>🐛 Behoben</h4>
+            <ul>
+                <li><strong>Stille Schicht klingelte manchmal doch:</strong> Hatte Android die App über Nacht beendet, erkannte sie beim Wecken nicht mehr, dass die Schicht als still markiert ist, und klingelte. Jetzt bleibt eine stille Schicht auch dann still. Im Zweifel – etwa wenn zwei Schichten denselben Namen tragen und nur eine still ist – klingelt der Wecker weiterhin.</li>
+                <li><strong>Regionsname bei der Postleitzahl:</strong> Statt eines kleinen Orts nahe der Regionsmitte steht jetzt der größte Ort der Region da – bei „93“ also „Region Regensburg“.</li>
+            </ul>
+
+            <h4>🎨 Feinschliff</h4>
+            <ul>
+                <li><strong>Standort abgelehnt oder Ortung aus:</strong> Unter dem Hinweis gibt es jetzt einen Knopf, der direkt in die passende Einstellung führt („App-Einstellungen“ bzw. „Standort-Einstellungen“).</li>
+            </ul>
+        </div>
+
+        <div class="content-card">
+            <h3>Version 1.52.0</h3>
             <p><strong>Stand:</strong> Oktober 2026</p>
             <p><em>Dimmer und Weck-Licht können sich jetzt danach richten, ob es morgens draußen schon hell ist.</em></p>
 

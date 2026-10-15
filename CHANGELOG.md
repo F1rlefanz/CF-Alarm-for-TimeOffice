@@ -27,7 +27,24 @@ Schreibkonventionen (der Generator verlässt sich darauf):
 - `### 🐛 Behoben` — Rubrik, mit Emoji wie bisher.
 - `- **Kurzfassung:** Erklärung` — ein Eintrag.
 
-## 🆕 Version 1.51.0 (Aktuell – interne Alpha)
+## 🆕 Version 1.52.0 (Aktuell – interne Alpha)
+
+**Stand:** Oktober 2026
+
+_Dimmer und Weck-Licht können sich jetzt danach richten, ob es morgens draußen schon hell ist._
+
+### ✨ Neu
+
+- **„Ort für Tageslicht“ in den Einstellungen:** Damit die App weiß, wann es bei dir hell wird, genügt ein ungefährer Ort – per „Standort übernehmen“ (einmalig, auf etwa 10 km gerundet, nur auf Knopfdruck) oder von Hand mit Land und Postleitzahl. Ohne Angabe nimmt sie die Mitte deiner Zeitzone. Der Ort bleibt auf dem Gerät; die Sonnenzeiten rechnet die App selbst aus.
+- **Dimmer: Nachlauf nur, solange es dunkel ist:** Bei einem Fenster bis „Weckzeit, spätestens“ mit Minuten nach dem Wecken kannst du wählen „Bis Dämmerung“ oder „Bis Sonnenaufgang“. Wird es nach dem Wecken hell, endet die Verdunkelung dort statt erst nach den vollen Minuten. Vor dem Wecken bleibt es immer gedimmt; „Nicht stören“ ändert sich nicht.
+- **Hue: Regeln nur bei Dunkelheit:** In der neuen Karte „Tageslicht“ einer Hue-Regel wählst du „Nur vor der Dämmerung“ oder „Nur vor Sonnenaufgang“. Liegt die Weckzeit danach, bleibt das Licht aus – auch der Sonnenaufgang läuft dann gar nicht erst an. Die Regel-Liste zeigt solche Regeln mit „nur bei Dunkelheit“.
+
+### 🐛 Behoben
+
+- **Schmale Anzeigen und große Schrift:** In den Hue-Einstellungen wurden Knöpfe zu „Bea…“ oder „Neue R…“ gekürzt, das Etikett einer Regel stand Buchstabe für Buchstabe untereinander, und die Übersichtszahlen liefen ineinander. Lange Überschriften wie „Benachrichtigungen“ brachen mitten im Wort ohne Trennstrich um. Jetzt rücken die Knöpfe untereinander, und Überschriften werden richtig getrennt.
+- **„Verdunkelung 80 %“** in der Dimm-Vorschau bricht nicht mehr vor dem Prozentzeichen um.
+
+## Version 1.51.0
 
 **Stand:** Oktober 2026
 

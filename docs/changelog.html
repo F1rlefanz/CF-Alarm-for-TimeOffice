@@ -47,7 +47,26 @@
              Dieser Kommentar steht bewusst VOR dem BEGIN-Marker und ueberlebt deshalb. -->
         <!-- CHANGELOG:BEGIN -->
         <div class="content-card">
-            <h3>🆕 Version 1.51.0 <small>(Aktuell – interne Alpha)</small></h3>
+            <h3>🆕 Version 1.52.0 <small>(Aktuell – interne Alpha)</small></h3>
+            <p><strong>Stand:</strong> Oktober 2026</p>
+            <p><em>Dimmer und Weck-Licht können sich jetzt danach richten, ob es morgens draußen schon hell ist.</em></p>
+
+            <h4>✨ Neu</h4>
+            <ul>
+                <li><strong>„Ort für Tageslicht“ in den Einstellungen:</strong> Damit die App weiß, wann es bei dir hell wird, genügt ein ungefährer Ort – per „Standort übernehmen“ (einmalig, auf etwa 10 km gerundet, nur auf Knopfdruck) oder von Hand mit Land und Postleitzahl. Ohne Angabe nimmt sie die Mitte deiner Zeitzone. Der Ort bleibt auf dem Gerät; die Sonnenzeiten rechnet die App selbst aus.</li>
+                <li><strong>Dimmer: Nachlauf nur, solange es dunkel ist:</strong> Bei einem Fenster bis „Weckzeit, spätestens“ mit Minuten nach dem Wecken kannst du wählen „Bis Dämmerung“ oder „Bis Sonnenaufgang“. Wird es nach dem Wecken hell, endet die Verdunkelung dort statt erst nach den vollen Minuten. Vor dem Wecken bleibt es immer gedimmt; „Nicht stören“ ändert sich nicht.</li>
+                <li><strong>Hue: Regeln nur bei Dunkelheit:</strong> In der neuen Karte „Tageslicht“ einer Hue-Regel wählst du „Nur vor der Dämmerung“ oder „Nur vor Sonnenaufgang“. Liegt die Weckzeit danach, bleibt das Licht aus – auch der Sonnenaufgang läuft dann gar nicht erst an. Die Regel-Liste zeigt solche Regeln mit „nur bei Dunkelheit“.</li>
+            </ul>
+
+            <h4>🐛 Behoben</h4>
+            <ul>
+                <li><strong>Schmale Anzeigen und große Schrift:</strong> In den Hue-Einstellungen wurden Knöpfe zu „Bea…“ oder „Neue R…“ gekürzt, das Etikett einer Regel stand Buchstabe für Buchstabe untereinander, und die Übersichtszahlen liefen ineinander. Lange Überschriften wie „Benachrichtigungen“ brachen mitten im Wort ohne Trennstrich um. Jetzt rücken die Knöpfe untereinander, und Überschriften werden richtig getrennt.</li>
+                <li><strong>„Verdunkelung 80 %“</strong> in der Dimm-Vorschau bricht nicht mehr vor dem Prozentzeichen um.</li>
+            </ul>
+        </div>
+
+        <div class="content-card">
+            <h3>Version 1.51.0</h3>
             <p><strong>Stand:</strong> Oktober 2026</p>
             <p><em>Ein geschlummerter Wecker ist jetzt zu sehen – in der Wecker-Liste und auf der Übersicht.</em></p>
 

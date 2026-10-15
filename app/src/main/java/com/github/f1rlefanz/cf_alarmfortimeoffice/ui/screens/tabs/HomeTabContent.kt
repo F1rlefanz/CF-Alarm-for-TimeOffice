@@ -37,7 +37,6 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.freietage.Ausfall
 import com.github.f1rlefanz.cf_alarmfortimeoffice.freietage.AusfallQuelle
 import com.github.f1rlefanz.cf_alarmfortimeoffice.freietage.FreieTageStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.freietage.laufenderAusfall
-import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.LetzterSchichtStand
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpan
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftInfo

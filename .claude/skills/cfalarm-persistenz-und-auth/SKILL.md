@@ -18,6 +18,7 @@ das baut man dieselbe Falle in neuer Form nach.
 - `reference/auth-und-token.md` — Token-Rotation, Verlust-Signal, Abmelden
 - `reference/fehlerbehandlung.md` — SafeExecutor, CancellationException, Fehlerklassifizierung
 - `reference/geraetewechsel-und-export.md` — DeviceLocalFlagsGuard, Export/Import-Filter
+- `reference/pflichtregeln-aus-claude-md.md` — die Pflichtregeln aus der CLAUDE.md im vollen Wortlaut, mit Begründung
 
 ---
 

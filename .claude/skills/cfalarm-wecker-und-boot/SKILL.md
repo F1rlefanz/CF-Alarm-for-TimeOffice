@@ -18,6 +18,7 @@ das baut man dieselbe Falle in neuer Form nach.
 - `reference/tag-freigeben.md` — "Tag freigeben": Gate, Backstop, manuelle Wecker, Direct-Boot-Grenze
 - `reference/master-pause.md` — die Master-Pause und ihre Backstops
 - `reference/vorwecken.md` — warum der Wecker den Bildschirm selbst weckt (FP6-Verdraengung)
+- `reference/pflichtregeln-aus-claude-md.md` — die Pflichtregeln aus der CLAUDE.md im vollen Wortlaut, mit Begründung
 
 ---
 

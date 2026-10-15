@@ -29,8 +29,8 @@ erst bei Bedarf.
 **Pflege:** Neue Erkenntnisse mit Hergang gehören in den Skill, hierher nur die normative Zeile —
 und auch die nur, wenn ihr Bruch den Wecker kostet.
 
-**Diese Datei hat ein Budget, und es wird gemessen:** `tools/doku/pruefe_budget.py` warnt ab 30 k,
-lässt die CI ab 40 k scheitern und meldet sich per `SessionStart`-Hook (Hergang im Kopf des
+**Diese Datei hat ein Budget, und es wird gemessen:** `tools/doku/pruefe_budget.py` warnt ab 22 k,
+lässt die CI ab 26 k scheitern und meldet sich per `SessionStart`-Hook (Hergang im Kopf des
 Skripts). **Wenn die Meldung kommt, ist Verschieben in einen Skill die Antwort, nicht das Anheben
 der Schwelle.** Dort kostet Wissen erst beim Lesen etwas; `reference/*.md` darf deshalb wachsen.
 
@@ -134,40 +134,8 @@ service/ + alarm/                     ← Android-Hintergrundkomponenten
 di/modules/                           ← Hilt-Module
 ```
 
-**Hilt-Module** (`di/modules/`): `DataModule` (genau **zwei** unverschlüsselte
-`DataStore<Preferences>`: `@MainDataStore` = `settings`, `@HueDataStore` = `hue_settings`, beide mit
-`ReplaceFileCorruptionHandler`, plus `ErrorHandler` — **kein** Token-Store, **kein**
-`TinkEncryptionHelper`), `RepositoryModule`, `UseCaseModule`, `HueModule`, `ServiceModule` (genau
-vier Provider; `BackgroundServiceManager` hat bewusst seinen eigenen `@Singleton @Inject`-Konstruktor).
-Alle injizierten `Service`/`BroadcastReceiver` sind
-`@AndroidEntryPoint`.
-
-**Auth** (`auth/`): `CredentialAuthManager` (Google Sign-In via `androidx.credentials`),
-`OAuth2TokenManager` (Token holen/refreshen via AuthorizationClient; offline ist `hasResolution` KEIN Anmeldefall), `DataStoreTokenRepository`
-(Tink/AES-256-GCM). Der Token liegt im DataStore `token_data_v2_encrypted`, den sich
-`DataStoreTokenRepository` per `EncryptedDataStoreFactory` **selbst** baut.
-
-**Alarm** (`service/`, `alarm/`): `AlarmMaintenanceService` (kurzlebiger Foreground-Service,
-`specialUse`, alle 6 h per Exact-Alarm: Token-Refresh → Kalender-Events (bei jedem Lauf) →
-Alarm-Erzeugung), `AlarmSoundService` (`mediaPlayback`), `AlarmReceiver`, `BootReceiver`,
-`BackgroundServiceManager`.
-
-**Schichterkennung**: `shift/ShiftRecognitionEngine` bildet Kalender-Events auf `ShiftDefinition` ab,
-Ergebnis adaptiv gecacht (2–30 s). `ShiftConfig` im `@MainDataStore`.
-
-**Hue** (`hue/`): Discovery per mDNS/N-UPnP/offiziellem Endpunkt, `HueBridgeConnectionManager`
-(Singleton), `HueApiClient` (**handgebautes OkHttp + Gson**, kein Retrofit — die V1-Semantik
-„HTTP 200 auch bei Ablehnung" braucht die Body-Auswertung in `HueV1Envelope`), `HueSmartScheduler`
-(WorkManager für Tagesplanung und Pre-Alarm-Checks). Eine Regel setzt das Licht auf genau eine von
-drei Arten: Szene, manuell oder Sonnenaufgang. Hue-Konfiguration im `@HueDataStore`.
-
-**Navigation**: eigener `NavigationState` + `MainTab`-Enum (`HOME, WECKER, STATUS, SETTINGS, HUE,
-DIMMER`), **kein** Navigation-Compose. `MainScreen` ist die Compose-Wurzel (Unterscreens,
-Onboarding-Gates, `BackHandler`), `MainContentScreen` verteilt die Tab-Inhalte.
-
-**Shared State**: `di/state/CalendarStateHolder` — Hilt-Singleton mit `StateFlow`, gebunden über
-`@Singleton @Inject constructor` (kein Modul).
-`CalendarViewModel` **schreibt**, `ShiftViewModel` **liest** (Einbahnstraße).
+Hilt-Module, Auth, Alarm, Schichterkennung, Hue, Navigation und Shared State im Detail:
+`ARCHITECTURE.md`.
 
 ## Key Constraints
 
@@ -176,12 +144,8 @@ Onboarding-Gates, `BackHandler`), `MainContentScreen` verteilt die Tab-Inhalte.
 - Die DataStore-Namensräume bleiben getrennt (settings / hue / tokens) — nie zusammenlegen.
 - `TinkEncryptionHelper.getInstance()` muss ein Singleton bleiben und ist der **einzige** Zugriff.
   Kein Hilt-Provider dafür (zöge den Keyset-Read in `directBootAware`-Komponenten).
-- **Es gibt bewusst keinen `@TokenDataStore`-Qualifier.** `DataModule` stellte bis v1.11.2 einen
-  bereit (`oauth_tokens`), den **niemand** injizierte — am Gerät verifiziert: die Datei existierte
-  gar nicht. **Die Falle ist die Namensgleichheit:** `DataStoreTokenRepository` hat ein privates
-  Feld `tokenDataStore` (den verschlüsselten Store) — wer nur den Namen sieht, hält den Provider
-  für benutzt und holt ihn zurück. Dann gibt es eine zweite Wahrheit, und ein Klartext-Store für
-  Tokens ist genau das, was Tink verhindern soll.
+- **Es gibt bewusst keinen `@TokenDataStore`-Qualifier** — nicht zurückholen, auch wenn der
+  Feldname `tokenDataStore` danach aussieht. Hergang: Skill `cfalarm-persistenz-und-auth`.
 - **Jeder `preferencesDataStore` braucht einen `corruptionHandler`.** Ohne ihn blockiert eine
   beschädigte `preferences_pb` dauerhaft auch das SCHREIBEN, reboot-fest.
 - **R8/Minify ist AN** (seit v1.23.0; APK 19,8 → 10,9 MB). `-dontshrink`/`-dontoptimize` müssen in
@@ -211,225 +175,153 @@ Onboarding-Gates, `BackHandler`), `MainContentScreen` verteilt die Tab-Inhalte.
 
 ## Die Regeln, deren Bruch den Wecker kostet
 
-Vollständige Regellisten und Belege in den Skills oben. Was hier steht, gilt immer.
+Was hier steht, gilt immer. Je Regel steht hier nur der Kernsatz; der volle Wortlaut mit
+Begründung liegt im genannten Skill unter `reference/pflichtregeln-aus-claude-md.md` —
+**vor einer Änderung an einer Regel dort lesen.**
+Die vollständigen Regellisten je Bereich und ihr Hergang stehen in den Skills oben.
 
 ### Alarme anlegen, ändern, löschen
 
-- **Löschen heißt IMMER: erst `cancelSystemAlarm()`, dann `deleteAlarm()`.** Umgekehrt entsteht ein
-  armierter Alarm, den weder Repository noch Direct-Boot-Spiegel kennen — unsichtbar UND
-  unabbrechbar bis zum nächsten Neustart.
+Wortlaut: Skill `cfalarm-wecker-und-boot`.
+
+- **Löschen heißt IMMER: erst `cancelSystemAlarm()`, dann `deleteAlarm()`.**
 - **`clearInternalAlarms()` fragt ZUERST `isPersistenceBlocked()` und scheitert laut.** Räumen ohne
   Cancellen ist die gefährliche Kombination.
-- **Die datengetriebenen Räumzweige von `syncAlarms()` schonen MANUELLE Alarme**
-  (`keepManualAlarms = true`) — nur der manuelle Alarm lässt sich nicht aus dem Kalender
-  rekonstruieren. Ausdrückliche Abschaltungen räumen weiter ALLES.
-- **Der Delta-Sync hat pro Event ein eigenes `try/catch`, das `CancellationException` weiterwirft** —
-  sonst bricht ein einzelner abgelehnter Alarm den gesamten Sync ab.
-- **Die Wecker-Identitaet haengt NICHT allein an der Kalender-Kennung.** Ein abonnierter
-  Dienstplan-Feed bekommt von Google alle paar Tage neue Event-IDs fuer dieselben Termine.
-  `syncAlarms()` paart deshalb ERST (Kennung, sonst Weckzeit + Schicht) und
-  entscheidet DANN; bei reinem Kennungswechsel wird die neue Kennung still uebernommen, die
-  `AlarmInfo.id` bleibt. Dieselbe Frage stellt die Boot-Wiederherstellung - sonst loescht ein
-  Neustart im Rotationsfenster den GESAMTEN Bestand.
-- **Die Skip-Erkennung nimmt den WECKZEITPUNKT als Anker, nicht nur die id** (in beiden Gates,
-  auch im Backstop). `skipNextAlarm()` loescht den Eintrag; nach einer Kennungsrotation gaebe es
-  sonst nichts mehr zu paaren, und der uebersprungene Wecker klingelte am freien Morgen.
+- **Die datengetriebenen Räumzweige von `syncAlarms()` schonen MANUELLE Alarme** (`keepManualAlarms
+  = true`)
+- **Der Delta-Sync hat pro Event ein eigenes `try/catch`, das `CancellationException` weiterwirft**
+- **Die Wecker-Identitaet haengt NICHT allein an der Kalender-Kennung.**
+- **Die Skip-Erkennung nimmt den WECKZEITPUNKT als Anker, nicht nur die id** (in beiden Gates, auch
+  im Backstop).
 - **Verstrichene Weckzeit ist KEINE entfernte Schicht** (`expiredEventIds`).
 - **Alle `setAlarmClock()`-Aufrufstellen fangen die entzogene Exact-Alarm-Berechtigung**
-  (`setExactOrInexact`: try/catch + inexakter Fallback). Ein verzögerter Wecker schlägt keinen Wecker.
-- **Das Skip-Flag läuft zeitbasiert ab, nicht per ID-Match** — plus Gate in `syncAlarms()` UND
-  Backstop in `scheduleSystemAlarm()`.
+  (`setExactOrInexact`: try/catch + inexakter Fallback).
+- **Das Skip-Flag läuft zeitbasiert ab, nicht per ID-Match**
 - **`ShiftConfig.autoAlarmEnabled = false` ist eine ECHTE, sofortige Pause**, kein stilles `return`.
 - **Ein freigegebener Tag („Tag freigeben") braucht Gate UND Backstop — und nimmt MANUELLE Wecker
-  aus.** Der Anker ist überall die Weckzeit (vier Stellen). Ohne den Backstop holt der
-  `BootReceiver` den Wecker nach einem Neustart zurück; ohne die Ausnahme für manuelle Wecker
-  löscht die Freigabe einen Wecker, den kein Kalender rekonstruieren kann — und der Backstop
-  verhindert zusätzlich, dass an dem Tag überhaupt einer gestellt werden kann. Auch ein
-  schwebender Snooze (Anker: die Weckzeit im Snooze-Merker).
+  aus.** Der Anker ist überall die Weckzeit (vier Stellen).
 - **Freigaben: Hand + Krank laut Kalender, `freieTage` liefert die VEREINIGUNG** (#142) - jeder
-  Leser liest nur sie; den Kalender-Schlüssel schreibt NUR `syncAlarms()`. Hergang im Wecker-Skill.
+  Leser liest nur sie; den Kalender-Schlüssel schreibt NUR `syncAlarms()`.
 
 ### Wecken, Vollbild, Snooze
 
-- **`_alarmActive = true` VOR `startForeground()`** — sonst schließt sich das Vollbild sofort.
-- **Kein `startActivity()` aus dem `AlarmReceiver`** — einziger Weg ist `setFullScreenIntent()`.
+Wortlaut: Skill `cfalarm-wecker-und-boot`.
+
+- **`_alarmActive = true` VOR `startForeground()`**
+- **Kein `startActivity()` aus dem `AlarmReceiver`**
 - **Eine Instanz besitzt den Wecker**: `AlarmSoundService` hält Ton, Vibration und die einzige
-  Wecker-Notification (ID 2002). Der `AlarmReceiver` darf **keine eigene** posten.
-- **`AlarmSoundService`: `stopSelf(startId)` und `START_REDELIVER_INTENT`** — nie blankes
-  `stopSelf()`/`START_STICKY` (stummer Zombie-Service bei sonst normal aussehendem Log).
+  Wecker-Notification (ID 2002).
+- **`AlarmSoundService`: `stopSelf(startId)` und `START_REDELIVER_INTENT`**
 - **Vollbild-Dismiss und -Snooze teilen eine Einweg-Sperre** (`OneShotAlarmHandoff.claim()`).
 - **In `onNewIntent()` wird ERARBEITETER Zustand nur bei einem ANDEREN Weckvorgang verworfen.**
-  Aus dem Intent abgeleitete Werte werden immer frisch gelesen; ein Fehlerhinweis und die
-  Einweg-Sperre gehoeren dagegen zum laufenden Vorgang. Die Wecker-Notification traegt denselben
-  PendingIntent auch als `setContentIntent()` — ein Tipp darauf ist DERSELBE Wecker und darf einen
-  Schlummer-Fehlerhinweis nicht wegwischen. Vergleich ueber die Alarm-Kennung.
-- **`AlarmFullScreenActivity` braucht `onNewIntent()` mit `setIntent()`** (`launchMode="singleTask"`).
+- **`AlarmFullScreenActivity` braucht `onNewIntent()` mit `setIntent()`**
+  (`launchMode="singleTask"`).
 - **Snooze braucht `snoozeAlarmAction(id)`**, nicht `enhancedAlarmAction(id)`.
-- **Ein AUFGEGEBENER Armierungsversuch hinterlaesst nichts Scharfes.** Scheitert das Vormerken
-  NACH dem Planen, wird der bereits gestellte Alarm abgebrochen, bevor der Fehlschlag gemeldet
-  wird — sonst steht er scharf im AlarmManager, waehrend die App „kein weiterer Weckruf" sagt, und
-  ohne Merker kann ihn niemand mehr abbrechen. Der WIEDERHERSTELLUNGS-Lauf nach einem Neustart
-  raeumt dabei nichts weg: dort ist der Merker die Vorlage, nicht das Ergebnis.
+- **Ein AUFGEGEBENER Armierungsversuch hinterlaesst nichts Scharfes.**
 - **Ein schwebender Snooze muss einen Reboot überleben** (`restorePendingSnoozes()`), und beide
-  Anlässe armieren über dasselbe `armSnooze()` — sonst trifft ein späterer Abbruch ihn nicht mehr.
+  Anlässe armieren über dasselbe `armSnooze()`
 - **Der Snooze-Merker ist serialisiert und schreibt mit `commit()`**, nicht `apply()`.
-- **Der Schlummer-Read in `AlarmReceiver` MUSS hinter `userUnlocked` gegated sein** — `AlarmPrefs`
-  liegt im CE-Storage, ungegatet bleibt der Wecker bei Direct Boot komplett stumm.
+- **Der Schlummer-Read in `AlarmReceiver` MUSS hinter `userUnlocked` gegated sein**
 - **Stille Schicht (`isSilent`) gated NUR die Auslösung.** Fail-safe: Lookup-Fehler = NICHT still.
 - **„Deine Schicht beginnt um" zeigt `AlarmInfo.shiftStartTime`, nicht `triggerTime`.**
-- **Wer die Wichtigkeit eines Notification-Kanals anhebt, braucht eine NEUE Kanal-ID.** Android
-  ändert die Importance eines bestehenden Kanals nur nach UNTEN und ignoriert alle übrigen Felder;
-  ein unter derselben ID neu angelegter Kanal kommt mit seinen ALTEN Einstellungen zurück. Ein
-  frisch installiertes Gerät zeigt das NIE.
-- **Die Schlummer-Beschriftung kommt aus derselben Variablen wie `scheduleSnooze()`**, nie aus
-  einem festen Text — sonst verspricht der Knopf am Weckbildschirm eine andere Dauer, als er
-  schlummert.
-- **Blockierte Benachrichtigungen sind ein Wecker ohne Oberfläche** — deshalb die Status-Karte davor
-  und ein WARN direkt nach `startForeground()`.
+- **Wer die Wichtigkeit eines Notification-Kanals anhebt, braucht eine NEUE Kanal-ID.**
+- **Die Schlummer-Beschriftung kommt aus derselben Variablen wie `scheduleSnooze()`**
+- **Blockierte Benachrichtigungen sind ein Wecker ohne Oberfläche**
 - **`visibilitySnapshot()` ist Diagnostik, die im Release-Log landen MUSS** (WARN).
-- **Der Weckton startet sofort, nie im verzoegerten Vorweck-Zweig.** Bei dunklem, gesperrtem
-  Bildschirm wartet ausschliesslich `startForeground()` mit der FSI-Notification (600 ms, siehe
-  `VorweckEntscheidung`). Wer den Ton mit verzoegert, verzoegert den Weckruf selbst.
-- **Die Vorweck-Bedingung liest NUR Systemzustand, nie etwas Gespeichertes** — ein Merker im
-  CE-Storage ist im Direct Boot nicht lesbar; Hergang im Wecker-Skill.
+- **Der Weckton startet sofort, nie im verzoegerten Vorweck-Zweig.**
+- **Die Vorweck-Bedingung liest NUR Systemzustand, nie etwas Gespeichertes**
 
 ### Hintergrundketten und Boot
 
+Wortlaut: Skill `cfalarm-wecker-und-boot`.
+
 - **Kein Hintergrund-Paket importiert `ui.` oder `viewmodel.`** (nach unten greifen ist frei, nur
-  die Gegenrichtung ist gesperrt). `AlarmReceiver`, `AlarmSoundService`, `BootReceiver` und die
-  6h-Wartung laufen bei gesperrtem Gerät und im Direct-Boot-Prozess, ohne sichtbare Activity — eine
-  Referenz von dort in die Oberfläche ist der kurze Weg zu einem Leak oder Klassenauflösungsfehler,
-  den kein Unit-Test sieht. Geprüft von `tools/invarianten/pruefe_code.py`.
-- **NICHTS am Application-Graphen darf WorkManager oder CE-Storage beim BAUEN anfassen.** Der Graph
-  wird auch im Direct-Boot-Prozess aufgebaut; ein Wurf dort tötet den Prozess, und die
-  Wiederherstellung der Alarme läuft NIE. **Kein Unit-Test fängt das** — die Prüfung ist ein echter Reboot ohne Entsperrung:
-  `python tools/geraet/pruefe_direct_boot.py` (nur Emulator, verweigert jedes andere Ziel).
+  die Gegenrichtung ist gesperrt).
+- **NICHTS am Application-Graphen darf WorkManager oder CE-Storage beim BAUEN anfassen.**
 - **Kein `getSharedPreferences()`/CE-Zugriff in einem Property-Initializer** einer Klasse am
-  Application-Graphen. Der Zugriff ist harmlos, der ZEITPUNKT nicht.
-- **Die 6h-Wartungskette hat GENAU einen Planer** (`scheduleNext()`, ein Request-Code). Wer
-  „sicherheitshalber" nachplant, erzeugt zwei parallele Zyklen.
-- **Deren `finally`-Block läuft in `withContext(NonCancellable)`** — sonst stirbt die rollierende
-  Kette bis zum nächsten Boot.
+  Application-Graphen.
+- **Die 6h-Wartungskette hat GENAU einen Planer** (`scheduleNext()`, ein Request-Code).
+- **Deren `finally`-Block läuft in `withContext(NonCancellable)`**
 - **`AlarmMaintenanceService`: `stopSelf(startId)`**, niemals blankes `stopSelf()`.
-- **`AlarmMaintenanceService.start()` fängt den abgelehnten Vordergrund-Start selbst**, nicht die
-  Aufrufer — eine Exception aus `onReceive()` reißt den Prozess mit.
+- **`AlarmMaintenanceService.start()` fängt den abgelehnten Vordergrund-Start selbst**
 - **Die 6h-Wartung MUSS Änderungen und Streichungen sehen können** und synchronisiert **immer**,
-  sobald Events vorliegen. Die Leerlisten-Sperre bleibt.
-- **`TimezoneChangeReceiver` startet die Wartung mit `forceSync=true`** — ein Re-Arming wäre kein
-  Ersatz, die Weckzeit ist eine Wanduhrzeit auf dem Kalendertag.
+  sobald Events vorliegen.
+- **`TimezoneChangeReceiver` startet die Wartung mit `forceSync=true`**
 - **Die Hue-Regelausführung im `AlarmReceiver` ist gedeckelt** (`HUE_EXECUTION_BUDGET_MS = 45 s`).
-  Nicht kleiner machen: der Batch-Timeout EINER Regel ist schon 30 s, und ein zu knapper Deckel
-  lässt das Licht an, ohne dass der Auto-Aus-Zeitplan je entsteht.
-- **Die stündliche Rufbereitschafts-Abfrage (`RufbereitschaftAbfrage`) ist eine EIGENE Kette**,
-  die nur `AlarmMaintenanceService.start(forceSync = true)` anstößt — kein zweiter Planer der
-  6h-Kette. Quelle ist `ShiftDefinition.isOnCall` (auch für den DND-Cutoff). Hergang im
-  Kalender-Skill.
+- **Die stündliche Rufbereitschafts-Abfrage (`RufbereitschaftAbfrage`) ist eine EIGENE Kette**
 
 ### Master-Pause
 
-- **`syncAlarms()` hat einen zentralen Master-Pause-Backstop**, nicht nur Gates an den Aufrufstellen —
-  als erste inhaltliche Prüfung innerhalb von `SafeExecutor.safeExecute`.
+Wortlaut: Skill `cfalarm-wecker-und-boot`.
+
+- **`syncAlarms()` hat einen zentralen Master-Pause-Backstop**
 - **Denselben Backstop haben `DimScheduleUseCase.enable()` und `DndScheduleUseCase.enable()`.**
   `disable()` bleibt ungegatet, sonst kommt `pause()` nicht mehr durch.
-- **`pause()`/`resume()` laufen in `withContext(NonCancellable)`** — sie stellen einen Zustand HER.
+- **`pause()`/`resume()` laufen in `withContext(NonCancellable)`**
 - **Der Pausen-Spiegel wird beim App-Start mit der CE-Wahrheit abgeglichen.**
 
 ### Kalender und Schichterkennung
 
-- **Eine unvollständige Eventliste ist KEINE Löschgrundlage.** Drei Quellen: Teilerfolg einzelner
-  Kalender, das Lazy-Präfix (10 Events pro Kalender) und der Abruf-Horizont einer VERKLEINERTEN
-  Vorausschau — Wecker dahinter sind „nicht gelesen“, nicht „gelöscht“ (`abrufHorizontEnde`). **Jeder löschende Konsument geht über
-  `getCalendarEventsWithStatus()` und prüft `isComplete`** — einzige Ausnahme ist die
-  ausdrückliche Kalender-ABWAHL (leere Auswahl aus dem Speicher rückgelesen, nicht leeres
-  Ladeergebnis); Einzelheiten im Kalender-Skill; der `CalendarStateHolder` trägt
-  `eventsComplete` mit. Wer einen neuen `syncAlarms()`-Aufrufer ergänzt, muss das beantworten.
-- **Ein Zustand, der den Alarm-Sync DAUERHAFT anhält, muss sichtbar sein.** Die
-  `isComplete`-Sperren verhindern nicht nur das Löschen, sondern auch jedes Anlegen; bleibt ein
-  Kalender dauerhaft unerreichbar, versiegen die Wecker lautlos. Deshalb trägt
-  `CalendarFetchOutcome` die `failedCalendarIds` (nicht nur ihre Zahl), die Status-Karte zeigt sie
-  mit Folge und Ausweg, und ab dem ZWEITEN Wartungslauf in Folge warnt eine Benachrichtigung —
-  **auch wenn ALLE Kalender scheitern**; nur ein reiner Verbindungsausfall fragt sie nicht (eine
-  leere Menge hieße „erholt"). **Ihr „schon gemeldet"-Gedächtnis endet an der Gerätegrenze**, auf
-  BEIDEN Wegen —
-  `ConfigBackupFilter` (Export) und `DeviceLocalFlagsGuard` (Android-Backup). Mitgereist heilt es
-  nicht, es hält sich selbst am Leben.
-- **Kein Fehler darf als leeres Erfolgsergebnis durchrutschen** — „leer" ist für eine Wecker-App die
-  gefährlichste Lüge und löscht ALLE Alarme.
+Wortlaut: Skill `cfalarm-kalender-und-schichten`.
+
+- **Eine unvollständige Eventliste ist KEINE Löschgrundlage.**
+- **Ein Zustand, der den Alarm-Sync DAUERHAFT anhält, muss sichtbar sein.**
+- **Kein Fehler darf als leeres Erfolgsergebnis durchrutschen**
 - **Ein gescheiterter Konfigurations-Read darf NIE zur leeren Definitionsliste werden**
   (`getOrThrow()`), und es gibt **keinen stillen Default-Überschreiber**.
 - **`ShiftRecognitionEngine`: ein unveränderliches Cache-Objekt, Prüfung UND Veröffentlichung hinter
-  dem Mutex, PLUS Epochen-Kennung.** Sonst liest ein nebenläufiger Aufrufer eine leere Liste — und
-  „leer" heißt „keine Schichten" heißt: alle Alarme weg.
-- **`findDefinitionFor` und `matchesKeywords` nicht verwechseln** — die Verwechslung hat zweimal
-  Wecker gekostet. Ersteres ordnet einem bestehenden Alarm zu (gestaffelt), Letzteres erkennt in
-  Kalendertiteln (mit Wortgrenzen über Unicode-Kategorien, NICHT `\b`).
+  dem Mutex, PLUS Epochen-Kennung.**
+- **`findDefinitionFor` und `matchesKeywords` nicht verwechseln**
 - **Wer einen Schichtnamen PERSISTENT speichert, traegt ihn in den Umbenennungs-Nachzug ein.**
-  Drei Stellen binden ueber den Namen: Dimmer- und Hue-Regeln (`shiftPattern`) und die
-  Dienstzeit-Ausnahmen. Letztere vergleicht EXAKT - eine reine Schreibweisen-Aenderung zaehlt
-  deshalb als Umbenennung. Beim Namenstausch wird der falsch gewordene Eintrag geraeumt, ausser
-  beide Namen stehen in derselben Liste (dann stimmt ihr Inhalt weiter). Rufbereitschaft ist ein
-  Flag AM Schichttyp (`isOnCall`), keine Liste. Die vollstaendige Inventur steht im Kalender-Skill.
 - **`CalendarStateHolder` ist eine Einbahnstraße**, und Laden gehört ausschließlich dem
   `CalendarViewModel`.
-- **`loadEventsForSelectedCalendars()` braucht einen Generation-Counter** — die Prüfung VOR JEDEM
-  Schreiben, auch vor dem ersten `isLoading = true`.
-- **Neue Properties in ViewModels mit `init{}` gehören VOR den `init{}`-Block** — sonst NPE beim
-  ersten App-Start, die kein Unit-Test fängt.
+- **`loadEventsForSelectedCalendars()` braucht einen Generation-Counter**
+- **Neue Properties in ViewModels mit `init{}` gehören VOR den `init{}`-Block**
 
 ### Persistenz
 
+Wortlaut: Skill `cfalarm-persistenz-und-auth`.
+
 - **`isPersistenceBlocked()` heisst „der Bestand ist unlesbar", NICHT „der letzte Schreibvorgang
-  ging schief".** Verodert raeumte die Master-Pause nach einem einzigen fehlgeschlagenen Write den
-  Bestand und liesse jeden Systemalarm scharf zurueck (`clearInternalAlarms()` ueberspringt bei
-  „unlesbar" die `cancelSystemAlarm()`-Schleife). Ein Schreibfehler hat einen eigenen Weg zu
-  seinem einzigen Konsumenten.
-- **Stille Degradierung darf nie zur Schreibwahrheit werden.** DataStore liest vor jedem Write
-  erneut; wer einen Lesefehler auf „leer"/„Default" degradiert, speist die Notlage-Leere in den
-  nächsten Read-Modify-Write und überschreibt echte Nutzerdaten.
+  ging schief".**
+- **Stille Degradierung darf nie zur Schreibwahrheit werden.**
 - **Ein CE-DataStore-Read VOR der ersten Entsperrung wirft NICHT — er liefert still leere
-  Preferences** und meldet Erfolg. Deshalb fragt `AlarmRepository` vorher den `UserManager` und lädt
-  nach dem Entsperren nach. **DataStore hält dieses Leer für den GANZEN Store im Prozess** — EIN
-  fremder Leser im gesperrten Prozess genügt, und danach liest jeder „leer“ (bis 1.45.0 der
-  Hue-Manager: Alarm-Bestand weg). Wer beim Prozessstart einen CE-Store liest, fragt vorher
-  `NutzerEntsperrung.istEntsperrt()`.
+  Preferences** und meldet Erfolg.
 - **Der Direct-Boot-Spiegel wird bei JEDEM erfolgreichen Load abgeglichen.**
-- **Die REIHENFOLGE von `.catch` und `.map` in einem Preferences-Flow ist tragend** — `.catch`
-  gehört **hinter** das `.map` und muss den Cache invalidieren.
+- **Die REIHENFOLGE von `.catch` und `.map` in einem Preferences-Flow ist tragend**
 - **Die RICHTUNG der Degradation ist jeweils bewusst gewählt**: Master-Pause → `false` (nicht
-  pausiert), Dimmer → aus, Onboarding-Hinweise → werden gezeigt. Im Zweifel klingeln und hell.
+  pausiert), Dimmer → aus, Onboarding-Hinweise → werden gezeigt.
 
 ### Auth
 
+Wortlaut: Skill `cfalarm-persistenz-und-auth`.
+
 - **Kein `getOrElse { emptyList() }` auf Auth-behafteten Ergebnissen.**
 - **`refresh()` prüft den NEUEN Token gegen die ID des ALTEN**
-  (`storedToken.validateRotation(currentToken.rotationId)`) — vertauscht erzwingt jede legitime
-  gleichzeitige Rotation einen Re-Login.
+  (`storedToken.validateRotation(currentToken.rotationId)`)
 - **Eine frische Neu-Autorisierung ist KEIN Kettenbruch.**
-- **`DataStoreTokenRepository.observe()` nutzt `retryWhen`, und der Fehlerfall emittiert NICHTS** —
-  kein Signal statt falschem Signal.
+- **`DataStoreTokenRepository.observe()` nutzt `retryWhen`, und der Fehlerfall emittiert NICHTS**
 
 ### Dimmer, DND, Hue
 
+Wortlaut: Skill `cfalarm-dimmer-und-dnd` / `cfalarm-hue`.
+
 - **Es gibt GENAU EINE Dimm-Fenster-Quelle: die Regeln** (seit v1.34.0, ein Schalter `dim_enabled`).
-  Wer eine zweite, „eingebaute" Quelle daneben stellt, koppelt Schalter aneinander (Hergang im
-  Dimmer-Skill).
-- **Leere Fensterliste = Unterdrückung dieser Nacht**, NICHT „keine Regel". Nicht wegoptimieren.
-- **Die Tick-Kette darf nicht abreißen** — Keep-alive (6 h) plus Retry (15 min) nach Lesefehler.
-- **Das Aufräumen der Dimm-VORSCHAU darf nicht am `viewModelScope` hängen** — sonst bleibt der
-  Bildschirm systemweit verdunkelt, wenn der Nutzer die App verlässt.
-- **Jeder `DimOverlayPrefs`-Setter MUSS direkt danach `DimScheduleUseCase.enable()` rufen**, unentprellt.
-- **Die Dienstzeit-Fenster kommen aus `ShiftSpanStore`, nicht aus dem Alarm-Bestand** — ein Alarm
-  überlebt die Weckzeit nicht.
-- **Die V1-Hue-API antwortet auch bei ABLEHNUNG mit HTTP 200** — das Urteil steht im Body.
+- **Leere Fensterliste = Unterdrückung dieser Nacht**, NICHT „keine Regel".
+- **Die Tick-Kette darf nicht abreißen**
+- **Das Aufräumen der Dimm-VORSCHAU darf nicht am `viewModelScope` hängen**
+- **Jeder `DimOverlayPrefs`-Setter MUSS direkt danach `DimScheduleUseCase.enable()` rufen**,
+  unentprellt.
+- **Die Dienstzeit-Fenster kommen aus `ShiftSpanStore`, nicht aus dem Alarm-Bestand**
+- **Die V1-Hue-API antwortet auch bei ABLEHNUNG mit HTTP 200**
 - **Ein Fehlschlag der Bridge darf nicht zur leeren Liste degradieren**, und die Subnetz-Prüfung ist
   ein HINWEIS auf das Timeout, **niemals ein Veto**.
 - **`cleanup()` auf Prozess-Singletons cancelt NUR Kinder** (`cancelChildren()`), nie den Scope.
-- **`healthCheckScope` braucht einen `CoroutineExceptionHandler`** — ein `SupervisorJob` allein
-  lässt die Exception den PROZESS beenden.
+- **`healthCheckScope` braucht einen `CoroutineExceptionHandler`**
 
 ### Navigation
 
-- **Zurück gehört dem `BackHandler` in `MainScreen`** — es gibt keinen Backstack, ohne Handler
-  beendet jeder Druck die App. Wer einen neuen `NavigationState` ergänzt, muss ihn dort mitbedenken.
-- **Die vier Onboarding-Gates sind nicht optional**, und „Später" beim Akku-Gate heißt ERLEDIGT,
-  nicht abgebrochen — sonst wird dem Nutzer der nächste Schritt NIE angeboten.
+Wortlaut: Skill `cfalarm-ui-und-navigation`.
+
+- **Zurück gehört dem `BackHandler` in `MainScreen`**
+- **Die vier Onboarding-Gates sind nicht optional**

@@ -160,11 +160,9 @@ fun ShiftConfigScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    Text(
-                        "Schicht-Konfiguration",
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
+                    // Ohne Ein-Zeilen-Kuerzung: bei 320 dp + Schrift 1,3 stand "Schicht-Kon…" da.
+                    // Der Titel-Stil trennt jetzt (Hyphens.Auto), zwei Zeilen wie die uebrigen Kopfzeilen.
+                    Text("Schicht-Konfiguration")
                 },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {

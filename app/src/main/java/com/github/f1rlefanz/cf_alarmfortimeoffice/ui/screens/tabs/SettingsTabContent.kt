@@ -1,5 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.KnopfZeile
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.wecker.TitelUndBeschreibung
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.wecker.InhaltUndBedienung
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -571,19 +572,17 @@ private fun ConfigBackupCard() {
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
-            Row(horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_SMALL)) {
-                // CompactActionButton: zwei geteilte Buttons in einer Kartenzeile - mit
-                // ButtonDefaults.ContentPadding (24dp je Seite) bricht Compose hier mitten im Wort.
+            // KnopfZeile + Compact-Buttons: nebeneinander, solange beide ganz hineinpassen, sonst
+            // untereinander (ButtonDefaults.ContentPadding brach hier mitten im Wort).
+            KnopfZeile(modifier = Modifier.fillMaxWidth(), abstand = SpacingConstants.SPACING_SMALL) {
                 CompactButton(
                     onClick = { exportLauncher.launch(viewModel.suggestedFileName()) },
                     text = "Exportieren",
-                    modifier = Modifier.weight(1f),
                     enabled = !state.busy
                 )
                 CompactOutlinedButton(
                     onClick = { showImportConfirmation = true },
                     text = "Importieren",
-                    modifier = Modifier.weight(1f),
                     enabled = !state.busy
                 )
             }

@@ -32,4 +32,12 @@ class TypographySilbentrennungTest {
             assertEquals("$name: Trennsprache", LocaleList("de"), stil.localeList)
         }
     }
+
+    @Test
+    fun `jeder Titel- und Ueberschriften-Stil trennt - auch die ohne eigenen Wert`() {
+        // headlineSmall/displaySmall fehlten zuerst: ohne Eintrag gilt der Material-Standard ohne
+        // Trennung ("Neue Schichtdefinition" im Schicht-Dialog, Review 3 zu #140).
+        alleStile.filterKeys { it.startsWith("display") || it.startsWith("headline") || it.startsWith("title") }
+            .forEach { (name, stil) -> assertEquals("$name: Silbentrennung", Hyphens.Auto, stil.hyphens) }
+    }
 }

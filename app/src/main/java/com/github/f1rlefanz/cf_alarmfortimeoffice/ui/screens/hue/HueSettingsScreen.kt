@@ -1,5 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.KnopfZeile
 import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.ui.platform.LocalDensity
@@ -262,18 +263,16 @@ private fun BridgeStatusCard(
                 }
             }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            KnopfZeile(modifier = Modifier.fillMaxWidth()) {
                 CompactOutlinedButton(
                     onClick = onValidate,
                     text = stringResource(R.string.hue_bridge_check),
-                    icon = Icons.Default.Refresh,
-                    modifier = Modifier.weight(1f)
+                    icon = Icons.Default.Refresh
                 )
                 CompactOutlinedButton(
                     onClick = onTest,
                     text = stringResource(R.string.hue_bridge_test),
-                    icon = Icons.Default.FlashOn,
-                    modifier = Modifier.weight(1f)
+                    icon = Icons.Default.FlashOn
                 )
             }
 

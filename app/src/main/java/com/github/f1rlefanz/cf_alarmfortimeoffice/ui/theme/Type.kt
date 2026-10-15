@@ -50,7 +50,14 @@ private val RobotoFamily = FontFamily.Default
 // Mustern getrennt. Die App ist rein deutsch, deshalb fest "de".
 internal val Deutsch = LocaleList("de")
 
+// Material-Standard, nur fuer die Stile, die hier keinen eigenen Wert bekommen (headlineSmall,
+// displaySmall): ohne Eintrag fielen sie aus der Silbentrennung heraus ("Neue Schichtdefinition"
+// im Schicht-Dialog, Review 3 zu #140). Aussehen bleibt das von Material 3.
+private val Standard = Typography()
+
 val Typography = Typography(
+    displaySmall = Standard.displaySmall.copy(hyphens = Hyphens.Auto, localeList = Deutsch),
+    headlineSmall = Standard.headlineSmall.copy(hyphens = Hyphens.Auto, localeList = Deutsch),
     displayLarge = TextStyle(fontFamily = MulishFamily, fontWeight = FontWeight.Light, fontSize = 36.sp, lineHeight = 42.sp, letterSpacing = 0.sp, hyphens = Hyphens.Auto, localeList = Deutsch),
     displayMedium = TextStyle(fontFamily = MulishFamily, fontWeight = FontWeight.Light, fontSize = 30.sp, lineHeight = 36.sp, hyphens = Hyphens.Auto, localeList = Deutsch),
 

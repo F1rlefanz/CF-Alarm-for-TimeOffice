@@ -180,7 +180,7 @@ das baut man dieselbe Falle in neuer Form nach.
   kein Wecker mehr klingelte (Review 14.10.2026). Alte Jobs ohne Weckzeit laufen wie bisher.
 - **Die Vorab-Rampe legt ihr Auto-Aus sofort auf der Bridge an** (Minuten bis Weckzeit +
   Regeldauer, `HueRuleUseCase.vorabAutoAusZiele`); feuert der Wecker, ersetzt
-  `scheduleBridgeAutoOff` den Zeitplan wie bisher. Sonst blieb ein Licht an, dessen Rampe schon lief,
+  `scheduleBridgeAutoOff` den Zeitplan — je ZIEL; Timer anderer Ziele bleiben stehen (sonst blieb eine Rampe, deren Regel zur Weckzeit wegfiel, ohne Auto-Aus an). Sonst blieb ein Licht an, dessen Rampe schon lief,
   als der Tag freigegeben wurde. Regeln ohne Auto-Aus-Dauer bleiben bewusst an (wie nach jedem Wecker).
 - **`IHueConfigRepository.getConfiguration()` emittiert bei JEDER Änderung des @HueDataStore** — die
   Statuszeile je Schicht liest geänderte Regeln darüber nach. Ein `distinctUntilChanged` dort macht sie

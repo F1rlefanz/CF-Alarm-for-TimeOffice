@@ -155,6 +155,9 @@ das baut man dieselbe Falle in neuer Form nach.
   stellt linksbuendig untereinander, wenn sie nicht passen. Etikett neben einem Namen: `FlowRow`.
 - **Titel- und Ueberschriften-Stile tragen `Hyphens.Auto`** (`ui/theme/Type.kt`): deutsche
   Komposita brachen dort ohne Trennstrich mitten im Wort („Benachrichtigunge|n“). Fliesstext nicht.
+  **Immer mit `localeList = Deutsch`**: Compose setzt die Trennsprache nur aus `TextStyle.localeList`,
+  sonst trennt der Hyphenator nach der SYSTEMSPRACHE (englisches Geraet = englische Muster an
+  deutschen Titeln). Abgesichert durch `TypographySilbentrennungTest`.
 - **Neue Screens einmal bei 320 dp ansehen** (`adb shell wm density 540` auf 1080 px, danach
   `wm density reset`) — das Gerät des Eigentümers läuft so. Lange zusammengesetzte Hauptwörter
   brechen dort mitten im Wort um.

@@ -843,5 +843,7 @@ dann sinnlos ab. Gewaehlt wurde je Dimm-Fenster `HellAb { IMMER, DAEMMERUNG, SON
 - **Fail-safe = voller Nachlauf**: lieber 30 Minuten zu lange gedimmt als ein Dimmer, der wegen
   eines Lesefehlers ploetzlich anders arbeitet.
 - **Wanduhr- und Kalendertag-Arithmetik**, kein `+ 24 h` in Millisekunden (Zeitumstellung).
-- Die Vorschau nennt den Grund nur, wenn wirklich gekuerzt wurde („bis 07:31, Sonnenaufgang …“);
-  der Editor zeigt fuer den naechsten Wecker live, was passiert (`tageslicht_dimmer_grund_*`).
+- Die Vorschau nennt den Grund nur, wenn wirklich gekuerzt wurde
+  (`DimmerPreviewScreen.tageslichtGrundZeile`: „endet bei Sonnenaufgang 07:31“ aus
+  `tageslicht_vorschau_endet`, bzw. „an der Weckzeit, Sonnenaufgang war schon um 07:31“ aus
+  `tageslicht_dimmer_grund_weckzeit`); der Editor zeigt fuer den naechsten Wecker live, was passiert (`tageslicht_dimmer_grund_*`).

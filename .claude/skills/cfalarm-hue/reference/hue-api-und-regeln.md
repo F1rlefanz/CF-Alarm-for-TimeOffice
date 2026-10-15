@@ -168,6 +168,11 @@
 - **Auf der Bridge liegen fremde Zeitpläne** (real: zwei „Hue dimmer switch 1"). Aufgeräumt wird
   ausschließlich, was `BridgeTimer.NAME_PREFIX` trägt. Und aufgeräumt werden **muss**: sonst legt
   jeder Snooze einen weiteren Timer an, und der älteste schaltet zu früh aus.
+  **Geräumt wird je ZIEL**, nur was gleich für dieselbe Lampe/Gruppe neu angelegt wird (Review 2
+  zu #140, 15.10.2026): bis dahin räumte jeder Lauf ALLE eigenen Timer, und fiel eine Regel mit
+  laufender Vorab-Rampe zur Weckzeit weg (Tageslicht, deaktiviert), nahm das Auto-Aus einer
+  anderen Regel ihren Vorab-Timer mit — die Rampen-Lampen blieben an. Ein stehen gebliebener
+  fremder Timer ist einmalig und räumt sich per `autodelete` selbst ab.
 - **`autoOffTargetsOf()` filtert bewusst NICHT nach Schichtnamen.** Die Auswahl gehört allein
   `findApplicableRules` — und die matcht seit v1.11.0 **exakter Definitionsname ODER
   `UNIVERSAL_SHIFT_PATTERN`**, kein Keyword, kein Teiltreffer (`HueRuleMatchingTest`). Ein zweiter

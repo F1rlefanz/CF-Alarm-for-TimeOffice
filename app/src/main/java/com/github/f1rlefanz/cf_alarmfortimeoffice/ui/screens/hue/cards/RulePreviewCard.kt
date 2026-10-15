@@ -32,6 +32,10 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.presetLabel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.previewColorForKelvin
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.previewColorForPreset
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.validate
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.TageslichtUrteil
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.uhrzeitKurz
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.weckzeitKurz
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.HellAb
 import kotlinx.coroutines.launch
 import androidx.compose.ui.res.pluralStringResource
 
@@ -46,6 +50,7 @@ import androidx.compose.ui.res.pluralStringResource
 @Composable
 internal fun RulePreviewCard(
     form: HueRuleFormState,
+    tageslichtZeile: String?,
     onTestRule: () -> Unit
 ) {
     val context = LocalContext.current
@@ -188,6 +193,19 @@ internal fun RulePreviewCard(
                 }
             }
 
+            // Tageslicht-Bedingung (#140): die Urteilszeile fuer den naechsten Wecker; ohne Urteil
+            // (kein Ort, kein passender Wecker, kein Ereignis) wenigstens die gewaehlte Bedingung -
+            // die Zusammenfassung darf sie nicht verschweigen.
+            if (form.hellAb != HellAb.IMMER) {
+                Text(
+                    tageslichtZeile ?: stringResource(
+                        if (form.hellAb == HellAb.DAEMMERUNG) R.string.tageslicht_hue_vor_daemmerung
+                        else R.string.tageslicht_hue_vor_sonnenaufgang
+                    ),
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+
             Text(
                 stringResource(
                     R.string.hue_preview_status,
@@ -201,4 +219,24 @@ internal fun RulePreviewCard(
             )
         }
     }
+}
+
+/**
+ * Die Urteilszeile (#140) als Text: "Nächster Wecker Mi 05:30 · Sonnenaufgang 07:31 → Licht geht
+ * an" bzw. "… → entfällt, Weckzeit liegt danach" - NICHT "draußen schon hell": ein Abendwecker
+ * liegt nach dem Morgen des Wecktags und entfällt auch bei Dunkelheit (Plan §0.9). Einmal im Editor gebaut und an Tageslicht-Karte UND
+ * Zusammenfassung gereicht - zwei eigene Herleitungen waeren zwei Wahrheiten.
+ */
+@Composable
+internal fun tageslichtUrteilText(urteil: TageslichtUrteil): String {
+    val ereignis = stringResource(
+        if (urteil.ereignis == HellAb.DAEMMERUNG) R.string.tageslicht_ereignis_daemmerung
+        else R.string.tageslicht_ereignis_sonnenaufgang
+    )
+    return stringResource(
+        if (urteil.laeuft) R.string.tageslicht_hue_naechster_an else R.string.tageslicht_hue_naechster_aus,
+        weckzeitKurz(urteil.weckzeit, urteil.zone),
+        ereignis,
+        uhrzeitKurz(urteil.hellZeitpunkt, urteil.zone)
+    )
 }

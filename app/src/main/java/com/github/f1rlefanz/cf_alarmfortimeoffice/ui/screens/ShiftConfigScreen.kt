@@ -160,11 +160,9 @@ fun ShiftConfigScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    Text(
-                        "Schicht-Konfiguration",
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
+                    // Ohne Ein-Zeilen-Kuerzung: bei 320 dp + Schrift 1,3 stand "Schicht-Kon…" da.
+                    // Der Titel-Stil trennt jetzt (Hyphens.Auto), zwei Zeilen wie die uebrigen Kopfzeilen.
+                    Text("Schicht-Konfiguration")
                 },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
@@ -678,7 +676,14 @@ private fun ShiftDefinitionCard(
                     // Verwechslung passiert: eine Rufbereitschaft wurde ausgeschaltet angelegt,
                     // damit sie nicht klingelt, und sollte trotzdem DND steuern - was sie so nie
                     // konnte. Der Schalter dafuer heisst "Stille Schicht".
+                    //
+                    // weight(1f, fill = false): der lange Ausgeschaltet-Text bricht um und meldet
+                    // dann die VOLLE Restbreite - ungewichtet bekaemen die Marker-Icons dahinter
+                    // 0 dp und verschwaenden genau an der deaktivierten Schicht (Runde 4 zu #140).
+                    // Gewichtet misst Row die Icons zuerst, der Text nimmt nur den Rest.
                     Text(
+                        modifier = Modifier.weight(1f, fill = false),
+                        text =
                         if (definition.isEnabled) {
                             "Alarm: ${definition.getAlarmTimeFormatted()}"
                         } else {

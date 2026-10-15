@@ -22,6 +22,11 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.ICalenda
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.ICalendarSelectionRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IShiftConfigRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftConfigRepository
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.IStandortAbfrage
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.ITageslichtRepository
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.StandortAbfrage
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.TageslichtQuelle
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.TageslichtRepository
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
@@ -92,4 +97,22 @@ abstract class RepositoryModule {
     abstract fun bindAnmeldeWiederherstellung(
         impl: PlayDiensteAnmeldeWiederherstellung
     ): AnmeldeWiederherstellung
+
+    // Tageslicht (#140): EIN Objekt hinter beiden Schnittstellen - TageslichtRepository ist selbst
+    // @Singleton, sonst haetten UI und Hintergrund je einen eigenen PLZ-Tabellen-Cache. Der Bau
+    // liest nichts (Direct Boot); das Entsperr-Gate sitzt in stand()/einstellungen.
+    @Binds
+    abstract fun bindTageslichtRepository(
+        impl: TageslichtRepository
+    ): ITageslichtRepository
+
+    @Binds
+    abstract fun bindTageslichtQuelle(
+        impl: TageslichtRepository
+    ): TageslichtQuelle
+
+    @Binds
+    abstract fun bindStandortAbfrage(
+        impl: StandortAbfrage
+    ): IStandortAbfrage
 }

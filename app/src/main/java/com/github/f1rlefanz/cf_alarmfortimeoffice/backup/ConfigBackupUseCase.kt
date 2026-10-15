@@ -18,6 +18,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.ZeitkettenArmierer
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimmerModellMigration
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.RufbereitschaftMigration
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueSchedule
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.scheduling.HueSmartScheduler
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.IHueLightUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.IHueRuleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IShiftUseCase
@@ -84,7 +85,11 @@ class ConfigBackupUseCase @Inject constructor(
     // reconcileImportedHueTargets). Beide werden ausschliesslich im Import benutzt und beruehren
     // die Bridge nur, wenn sie erreichbar ist.
     private val hueLightUseCase: IHueLightUseCase,
-    private val hueRuleUseCase: IHueRuleUseCase
+    private val hueRuleUseCase: IHueRuleUseCase,
+    // Nur fuer den Hue-Nachzug am Ende des Imports. `dagger.Lazy`, damit der Scheduler (der sich
+    // beim ersten getInstance() selbst initialisiert) erst gebaut wird, wenn wirklich importiert
+    // wird - nicht schon, wenn der Bildschirm den UseCase injiziert bekommt.
+    private val hueSmartScheduler: dagger.Lazy<HueSmartScheduler>
 ) {
 
     private val json = Json {
@@ -204,6 +209,16 @@ class ConfigBackupUseCase @Inject constructor(
         armierer.armiere("IMPORT")
 
         val unresolvedHueTargets = reconcileImportedHueTargets()
+
+        // HUE-SONNENAUFGANGSPLANUNG NACHZIEHEN (#140). Der Import schreibt zwei ihrer Eingaben:
+        // die Hue-Regeln (samt `hellAb`) und den Ort (`tageslicht_land`/`tageslicht_plz`). Der
+        // Scheduler reagiert von sich aus nur auf ALARM-Aenderungen und den Tagesplaner - eine
+        // Regel, die am alten Ort als "entfaellt" galt, bekaeme sonst bis zu 24 h keinen
+        // Vorlauf-Worker, die Rampe fehlte. Gleicher Nachzug wie im TageslichtViewModel nach
+        // jedem wirksamen Ort-Schreiben. NACH dem Ziel-Abgleich, damit die Planung schon die
+        // abgeglichenen Lampen sieht. Best-effort: der Import ist zu diesem Zeitpunkt geschrieben.
+        runCatching { hueSmartScheduler.get().recalculateSchedule() }
+            .onFailure { Logger.w(LogTags.HUE_USECASE, "⚠️ IMPORT: Hue-Planung nicht neu berechnet", it) }
 
         Logger.business(
             LogTags.APP,

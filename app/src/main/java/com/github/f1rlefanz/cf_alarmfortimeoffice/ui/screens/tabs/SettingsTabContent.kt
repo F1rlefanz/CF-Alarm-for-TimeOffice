@@ -1,5 +1,8 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.KnopfZeile
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.wecker.TitelUndBeschreibung
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.wecker.InhaltUndBedienung
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -23,6 +26,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.WbTwilight
 import androidx.compose.material.icons.filled.Work
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
@@ -43,10 +47,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.github.f1rlefanz.cf_alarmfortimeoffice.R
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.CompactButton
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.CompactOutlinedButton
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.ErrorMessage
@@ -66,7 +72,8 @@ fun SettingsTabContent(
     authViewModel: AuthViewModel,
     onShowCalendarSelection: () -> Unit,
     onShowShiftConfig: () -> Unit,
-    onShowDndSettings: () -> Unit
+    onShowDndSettings: () -> Unit,
+    onShowOrtFuerTageslicht: () -> Unit
 ) {
     val context = LocalContext.current
     // collectAsStateWithLifecycle, nicht collectAsState: Es sind reine Anzeige-Zustaende, an deren
@@ -214,6 +221,15 @@ fun SettingsTabContent(
             titel = "Nicht stören",
             text = "Schaltet Nicht-stören automatisch nach Schicht",
             onClick = onShowDndSettings
+        )
+
+        // Ort fuer Tageslicht (#140) - gemeinsam fuer Dimmer und Hue, deshalb in den
+        // Einstellungen; die beiden Regel-Editoren fuehren zusaetzlich direkt hierher.
+        WeiterKarte(
+            icon = Icons.Default.WbTwilight,
+            titel = stringResource(R.string.tageslicht_ort_titel),
+            text = stringResource(R.string.tageslicht_ort_karte_text),
+            onClick = onShowOrtFuerTageslicht
         )
 
         // Benachrichtigungen (Schicht-Aenderung + Dimmer-Korrektur)
@@ -556,19 +572,17 @@ private fun ConfigBackupCard() {
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
-            Row(horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_SMALL)) {
-                // CompactActionButton: zwei geteilte Buttons in einer Kartenzeile - mit
-                // ButtonDefaults.ContentPadding (24dp je Seite) bricht Compose hier mitten im Wort.
+            // KnopfZeile + Compact-Buttons: nebeneinander, solange beide ganz hineinpassen, sonst
+            // untereinander (ButtonDefaults.ContentPadding brach hier mitten im Wort).
+            KnopfZeile(modifier = Modifier.fillMaxWidth(), abstand = SpacingConstants.SPACING_SMALL) {
                 CompactButton(
                     onClick = { exportLauncher.launch(viewModel.suggestedFileName()) },
                     text = "Exportieren",
-                    modifier = Modifier.weight(1f),
                     enabled = !state.busy
                 )
                 CompactOutlinedButton(
                     onClick = { showImportConfirmation = true },
                     text = "Importieren",
-                    modifier = Modifier.weight(1f),
                     enabled = !state.busy
                 )
             }
@@ -665,21 +679,10 @@ private fun BenachrichtigungsSchalter(
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically
+    // InhaltUndBedienung: der Text lief bei 320 dp mit Schrift 1,3 bis an den Schalter heran.
+    InhaltUndBedienung(
+        inhalt = { mod -> TitelUndBeschreibung(titel, text, mod) }
     ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                titel,
-                style = MaterialTheme.typography.titleMedium
-            )
-            Text(
-                text,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
         Switch(
             checked = checked,
             onCheckedChange = onCheckedChange

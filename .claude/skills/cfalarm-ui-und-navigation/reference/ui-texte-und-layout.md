@@ -67,7 +67,9 @@
 - **`ButtonDefaults.ContentPadding` = 24dp pro Seite.** In schmalen, geteilten Buttons bleibt zu
   wenig für die Schrift, und Compose bricht mitten im Wort. Dafür gibt es **`CompactButton`** und
   **`CompactOutlinedButton`** (in `ui/components/CompactActionButton.kt`) — **nur** für schmale,
-  geteilte Buttons, nicht für ganzbreite, wo ein Zweizeiler gewollt ist.
+  geteilte Buttons, nicht für ganzbreite, wo ein Zweizeiler gewollt ist. Die Anordnung
+  nebeneinander übernimmt `KnopfZeile`, nicht `Row` + `weight(1f)` (sonst „Bea…"; siehe SKILL.md);
+  die Kürzung mit „…" ist nur der Notausgang für einen einzelnen, zu breiten Knopf.
 - **Eine `LazyColumn` in einer `Column` braucht `weight(1f)`.** Ohne sie misst sie sich auf ihre
   Inhaltshöhe und frisst die gesamte Resthöhe — im `ShiftConfigScreen` war der Knopf „Auf
   Standardwerte zurücksetzen" darunter dadurch **unerreichbar** (bei fünf Schichten plus der

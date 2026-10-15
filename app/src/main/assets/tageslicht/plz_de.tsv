@@ -1,0 +1,776 @@
+# Quelle: GeoNames (www.geonames.org), Postleitzahlen DE - Lizenz CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/)
+# Aggregiert zu Regions-Schwerpunkten von tools/tageslicht/baue_plz_tabelle.py - nicht von Hand bearbeiten
+# Stand 2026-10-14
+# praefix	breite	laenge	name
+01	51.11	13.77	Klotzsche
+010	51.06	13.75	Dresden
+011	51.07	13.70	Dresden
+012	51.02	13.80	Dresden
+013	51.05	13.83	Dresden
+014	51.15	13.81	Dresden Langebrück
+015	51.29	13.38	Riesa
+016	51.22	13.41	Lommatzsch
+017	50.90	13.68	Dippoldiswalde
+018	50.98	14.05	Stadt Wehlen
+019	51.37	13.99	Grünewald
+02	51.17	14.62	Hochkirch
+026	51.18	14.43	Bautzen
+027	50.96	14.67	Leutersdorf
+028	51.13	14.91	Görlitz
+029	51.43	14.52	Boxberg/Oberlausitz
+03	51.73	14.22	Kolkwitz
+030	51.76	14.32	Cottbus
+031	51.71	14.42	Forst (Lausitz)
+032	51.72	13.82	Babben
+04	51.30	12.61	Brandis
+041	51.36	12.35	Leipzig
+042	51.35	12.35	Leipzig
+043	51.36	12.40	Leipzig
+044	51.30	12.36	Markkleeberg
+045	51.21	12.40	Böhlen
+046	51.08	12.58	Frohburg
+047	51.20	13.05	Mügeln
+048	51.48	12.84	Mockrehna
+049	51.55	13.46	Bad Liebenwerda
+06	51.55	11.92	Halle
+061	51.49	11.96	Halle
+062	51.36	11.87	Klobikau
+063	51.63	11.71	Friedeburgerhütte
+064	51.77	11.46	Aschersleben
+065	51.47	11.19	Drebsdorf
+066	51.20	11.80	Freyburg
+067	51.45	12.25	Brehna
+068	51.80	12.36	Dessau
+069	51.76	12.89	Jessen (Elster) Battin
+07	50.73	11.78	Dreitzsch
+073	50.59	11.52	Hohenwarte
+074	50.67	11.23	Bad Blankenburg
+075	50.85	12.08	Gera
+076	50.94	11.85	Bad Klosterlausnitz
+077	50.92	11.62	Jena
+078	50.72	11.79	Schmieritz
+079	50.61	11.98	Pausa
+08	50.58	12.45	Crinitzberg
+080	50.71	12.48	Zwickau
+081	50.66	12.53	Wilkau-Haßlau
+082	50.48	12.47	Morgenröthe-Rautenkranz
+083	50.59	12.66	Schlema
+084	50.70	12.34	Fraureuth
+085	50.51	12.12	Plauen
+086	50.31	12.23	Adorf
+09	50.78	13.00	Amtsberg
+091	50.82	12.91	Chemnitz
+092	50.87	12.84	Röhrsdorf
+093	50.81	12.78	Erlbach-Kirchberg
+094	50.62	13.02	Wiesa
+095	50.76	13.23	Borstendorf
+096	50.91	13.32	Oberschöna
+10	52.51	13.38	Berlin
+101	52.52	13.40	Berlin
+102	52.51	13.45	Berlin Friedrichshain
+103	52.51	13.50	Berlin
+104	52.54	13.43	Berlin
+105	52.52	13.33	Berlin
+106	52.51	13.31	Berlin
+107	52.50	13.33	Berlin
+108	52.48	13.35	Berlin
+109	52.50	13.41	Berlin Kreuzberg
+11	52.52	13.38	Berlin
+110	52.52	13.38	Berlin
+12	52.46	13.46	Berlin
+120	52.48	13.44	Berlin
+121	52.46	13.35	Berlin
+122	52.43	13.33	Berlin
+123	52.42	13.44	Berlin
+124	52.46	13.51	Berlin
+125	52.43	13.60	Berlin
+126	52.53	13.58	Berlin
+13	52.57	13.34	Reinickendorf
+130	52.56	13.47	Berlin
+131	52.60	13.42	Berlin
+133	52.55	13.36	Berlin
+134	52.59	13.33	Berlin
+135	52.55	13.21	Berlin
+136	52.54	13.28	Berlin
+14	52.40	12.96	Potsdam
+140	52.51	13.25	Berlin
+141	52.45	13.26	Berlin
+144	52.40	13.06	Potsdam
+145	52.34	13.04	Wilhelmshorst
+146	52.58	12.94	Brieselang
+147	52.45	12.46	Havelsee
+148	52.16	12.56	Hagelberg
+149	52.16	13.17	Luckenwalde
+15	52.30	13.94	Spreenhagen Markgrafpieske
+152	52.30	14.51	Frankfurt (Oder)
+153	52.55	14.12	Müncheberg
+155	52.40	13.90	Grünheide (Mark)
+157	52.25	13.67	Bestensee
+158	52.18	13.85	Storkow (Mark)
+159	51.95	13.84	Lübben (Spreewald)
+16	52.88	13.29	Liebenwalde
+162	52.87	13.90	Eberswalde
+163	52.85	13.80	Biesenthal
+165	52.71	13.32	Borgsdorf
+167	52.86	13.20	Germendorf
+168	52.94	12.72	Walsleben
+169	53.20	12.23	Alt Krüssow
+17	53.68	13.42	Datzetal
+170	53.62	13.32	Neverin
+171	53.81	12.88	Neukalen
+172	53.35	13.03	Neustrelitz
+173	53.61	13.90	Hammer
+174	54.02	13.77	Sauzin
+175	54.02	13.51	Hanshagen
+18	54.17	12.55	Marlow
+180	54.08	12.10	Rostock
+181	54.11	12.20	Rostock
+182	53.94	11.98	Bölkow
+183	54.29	12.58	Saal
+184	54.27	12.95	Pantelitz
+185	54.35	13.29	Samtens
+186	54.38	13.62	Binz
+19	53.46	11.50	Lübesse
+190	53.61	11.43	Schwerin
+192	53.46	11.08	Körchow
+193	53.27	11.83	Marnitz
+194	53.74	11.74	Brüel
+20	53.56	9.99	Hamburg
+200	53.55	10.01	Hamburg Sankt Georg
+201	53.57	9.98	Hamburg Rotherbaum
+202	53.58	9.97	Hamburg Hoheluft-West
+203	53.56	9.97	Hamburg
+204	53.54	9.98	Hamburg
+205	53.55	10.04	Hamburg Hammerbrook
+21	53.44	9.90	Hamburg Eißendorf
+210	53.47	10.10	Hamburg Ochsenwerder
+211	53.50	9.92	Hamburg Altenwerder
+212	53.31	9.90	Buchholz in der Nordheide
+213	53.25	10.45	Lüneburg
+214	53.32	10.32	Radbruch
+215	53.48	10.43	Brunstorf
+216	53.48	9.59	Nottensdorf
+217	53.69	9.18	Hemmoor
+22	53.61	10.07	Hamburg Bramfeld
+220	53.58	10.07	Hamburg
+221	53.58	10.13	Hamburg Tonndorf
+222	53.60	10.01	Hamburg Winterhude
+223	53.63	10.06	Hamburg Ohlsdorf
+224	53.64	9.98	Hamburg
+225	53.59	9.88	Hamburg
+226	53.56	9.88	Hamburg Groß Flottbek
+227	53.56	9.92	Hamburg Ottensen
+228	53.66	9.98	Norderstedt
+229	53.66	10.34	Hoisdorf
+23	53.94	10.74	Ratekau
+235	53.86	10.68	Lübeck
+236	53.93	10.68	Bad Schwartau
+237	54.21	10.85	Lensahn
+238	53.83	10.41	Bad Oldesloe
+239	53.87	11.22	Warnow
+24	54.38	9.82	Sehestedt
+241	54.33	10.12	Kiel
+242	54.32	10.16	Mönkeberg
+243	54.46	10.00	Waabs
+244	54.68	9.83	Oersberg
+245	54.03	9.95	Neumünster
+246	54.03	10.01	Groß Kummerfeld
+247	54.30	9.67	Rendsburg
+248	54.46	9.53	Jagel
+249	54.75	9.46	Jarplund-Weding
+25	54.15	9.27	Albersdorf
+253	53.78	9.60	Kiebitzreihe
+254	53.68	9.78	Kummerfeld
+255	53.97	9.49	Ottenbüttel
+256	54.00	9.09	Gudendorf
+257	54.15	9.13	Nordhastedt
+258	54.50	9.00	Schobüll
+259	54.83	8.60	Friedrich-Wilhelm-Lübke-Koog
+26	53.33	7.73	Uplengen
+261	53.13	8.17	Oldenburg
+262	53.08	8.15	Wardenburg
+263	53.48	8.10	Wilhelmshaven
+264	53.62	7.77	Wittmund
+265	53.63	7.28	Hagermarsch
+266	53.35	7.62	Großefehn Strackholt
+267	53.40	7.16	Hinte Groß Midlum
+268	53.16	7.48	Westoverledingen
+269	53.15	7.90	Rastdorf
+27	53.19	8.86	Worpswede
+272	52.77	8.84	Sudwalde
+273	52.94	9.24	Kirchlinteln
+274	53.62	8.89	Alfstedt
+275	53.55	8.60	Bremerhaven
+276	53.57	8.65	Schiffdorf
+277	53.11	8.66	Delmenhorst
+278	53.09	8.49	Berne
+28	53.09	8.83	Bremen
+281	53.08	8.78	Bremen
+282	53.09	8.80	Bremen
+283	53.08	8.87	Bremen
+287	53.14	8.73	Bremen
+288	53.06	8.93	Oyten
+29	52.87	10.54	Stadensen
+292	52.62	10.08	Celle
+293	52.67	10.31	Eldingen
+294	53.00	11.15	Lüchow
+295	53.01	10.57	Emmendorf
+296	52.92	9.78	Soltau
+30	52.38	9.72	Hannover
+301	52.38	9.74	Hannover
+304	52.36	9.69	Hannover
+305	52.35	9.79	Hannover
+306	52.39	9.78	Hannover
+308	52.41	9.64	Garbsen
+309	52.37	9.71	Hemmingen
+31	52.28	9.52	Springe
+310	52.02	9.80	Brüggen
+311	52.13	9.99	Hildesheim
+312	52.32	10.17	Peine
+313	52.41	10.04	Burgdorf
+315	52.42	9.29	Hagenburg
+316	52.53	9.15	Landesbergen Heidhausen
+317	52.27	9.20	Auetal Westerwald
+318	52.11	9.39	Emmerthal
+32	52.15	8.80	Vlotho
+320	52.12	8.67	Herford
+321	52.11	8.65	Hiddenhausen
+322	52.22	8.57	Bünde
+323	52.38	8.56	Espelkamp
+324	52.30	8.90	Minden
+325	52.21	8.77	Bad Oeynhausen
+326	52.08	8.97	Dörentrup
+327	51.96	8.85	Detmold
+328	51.90	9.01	Horn-Bad Meinberg
+33	51.90	8.58	Schloß Holte-Stukenbrock
+330	51.74	9.02	Bad Driburg
+331	51.71	8.72	Paderborn
+333	51.89	8.39	Gütersloh
+334	51.88	8.32	Herzebrock-Clarholz
+335	52.03	8.53	Bielefeld
+336	52.01	8.54	Bielefeld
+337	52.02	8.48	Bielefeld
+338	52.03	8.50	Steinhagen
+34	51.25	9.34	Niedenstein
+341	51.32	9.48	Kassel
+342	51.27	9.48	Fuldabrück
+343	51.34	9.46	Espenau
+344	51.43	9.05	Volkmarsen
+345	51.14	9.15	Bad Wildungen
+346	50.90	9.27	Schwalmstadt
+35	50.69	8.61	Lohra
+350	50.86	8.72	Lahntal
+351	50.97	8.76	Münchhausen
+352	50.87	8.83	Rauschenberg
+353	50.61	8.88	Grünberg
+354	50.59	8.75	Buseck
+355	50.53	8.55	Wetzlar
+356	50.63	8.39	Ehringshausen
+357	50.64	8.29	Greifenstein
+36	50.70	9.73	Burghaun
+360	50.57	9.70	Fulda
+361	50.61	9.75	Hofbieber
+362	50.90	9.78	Bad Hersfeld
+363	50.58	9.37	Herbstein
+364	50.78	10.14	Stadtlengsfeld
+37	51.57	9.93	Göttingen
+370	51.54	9.93	Göttingen
+371	51.59	9.94	Bovenden
+372	51.23	9.95	Berkatal
+373	51.37	10.29	Kallmerode
+374	51.63	10.49	Bad Lauterberg im Harz
+375	51.81	10.03	Kalefeld
+376	51.85	9.49	Bevern
+38	52.20	10.65	Sickte
+380	52.26	10.54	Braunschweig
+381	52.27	10.55	Braunschweig
+382	52.12	10.33	Salzgitter Gebhardshagen
+383	52.14	10.79	Ingeleben
+384	52.49	10.86	Rühen
+385	52.45	10.53	Ribbesbüttel
+386	51.90	10.45	Goslar Goslar
+387	51.88	10.37	Wildemann
+388	51.85	10.89	Reddeber
+39	52.24	11.62	Wolmirstedt
+390	52.08	11.59	Magdeburg
+391	52.13	11.60	Magdeburg
+392	52.04	11.88	Dannigkow
+393	52.23	11.45	Haldensleben
+394	51.88	11.54	Löderburg
+395	52.62	11.89	Stendal
+396	52.67	11.43	Altmersleben
+40	51.23	6.81	Düsseldorf
+402	51.22	6.79	Düsseldorf
+404	51.25	6.78	Düsseldorf
+405	51.20	6.79	Düsseldorf
+406	51.25	6.78	Düsseldorf
+407	51.14	6.93	Hilden
+408	51.30	6.87	Ratingen
+41	51.17	6.50	Korschenbroich
+410	51.20	6.43	Mönchengladbach
+411	51.16	6.41	Mönchengladbach
+412	51.16	6.44	Mönchengladbach
+413	51.21	6.31	Schwalmtal
+414	51.19	6.70	Neuss
+415	51.11	6.71	Dormagen
+417	51.26	6.39	Viersen
+418	51.09	6.25	Hückelhoven
+42	51.23	7.14	Wuppertal
+421	51.26	7.14	Wuppertal
+422	51.27	7.20	Wuppertal
+423	51.24	7.15	Wuppertal
+424	51.21	7.25	Radevormwald
+425	51.33	7.06	Velbert
+426	51.17	7.06	Solingen
+427	51.16	7.03	Solingen
+428	51.19	7.21	Remscheid
+429	51.14	7.22	Wermelskirchen
+44	51.51	7.35	Dortmund
+441	51.51	7.47	Dortmund
+442	51.48	7.49	Dortmund
+443	51.53	7.46	Dortmund
+445	51.57	7.40	Lünen
+446	51.54	7.20	Herne
+447	51.46	7.23	Bochum
+448	51.48	7.21	Bochum
+45	51.50	7.05	Essen
+451	51.44	7.01	Essen
+452	51.43	7.05	Essen
+453	51.48	7.00	Essen
+454	51.43	6.88	Mülheim an der Ruhr
+455	51.39	7.19	Hattingen
+456	51.60	7.19	Recklinghausen
+457	51.65	7.20	Oer-Erkenschwick
+458	51.54	7.08	Gelsenkirchen
+459	51.57	6.99	Gladbeck
+46	51.66	6.76	Hünxe
+460	51.48	6.86	Oberhausen
+461	51.51	6.85	Oberhausen
+462	51.60	6.95	Bottrop
+463	51.85	6.79	Borken
+464	51.76	6.53	Hamminkeln
+465	51.61	6.69	Voerde
+47	51.46	6.55	Neukirchen-Vluyn
+470	51.42	6.77	Duisburg
+471	51.46	6.75	Duisburg
+472	51.39	6.73	Duisburg
+474	51.48	6.62	Moers
+475	51.67	6.26	Uedem
+476	51.54	6.29	Geldern
+477	51.33	6.57	Krefeld
+478	51.33	6.57	Krefeld
+479	51.34	6.42	Kempen
+48	52.08	7.44	Nordwalde
+480	51.96	7.63	Münster
+481	51.95	7.63	Münster
+482	52.01	7.63	Greven
+483	51.97	7.66	Everswinkel
+484	52.31	7.40	Salzbergen
+485	52.37	7.14	Nordhorn
+486	52.09	7.13	Heek
+487	51.97	7.09	Gescher
+49	52.49	7.86	Merzen
+490	52.27	8.04	Osnabrück
+491	52.25	8.14	Bissendorf
+492	52.14	8.08	Bad Rothenfelde
+493	52.43	8.32	Diepholz
+494	52.55	8.20	Damme
+495	52.39	7.87	Neuenkirchen
+496	52.75	7.91	Lastrup
+497	52.75	7.40	Stavern
+498	52.54	7.14	Wietmarschen
+50	50.93	6.87	Köln
+501	50.93	6.65	Bergheim
+502	50.96	6.81	Pulheim
+503	50.84	6.89	Brühl
+506	50.94	6.95	Köln
+507	51.00	6.91	Köln
+508	50.95	6.88	Köln
+509	50.91	6.94	Köln
+51	50.97	7.24	Bergisch Gladbach
+510	50.98	7.02	Köln
+511	50.91	7.05	Köln
+513	51.05	7.03	Leverkusen
+514	50.97	7.15	Bergisch Gladbach
+515	50.92	7.50	Nümbrecht
+516	51.02	7.53	Gummersbach
+517	51.03	7.49	Marienheide
+52	50.81	6.27	Eschweiler
+520	50.77	6.10	Aachen
+521	50.70	6.19	Roetgen
+522	50.76	6.26	Stolberg (Rheinland)
+523	50.78	6.48	Düren
+524	50.92	6.29	Aldenhoven
+525	50.99	6.06	Geilenkirchen
+53	50.64	7.07	Wachtberg
+531	50.72	7.10	Bonn
+532	50.73	7.16	Bonn
+533	50.68	7.02	Meckenheim
+534	50.53	7.20	Sinzig
+535	50.52	7.14	Dernau
+536	50.65	7.24	Bad Honnef
+537	50.79	7.27	Hennef
+538	50.77	7.07	Troisdorf
+539	50.55	6.65	Kall
+54	49.92	6.67	Speicher
+542	49.76	6.63	Trier
+543	49.78	6.70	Mertesdorf
+544	49.74	6.82	Hinzert-Pölert
+545	50.14	6.75	Schutz
+546	50.05	6.41	Mauel
+55	49.88	7.83	Rüdesheim
+551	49.99	8.25	Mainz
+552	49.89	8.20	Nieder-Olm
+554	49.96	7.69	Ellern
+555	49.81	7.80	Norheim
+556	49.81	7.47	Hennweiler
+557	49.67	7.27	Sonnenberg-Winnenberg
+56	50.33	7.49	Winningen
+560	50.35	7.58	Koblenz
+561	50.35	7.64	Fachbach
+562	50.36	7.57	Mülheim-Kärlich
+563	50.31	7.68	Braubach
+564	50.54	7.92	Kaden
+565	50.50	7.47	Ehlscheid
+566	50.42	7.33	Nickenich
+567	50.30	7.15	Reudelsterz
+568	50.08	7.16	Nehren
+57	50.82	7.89	Kirchen
+570	50.88	8.02	Siegen
+572	50.88	8.04	Wilnsdorf
+573	51.06	8.24	Erndtebrück
+574	51.06	7.87	Olpe
+575	50.77	7.83	Scheuerfeld
+576	50.66	7.71	Winkelbach
+58	51.33	7.58	Hagen
+580	51.37	7.49	Hagen
+581	51.35	7.50	Hagen
+582	51.35	7.42	Gevelsberg
+583	51.33	7.40	Wetter (Ruhr)
+584	51.44	7.33	Witten
+585	51.20	7.60	Lüdenscheid
+586	51.37	7.70	Iserlohn
+587	51.39	7.76	Menden
+588	51.25	7.83	Neuenrade
+59	51.57	8.02	Soest
+590	51.67	7.80	Hamm
+591	51.60	7.69	Kamen
+592	51.76	7.94	Ahlen
+593	51.75	7.72	Ascheberg
+594	51.54	7.81	Unna
+595	51.61	8.26	Erwitte
+596	51.53	8.38	Anröchte
+597	51.40	8.05	Arnsberg
+598	51.37	8.11	Arnsberg
+599	51.27	8.55	Winterberg
+60	50.12	8.67	Frankfurt am Main
+603	50.12	8.68	Frankfurt am Main
+604	50.15	8.65	Frankfurt am Main
+605	50.09	8.65	Frankfurt am Main
+61	50.28	8.66	Friedrichsdorf
+611	50.26	8.80	Karben
+612	50.35	8.66	Ober-Mörlen
+613	50.24	8.58	Bad Homburg vor der Höhe
+614	50.19	8.51	Kronberg im Taunus
+63	50.04	9.10	Johannesberg
+630	50.10	8.76	Offenbach
+631	50.05	8.83	Heusenstamm
+632	50.02	8.68	Neu-Isenburg
+633	49.99	8.73	Dreieich
+634	50.14	8.91	Hanau
+635	50.15	9.06	Rodenbach
+636	50.32	9.18	Kefenrod
+637	50.00	9.12	Aschaffenburg
+638	49.96	9.23	Haibach
+639	49.72	9.23	Großheubach
+64	49.80	8.75	Mühltal
+642	49.87	8.65	Darmstadt
+643	49.82	8.71	Mühltal
+644	49.80	8.77	Groß-Bieberau
+645	49.87	8.50	Riedstadt
+646	49.68	8.66	Bensheim
+647	49.68	9.00	Michelstadt
+648	49.90	8.90	Münster
+65	50.18	8.21	Taunusstein
+651	50.08	8.23	Wiesbaden
+652	50.11	8.18	Taunusstein
+653	50.07	8.05	Kiedrich
+654	50.00	8.42	Rüsselsheim
+655	50.36	8.11	Hünfelden
+656	50.39	8.10	Elz
+657	50.11	8.49	Hofheim am Taunus
+658	50.13	8.49	Liederbach am Taunus
+659	50.10	8.56	Frankfurt am Main
+66	49.33	7.18	Spiesen-Elversberg
+661	49.23	7.00	Saarbrücken
+662	49.29	7.02	Sulzbach/Saar
+663	49.25	6.95	Püttlingen
+664	49.26	7.32	Zweibrücken
+665	49.30	7.29	Großbundenbach
+666	49.51	6.97	Tholey
+667	49.37	6.72	Dillingen
+668	49.43	7.29	Bruchmühlbach-Miesau
+669	49.29	7.55	Thaleischweiler-Fröschen
+67	49.51	8.06	Wattenheim
+670	49.48	8.38	Ludwigshafen am Rhein
+671	49.43	8.29	Dannstadt-Schauernheim
+672	49.57	8.19	Grünstadt
+673	49.39	8.22	Gommersheim
+674	49.35	8.12	Neustadt an der Weinstraße
+675	49.71	8.30	Osthofen
+676	49.47	7.78	Kaiserslautern
+677	49.52	7.70	Hirschhorn
+678	49.68	7.83	Dielkirchen
+68	49.45	8.52	Mannheim
+681	49.49	8.48	Mannheim
+682	49.49	8.46	Mannheim
+685	49.49	8.59	Heddesheim
+686	49.66	8.47	Bürstadt
+687	49.32	8.55	Hockenheim
+688	49.30	8.51	Altlußheim
+69	49.42	8.77	Heidelberg
+691	49.39	8.69	Heidelberg
+692	49.36	8.74	Gaiberg
+694	49.49	8.91	Hirschhorn
+695	49.57	8.71	Mörlenbach
+70	48.77	9.19	Stuttgart
+701	48.77	9.18	Stuttgart
+703	48.78	9.20	Stuttgart
+704	48.77	9.18	Stuttgart
+705	48.76	9.19	Stuttgart
+706	48.77	9.18	Stuttgart
+707	48.75	9.23	Leinfelden-Echterdingen
+708	48.83	9.12	Kornwestheim
+71	48.83	9.15	Ditzingen
+710	48.68	8.99	Böblingen
+711	48.63	8.93	Hildrizhausen
+712	48.82	8.93	Rutesheim
+713	48.84	9.34	Waiblingen
+714	48.86	9.36	Schwaikheim
+715	48.97	9.46	Oppenweiler
+716	48.91	9.18	Ludwigsburg
+717	48.96	9.21	Benningen am Neckar
+72	48.41	9.03	Ofterdingen
+720	48.53	9.05	Tübingen
+721	48.47	8.90	Neustetten
+722	48.52	8.55	Pfalzgrafenweiler
+723	48.23	8.83	Dotternhausen
+724	48.25	9.02	Albstadt
+725	48.33	9.36	Hohenstein
+726	48.60	9.30	Großbettlingen
+727	48.49	9.21	Reutlingen
+728	48.43	9.21	Lichtenstein
+73	48.76	9.74	Ottenbach
+730	48.70	9.65	Göppingen
+731	48.69	9.66	Eschenbach
+732	48.64	9.47	Kirchheim unter Teck
+733	48.60	9.73	Deggingen
+734	48.90	10.18	Westhausen
+735	48.83	9.85	Iggingen
+736	48.83	9.53	Schorndorf
+737	48.73	9.32	Esslingen am Neckar
+74	49.21	9.36	Neuenstadt am Kocher
+740	49.14	9.21	Heilbronn
+741	49.17	9.25	Neckarsulm
+742	49.22	9.30	Eberstadt
+743	49.02	9.11	Erligheim
+744	49.00	9.81	Gaildorf
+745	49.16	9.92	Ilshofen
+746	49.26	9.60	Niedernhall
+747	49.49	9.43	Rosenberg
+748	49.35	9.13	Mosbach
+749	49.29	8.93	Waibstadt
+75	48.89	8.72	Pforzheim
+750	49.09	8.80	Oberderdingen
+751	48.89	8.68	Pforzheim
+752	48.91	8.70	Ispringen
+753	48.75	8.67	Oberreichenbach
+754	48.96	8.83	Mühlacker
+76	49.03	8.31	Karlsruhe
+760	49.01	8.42	Karlsruhe
+761	49.01	8.39	Karlsruhe
+762	49.00	8.41	Karlsruhe
+763	48.96	8.45	Waldbronn
+764	48.88	8.23	Ötigheim
+765	48.76	8.25	Baden-Baden
+766	49.18	8.58	Forst
+767	49.12	8.34	Leimersheim
+768	49.16	8.05	Göcklingen
+77	48.44	8.02	Ohlsbach
+776	48.49	7.91	Offenburg
+777	48.39	8.08	Nordrach
+778	48.65	8.09	Sasbach
+779	48.31	7.83	Kippenheim
+78	48.00	8.70	Seitingen-Oberflacht
+780	48.08	8.45	Villingen-Schwenningen
+781	48.04	8.38	Vöhrenbach
+782	47.78	8.81	Hilzingen
+783	47.79	9.00	Bodman-Ludwigshafen
+784	47.68	9.14	Konstanz
+785	48.07	8.81	Dürbheim
+786	48.11	8.68	Frittlingen
+787	48.25	8.46	Aichhalden
+79	47.86	7.89	Wieden
+790	47.99	7.85	Freiburg im Breisgau
+791	48.00	7.85	Freiburg im Breisgau
+792	48.00	7.83	Merzhausen
+793	48.12	7.74	Bahlingen am Kaiserstuhl
+794	47.79	7.64	Badenweiler
+795	47.63	7.65	Röttlerweiler
+796	47.71	7.85	Zell im Wiesental
+797	47.63	8.19	Waldshut-Tiengen
+798	47.79	8.25	Grafenhausen
+80	48.16	11.55	München
+803	48.14	11.56	München
+804	48.13	11.57	München
+805	48.15	11.59	München
+806	48.15	11.51	München
+807	48.15	11.58	München
+808	48.17	11.58	München
+809	48.20	11.53	München
+81	48.13	11.57	München
+812	48.16	11.47	München
+813	48.11	11.52	München
+814	48.10	11.53	München
+815	48.11	11.58	München
+816	48.13	11.61	München
+817	48.12	11.62	München
+818	48.12	11.68	München
+819	48.16	11.63	München
+82	47.91	11.24	Tutzing
+820	48.02	11.52	Straßlach-Dingharting
+821	48.14	11.38	Germering
+822	48.15	11.17	Landsberied
+823	47.85	11.22	Weilheim in Oberbayern
+824	47.64	11.15	Schwaigen
+825	47.88	11.44	Geretsried
+83	47.86	12.28	Rimsting
+830	47.81	12.11	Raubling
+831	47.89	12.23	Prutting
+832	47.81	12.43	Grassau
+833	47.91	12.63	Nußdorf
+834	47.76	12.91	Piding
+835	48.06	12.19	Edling
+836	47.79	11.62	Greiling
+837	47.73	11.84	Schliersee
+84	48.43	12.41	Egglkofen
+840	48.66	12.06	Hohenthann
+841	48.54	12.29	Adlkofen
+843	48.40	12.88	Postmünster
+844	48.28	12.26	Schwindegg
+845	48.22	12.60	Tüßling
+85	48.43	11.62	Allershausen
+850	48.78	11.44	Ingolstadt
+851	48.84	11.38	Böhmfeld
+852	48.40	11.42	Weichs
+853	48.44	11.62	Allershausen
+854	48.39	11.85	Eitting
+855	48.12	11.80	Baldham
+856	48.09	11.84	Zorneding
+857	48.26	11.59	Oberschleißheim
+86	48.38	10.83	Neusäß
+861	48.37	10.90	Augsburg
+863	48.33	10.80	Stadtbergen
+864	48.36	10.67	Horgau
+865	48.44	11.05	Obergriesbach
+866	48.70	10.89	Genderkingen
+867	48.85	10.66	Alerheim
+868	48.12	10.69	Ettringen
+869	47.94	10.92	Vilgertshofen
+87	47.84	10.40	Untrasried
+874	47.71	10.35	Durach
+875	47.53	10.23	Ofterschwang
+876	47.80	10.63	Ruderatshofen
+877	48.02	10.29	Westerheim
+88	47.88	9.64	Wolpertswende
+880	47.66	9.51	Friedrichshafen
+881	47.60	9.83	Scheidegg
+882	47.78	9.68	Schlier
+883	47.91	9.64	Aulendorf
+884	48.10	9.89	Maselheim
+885	48.13	9.47	Ertingen
+886	47.85	9.23	Herdwangen-Schönach
+887	47.70	9.28	Meersburg
+89	48.44	10.14	Nersingen
+890	48.40	9.97	Ulm
+891	48.45	9.97	Beimerstetten
+892	48.28	10.12	Vöhringen
+893	48.43	10.37	Burgau
+894	48.60	10.47	Dillingen an der Donau
+895	48.60	10.09	Gerstetten
+896	48.27	9.71	Rottenacker
+90	49.44	11.05	Nürnberg
+904	49.44	11.08	Nürnberg
+905	49.42	11.08	Stein bei Nürnberg
+906	49.43	10.94	Ammerndorf
+907	49.49	10.97	Fürth
+91	49.41	10.84	Rohr
+910	49.61	10.98	Erlangen
+911	49.20	11.08	Georgensgmünd
+912	49.59	11.45	Kirchensittenbach
+913	49.73	11.12	Wiesenthau
+914	49.60	10.57	Neustadt an der Aisch
+915	49.28	10.49	Herrieden
+916	49.30	10.36	Dombühl
+917	49.07	10.77	Dittenheim
+918	48.92	10.91	Solnhofen
+92	49.49	12.02	Freudenberg
+922	49.46	11.80	Poppenricht
+923	49.21	11.51	Deining
+924	49.31	12.31	Bodenwöhr
+925	49.45	12.33	Guteneck
+926	49.71	12.17	Neustadt an der Waldnaab
+927	49.67	12.18	Schirmitz
+93	49.08	12.31	Altenthann
+930	48.98	12.18	Obertraubling
+931	49.08	12.17	Wenzenbach
+933	48.86	11.83	Abensberg
+934	49.24	12.77	Weiding
+94	48.78	13.09	Auerbach
+940	48.56	13.43	Passau
+941	48.64	13.48	Salzweg
+942	49.01	13.07	Böbrach
+943	48.94	12.63	Steinach
+944	48.67	12.91	Eichendorf
+945	48.78	13.11	Auerbach
+95	50.07	11.82	Bischofsgrün
+950	50.31	11.91	Hof
+951	50.26	11.88	Konradsreuth
+952	50.17	11.78	Münchberg
+953	50.13	11.51	Untersteinach
+954	49.95	11.63	Bayreuth
+955	49.92	11.67	Emtmannsberg
+956	49.96	12.15	Fuchsmühl
+957	49.97	12.11	Pechbrunn
+96	50.09	11.00	Bad Staffelstein
+960	49.89	10.90	Bamberg
+961	49.93	10.85	Hallstadt
+962	50.17	11.11	Weidhausen bei Coburg
+963	50.33	11.37	Wilhelmsthal
+964	50.29	10.96	Dörfles-Esbach
+965	50.39	11.14	Sonneberg
+97	49.93	9.98	Arnstein
+970	49.79	9.94	Würzburg
+971	49.66	10.06	Ochsenfurt
+972	49.76	9.92	Reichenberg
+973	49.76	10.23	Großlangheim
+974	50.05	10.35	Schonungen
+975	50.01	10.31	Grettstadt
+976	50.38	10.20	Bastheim
+977	50.18	9.86	Wartmannsroth
+978	49.90	9.55	Rothenfels
+979	49.62	9.65	Tauberbischofsheim
+98	50.59	10.73	Suhl
+985	50.68	10.56	Springstille
+986	50.49	10.66	Ehrenberg
+987	50.59	11.04	Böhlen
+99	51.07	10.85	Dachwig
+990	50.99	11.03	Erfurt
+991	50.98	11.00	Ingersleben
+993	50.80	10.97	Dornheim
+994	50.95	11.30	Weimar
+995	51.07	11.53	Rannstedt
+996	51.18	11.19	Sömmerda
+997	51.44	10.79	Kleinfurra
+998	50.95	10.43	Wutha-Farnroda
+999	51.19	10.55	Mühlhausen/Thüringen

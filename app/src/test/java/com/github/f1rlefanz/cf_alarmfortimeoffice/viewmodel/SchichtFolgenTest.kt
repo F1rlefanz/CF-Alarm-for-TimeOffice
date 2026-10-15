@@ -17,6 +17,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.HueRuleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpanStore
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.HellAb
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IShiftUseCase
 import kotlinx.coroutines.Dispatchers
@@ -83,8 +84,8 @@ class SchichtFolgenTest {
         fenster: List<DimWindow> = listOf(DimWindow())
     ) = DimRule(id = id, name = "Regel $id", shiftPattern = muster, enabled = aktiv, windows = fenster)
 
-    private fun hueRegel(id: String, muster: String, aktiv: Boolean = true): HueSchedule =
-        HueScheduleRule(id = id, name = "Hue $id", shiftPattern = muster, enabled = aktiv, timeRanges = emptyList())
+    private fun hueRegel(id: String, muster: String, aktiv: Boolean = true, hellAb: HellAb = HellAb.IMMER): HueSchedule =
+        HueScheduleRule(id = id, name = "Hue $id", shiftPattern = muster, enabled = aktiv, timeRanges = emptyList(), hellAb = hellAb)
 
     private val dndAus = DndPrefs.Toggles(followDimmerEnabled = false, duringShiftEnabled = false)
 
@@ -243,6 +244,32 @@ class SchichtFolgenTest {
             hueRegeln = Result.success(listOf(hueRegel("h1", "AD1", aktiv = false), hueRegel("h2", "Frühdienst")))
         )
         assertEquals("Licht: keine", licht(f))
+    }
+
+    @Test
+    fun `Licht - Regeln nur bei Dunkelheit werden mitgezaehlt, ohne Datum`() {
+        // Gezaehlt mit DERSELBEN Auswahl wie zur Laufzeit; ob die Regel an einem bestimmten Morgen
+        // entfaellt, haengt an der Weckzeit - die kennt diese Zeile nicht (#140).
+        val f = folgen(
+            hueRegeln = Result.success(
+                listOf(
+                    hueRegel("h1", "AD1", hellAb = HellAb.SONNENAUFGANG),
+                    hueRegel("h2", "ALL", hellAb = HellAb.DAEMMERUNG),
+                    hueRegel("h3", "AD1"),
+                    hueRegel("h4", "AD1", aktiv = false, hellAb = HellAb.SONNENAUFGANG),
+                    hueRegel("h5", "Frühdienst", hellAb = HellAb.SONNENAUFGANG)
+                )
+            )
+        )
+        assertEquals(LichtStatus.Regeln(eigene = 2, allgemeine = 1, nurBeiDunkelheit = 2), f.licht)
+        assertEquals("Licht: 2 Regeln + allgemeine (2 nur bei Dunkelheit)", licht(f))
+    }
+
+    @Test
+    fun `Licht - ohne Dunkelheits-Regel kein Zusatz, Zusatz ist eigene Umbruchstelle`() {
+        assertEquals("Licht: 1 Regel", licht(folgen(hueRegeln = Result.success(listOf(hueRegel("h1", "AD1"))))))
+        val roh = folgen(hueRegeln = Result.success(listOf(hueRegel("h1", "AD1", hellAb = HellAb.DAEMMERUNG)))).alsText()
+        assertTrue(roh.contains("Regel (1${NBSP}nur${NBSP}bei${NBSP}Dunkelheit)"))
     }
 
     // --- DND -------------------------------------------------------------------------------

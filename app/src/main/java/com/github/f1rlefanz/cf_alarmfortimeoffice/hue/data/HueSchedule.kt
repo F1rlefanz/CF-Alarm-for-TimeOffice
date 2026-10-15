@@ -1,6 +1,7 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data
 
 import androidx.compose.runtime.Immutable
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.HellAb
 import kotlinx.serialization.Serializable
 
 typealias HueSchedule = HueScheduleRule
@@ -18,7 +19,15 @@ data class HueScheduleRule(
     val enabled: Boolean = true,
     val timeRanges: List<HueTimeRange>,
     val priority: Int = 0, // Higher priority rules override lower ones
-    val sunrise: SunriseConfig? = null // Optional sunrise wake-up light; null = plain on/off rule
+    val sunrise: SunriseConfig? = null, // Optional sunrise wake-up light; null = plain on/off rule
+    /**
+     * Regel nur ausfuehren, wenn die WECKZEIT vor dem gewaehlten Hell-Zeitpunkt des WECKTAGS
+     * liegt (#140). Gilt fuer alle drei Modi, beim Sonnenaufgang fuer die ganze Rampe (ganz oder
+     * gar nicht). Ein Wecker am Abend liegt nach dem Morgen des Wecktags - die Regel entfaellt dann,
+     * auch wenn es draussen dunkel ist. Fail-safe: kein Ort / kein Ereignis / keine Weckzeit = laeuft.
+     * Default [HellAb.IMMER]: ein Bestand ohne dieses Feld laeuft wie bisher.
+     */
+    val hellAb: HellAb = HellAb.IMMER
 ) {
     companion object {
         fun generateId(): String = "rule_${System.currentTimeMillis()}"

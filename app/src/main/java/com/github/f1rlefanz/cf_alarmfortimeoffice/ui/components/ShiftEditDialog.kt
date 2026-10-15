@@ -15,7 +15,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Remove
-import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -103,7 +102,9 @@ fun ShiftEditDialog(
                     Text(
                         text = if (isNewShift) "Neue Schichtdefinition" else "Schicht bearbeiten",
                         style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
+                        // weight(1f): sonst lief der Titel bei 320 dp + Schrift 1,3 bis unter das X
+                        modifier = Modifier.weight(1f)
                     )
                     IconButton(onClick = onDismiss) {
                         Icon(Icons.Default.Close, contentDescription = "Schließen")
@@ -309,18 +310,19 @@ fun ShiftEditDialog(
                 
                 Spacer(modifier = Modifier.height(SpacingConstants.SPACING_LARGE))
                 
-                // Actions
-                Row(
+                // Actions - KnopfZeile + CompactButton statt Row + weight(1f) + Button: bei 320 dp
+                // mit Schrift 1,3 blieben im rechten Knopf 68 dp fuer "Speichern" (Wortbruch).
+                KnopfZeile(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_SMALL)
+                    abstand = SpacingConstants.SPACING_SMALL
                 ) {
                     CompactOutlinedButton(
                         onClick = onDismiss,
-                        text = "Abbrechen",
-                        modifier = Modifier.weight(1f)
+                        text = "Abbrechen"
                     )
                     
-                    Button(
+                    CompactButton(
+                        text = if (isNewShift) "Erstellen" else "Speichern",
                         onClick = {
                             // Trimmen ist Pflicht (Wortgrenzen-Regex), distinct gegen Doppel - schichterkennung.md.
                             val validKeywords = keywords
@@ -343,13 +345,10 @@ fun ShiftEditDialog(
                                 onDismiss()
                             }
                         },
-                        modifier = Modifier.weight(1f),
                         enabled = name.isNotBlank() &&
                                  keywords.any { it.isNotBlank() } &&
                                  parsedAlarmTime != null
-                    ) {
-                        Text(if (isNewShift) "Erstellen" else "Speichern")
-                    }
+                    )
                 }
             }
         }

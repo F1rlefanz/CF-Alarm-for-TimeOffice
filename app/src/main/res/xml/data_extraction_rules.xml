@@ -85,6 +85,14 @@
              einen Hinweis ueber einen Defekt, den es nicht hat - und raet dem Nutzer, sein
              eingelerntes Gesicht zu loeschen. -->
         <exclude domain="sharedpref" path="weckbildschirm_verdraengung.xml"/>
+
+        <!-- tageslicht_standort.xml (#140): auf diesem Geraet ermittelter Standort; reist nicht
+             mit. Auf 0,1° gerundet (etwa 10 km), aber trotzdem ein Standort - er gehoert weder in
+             eine Cloud noch auf ein anderes Geraet, und der Nutzer hat ihn fuer DIESES Geraet
+             uebernommen. Eine eigene Datei genau deshalb: aus einer DataStore-Datei laesst sich
+             kein einzelner Schluessel ausnehmen. Land und PLZ (tageslicht_land/tageslicht_plz)
+             liegen dagegen im settings-Store und reisen mit - sie hat der Nutzer eingetippt. -->
+        <exclude domain="sharedpref" path="tageslicht_standort.xml"/>
     </cloud-backup>
 
     <!-- Geraetetransfer: identische Menge wie das Cloud-Backup. Bewusst KEINE Sonderregelung -
@@ -101,5 +109,8 @@
 
         <!-- Begruendung wie im Block <cloud-backup>. -->
         <exclude domain="sharedpref" path="weckbildschirm_verdraengung.xml"/>
+
+        <!-- Begruendung wie im Block <cloud-backup>. -->
+        <exclude domain="sharedpref" path="tageslicht_standort.xml"/>
     </device-transfer>
 </data-extraction-rules>

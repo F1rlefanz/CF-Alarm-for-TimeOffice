@@ -32,6 +32,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.connection.HueBridgeConnectionManager
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.CompactOutlinedButton
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.KnopfZeile
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.success
 import kotlinx.coroutines.launch
 import com.github.f1rlefanz.cf_alarmfortimeoffice.R
@@ -135,23 +136,18 @@ internal fun ConnectedManagementCard(
                     Text(stringResource(R.string.hue_connected_manage))
                 }
 
-                // Secondary actions
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
+                // Secondary actions - KnopfZeile statt weight(1f): kuerzte bei 320 dp zu "Neue R…"
+                KnopfZeile(modifier = Modifier.fillMaxWidth()) {
                     CompactOutlinedButton(
                         onClick = onNavigateToRuleConfig,
                         text = stringResource(R.string.hue_settings_new_rule),
-                        icon = Icons.Default.Add,
-                        modifier = Modifier.weight(1f)
+                        icon = Icons.Default.Add
                     )
 
                     CompactOutlinedButton(
                         onClick = onTestConnection,
                         text = stringResource(R.string.hue_bridge_test),
-                        icon = Icons.Default.FlashOn,
-                        modifier = Modifier.weight(1f)
+                        icon = Icons.Default.FlashOn
                     )
                 }
             }
@@ -276,15 +272,11 @@ internal fun ConnectedFeaturesCard(
                 }
 
                 // Secondary Actions
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
+                KnopfZeile(modifier = Modifier.fillMaxWidth(), abstand = 12.dp) {
                     CompactOutlinedButton(
                         onClick = onNavigateToSettings,
                         text = stringResource(R.string.hue_setup_done_settings),
-                        icon = Icons.Default.Settings,
-                        modifier = Modifier.weight(1f)
+                        icon = Icons.Default.Settings
                     )
 
                     CompactOutlinedButton(
@@ -296,8 +288,7 @@ internal fun ConnectedFeaturesCard(
                             onTestConnection()
                         },
                         text = stringResource(R.string.hue_bridge_test),
-                        icon = Icons.Default.Lightbulb,
-                        modifier = Modifier.weight(1f)
+                        icon = Icons.Default.Lightbulb
                     )
                 }
             }

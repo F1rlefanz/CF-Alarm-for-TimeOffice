@@ -92,9 +92,12 @@ class SunriseStartWorker(
 
             // Mit Weckzeit legt der Lauf das Auto-Aus gleich mit an - sonst bliebe das Licht an,
             // wenn der Wecker WAEHREND der Rampe geloescht wird (HueRuleUseCase.vorabAutoAusZiele).
+            // Und er prueft die Tageslicht-Bedingung (#140) beim FEUERN erneut - der Ort kann sich
+            // seit der Planung geaendert haben. Ohne Weckzeit (alter Auftrag): kein Filter.
             val result = ruleUseCase.executeSunrisePreAlarm(
                 shiftName,
-                weckzeit?.let { minutenBisWecker(LocalDateTime.now(), it) }
+                weckzeit?.let { minutenBisWecker(LocalDateTime.now(), it) },
+                weckzeit?.let { HueSmartScheduler.weckzeitMillis(it) }
             )
             if (result.isSuccess) {
                 val exec = result.getOrNull()

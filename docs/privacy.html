@@ -43,7 +43,7 @@
         </header>
 
         <div class="content-card">
-            <p><strong>Letzte Aktualisierung:</strong> 2. Oktober 2026 | <strong>Version:</strong> 1.6 | <strong>Gültig ab:</strong> 2. Oktober 2026</p>
+            <p><strong>Letzte Aktualisierung:</strong> 14. Oktober 2026 | <strong>Version:</strong> 1.7 | <strong>Gültig ab:</strong> 14. Oktober 2026</p>
 
             <h2 id="verantwortlicher">1. Verantwortlicher</h2>
             <p><strong>Entwickler:</strong> f1rlefanz (Privatperson, keine Firma)<br>
@@ -52,7 +52,7 @@
             <strong>Quellcode:</strong> <a href="https://github.com/F1rlefanz/CF-Alarm-for-TimeOffice" rel="external">https://github.com/F1rlefanz/CF-Alarm-for-TimeOffice</a></p>
 
             <h2 id="zweck">2. Zweck der App</h2>
-            <p>CF-Alarm for TimeOffice liest den Dienstplan aus deinem Google Kalender und stellt für die darin erkannten Schichten Wecker. Optional steuert sie dazu Philips-Hue-Licht (Abschnitt 3.3), dunkelt den Bildschirm rund um die Schichten ab (Schicht-Dimmer, Abschnitt 3.4) und schaltet Androids „Nicht stören“ (Abschnitt 3.5).</p>
+            <p>CF-Alarm for TimeOffice liest den Dienstplan aus deinem Google Kalender und stellt für die darin erkannten Schichten Wecker. Optional steuert sie dazu Philips-Hue-Licht (Abschnitt 3.3), dunkelt den Bildschirm rund um die Schichten ab (Schicht-Dimmer, Abschnitt 3.4) und schaltet Androids „Nicht stören“ (Abschnitt 3.5). Dimmer und Hue-Regeln können sich dabei danach richten, ob es morgens beim Wecken draußen schon hell ist; dafür kannst du einen ungefähren Ort angeben (Abschnitt 3.11).</p>
             <p><strong>Kurz gesagt:</strong> Die App liest deinen Kalender nur. Sie hat keine eigenen Server, zeigt keine Werbung und enthält keine Analyse- oder Tracking-Dienste. Daten verlassen dein Gerät nur in den unten genannten Fällen.</p>
 
             <h2 id="daten">3. Verarbeitete Daten</h2>
@@ -108,8 +108,8 @@
 
             <h3 id="export">3.7 Konfigurationsdatei (Exportieren/Importieren)</h3>
             <ul>
-                <li><strong>Inhalt:</strong> deine Schichttypen, Hue-Regeln, Dimmer-Regeln und „Nicht stören“-Einstellungen.</li>
-                <li><strong>Nicht enthalten:</strong> Anmeldedaten, Google-Token, Schlüssel, die Kalenderauswahl und der Zugang zur Hue-Bridge.</li>
+                <li><strong>Inhalt:</strong> deine Schichttypen, Hue-Regeln, Dimmer-Regeln und „Nicht stören“-Einstellungen sowie Land und Postleitzahl für den Ort für Tageslicht (Abschnitt 3.11), falls du sie eingegeben hast.</li>
+                <li><strong>Nicht enthalten:</strong> Anmeldedaten, Google-Token, Schlüssel, die Kalenderauswahl, der Zugang zur Hue-Bridge und der übernommene Standort (Abschnitt 3.11).</li>
                 <li><strong>Speicherort:</strong> dort, wo du die Datei über den Android-Dateidialog selbst ablegst. Sie verlässt dein Gerät nur, wenn du sie weitergibst.</li>
             </ul>
 
@@ -126,8 +126,8 @@
             <h3 id="datensicherung">3.9 Android-Datensicherung</h3>
             <p>Die App nimmt an Androids eigener Datensicherung teil. Ob und wohin gesichert wird, steuerst du in den Android-Einstellungen (Google-Sicherung); CF-Alarm selbst überträgt dabei nichts.</p>
             <ul>
-                <li><strong>Gesichert</strong> werden deine Einstellungen: Schichttypen, Dimmer-, „Nicht stören“- und Hue-Regeln, die Kalenderauswahl, der Hue-Bridge-Zugang und die gespeicherte Schicht- und Weckerliste (Abschnitt 3.1). So kommen sie beim Umzug auf ein neues Handy mit.</li>
-                <li><strong>Nicht gesichert</strong> werden das Google-Token, der zugehörige Schlüssel und der Anmeldezustand. Auf einem neuen Gerät meldest du dich neu an (oder die App tut es nach Abschnitt 3.8).</li>
+                <li><strong>Gesichert</strong> werden deine Einstellungen: Schichttypen, Dimmer-, „Nicht stören“- und Hue-Regeln, die Kalenderauswahl, der Hue-Bridge-Zugang, Land und Postleitzahl für den Ort für Tageslicht (Abschnitt 3.11) und die gespeicherte Schicht- und Weckerliste (Abschnitt 3.1). So kommen sie beim Umzug auf ein neues Handy mit.</li>
+                <li><strong>Nicht gesichert</strong> werden das Google-Token, der zugehörige Schlüssel, der Anmeldezustand und der übernommene Standort (Abschnitt 3.11). Auf einem neuen Gerät meldest du dich neu an (oder die App tut es nach Abschnitt 3.8) und übernimmst den Standort bei Bedarf neu.</li>
                 <li><strong>Speicherort:</strong> in deinem Google-Konto bzw. bei einer direkten Übertragung auf dem neuen Gerät. Bei einer Google-Sicherung verschlüsselt Android die Daten ab Android 9, sofern das Gerät eine Displaysperre hat.</li>
             </ul>
 
@@ -137,6 +137,22 @@
                 <li><strong>Speicherdauer:</strong> eine Datei pro Tag, ältere als acht Tage werden automatisch gelöscht. Im System-Status unter „Debug-Informationen“ löschst du sie mit „Alte Logs löschen“.</li>
                 <li><strong>Weitergabe:</strong> nur, wenn du selbst „Logs an Entwickler senden“ antippst. Es öffnet sich der Teilen-Dialog, vorausgefüllt als E-Mail an den Entwickler; du siehst vor dem Absenden, was verschickt wird, und kannst abbrechen.</li>
                 <li><strong>Rechtsgrundlage:</strong> Einwilligung (Art. 6 Abs. 1 lit. a DSGVO), erteilt durch das Absenden.</li>
+            </ul>
+
+            <h3 id="ort">3.11 Ort für Tageslicht (optional)</h3>
+            <p>Dimmer und Hue-Regeln können sich danach richten, ob es morgens beim Wecken draußen schon hell ist (Einstellungen → „Ort für Tageslicht“). Die App vergleicht dazu die Weckzeit mit der Dämmerung bzw. dem Sonnenaufgang des Wecktags. Diese Zeiten rechnet sie aus einem ungefähren Ort selbst aus – auf dem Gerät, ohne Internetverbindung und ohne fremden Dienst.</p>
+            <ul>
+                <li><strong>Woher der Ort kommt</strong> – die App nutzt den genauesten, den sie hat:
+                    <ul>
+                        <li><strong>Standort (Berechtigung für den ungefähren Standort, <code>ACCESS_COARSE_LOCATION</code>):</strong> Die App fragt Android nur, wenn du „Standort übernehmen“ antippst, einmalig und nie im Hintergrund. Einen genauen Standort fordert sie nicht an. Sie nutzt dafür Androids eigenen Ortungsdienst und bindet keine Google-Play-Dienste ein; wie Android den Ort bestimmt (GPS, WLAN, Mobilfunk), richtet sich nach deinen Android-Einstellungen.</li>
+                        <li><strong>Land und Postleitzahl:</strong> so, wie du sie eingibst. Die Zuordnung zu einer Region steht in einer Tabelle, die in der App enthalten ist; nachgeschlagen wird nichts im Internet.</li>
+                        <li><strong>Zeitzone:</strong> Ist nichts davon eingestellt, nimmt die App einen festen Ort zur Zeitzone deines Geräts. Gespeichert wird dafür nichts.</li>
+                    </ul>
+                </li>
+                <li><strong>Was gespeichert wird:</strong> der Standort nur auf 0,1 Grad gerundet (etwa 10&nbsp;km) samt dem Zeitpunkt der Übernahme, außerdem Land und Postleitzahl. Alles bleibt auf dem Gerät; die App überträgt den Ort nirgendwohin, auch nicht an den Entwickler. Im Diagnose-Protokoll der Play-Store-Version (Abschnitt 3.10) steht er nicht.</li>
+                <li><strong>Gerätewechsel:</strong> Der Standort gehört zu diesem Gerät. Er ist weder in der Konfigurationsdatei (Abschnitt 3.7) noch in der Android-Datensicherung (Abschnitt 3.9). Land und Postleitzahl reisen in beiden mit.</li>
+                <li><strong>Rechtsgrundlage:</strong> Einwilligung (Art. 6 Abs. 1 lit. a DSGVO), erteilt durch das Antippen von „Standort übernehmen“ und die Standort-Freigabe bei Android bzw. durch die Eingabe der Postleitzahl.</li>
+                <li><strong>Speicherdauer und Löschung:</strong> bis du ihn löschst, die App-Daten löschst oder die App deinstallierst. „Standort entfernen“ im selben Bildschirm löscht den Standort; leerst du das Feld „Postleitzahl“, verwirft die App die Postleitzahl. Die Standort-Berechtigung entziehst du in den Android-Einstellungen (Abschnitt 6.2).</li>
             </ul>
 
             <h2 id="weitergabe">4. Datenweitergabe und Sicherheit</h2>
@@ -167,6 +183,7 @@
                 <li><strong>Philips Hue → „Verbindung trennen / Bridge vergessen“:</strong> löscht den gespeicherten Zugang zur Bridge.</li>
                 <li><strong>Einstellungen → Schichttypen verwalten → „Auf Standardwerte zurücksetzen“:</strong> verwirft deine eigenen Schichttypen.</li>
                 <li><strong>System-Status → „Alte Logs löschen“:</strong> löscht ältere Protokolldateien.</li>
+                <li><strong>Einstellungen → „Ort für Tageslicht“ → „Standort entfernen“:</strong> löscht den gespeicherten Standort; ein geleertes Feld „Postleitzahl“ verwirft die Postleitzahl (Abschnitt 3.11).</li>
             </ul>
             <p>Eine Funktion „Alle Daten löschen“ gibt es in der App nicht – dafür ist der Weg über Android in 6.2 der vollständige.</p>
 
@@ -178,6 +195,7 @@
                 <li><strong>Bedienungshilfen-Dienst:</strong> Android-Einstellungen → Bedienungshilfen → CF-Alarm → aus (Abschnitt 3.4).</li>
                 <li><strong>„Nicht stören“-Zeitplan:</strong> Android-Einstellungen → Ton → Nicht stören → Zeitpläne (Abschnitt 3.5).</li>
                 <li><strong>Zeitpläne auf der Hue-Bridge:</strong> in der Hue-App.</li>
+                <li><strong>Standort-Berechtigung:</strong> Android-Einstellungen → Apps → CF-Alarm → Berechtigungen → Standort (Abschnitt 3.11).</li>
             </ul>
 
             <h2 id="minderjaehrige">7. Minderjährige</h2>
@@ -199,8 +217,9 @@
 
             <h2 id="open-source">Open Source</h2>
             <p>Der vollständige Quellcode der App ist öffentlich: <a href="https://github.com/F1rlefanz/CF-Alarm-for-TimeOffice" rel="external">https://github.com/F1rlefanz/CF-Alarm-for-TimeOffice</a></p>
+            <p>Die Orte zu den Postleitzahlen (Abschnitt 3.11) stammen von <a href="https://www.geonames.org" rel="external">GeoNames</a> (www.geonames.org), zu Regions-Schwerpunkten zusammengefasst, lizenziert unter <a href="https://creativecommons.org/licenses/by/4.0/" rel="external">CC BY 4.0</a>.</p>
 
-            <p><strong>Letzte Aktualisierung:</strong> 2. Oktober 2026 | <strong>Version:</strong> 1.6 | <strong>App-Version:</strong> 1.46.1</p>
+            <p><strong>Letzte Aktualisierung:</strong> 14. Oktober 2026 | <strong>Version:</strong> 1.7 | <strong>App-Version:</strong> 1.52.0</p>
         </div>
     </main>
 

@@ -38,6 +38,12 @@ das baut man dieselbe Falle in neuer Form nach.
   bei degradiertem Read). Die Entscheidung ist die reine Funktion `naechsterGateSchritt()` in
   `navigation/OnboardingGates.kt`; gelesen wird nur in `MainScreen.leseGateLage()`.
 - **Der Rückweg aus den Regel-Editoren wird NUR in `NavigationViewModel.navigateBackFrom()` aufgelöst.**
+- **`OrtFuerTageslicht` (#140) traegt sein `zurueckZu`** (Einstellungen, Dimmer- oder Hue-Editor)
+  und hat einen eigenen Zweig in `rueckwegZiel`. Die Editoren ueberleben den Umweg ueber den
+  `SaveableStateHolder` in `MainScreen`, verschluesselt mit `sitzung` (`editorFormularSchluessel`);
+  jedes frische Oeffnen bekommt eine neue `sitzung`, beim endgueltigen Verlassen wird der Zustand
+  entfernt (`verworfenesEditorFormular`). Wer einen weiteren Unterscreen aus einem Editor heraus
+  oeffnet, haengt sich an dasselbe Muster - sonst verliert der Nutzer seine Eingabe.
 - **Gate-Texte verweisen nicht auf vorige Schritte** („wie eben bei …“): seit „Später“ weiterführt,
   kommt jedes Gate auch direkt nach einem ABGELEHNTEN Vorgänger.
 
@@ -143,6 +149,19 @@ das baut man dieselbe Falle in neuer Form nach.
   ist „Dienst fällt aus“ nicht mehr erreichbar. Heute bleibt, solange der Dienst laeuft; ein
   kuenftiger Tag entsteht nie aus einer Spanne allein. Dienstzeiten nur ueber
   `ui/components/Dienstzeit.kt` („ganztägig“ ueber Kalendertage, nicht ueber 24 h — Zeitumstellung).
+- **Gleichrangige Knoepfe nebeneinander ueber `KnopfZeile` (`ui/components`), nicht `Row` +
+  `weight(1f)`**: die Gewichtung kuerzte die Beschriftung mit Auslassung („Bea…“, „Neue R…“ bei
+  320 dp + Schrift 1,3, Emulator 14.10.2026). `KnopfZeile` misst die natuerlichen Breiten und
+  stellt linksbuendig untereinander, wenn sie nicht passen. Etikett neben einem Namen: `FlowRow`.
+- **Ein umbrechender `Text` VOR Icons in einer `Row` braucht `weight(1f, fill = false)`**: ein
+  umbrechender Text meldet die volle Restbreite, die ungewichteten Icons danach bekommen 0 dp und
+  verschwinden (`Modifier.size` respektiert die Constraints). So fehlten Still-/Rufbereitschafts-
+  Marker genau an der AUSGESCHALTETEN Schicht (`ShiftConfigScreen`, Runde 4 zu #140).
+- **Titel- und Ueberschriften-Stile tragen `Hyphens.Auto`** (`ui/theme/Type.kt`): deutsche
+  Komposita brachen dort ohne Trennstrich mitten im Wort („Benachrichtigunge|n“). Fliesstext nicht.
+  **Immer mit `localeList = Deutsch`**: Compose setzt die Trennsprache nur aus `TextStyle.localeList`,
+  sonst trennt der Hyphenator nach der SYSTEMSPRACHE (englisches Geraet = englische Muster an
+  deutschen Titeln). Abgesichert durch `TypographySilbentrennungTest`.
 - **Neue Screens einmal bei 320 dp ansehen** (`adb shell wm density 540` auf 1080 px, danach
   `wm density reset`) — das Gerät des Eigentümers läuft so. Lange zusammengesetzte Hauptwörter
   brechen dort mitten im Wort um.

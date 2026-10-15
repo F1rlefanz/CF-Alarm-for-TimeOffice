@@ -168,6 +168,11 @@
 - **Auf der Bridge liegen fremde Zeitpläne** (real: zwei „Hue dimmer switch 1"). Aufgeräumt wird
   ausschließlich, was `BridgeTimer.NAME_PREFIX` trägt. Und aufgeräumt werden **muss**: sonst legt
   jeder Snooze einen weiteren Timer an, und der älteste schaltet zu früh aus.
+  **Geräumt wird je ZIEL**, nur was gleich für dieselbe Lampe/Gruppe neu angelegt wird (Review 2
+  zu #140, 15.10.2026): bis dahin räumte jeder Lauf ALLE eigenen Timer, und fiel eine Regel mit
+  laufender Vorab-Rampe zur Weckzeit weg (Tageslicht, deaktiviert), nahm das Auto-Aus einer
+  anderen Regel ihren Vorab-Timer mit — die Rampen-Lampen blieben an. Ein stehen gebliebener
+  fremder Timer ist einmalig und räumt sich per `autodelete` selbst ab.
 - **`autoOffTargetsOf()` filtert bewusst NICHT nach Schichtnamen.** Die Auswahl gehört allein
   `findApplicableRules` — und die matcht seit v1.11.0 **exakter Definitionsname ODER
   `UNIVERSAL_SHIFT_PATTERN`**, kein Keyword, kein Teiltreffer (`HueRuleMatchingTest`). Ein zweiter
@@ -276,3 +281,17 @@
   - **Keine der stichprobenhaft geprueften Szenen enthaelt Lampen mit `on:false`** (8 Szenen aus
     5 Raeumen, Felder je Lampe: `on` + `bri` + `ct`/`xy`). „Szene an heisst Licht an" traegt damit
     fuer den Auto-Aus-Text.
+
+## Tageslicht-Bedingung (#140, Oktober 2026)
+
+Eine Regel mit `hellAb != IMMER` laeuft nur, wenn die Weckzeit vor Daemmerung bzw. Sonnenaufgang
+des Wecktags liegt. Bewusst die WECKZEIT, nicht der Rampenstart oder „jetzt“: die Rampe beginnt
+vor dem Wecker, ein Vergleich mit ihrem Start liesse dieselbe Regel je nach Rampendauer anders
+entscheiden. Ein Abendwecker (vor einem Nachtdienst) liegt nach dem Sonnenaufgang desselben Tages —
+die Regel entfaellt dann, auch wenn es draussen dunkel ist; der Editor sagt das
+(`tageslicht_hue_hinweis_abend`). Verworfen: „ist es JETZT dunkel“ — das haette die Rampe
+mittendrin abbrechen koennen. Das Entfallen loggt `laeuftBeiTageslichtMitLog` auf WARN (ohne
+Ort) — auf INFO stuende im Release-Log nichts, und „Licht ging nicht an“ waere nicht
+nachvollziehbar (Runde 4 zu #140). Bekannte Restluecke: `HueConfigRepository` liest ohne
+`coerceInputValues`; ein unbekannter `HellAb`-Wert aus einer neueren Version macht die
+Regelliste unlesbar (dokumentiert in `HellAb`).

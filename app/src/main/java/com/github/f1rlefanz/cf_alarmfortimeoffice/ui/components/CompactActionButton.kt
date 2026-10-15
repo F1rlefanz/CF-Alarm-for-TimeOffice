@@ -21,14 +21,14 @@ import androidx.compose.ui.unit.dp
  * Aktions-Buttons für Karten, in denen sich mehrere Buttons eine Zeile teilen.
  *
  * WARUM ES DIE GIBT: Material3 gibt jedem Button 24dp Innenabstand pro Seite (ButtonDefaults
- * .ContentPadding). Teilen sich zwei `weight(1f)`-Buttons und ein IconButton die Breite einer
- * Karte, bleiben auf einem 360dp-Gerät je ~48dp für die Beschriftung übrig — nach Abzug von Icon
- * und Spacer. Passt ein Wort dort nicht hinein, bricht Compose es kommentarlos mitten durch: aus
- * "Bearbeiten" wurde so "Bea/rbei/ten", aus "Einstellungen" "Einstell/ungen".
+ * .ContentPadding). In einer Kartenzeile frisst das die Breite, die der Beschriftung fehlt — und
+ * passt ein Wort nicht hinein, bricht Compose es kommentarlos mitten durch ("Bea/rbei/ten").
+ * Diese Varianten nehmen den Innenabstand zurück und lassen nur eine Zeile zu.
  *
- * Diese Varianten nehmen den Innenabstand zurück und lassen nur eine Zeile zu. Reicht der Platz
- * dann immer noch nicht — etwa bei großer Systemschrift —, kürzt Android mit "…". Das ist unschön,
- * aber lesbar, und anders als ein zerlegtes Wort ein ehrliches Signal, dass es eng wird.
+ * NEBENEINANDER gehören gleichrangige Knöpfe in [KnopfZeile], NICHT in `Row` + `weight(1f)`: die
+ * Gewichtung teilt die Breite unabhängig von der Beschriftung, und dann kürzt dieser Knopf mit "…"
+ * ("Bea…", "Neue R…" bei 320 dp, Schrift 1,3) — das ist der Befund, nicht das Soll. Die Kürzung
+ * bleibt nur der Notausgang, wenn ein EINZELNER Knopf allein schon breiter als die Zeile ist.
  *
  * NICHT für ganzbreite Buttons verwenden: dort ist ein Umbruch über zwei Zeilen gewollt (etwa bei
  * "Verbindung trennen / Bridge vergessen") und eine erzwungene Kürzung wäre die schlechtere Wahl.

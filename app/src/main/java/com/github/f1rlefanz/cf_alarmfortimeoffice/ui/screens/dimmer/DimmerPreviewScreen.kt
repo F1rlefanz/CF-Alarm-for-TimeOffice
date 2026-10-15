@@ -1,6 +1,7 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.dimmer
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -20,6 +21,8 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.github.f1rlefanz.cf_alarmfortimeoffice.R
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.TageslichtEnde
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.HellAb
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.SimpleBackTopAppBar
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.DateTimeFormats
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.DimmerRulesViewModel
@@ -67,15 +70,24 @@ fun DimmerPreviewScreen(
             }
             items(timeline) { interval ->
                 Card(modifier = Modifier.fillMaxWidth()) {
-                    Text(
-                        text = stringResource(
-                            R.string.dimmer_preview_row,
-                            formatRange(interval.range),
-                            interval.strength
-                        ),
-                        modifier = Modifier.padding(16.dp),
-                        style = MaterialTheme.typography.bodyMedium
-                    )
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text(
+                            text = stringResource(
+                                R.string.dimmer_preview_row,
+                                formatRange(interval.range),
+                                interval.strength
+                            ),
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        // #140: warum dieser Abschnitt frueher endet als "Weckzeit + Nachlauf".
+                        interval.tageslicht?.let { grund ->
+                            Text(
+                                text = tageslichtGrundZeile(grund),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -84,6 +96,36 @@ fun DimmerPreviewScreen(
 
 // Locale.GERMAN bleibt zwingend: ohne das Argument haengt der Wochentagsname an der Systemsprache.
 private val DAY_TIME_FORMAT = DateTimeFormatter.ofPattern(DateTimeFormats.DAY_TIME, Locale.GERMAN)
+
+private val TIME_FORMAT = DateTimeFormatter.ofPattern(DateTimeFormats.TIME_ONLY, Locale.GERMAN)
+
+/**
+ * "endet bei Sonnenaufgang 07:31" - oder, wenn es schon vor dem Wecken hell war, "an der
+ * Weckzeit, Sonnenaufgang war schon um 07:31" (das Fenster endet dann an der Weckzeit, nie davor).
+ */
+@Composable
+private fun tageslichtGrundZeile(grund: TageslichtEnde): String {
+    val uhrzeit = Instant.ofEpochMilli(grund.hellZeitpunkt).atZone(ZoneId.systemDefault()).format(TIME_FORMAT)
+    val ereignis = tageslichtEreignisName(grund.hellAb)
+    return if (grund.vorWeckzeit) {
+        stringResource(R.string.tageslicht_dimmer_grund_weckzeit, ereignis, uhrzeit)
+    } else {
+        stringResource(R.string.tageslicht_vorschau_endet, ereignis, uhrzeit)
+    }
+}
+
+/**
+ * Nutzername des Ereignisses hinter einer [HellAb]-Wahl ("Dämmerung"/"Sonnenaufgang") - fuer
+ * Vorschau und Editor-Beispiel. [HellAb.IMMER] kuerzt nie und taucht hier nicht auf; faellt es
+ * doch hinein, ist "Sonnenaufgang" die harmlose Beschriftung.
+ */
+@Composable
+internal fun tageslichtEreignisName(hellAb: HellAb): String = stringResource(
+    when (hellAb) {
+        HellAb.DAEMMERUNG -> R.string.tageslicht_ereignis_daemmerung
+        HellAb.SONNENAUFGANG, HellAb.IMMER -> R.string.tageslicht_ereignis_sonnenaufgang
+    }
+)
 
 private fun formatRange(range: LongRange): String {
     val zone = ZoneId.systemDefault()

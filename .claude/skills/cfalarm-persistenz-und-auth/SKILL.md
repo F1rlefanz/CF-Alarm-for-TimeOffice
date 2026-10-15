@@ -152,3 +152,16 @@ das baut man dieselbe Falle in neuer Form nach.
 - **„Kein Token vorhanden" landet als `UnknownError` im Log — und das umzubiegen wäre ein Fehler.**
   Eine Abbildung auf `AuthenticationError` würde `invalidateTokenIfRejectedByGoogle()` (nur für 401
   gedacht) ohne Anlass den GMS-Cache leeren lassen. Das Verhalten selbst ist korrekt.
+
+## Tageslicht-Ort (#140) — Kurzregeln
+
+- **Gelesen wird der Ort NUR ueber `TageslichtQuelle.stand()`** (`TageslichtRepository`), und das
+  fragt VOR jedem Lesen `NutzerEntsperrung.istEntsperrt()`; gesperrt = `TageslichtStand.ohneOrt()`.
+  Land und PLZ liegen im `@MainDataStore` — ein fremder Leser im gesperrten Prozess vergiftete den
+  ganzen Store (siehe oben).
+- **Die Koordinaten liegen in einer EIGENEN SharedPreferences-Datei `tageslicht_standort.xml`**,
+  nur auf 0,1° gerundet (Typ `Int`, Zehntelgrad), aus allen Backup-Bloecken ausgeschlossen und
+  nicht im Export. Grund: einzelne DataStore-Schluessel lassen sich nicht vom Android-Backup
+  ausnehmen. Land + PLZ reisen dagegen mit (Export und Backup).
+- **Die PLZ-Tabellen erzeugt `tools/tageslicht/baue_plz_tabelle.py` aus GeoNames (CC BY 4.0)** —
+  Assets nicht von Hand bearbeiten, Zips nicht committen; Lizenz in `licenses/`.

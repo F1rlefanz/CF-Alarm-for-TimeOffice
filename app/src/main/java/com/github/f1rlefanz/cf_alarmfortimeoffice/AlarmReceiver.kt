@@ -108,12 +108,74 @@ class AlarmReceiver : BroadcastReceiver() {
         fun isSilentAlarm(alarmInfo: AlarmInfo?): Boolean = alarmInfo?.isSilent == true
 
         /**
+         * Welche Weckzeit die Tageslicht-Bedingung der Hue-Regeln (#140) zu sehen bekommt. Reine
+         * Funktion aus demselben Grund wie [isSilentAlarm].
+         *
+         * Beim SCHLUMMERN die erste Weckzeit aus dem Snooze-Merker: derselbe Wecktag, also dieselbe
+         * Entscheidung wie beim ersten Klingeln - sonst ginge nach 10 min Schlummern ploetzlich kein
+         * Licht mehr an, weil inzwischen die Sonne aufgegangen ist. Fehlt sie dort (Merker aus einer
+         * aelteren Version), bewusst KEIN Rueckgriff auf [alarmTrigger]: `null` heisst "kein
+         * Filter", im Zweifel Licht.
+         *
+         * Dass beide Wege DIESELBE Zeit sehen, haengt an [zuMerkendeWeckzeit]: der Merker, aus dem
+         * der Snooze-Eintrag seine Weckzeit erbt, bekommt die GEPLANTE Weckzeit, nicht "jetzt" -
+         * sonst entschiede ein verspaetet (inexakt) zugestellter Wecker, dessen Verspaetung ueber
+         * den Hell-Zeitpunkt reicht, beim Schlummern anders als beim ersten Klingeln.
+         */
+        internal fun weckzeitFuerHue(istSnooze: Boolean, snoozeWeckzeit: Long?, alarmTrigger: Long?): Long? =
+            if (istSnooze) snoozeWeckzeit else alarmTrigger
+
+        /**
+         * Die GEPLANTE Weckzeit dieses Weckers, fuer die Tageslicht-Bedingung (#140). Reine Funktion
+         * aus demselben Grund wie [isSilentAlarm].
+         *
+         * Erste Quelle ist das Intent-Extra [EXTRA_TRIGGER_TIME], NICHT der Alarm-Bestand: startet
+         * der Wecker den Prozess kalt (ueber Nacht beendet, Neustart - der Normalfall), laedt
+         * `AlarmRepository` den Bestand frisch und wirft dabei alles Verstrichene weg
+         * (`triggerTime > jetzt`). Der gerade klingelnde Wecker ist im Moment des Feuerns
+         * verstrichen, `alarmInfo` also null - die Bedingung lief dann still ins Leere (Review
+         * #140). Der Bestand bleibt Rueckfall fuer einen PendingIntent, der vor dem Update armiert
+         * wurde und das Extra noch nicht traegt; fehlt beides: null = kein Filter, im Zweifel Licht.
+         *
+         * @param extraWert `intent.getLongExtra(EXTRA_TRIGGER_TIME, -1L)`; <= 0 heisst "fehlt".
+         */
+        internal fun geplanteWeckzeit(extraWert: Long, ausBestand: Long?): Long? =
+            extraWert.takeIf { it > 0L } ?: ausBestand
+
+        /**
+         * Welcher Zeitpunkt in [GeklingelteWeckzeiten] gemerkt wird - reine Funktion aus demselben
+         * Grund wie [isSilentAlarm].
+         *
+         * Die GEPLANTE Weckzeit aus [EXTRA_TRIGGER_TIME], nicht die Klingelzeit: aus dem Merker erbt
+         * der Snooze-Eintrag seine Weckzeit (`AlarmManagerService.weckzeitFuerEintrag`), und die
+         * muss beim Schlummern dieselbe Tageslicht-Entscheidung tragen wie das erste Klingeln
+         * ([weckzeitFuerHue]). Exakt zugestellt ist das dieselbe Minute wie bisher; nur ein
+         * verspaeteter (inexakter) Wecker merkt jetzt seine Weckzeit statt der Verspaetung - das ist
+         * auch fuer die anderen Leser die richtige Groesse (Dimm-Fenster-Ende wie bei den
+         * Schichtspannen, Tagesanker "Dienst faellt aus" = die Weckzeit). Das Extra liegt im Intent,
+         * gilt also auch im Direct Boot.
+         *
+         * Rueckfall "jetzt" (das bisherige Verhalten) fuer einen Schlummer-Broadcast (traegt das
+         * Extra nicht) oder einen alten PendingIntent ohne Extra, und fuer einen Wert in der
+         * Zukunft: der Merker zaehlt nur Weckzeiten bis jetzt als geklingelt.
+         */
+        internal fun zuMerkendeWeckzeit(extraWert: Long, jetzt: Long): Long =
+            extraWert.takeIf { it in 1L..jetzt } ?: jetzt
+
+        /**
          * MUSS "shift_start_time_formatted" heissen - AlarmManagerService schreibt unter genau
          * diesem Schluessel. Wert ist der SCHICHTBEGINN, NICHT die Weckzeit; Hergang Skill
          * cfalarm-wecker-und-boot.
          */
         const val EXTRA_SHIFT_START_TIME = "shift_start_time_formatted"
         const val EXTRA_ALARM_ID = "alarm_id"
+
+        /**
+         * Die GEPLANTE Weckzeit (Epoch-ms) am Wecker-PendingIntent - Begruendung an
+         * [geplanteWeckzeit]. Ein Extra aendert `filterEquals` nicht: Abbrechen und Ersetzen
+         * treffen denselben PendingIntent wie zuvor.
+         */
+        const val EXTRA_TRIGGER_TIME = "trigger_time"
 
         private const val SKIP_CHANNEL_ID = "skip_channel"
         private const val WAKE_LOCK_TAG = "CFAlarm:WakeLock"
@@ -306,15 +368,24 @@ class AlarmReceiver : BroadcastReceiver() {
                 // beenden (siehe GeklingelteWeckzeiten). Bewusst VOR der Stille-Pruefung - eine
                 // stille Schicht beendet das Fenster ueber ihre Schichtspanne ohnehin, beide Quellen
                 // sagen also dasselbe. Device-Protected, also auch im Direct Boot.
-                GeklingelteWeckzeiten.merke(context)
+                // Die GEPLANTE Weckzeit, nicht "jetzt" - Begruendung an [zuMerkendeWeckzeit].
+                GeklingelteWeckzeiten.merke(
+                    context,
+                    zuMerkendeWeckzeit(intent.getLongExtra(EXTRA_TRIGGER_TIME, -1L), System.currentTimeMillis())
+                )
 
                 // STILLE SCHICHT: Ton/Vibration/Vollbild-Wecker UND Hue bleiben aus, wenn diese
                 // Schicht als still markiert ist. Der Zeit-Anker selbst (dieser Broadcast) feuert
                 // trotzdem normal weiter - DND/Dimmer/Feature A und die AlarmInfo in
                 // getAllAlarms() sind davon unberuehrt, nur die Wecker-Instanz
                 // (AlarmSoundService) und executeHueRulesForAlarm() werden nicht angestossen.
+                // Die AlarmInfo ist unten nur noch Rueckfall fuer die Hue-Weckzeit (#140), siehe
+                // [geplanteWeckzeit]. BEKANNTE LUECKE: im kalt gestarteten Prozess fehlt sie hier
+                // (der Bestand wirft den gerade verstrichenen Wecker beim Laden weg) - eine stille
+                // Schicht klingelt dann (fail-safe, im Zweifel wecken).
+                var alarmInfo: AlarmInfo? = null
                 if (userUnlocked) {
-                    val alarmInfo = try {
+                    alarmInfo = try {
                         alarmUseCase.getAllAlarms().getOrNull()?.find { it.id == alarmId }
                     } catch (e: Exception) {
                         Logger.w(
@@ -386,10 +457,27 @@ class AlarmReceiver : BroadcastReceiver() {
                     // Sound + Full-Screen-Intent nicht verzögert.
                     // Direct Boot: Hue braucht Netz + CE/Hue-Storage - vor Entsperrung ueberspringen.
                     if (userUnlocked) {
+                        // Tageslicht-Bedingung (#140): Weckzeit dieses Weckvorgangs. Der Snooze-Merker
+                        // ist CE-Storage - deshalb erst hier, im entsperrten Zweig. Jeder Fehler =
+                        // kein Filter (im Zweifel Licht).
+                        val istSnooze = intent.action == AlarmManagerService.snoozeAlarmAction(alarmId)
+                        val hueWeckzeit = try {
+                            weckzeitFuerHue(
+                                istSnooze = istSnooze,
+                                snoozeWeckzeit = if (istSnooze) AlarmManagerService.snoozeEintrag(context, alarmId)?.weckzeit else null,
+                                alarmTrigger = geplanteWeckzeit(
+                                    extraWert = intent.getLongExtra(EXTRA_TRIGGER_TIME, -1L),
+                                    ausBestand = alarmInfo?.triggerTime
+                                )
+                            )
+                        } catch (e: Exception) {
+                            Logger.w(LogTags.ALARM_RECEIVER, "⚠️ HUE: Weckzeit fuer die Tageslicht-Bedingung nicht lesbar - kein Filter", e)
+                            null
+                        }
                         // GEDECKELT, weil `pendingResult.finish()` erst danach kommt - Begruendung an
                         // [HUE_EXECUTION_BUDGET_MS]; der Wecker selbst haengt nicht daran.
                         val hueDone = withTimeoutOrNull(HUE_EXECUTION_BUDGET_MS) {
-                            executeHueRulesForAlarm(shiftName)
+                            executeHueRulesForAlarm(shiftName, hueWeckzeit)
                             true
                         }
                         if (hueDone == null) {
@@ -460,8 +548,11 @@ class AlarmReceiver : BroadcastReceiver() {
      *
      * Creates a synthetic ShiftMatch from available alarm data and executes
      * any applicable Hue rules configured for this shift pattern.
+     *
+     * @param weckzeit Epoch-ms fuer die Tageslicht-Bedingung (#140), siehe [weckzeitFuerHue];
+     *   `null` = kein Filter.
      */
-    private suspend fun executeHueRulesForAlarm(shiftName: String) {
+    private suspend fun executeHueRulesForAlarm(shiftName: String, weckzeit: Long?) {
         try {
             Logger.business(
                 LogTags.ALARM_RECEIVER,
@@ -498,7 +589,8 @@ class AlarmReceiver : BroadcastReceiver() {
                         val currentTime = LocalTime.now()
                         val executionResult = hueRuleUseCase.executeRulesForAlarm(
                             shift = syntheticShiftMatch,
-                            alarmTime = currentTime
+                            alarmTime = currentTime,
+                            weckzeit = weckzeit
                         )
 
                         if (executionResult.isSuccess) {

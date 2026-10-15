@@ -1,5 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.HellAb
 import kotlinx.serialization.Serializable
 
 /**
@@ -152,5 +153,14 @@ data class DimWindow(
      * verboten, aber sinnlos – der Editor lässt das letzte Häkchen deshalb nicht abwählen).
      * Für FREI-Regeln ohne Schicht wird das Feld ignoriert.
      */
-    val blockPositionen: Set<Blockposition> = Blockposition.ALLE
+    val blockPositionen: Set<Blockposition> = Blockposition.ALLE,
+    /**
+     * Nur fuer Ende [DimAnchor.ALARM_SONST_CLOCK] mit [weckzeitNachlaufMinuten] > 0: der Nachlauf
+     * endet, sobald es am WECKTAG hell ist (#140) - nie vor der Weckzeit selbst. Verglichen wird
+     * mit Daemmerung/Sonnenaufgang des Wecktags: ein Wecker am Abend liegt danach, sein Nachlauf
+     * entfaellt. Default [HellAb.IMMER] = voller Nachlauf wie bisher; ein Bestand ohne dieses Feld
+     * liest sich so (kotlinx-Default). Fehlt der Ort, gilt ebenfalls der volle Nachlauf.
+     * "Nicht stoeren" bleibt unberuehrt: es bekommt den Nachlauf gar nicht erst.
+     */
+    val nachlaufBisHell: HellAb = HellAb.IMMER
 )

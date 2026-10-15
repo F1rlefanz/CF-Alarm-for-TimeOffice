@@ -70,6 +70,10 @@ class Pruefrunde6BackupSchluesselInventurTest {
         "hue_schedule_rules",
         "shift_change_notification_enabled",
         "snooze_minutes",
+        // Ort fuer Tageslicht (#140): vom Nutzer eingetippt, reist mit. Der STANDORT liegt dagegen
+        // in tageslicht_standort.xml, ausserhalb jedes DataStores und des Backups.
+        "tageslicht_land",
+        "tageslicht_plz",
         "weckton_anstieg_aktiv",
         "weckton_anstieg_sekunden",
         "weckton_anstieg_start_prozent"

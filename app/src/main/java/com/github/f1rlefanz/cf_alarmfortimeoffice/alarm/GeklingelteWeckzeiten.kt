@@ -68,11 +68,14 @@ object GeklingelteWeckzeiten {
         text.orEmpty().split(',').mapNotNull { it.trim().toLongOrNull() }
 
     /**
-     * Auf die volle Minute abgerundet: Weckzeiten sind ganze Minuten (`HH:mm`), der Broadcast kommt
-     * aber ein paar Millisekunden bis Sekunden danach. Ungerundet verschob sich das Fensterende
-     * beim Herausfallen des Weckers aus dem Bestand - und mit ihm die Fenster-Identitaet, an der
-     * ein Korrektur-Override haengt (`isOverrideStale`); ein „Heller/Dunkler" im Nachlauf waere
-     * dann mitten darin verworfen worden.
+     * Auf die volle Minute abgerundet. Im Hauptpfad ist das ein No-op: der `AlarmReceiver` merkt
+     * bereits die GEPLANTE Weckzeit aus dem Intent-Extra (`AlarmReceiver.zuMerkendeWeckzeit`), und
+     * die ist eine ganze Minute (`HH:mm`). Die Rundung faengt den Rueckfall „jetzt“ ab - einen
+     * Schlummer-Broadcast ohne Extra oder einen alten PendingIntent -, bei dem der Zeitpunkt ein
+     * paar Millisekunden bis Sekunden nach der Minute liegt. Sie bleibt wegen der
+     * Fenster-Identitaet: ungerundet verschob sich das Fensterende beim Herausfallen des Weckers aus
+     * dem Bestand - und mit ihm die Identitaet, an der ein Korrektur-Override haengt
+     * (`isOverrideStale`); ein „Heller/Dunkler" im Nachlauf waere dann mitten darin verworfen worden.
      */
     internal fun aufMinute(zeitpunkt: Long): Long = zeitpunkt - Math.floorMod(zeitpunkt, 60_000L)
 

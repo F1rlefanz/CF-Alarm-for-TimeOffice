@@ -180,8 +180,17 @@ das baut man dieselbe Falle in neuer Form nach.
   kein Wecker mehr klingelte (Review 14.10.2026). Alte Jobs ohne Weckzeit laufen wie bisher.
 - **Die Vorab-Rampe legt ihr Auto-Aus sofort auf der Bridge an** (Minuten bis Weckzeit +
   Regeldauer, `HueRuleUseCase.vorabAutoAusZiele`); feuert der Wecker, ersetzt
-  `scheduleBridgeAutoOff` den Zeitplan wie bisher. Sonst blieb ein Licht an, dessen Rampe schon lief,
+  `scheduleBridgeAutoOff` den Zeitplan — je ZIEL; Timer anderer Ziele bleiben stehen (sonst blieb eine Rampe, deren Regel zur Weckzeit wegfiel, ohne Auto-Aus an). Sonst blieb ein Licht an, dessen Rampe schon lief,
   als der Tag freigegeben wurde. Regeln ohne Auto-Aus-Dauer bleiben bewusst an (wie nach jedem Wecker).
 - **`IHueConfigRepository.getConfiguration()` emittiert bei JEDER Änderung des @HueDataStore** — die
   Statuszeile je Schicht liest geänderte Regeln darüber nach. Ein `distinctUntilChanged` dort macht sie
   für Regeländerungen blind.
+- **„Nur bei Dunkelheit“ (#140, `HueScheduleRule.hellAb`) gilt an JEDER Stelle, an der
+  `passtAufSchicht` prueft** — `findApplicableRules`, `matchingPreAlarmSunriseRules` (Vorab-Rampe
+  UND Vorlaufzeit), `scheduleSunriseStarts`, `SunriseStartWorker`, `AlarmReceiver` (Snooze:
+  `SnoozeEntry.weckzeit`; sonst Intent-Extra `EXTRA_TRIGGER_TIME`, NICHT der Alarm-Bestand: im
+  kalten Prozess wirft der den gerade klingelnden Wecker beim Laden als verstrichen weg, die
+  Bedingung lief dann still ins Leere — Review 14.10.2026). Verglichen wird die **Weckzeit** (strikt `<`) mit dem Hell-Zeitpunkt
+  **des Wecktags**, auch bei der Sonnenaufgangs-Rampe: ganz oder gar nicht. `SchichtFolgen` zaehlt
+  nur. **Ein kuenftiger fuenfter Hue-Pfad muss die Bedingung mit anwenden** (wie die stille Schicht).
+  Kein Ort/Lesefehler = Regel laeuft. Auto-Aus bei Sonnenaufgang ist bewusst NICHT Teil davon.

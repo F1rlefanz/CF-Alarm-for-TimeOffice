@@ -113,6 +113,11 @@ jobs:
       - name: Auswertung des Direct-Boot-Tests testen
         run: python3 -m unittest discover -s tools/geraet -p "test_*.py"
 
+      # Der Generator der PLZ-Tabellen (#140) laeuft nur von Hand mit heruntergeladenen
+      # GeoNames-Dateien - seine Filter (Grosskunden-PLZ, Ausreisser) sind aber reine Logik.
+      - name: PLZ-Tabellen-Generator testen
+        run: python3 -m unittest discover -s tools/tageslicht -p "test_*.py"
+
       - name: Unit-Tests
         run: ./gradlew testDebugUnitTest --stacktrace
 

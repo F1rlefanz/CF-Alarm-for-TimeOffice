@@ -787,6 +787,13 @@ drei Tage wie die Spannen; `computeWindows` liest sie in die Zeitleiste. Verworf
 Device-Protected, weil der Receiver auch im Direct Boot feuert; jeder Zugriff wirft nie, ein
 Lesefehler fällt auf das alte Verhalten zurück.
 
+**Gemerkt wird die GEPLANTE Weckzeit, nicht die Klingelzeit** (Review #140, 14.10.2026): aus
+dem Merker erbt der Snooze-Eintrag seine Weckzeit, und die Hue-Tageslicht-Bedingung muss beim
+Schlummern dieselbe Zeit sehen wie beim ersten Klingeln. Ein verspätet (inexakt) zugestellter
+Wecker merkte sonst seine Verspätung. Quelle ist das Intent-Extra `EXTRA_TRIGGER_TIME` (auch im
+Direct Boot da), Rückfall „jetzt“ für Schlummer-Broadcasts und alte PendingIntents
+(`AlarmReceiver.zuMerkendeWeckzeit`). Exakt zugestellt ändert sich nichts.
+
 **Das Rennen an der Weckzeit (Review vor dem Merge).** Dimm-Tick und Wecker-Broadcast feuern im
 selben Augenblick. Rechnet der Tick, nachdem der verstrichene Wecker aus dem Bestand gefallen
 ist, aber bevor `merke()` geschrieben hat, öffnet er bei Nachlauf 0 die Nacht bis zur
@@ -821,3 +828,22 @@ danach — Dimmer und DND nur, wenn sich die Schichtspannen geändert haben. Das
 bloßer Blick in die App schaltet nichts um" (Emulator: leerer Abgleich ohne Neuberechnung,
 geänderte Schicht-Weckzeit mit). Unbekannter oder unlesbarer Stand: nichts anfassen, die Wartung
 zieht nach.
+
+## Tageslicht-Nachlauf (#140, Oktober 2026)
+
+Wunsch des Eigentuemers: im Sommer ist es beim Wecken laengst hell, der 30-Minuten-Nachlauf dunkelt
+dann sinnlos ab. Gewaehlt wurde je Dimm-Fenster `HellAb { IMMER, DAEMMERUNG, SONNENAUFGANG }`
+(Default `IMMER` = altes Verhalten), nur beim Ende-Anker „Weckzeit, spätestens“ mit Nachlauf > 0.
+
+- **Nur der Nachlauf, nie davor.** Verworfen: das Fenster schon VOR dem Wecken enden lassen, wenn es
+  hell ist. Wer schlaeft, merkt das Licht nicht; wer nach dem Wecken noch ins Telefon schaut, schon.
+  Und eine Abhaengigkeit zwischen Dimmer-Ende und Weckzeit in beide Richtungen haette DND
+  (`ohneNachlaufFalls`, „Schlaf-Fenster folgt dem Dimmer“) mitgezogen.
+- **DND bleibt identisch** mit und ohne Tageslicht (Test in `DimWindowTageslichtTest`).
+- **Fail-safe = voller Nachlauf**: lieber 30 Minuten zu lange gedimmt als ein Dimmer, der wegen
+  eines Lesefehlers ploetzlich anders arbeitet.
+- **Wanduhr- und Kalendertag-Arithmetik**, kein `+ 24 h` in Millisekunden (Zeitumstellung).
+- Die Vorschau nennt den Grund nur, wenn wirklich gekuerzt wurde
+  (`DimmerPreviewScreen.tageslichtGrundZeile`: „endet bei Sonnenaufgang 07:31“ aus
+  `tageslicht_vorschau_endet`, bzw. „an der Weckzeit, Sonnenaufgang war schon um 07:31“ aus
+  `tageslicht_dimmer_grund_weckzeit`); der Editor zeigt fuer den naechsten Wecker live, was passiert (`tageslicht_dimmer_grund_*`).

@@ -16,6 +16,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.scheduling.workers.PreAlar
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.scheduling.workers.SunriseStartWorker
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.IHueRuleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmInfo
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.HellAb
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
@@ -180,6 +181,14 @@ class HueSmartScheduler private constructor() {
             it.isActive && !it.isSilent && it.shiftName == shiftName &&
                 Instant.ofEpochMilli(it.triggerTime).atZone(zone).toLocalDateTime() == weckzeit
         }
+
+        /**
+         * Die Weckzeit eines Kandidaten als Epoch-ms - fuer die Tageslicht-Bedingung der Regeln
+         * (#140). Eine Umrechnung fuer Planer und [SunriseStartWorker], damit beide denselben
+         * Wecktag sehen.
+         */
+        internal fun weckzeitMillis(weckzeit: LocalDateTime, zone: ZoneId = ZoneId.systemDefault()): Long =
+            weckzeit.atZone(zone).toInstant().toEpochMilli()
 
         internal fun realeVerzoegerungMillis(von: LocalDateTime, bis: LocalDateTime): Long {
             val zone = ZoneId.systemDefault()
@@ -581,6 +590,12 @@ class HueSmartScheduler private constructor() {
             return
         }
 
+        // TAGESLICHT (#140): Ort EINMAL je Durchgang, und nur, wenn eine Regel eine Schwelle
+        // traegt. Eine Regel, die zur Weckzeit entfiele, bekommt keinen Vorlauf - sonst liefe
+        // die Rampe an, und der Weckzeit-Pfad finalisierte sie dann nicht. Ein Ortswechsel plant
+        // ueber recalculateSchedule() neu; der Worker prueft beim Feuern ohnehin noch einmal.
+        val stand = if (rules.any { it.hellAb != HellAb.IMMER }) ruleUseCase.tageslichtStand() else null
+
         val now = LocalDateTime.now()
         val maxTime = now.plusDays(MAX_LOOKAHEAD_DAYS.toLong())
 
@@ -588,7 +603,9 @@ class HueSmartScheduler private constructor() {
 
         var scheduled = 0
         upcoming.forEachIndexed { index, (shiftName, alarmTime) ->
-            val leadMinutes = ruleUseCase.getPreAlarmSunriseLeadMinutes(rules, shiftName) ?: return@forEachIndexed
+            val leadMinutes = ruleUseCase.getPreAlarmSunriseLeadMinutes(
+                rules, shiftName, weckzeitMillis(alarmTime), stand
+            ) ?: return@forEachIndexed
             val sunriseStart = alarmTime.minusMinutes(leadMinutes.toLong())
 
             if (sunriseStart.isBefore(now)) {

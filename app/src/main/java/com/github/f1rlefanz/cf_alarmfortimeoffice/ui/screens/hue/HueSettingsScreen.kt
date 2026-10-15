@@ -1,7 +1,11 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.KnopfZeile
 import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -259,18 +263,16 @@ private fun BridgeStatusCard(
                 }
             }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            KnopfZeile(modifier = Modifier.fillMaxWidth()) {
                 CompactOutlinedButton(
                     onClick = onValidate,
                     text = stringResource(R.string.hue_bridge_check),
-                    icon = Icons.Default.Refresh,
-                    modifier = Modifier.weight(1f)
+                    icon = Icons.Default.Refresh
                 )
                 CompactOutlinedButton(
                     onClick = onTest,
                     text = stringResource(R.string.hue_bridge_test),
-                    icon = Icons.Default.FlashOn,
-                    modifier = Modifier.weight(1f)
+                    icon = Icons.Default.FlashOn
                 )
             }
 
@@ -335,27 +337,40 @@ private fun StatsCard(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Text(stringResource(R.string.hue_stats_header), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                StatItem(Icons.Default.Schedule, stringResource(R.string.hue_stats_rules), "$enabledCount/$rulesCount", stringResource(R.string.hue_stats_active))
-                StatItem(Icons.Default.Lightbulb, stringResource(R.string.hue_stats_lights), lightsCount.toString(), stringResource(R.string.hue_stats_available))
-                StatItem(Icons.Default.Group, stringResource(R.string.hue_stats_groups), groupsCount.toString(), stringResource(R.string.hue_stats_available))
-                StatItem(Icons.Default.Movie, stringResource(R.string.hue_stats_scenes), scenesCount.toString(), stringResource(R.string.hue_stats_available))
+            // Vier Spalten nur, wenn "verfügbar" darin ganz Platz hat - bei 320 dp mit Schrift 1,3
+            // liefen die Beschriftungen ineinander ("verfügbarverfügbarverfügba|r", Emulator
+            // 14.10.2026). Darunter 2 x 2, jede Kachel gleich breit.
+            BoxWithConstraints(Modifier.fillMaxWidth()) {
+                val jeZeile = if (maxWidth / LocalDensity.current.fontScale < VIER_KACHELN_AB) 2 else 4
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    maxItemsInEachRow = jeZeile,
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    val kachel = Modifier.weight(1f)
+                    StatItem(Icons.Default.Schedule, stringResource(R.string.hue_stats_rules), "$enabledCount/$rulesCount", stringResource(R.string.hue_stats_active), kachel)
+                    StatItem(Icons.Default.Lightbulb, stringResource(R.string.hue_stats_lights), lightsCount.toString(), stringResource(R.string.hue_stats_available), kachel)
+                    StatItem(Icons.Default.Group, stringResource(R.string.hue_stats_groups), groupsCount.toString(), stringResource(R.string.hue_stats_available), kachel)
+                    StatItem(Icons.Default.Movie, stringResource(R.string.hue_stats_scenes), scenesCount.toString(), stringResource(R.string.hue_stats_available), kachel)
+                }
             }
         }
     }
 }
+
+/** Ab dieser Breite (dp / Schriftskalierung) passen die vier Kacheln nebeneinander. */
+private val VIER_KACHELN_AB = 230.dp
 
 @Composable
 private fun StatItem(
     icon: androidx.compose.ui.graphics.vector.ImageVector, 
     label: String, 
     value: String, 
-    subtitle: String
+    subtitle: String,
+    modifier: Modifier = Modifier
 ) {
     Column(
+        modifier = modifier,
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {

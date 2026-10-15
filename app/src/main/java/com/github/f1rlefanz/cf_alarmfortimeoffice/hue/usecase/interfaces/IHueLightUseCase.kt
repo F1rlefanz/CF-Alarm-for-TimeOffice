@@ -39,7 +39,9 @@ interface IHueLightUseCase {
      * Hergang: Skill cfalarm-hue, reference/hue-api-und-regeln.md
      *
      * Räumt eigene Timer aus einem früheren Lauf vorher ab (Snooze, erneut gefeuerter Alarm),
-     * damit nicht ein alter Timer zu früh auslöst.
+     * damit nicht ein alter Timer zu früh auslöst - aber nur die der Ziele in [targets]. Ein
+     * eigener Timer für ein anderes Ziel (z. B. das Vorab-Auto-Aus einer Rampe, deren Regel zur
+     * Weckzeit weggefallen ist) bleibt stehen.
      *
      * @return Anzahl der tatsächlich angelegten Timer.
      */

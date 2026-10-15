@@ -228,7 +228,7 @@ def pruefe_konstanten():
 # bewusst an der Quelle, statt sie zu verdoppeln).
 UNTERE_SCHICHTEN = ("alarm", "auth", "backup", "calendar", "data", "di", "dimmer", "dnd",
                     "error", "hue", "masterpause", "model", "repository", "service",
-                    "shift", "usecase", "util")
+                    "shift", "tageslicht", "usecase", "util")
 
 OBERE_SCHICHTEN = ("ui", "viewmodel")
 

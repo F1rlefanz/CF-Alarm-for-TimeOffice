@@ -4,6 +4,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
+import org.junit.experimental.categories.Category
 
 /**
  * Haelt die R8-Entscheidungen fest, die man nicht am Build sieht, sondern erst am ersten
@@ -59,6 +60,7 @@ class Pruefrunde6R8RegelnTest {
         assertTrue("LineNumberTable fehlt in -keepattributes", "LineNumberTable" in attribute)
     }
 
+    @Category(Kerntest::class)
     @Test
     fun `Regeln fuer per Namen gesuchte Bestandteile stehen weiter`() {
         // Ohne -dontobfuscate halten NUR noch diese Regeln die Namen, die zur Laufzeit gesucht

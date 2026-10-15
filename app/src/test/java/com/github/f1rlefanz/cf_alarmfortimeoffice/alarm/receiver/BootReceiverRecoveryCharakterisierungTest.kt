@@ -3,6 +3,7 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.receiver
 import android.app.AlarmManager
 import android.app.PendingIntent
 import android.content.Context
+import com.github.f1rlefanz.cf_alarmfortimeoffice.Kerntest
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.CalendarPreAlarmRefreshScheduler
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.DirectBootAlarmStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.data.CalendarSelectionRepository
@@ -16,6 +17,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCa
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.ICalendarUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IShiftUseCase
 import org.junit.Test
+import org.junit.experimental.categories.Category
 import org.mockito.kotlin.any
 import org.mockito.kotlin.anyOrNull
 import org.mockito.kotlin.atLeastOnce
@@ -114,6 +116,7 @@ class BootReceiverRecoveryCharakterisierungTest {
         verifyBlocking(f.dndSchedule, never()) { enable() }
     }
 
+    @Category(Kerntest::class)
     @Test
     fun `nicht pausiert - Recovery plant 6h-Kette und alle Nebenketten neu`() {
         val f = fixture(paused = false)
@@ -123,6 +126,7 @@ class BootReceiverRecoveryCharakterisierungTest {
         assertKettenGeplant(f)
     }
 
+    @Category(Kerntest::class)
     @Test
     fun `Master-Pause nicht lesbar - Recovery laeuft fail-safe wie nicht pausiert`() {
         val f = fixture(paused = null)

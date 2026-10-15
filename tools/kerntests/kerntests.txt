@@ -1,0 +1,149 @@
+# Kerntests: die Tests, deren Bruch Daten oder den Wecker kostet.
+#
+# Jeder hier gelistete Test traegt im Code `@Category(Kerntest::class)` - und umgekehrt.
+# `tools/kerntests/pruefe_kerntests.py` haelt beides deckungsgleich (CI und Schleuse).
+#
+# BEIM AUFRAEUMEN TABU: nicht loeschen, nicht zusammenlegen, Erwartungswerte nicht anpassen.
+# Aendert sich das geschuetzte Verhalten BEWUSST, wird der Test mit Grund geaendert und
+# diese Liste im selben Commit nachgefuehrt.
+#
+# Auswahl (15.10.2026): je Regel aus "Die Regeln, deren Bruch den Wecker kostet" (CLAUDE.md)
+# der aussagekraeftigste Test; Gate und Backstop zaehlen getrennt. Bewusst NICHT dabei:
+# Hue, Dimmer, DND (kosten weder Daten noch den Wecker) und reine UI-Text-Tests.
+#
+# Format: <quellset>:<pfad unter cf_alarmfortimeoffice/>::<Testname wie im Code>
+
+# ── Start und Weckbildschirm ────────────────────────────────────────────────
+androidTest:ColdStartSmokeTest.kt::applicationKommtHoch
+androidTest:ColdStartSmokeTest.kt::mainActivityErreichtResumedOhneAbsturz
+androidTest:AlarmFullScreenSmokeTest.kt::vollbildZeigtSchichtUndBeideKnoepfe
+test:AlarmFullScreenVertragTest.kt::der Wake-Lock wird symmetrisch zu onStart und onStop gehalten
+test:AlarmFullScreenHandoffTest.kt::zwei gleichzeitige Griffe - genau einer gewinnt
+test:Pruefrunde8ZweiterWeckerTest.kt::erarbeiteter Zustand wird nur bei einem anderen Weckvorgang verworfen
+test:Pruefrunde6ExactAlarmNotausgangTest.kt::lehnt das System den Vordergrund-Start ab, greift der Notausgang
+test:Pruefrunde6ExactAlarmNotausgangTest.kt::scheitert auch der Notausgang, laeuft keine Exception aus onReceive heraus
+test:AlarmReceiverSilentGateTest.kt::fehlende AlarmInfo gilt fail-safe als NICHT still - im Zweifel wecken
+test:AlarmReceiverSilentGateTest.kt::unbekannter Name, unlesbare Definitionen oder fehlender Name - nicht still
+test:AlarmReceiverSilentGateTest.kt::gleichnamige Definitionen mit widerspruechlichem Stille-Flag - klingeln, egal in welcher Reihenfolge
+test:AlarmReceiverSilentGateTest.kt::manueller Wecker trifft nie eine Definition - auch nicht die stille gleichen Namens
+test:alarm/VorweckEntscheidungTest.kt::das Vorwecken haengt an keinem gespeicherten Zustand
+
+# ── Schlummern ──────────────────────────────────────────────────────────────
+test:Pruefrunde8SchlummerTest.kt::scheitert die Planung, gibt es keinen Merker und kein GEPLANT
+test:Pruefrunde8SchlummerTest.kt::scheitert das Vormerken, wird der bereits armierte Alarm abgeraeumt
+test:service/AlarmManagerServiceSnoozeRegistryTest.kt::Eintrag kodiert und parst alle vier Felder verlustfrei
+test:service/AlarmManagerServiceSnoozeRegistryTest.kt::zweiteiliger Altbestand bleibt lesbar - ohne Anzeigedaten
+test:service/AlarmManagerServiceSnoozeRegistryTest.kt::Trennzeichen im Schichtnamen zerbricht den Eintrag nicht
+test:service/AlarmManagerServiceSnoozeRegistryTest.kt::Selbstreinigung entfernt verstrichene Snooze-Zeiten und behaelt kuenftige
+test:service/AlarmManagerServiceSnoozeRegistryTest.kt::Freigabe laesst manuelle Wecker und Eintraege ohne Anker klingeln
+test:service/AlarmManagerServiceSnoozeRegistryTest.kt::Backstop-Pruefung - leere Freigaben heissen klingeln
+
+# ── Alarme anlegen, aendern, loeschen ───────────────────────────────────────
+test:usecase/Pruefrunde6SkipSyncOrderTest.kt::syncAlarms - der Aenderungs-Zweig cancelt VOR dem Loeschen
+test:usecase/AlarmUseCaseSkipAndResilienceTest.kt::deleteAlarm - scheitert der Abbruch, bleibt der Eintrag stehen
+test:usecase/AlarmUseCaseSkipAndResilienceTest.kt::syncAlarms - scheitert der Abbruch eines gestrichenen Termins, bleibt sein Eintrag
+test:usecase/AlarmUseCaseSkipAndResilienceTest.kt::ein abgelehnter Alarm bricht den restlichen Delta-Sync nicht ab
+test:usecase/AlarmUseCaseSkipAndResilienceTest.kt::scheduleSystemAlarm - nicht lesbarer Skip-Status stellt den Alarm trotzdem (im Zweifel wecken)
+test:usecase/AlarmUseCaseSkipAndResilienceTest.kt::Master-Pause cancelt System-Alarme auch wenn der Repository-Cache noch nicht geladen ist
+test:usecase/Pruefrunde8SignaltrennungTest.kt::nach einem Schreibfehler wird beim Raeumen trotzdem jeder System-Alarm gecancelt
+test:usecase/AlarmUseCaseCancellationTest.kt::ein gewoehnlicher Event-Fehler bricht den Sync weiterhin NICHT ab
+test:usecase/AlarmUseCaseDeltaSyncTest.kt::neues Event - bestehender Alarm bleibt erhalten und neuer wird erstellt
+test:usecase/AlarmUseCaseDeltaSyncTest.kt::entferntes Event - dessen Alarm wird geloescht, anderes bleibt
+test:usecase/AlarmUseCaseDeltaSyncTest.kt::ShiftDefinition-Feld aendert sich ohne Event-Aenderung - Update wird trotzdem persistiert
+test:usecase/AlarmUseCaseDeltaSyncTest.kt::manueller Alarm bleibt erhalten wenn keine Schicht passt
+test:usecase/AlarmUseCaseDeltaSyncTest.kt::manueller Alarm bleibt erhalten wenn der Kalender keine Events liefert
+test:usecase/AlarmUseCaseDeltaSyncTest.kt::verkleinerte Vorausschau - Wecker hinter dem Abruf-Horizont bleiben und werden nicht gemeldet
+test:usecase/AlarmUseCaseKennungswechselTest.kt::Feed neu eingelesen - 11 Schichten mit neuen Event-IDs erzeugen keine einzige Aenderung
+test:usecase/AlarmUseCaseKennungswechselTest.kt::zwei Wecker mit gleicher Weckzeit und gleicher Schicht - keine Doppelpaarung, keiner geht verloren
+test:usecase/AlarmUseCaseKennungswechselTest.kt::Termin faellt wirklich weg - Loeschung samt Meldung, und vorher wurde gecancelt
+test:usecase/AlarmUseCaseKennungswechselTest.kt::nicht lesbarer Alarm-Bestand bricht den Sync ab statt auf einer erfundenen Leere weiterzurechnen
+test:usecase/AlarmUseCaseKennungswechselTest.kt::gesperrte Persistenz bricht den Sync ab - auch wenn getAllAlarms Erfolg meldet
+test:usecase/AlarmUseCaseKennungswechselTest.kt::ein MANUELLER Wecker zur selben Weckzeit wird NICHT mit uebersprungen
+test:usecase/AlarmUseCaseKennungswechselTest.kt::ein uebersprungener MANUELLER Wecker legt keine Schicht zur selben Weckzeit still
+test:alarm/AlarmSchedulerTest.kt::Alarm liegt am selben Tag wenn Weckzeit vor Schichtbeginn
+test:alarm/AlarmSchedulerTest.kt::Alarm liegt am Vortag wenn Weckzeit nach Schichtbeginn (Mitternachts-Fall)
+
+# ── Ueberspringen, Tag freigeben, Krank ─────────────────────────────────────
+test:usecase/AlarmSkipUseCaseTest.kt::skipNextAlarm - trifft genau den Wecker, den die Karte als naechsten klingelnden nennt
+test:usecase/AlarmSkipUseCaseTest.kt::clearExpiredSkip - loescht ein Flag dessen Ziel-Alarmzeit laengst verstrichen ist
+test:usecase/AlarmSkipUseCaseTest.kt::checkAndProcessSkip - Fehltreffer (andere Alarm-ID) laesst ein bestehendes Flag stehen
+test:usecase/AlarmSkipManualAlarmTest.kt::skipNextAlarm - manueller Alarm wird geloescht UND vollstaendig gesichert
+test:usecase/Pruefrunde7SkipLoeschfehlerTest.kt::dauerhaft fehlschlagendes Loeschen nimmt das Ueberspringen zurueck und scheitert laut
+test:usecase/Pruefrunde7SkipPersistenzGesperrtTest.kt::bei gesperrter Persistenz wird gar nicht erst uebersprungen
+test:usecase/TagFreigabeSyncGateTest.kt::istTagFreigegeben ankert an der Weckzeit und faellt fail-safe auf NICHT freigegeben
+test:usecase/TagFreigabeSyncGateTest.kt::Ein NICHT freigegebener Tag bekommt seinen Wecker wie immer
+test:usecase/TagFreigabeSyncGateTest.kt::scheduleSystemAlarm stellt einen MANUELLEN Wecker am freigegebenen Tag trotzdem
+test:freietage/FreieTageStoreTest.kt::Ein unlesbarer Eintrag gilt NICHT als freigegebener Tag
+test:freietage/FreieTageStoreTest.kt::HEUTE wird ersetzt - verschwindet der Termin, ist heute wieder Diensttag
+test:usecase/KrankSyncTest.kt::Termin weg - der Wecker entsteht neu und der Kalender-Tag faellt weg
+test:usecase/KrankSyncTest.kt::Zeitgebundener Krank-Termin bis Mitternacht gibt den Folgetag nicht frei
+test:usecase/KrankSyncTest.kt::Manueller Wecker am Krank-Tag bleibt
+test:usecase/KrankSyncTest.kt::Ein geloeschter, noch laufender Krank-Termin gibt den Tag zurueck
+
+# ── Kalender und Schichterkennung ───────────────────────────────────────────
+test:usecase/CalendarUseCaseFailureSemanticsTest.kt::alle Kalender gescheitert ergibt Fehler, nicht leeren Erfolg
+test:calendar/Pruefrunde6KalenderSeitenTest.kt::alle Seiten werden eingesammelt, nicht nur die erste
+test:calendar/Pruefrunde6KalenderSeitenTest.kt::eine offene Seitenkette wirft, statt still zu kuerzen
+test:viewmodel/CalendarViewModelAlarmSyncCompletenessTest.kt::abgeschnittenes Praefix darf NICHT synchronisiert werden
+test:viewmodel/CalendarViewModelAlarmSyncCompletenessTest.kt::ein fehlgeschlagener Kalender verhindert den Sync auch bei vollem Abruf
+test:viewmodel/CalendarViewModelSyncWiringTest.kt::gekuerztes Praefix ohne nachforderbare Liste loest KEINEN Alarm-Sync aus
+test:viewmodel/CalendarViewModelSyncWiringTest.kt::ein Teilerfolg beim Nachfordern loest KEINEN Alarm-Sync aus
+test:viewmodel/ShiftViewModelSyncGateTest.kt::unvollstaendige Eventliste loest KEINEN Alarm-Sync aus
+test:viewmodel/CalendarViewModelDeselectionCleanupTest.kt::der leere Startwert der Kalenderauswahl raeumt KEINE Wecker
+test:viewmodel/CalendarViewModelDeselectionCleanupTest.kt::bei nicht lesbarer Kalenderauswahl wird NICHT geraeumt
+test:viewmodel/CalendarViewModelDeselectionCleanupTest.kt::schnelles Ab- und Wiederanwaehlen kostet keine Wecker
+test:viewmodel/CalendarViewModelDeselectionCleanupTest.kt::leere Auswahl beim ersten Einrichten gilt nicht als Abwahl
+test:service/Pruefrunde8RaeumauftragWartungTest.kt::bei unlesbarer Schicht-Konfiguration wird nicht geraeumt und der Auftrag bleibt
+test:service/Pruefrunde8RaeumauftragWartungTest.kt::bei wieder ausgewaehltem Kalender wird nicht geraeumt und der Auftrag verworfen
+test:shift/ShiftRecognitionEngineTest.kt::aktivierte Schichtdefinition erzeugt einen Treffer
+test:shift/ShiftRecognitionEngineTest.kt::gleichzeitiger Aufrufer bekommt keine leere Liste waehrend die Erkennung laeuft
+test:shift/ShiftRecognitionEngineTest.kt::gescheiterter Lauf wird nicht als leeres Ergebnis gecacht
+test:shift/ShiftRecognitionEngineTest.kt::gescheiterter Konfigurations-Read wird nicht zu einer leeren Trefferliste
+test:shift/ShiftRecognitionEngineTest.kt::ganztaegiger Termin weckt am Tag des Termins, nicht am Vortag
+test:shift/ShiftRecognitionEngineTest.kt::zeitgebundene Nachtschicht weckt weiterhin am Vortag
+test:shift/ShiftConfigDecodeTest.kt::abgeschnittenes JSON ist Broken - nicht stillschweigend der Standard
+test:shift/ShiftConfigLockedStorageTest.kt::fehlender Eintrag bei gesperrtem Storage ist KEIN NotConfigured
+
+# ── Boot und Hintergrundketten ──────────────────────────────────────────────
+test:alarm/receiver/BootAlarmValidationTest.kt::unveraenderter Termin wird ganz normal wiederhergestellt
+test:alarm/receiver/BootAlarmValidationTest.kt::neue Kennung bei gleicher Weckzeit und Schicht loescht den Wecker nicht
+test:alarm/receiver/BootAlarmValidationTest.kt::der ganze Bestand ueberlebt ein Feed-Neueinlesen
+test:alarm/receiver/BootAlarmValidationTest.kt::ohne auswertbare Schichterkennung wird nie wegen fehlender Kennung geloescht
+test:alarm/receiver/BootAlarmValidationTest.kt::Wecker hinter dem Abruf-Horizont bleibt - er wurde nur nicht gelesen
+test:alarm/receiver/BootReceiverUpdateVorEntsperrungTest.kt::im Update-Zweig steht die Entsperrungs-Pruefung VOR der vollen Recovery
+test:alarm/receiver/BootReceiverRecoveryCharakterisierungTest.kt::nicht pausiert - Recovery plant 6h-Kette und alle Nebenketten neu
+test:alarm/receiver/BootReceiverRecoveryCharakterisierungTest.kt::Master-Pause nicht lesbar - Recovery laeuft fail-safe wie nicht pausiert
+test:service/MaintenanceLoadDecisionTest.kt::Sync laeuft auch ohne neue Schichten - Aenderungen und Streichungen brauchen ihn
+test:service/MaintenanceLoadDecisionTest.kt::schon ein einziges Event genuegt fuer den Sync
+test:service/MaintenanceLoadDecisionTest.kt::leere Eventliste synchronisiert NICHT - fail-safe gegen Total-Loeschung
+test:service/WartungLaedtBeiJedemLaufTest.kt::ein regulaerer Lauf fragt den Kalender ab, auch wenn Puffer und Daten frisch sind
+test:service/Pruefrunde6ExactAlarmWartungsketteTest.kt::ohne Exact-Alarm-Berechtigung wird gar nicht erst nachgeholt
+test:service/Pruefrunde6ExactAlarmWartungsketteTest.kt::der Wachhund wird IMMER inexakt gestellt
+test:service/Pruefrunde6ExactAlarmWartungsketteTest.kt::der Wachhund-Empfaenger zieht die Kette selbst wieder auf
+test:service/WartungsKettenTerminTest.kt::ein unerreichbarer Merker verhindert weder Stellen noch Kappen
+test:viewmodel/Pruefrunde8AbmeldenRaeumtWeckerTest.kt::abmelden bricht die Wecker ab, loescht sie und stoppt jede Hintergrundkette
+
+# ── Persistenz, Auth, Backup, Release-Build ─────────────────────────────────
+test:repository/AlarmRepositoryBrokenPersistenceTest.kt::saveAlarm ueberschreibt einen nicht dekodierbaren Bestand nicht
+test:repository/AlarmRepositoryBrokenPersistenceTest.kt::ein nicht dekodierbarer Bestand wird zuerst gesichert
+test:repository/AlarmRepositoryBrokenPersistenceTest.kt::deleteAllAlarms raeumt auch bei blockierter Persistenz wirklich
+test:repository/AlarmRepositoryBrokenPersistenceTest.kt::gesperrter Nutzer - Bestand wird NICHT gelesen und die Persistenz ist gesperrt
+test:repository/AlarmRepositoryTest.kt::init laedt persistierte zukuenftige Alarme aus dem DataStore
+test:repository/AlarmRepositoryTest.kt::deleteAlarm entfernt aus dem Cache und schreibt den Direct-Boot-Spiegel nach
+test:repository/AlarmRepositoryInitRaceTest.kt::getAllAlarms wartet auf den Init-Load statt faelschlich leer zu liefern
+test:repository/AlarmRepositoryInitRaceTest.kt::deleteAllAlarms wird nicht vom nachtraeglichen Init-Load wieder aufgefuellt
+test:auth/EncryptedPreferencesSerializerTest.kt::readFrom uebersetzt einen Tink-Fehler in eine CorruptionException
+test:auth/EncryptedPreferencesSerializerTest.kt::readFrom degradiert einen unerwarteten Lesefehler nicht still auf leere Preferences
+test:auth/EncryptedPreferencesSerializerTest.kt::writeTo schreibt echte Daten niemals unverschluesselt
+test:auth/TokenObserveResilienceTest.kt::ein dauerhafter Lesefehler emittiert KEIN falsches Verlust-Signal
+test:auth/TokenDataTest.kt::legitime gleichzeitige Rotation sieht NICHT wie ein Replay aus - Regressionstest fuer Bug 1
+test:auth/TokenDataTest.kt::frische Neu-Autorisierung ist KEIN Kettenbruch - Regressionstest
+test:auth/OAuth2AuthorizationClientRefreshTest.kt::Resolution OFFLINE ist ein Funkloch - voruebergehend, Token bleibt
+test:auth/OAuth2AuthorizationClientRefreshTest.kt::eine Resolution, die der Bestaetigungsabruf nicht wiederholt, kostet kein Token
+test:util/DeviceLocalFlagsGuardTest.kt::echte Nutzereinstellungen werden nicht angefasst
+test:util/DeviceLocalFlagsGuardTest.kt::fehlender Marker setzt nicht zurueck
+test:backup/ConfigBackupFilterTest.kt::Master-Pause wird nie exportiert
+test:backup/ConfigBackupFilterTest.kt::Anmeldung, Tokens und Kalenderauswahl werden nie exportiert
+test:backup/BackupRulesConsistencyTest.kt::die vom Nutzer konfigurierten DataStore-Dateien werden gesichert
+test:backup/BackupRulesConsistencyTest.kt::sensible und geraetegebundene Pfade sind in jedem Block ausgeschlossen
+test:Pruefrunde6R8RegelnTest.kt::Regeln fuer per Namen gesuchte Bestandteile stehen weiter

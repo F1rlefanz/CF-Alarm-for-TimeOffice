@@ -1,11 +1,13 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.service
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.Kerntest
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.experimental.categories.Category
 
 /**
  * PRUEFRUNDE 8, WELLE 5 - BEFUND A, Hintergrundseite.
@@ -76,6 +78,7 @@ class Pruefrunde8RaeumauftragWartungTest {
      * Ist wieder ein Kalender ausgewaehlt, ist der Auftrag hinfaellig - und Raeumen waere hier
      * sogar schaedlich: es traefe die Wecker des neu gewaehlten Dienstplans.
      */
+    @Category(Kerntest::class)
     @Test
     fun `bei wieder ausgewaehltem Kalender wird nicht geraeumt und der Auftrag verworfen`() = runTest {
         val ergebnis = AbwahlRaeumauftrag.abarbeiten(
@@ -93,6 +96,7 @@ class Pruefrunde8RaeumauftragWartungTest {
      * Fail-safe wie ueberall sonst: ein Defekt im Konfigurations-Store darf keine Wecker kosten.
      * Der Auftrag bleibt fuer den naechsten Lauf offen.
      */
+    @Category(Kerntest::class)
     @Test
     fun `bei unlesbarer Schicht-Konfiguration wird nicht geraeumt und der Auftrag bleibt`() = runTest {
         val ergebnis = AbwahlRaeumauftrag.abarbeiten(

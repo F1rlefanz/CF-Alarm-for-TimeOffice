@@ -1,5 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.service
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.Kerntest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -7,6 +8,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
 import java.util.concurrent.TimeUnit
+import org.junit.experimental.categories.Category
 
 /**
  * Befund 11 (Pruefrunde 6): Entzieht der Nutzer auf API 31/32 die Berechtigung
@@ -106,6 +108,7 @@ class Pruefrunde6ExactAlarmWartungsketteTest {
      * beim Feuern keine Vordergrunddienst-Startfreigabe: er wuerde abgewiesen und stellte sich
      * selbst erneut - alle 10 Sekunden bzw. im Doze-Takt, endlos, ohne je Erfolg zu haben.
      */
+    @Category(Kerntest::class)
     @Test
     fun `ohne Exact-Alarm-Berechtigung wird gar nicht erst nachgeholt`() {
         assertFalse(
@@ -143,6 +146,7 @@ class Pruefrunde6ExactAlarmWartungsketteTest {
      * ist die naheliegende "Aufraeum"-Aenderung, und sie waere toedlich: ein exakt gestellter
      * Wachhund wird vom Berechtigungsentzug mitgeloescht und ist damit genau im Zielfall weg.
      */
+    @Category(Kerntest::class)
     @Test
     fun `der Wachhund wird IMMER inexakt gestellt`() {
         val rumpf = funktionsRumpf("service/AlarmMaintenanceService.kt", "private fun armiereWiederanlauf")
@@ -188,6 +192,7 @@ class Pruefrunde6ExactAlarmWartungsketteTest {
      * Hintergrund immer erlaubt, `startForegroundService()` in seinem Zielzustand nie. Fehlt das,
      * ist der Wachhund-Slot nach einmaligem Feuern verbraucht und die Kette bleibt tot.
      */
+    @Category(Kerntest::class)
     @Test
     fun `der Wachhund-Empfaenger zieht die Kette selbst wieder auf`() {
         val quelle = quelldatei("service/AlarmMaintenanceBroadcastReceiver.kt").readText()

@@ -1,5 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.usecase
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.Kerntest
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmInfo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmSkipState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IAlarmRepository
@@ -17,6 +18,7 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.experimental.categories.Category
 import org.mockito.kotlin.any
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.never
@@ -218,6 +220,7 @@ class AlarmSkipUseCaseTest {
         assertEquals("Der Bestand bleibt vollstaendig", 3, repo.current.size)
     }
 
+    @Category(Kerntest::class)
     @Test
     fun `skipNextAlarm - trifft genau den Wecker, den die Karte als naechsten klingelnden nennt`() = runTest {
         // Die eigentliche Zusicherung von C: Anzeige und Knopf duerfen nicht auseinanderlaufen.
@@ -308,6 +311,7 @@ class AlarmSkipUseCaseTest {
         )
     }
 
+    @Category(Kerntest::class)
     @Test
     fun `clearExpiredSkip - loescht ein Flag dessen Ziel-Alarmzeit laengst verstrichen ist`() = runTest {
         // Regression: skipNextAlarm() cancelt+loescht den System-Alarm SOFORT (SKIP-IMMEDIATE),
@@ -392,6 +396,7 @@ class AlarmSkipUseCaseTest {
         assertFalse("clearSkipStatus darf nicht aufgerufen werden", skipRepo.clearCalled)
     }
 
+    @Category(Kerntest::class)
     @Test
     fun `checkAndProcessSkip - Fehltreffer (andere Alarm-ID) laesst ein bestehendes Flag stehen`() = runTest {
         // Dokumentiert bewusst die Luecke, die den urspruenglichen Bug ausgemacht hat: feuert ein

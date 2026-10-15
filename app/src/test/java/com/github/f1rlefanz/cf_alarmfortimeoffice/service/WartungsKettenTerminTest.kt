@@ -4,10 +4,12 @@ import android.app.AlarmManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.SharedPreferences
+import com.github.f1rlefanz.cf_alarmfortimeoffice.Kerntest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.experimental.categories.Category
 import org.mockito.kotlin.any
 import org.mockito.kotlin.anyOrNull
 import org.mockito.kotlin.argumentCaptor
@@ -119,6 +121,7 @@ class WartungsKettenTerminTest {
      * der gemockte Context liefert null), muss die Kette trotzdem stehen - sonst kostete ein
      * Anzeige-Detail die gesamte Wartung.
      */
+    @Category(Kerntest::class)
     @Test
     fun `ein unerreichbarer Merker verhindert weder Stellen noch Kappen`() {
         val alarmManager = mock<AlarmManager>()

@@ -9,6 +9,7 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.experimental.categories.Category
 
 /**
  * Pruefrunde 8, drei Befunde am Schlummer-Pfad — alle fixiert an [SchlummerEntscheidung], dem
@@ -103,6 +104,7 @@ class Pruefrunde8SchlummerTest {
         assertTrue("Der Erfolgsfall meldet nichts", p.meldungen.isEmpty())
     }
 
+    @Category(Kerntest::class)
     @Test
     fun `scheitert die Planung, gibt es keinen Merker und kein GEPLANT`() {
         val (ergebnis, p) = laufe(
@@ -133,6 +135,7 @@ class Pruefrunde8SchlummerTest {
         assertEquals(listOf("plane"), p.schritte)
     }
 
+    @Category(Kerntest::class)
     @Test
     fun `scheitert das Vormerken, wird der bereits armierte Alarm abgeraeumt`() {
         // SO STAND ES HIER ZUERST (und war zu wenig): "Der Alarm waere zwar scharf, aber weder

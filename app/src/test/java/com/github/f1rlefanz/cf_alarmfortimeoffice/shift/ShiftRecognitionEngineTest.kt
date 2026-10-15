@@ -1,5 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.shift
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.Kerntest
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.CalendarEvent
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
@@ -20,6 +21,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.LocalDateTime
 import java.time.LocalTime
+import org.junit.experimental.categories.Category
 
 /**
  * Tests fuer [ShiftRecognitionEngine] — bis v1.22.1 komplett ungetestet, obwohl sie der
@@ -142,6 +144,7 @@ class ShiftRecognitionEngineTest {
     }
 
     /** Gegenprobe zum Test darueber: aktiviert muss dieselbe Definition treffen. */
+    @Category(Kerntest::class)
     @Test
     fun `aktivierte Schichtdefinition erzeugt einen Treffer`() = runTest {
         val config = ShiftConfig(
@@ -171,6 +174,7 @@ class ShiftRecognitionEngineTest {
      * erkannter Schichten") wurde in v1.21.0 am Fairphone beobachtet; der Fix damals entfernte
      * nur EINEN der beiden ueberlappenden Aufrufer, die Engine selbst blieb anfaellig.
      */
+    @Category(Kerntest::class)
     @Test
     fun `gleichzeitiger Aufrufer bekommt keine leere Liste waehrend die Erkennung laeuft`() = runTest {
         val gate = CompletableDeferred<Unit>()
@@ -255,6 +259,7 @@ class ShiftRecognitionEngineTest {
      * nie eine Erkennung gelaufen war. Fuer eine Wecker-App ist "leer" die gefaehrlichste
      * Luege: `syncAlarms()` loescht darauf alle Alarme.
      */
+    @Category(Kerntest::class)
     @Test
     fun `gescheiterter Lauf wird nicht als leeres Ergebnis gecacht`() = runTest {
         val config = ShiftConfig(
@@ -408,6 +413,7 @@ class ShiftRecognitionEngineTest {
      *
      * Erwartung: der Fehler kommt beim Aufrufer an, statt sich als leeres Ergebnis zu tarnen.
      */
+    @Category(Kerntest::class)
     @Test
     fun `gescheiterter Konfigurations-Read wird nicht zu einer leeren Trefferliste`() = runTest {
         val engine = newEngine(FailingResultShiftConfigRepository())
@@ -440,6 +446,7 @@ class ShiftRecognitionEngineTest {
      * Bei einem ganztaegigen Eintrag ist 00:00 kein echter Schichtbeginn, sondern nur der Anker
      * des Kalendertags. Es gibt also nichts, gegen das "danach" sinnvoll pruefbar waere.
      */
+    @Category(Kerntest::class)
     @Test
     fun `ganztaegiger Termin weckt am Tag des Termins, nicht am Vortag`() = runTest {
         val allDay = CalendarEvent(
@@ -479,6 +486,7 @@ class ShiftRecognitionEngineTest {
      * den Vortag. Ohne diesen Test koennte ein Fix fuer den Ganztags-Fall die Heuristik
      * versehentlich komplett abschalten.
      */
+    @Category(Kerntest::class)
     @Test
     fun `zeitgebundene Nachtschicht weckt weiterhin am Vortag`() = runTest {
         val nightShift = CalendarEvent(

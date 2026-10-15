@@ -1,5 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.usecase
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.Kerntest
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FakeFeedNeueinlesenStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FakeKalenderVorausschauPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FakeSyncHorizonStore
@@ -33,6 +34,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.fail
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.experimental.categories.Category
 import org.mockito.kotlin.any
 import org.mockito.kotlin.doAnswer
 import org.mockito.kotlin.argumentCaptor
@@ -309,6 +311,7 @@ class KrankSyncTest {
         assertEquals(listOf(listOf(tag) to listOf(LocalTime.of(5, 30))), a.krankNotifier.meldungen)
     }
 
+    @Category(Kerntest::class)
     @Test
     fun `Termin weg - der Wecker entsteht neu und der Kalender-Tag faellt weg`() = runTest {
         val a = aufbau(kalender = setOf(tag))
@@ -337,6 +340,7 @@ class KrankSyncTest {
         assertEquals("Nur der Tag danach bekommt seinen Wecker", listOf("evDanach"), a.repo.current.map { it.eventId })
     }
 
+    @Category(Kerntest::class)
     @Test
     fun `Zeitgebundener Krank-Termin bis Mitternacht gibt den Folgetag nicht frei`() {
         val bisMitternacht = CalendarEvent(
@@ -374,6 +378,7 @@ class KrankSyncTest {
         assertEquals(setOf(tag.minusDays(1), tag), a.store.freigabeQuellenNow().kalender)
     }
 
+    @Category(Kerntest::class)
     @Test
     fun `Manueller Wecker am Krank-Tag bleibt`() = runTest {
         val manuell = AlarmInfo(
@@ -692,6 +697,7 @@ class KrankSyncTest {
         assertTrue("Die Nachtschicht darf heute nicht klingeln: ${a.protokoll}", a.repo.current.isEmpty())
     }
 
+    @Category(Kerntest::class)
     @Test
     fun `Ein geloeschter, noch laufender Krank-Termin gibt den Tag zurueck`() = runTest {
         val a = aufbau()

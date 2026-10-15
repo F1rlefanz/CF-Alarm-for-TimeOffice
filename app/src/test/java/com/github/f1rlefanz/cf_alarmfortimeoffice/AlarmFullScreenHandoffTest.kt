@@ -8,6 +8,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
+import org.junit.experimental.categories.Category
 
 /**
  * Vertrag der Doppelauslösungs-Sperre des Vollbild-Weckers ([OneShotAlarmHandoff]).
@@ -48,6 +49,7 @@ class AlarmFullScreenHandoffTest {
         assertTrue("Nach dem Griff muss die Sperre als beansprucht gelten", handoff.isClaimed)
     }
 
+    @Category(Kerntest::class)
     @Test
     fun `zwei gleichzeitige Griffe - genau einer gewinnt`() {
         // Das ist der real gemeldete Fall: Dismiss und Snooze quasi zeitgleich (24ms).

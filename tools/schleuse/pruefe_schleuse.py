@@ -538,6 +538,13 @@ def main():
         os.path.join("tools", "invarianten", "pruefe_code.py"),
         "Eine Code-Invariante ist gerissen (Wecker-Killer)",
     )
+    pruefe_hilfsskript(
+        probleme,
+        os.path.join("tools", "kerntests", "pruefe_kerntests.py"),
+        "Ein Kerntest ist verschwunden, abgeschaltet oder nicht gelistet",
+        hinweis="Kerntests sind beim Aufraeumen tabu. Bewusste Verhaltensaenderung: Test mit "
+                "Grund aendern und tools/kerntests/kerntests.txt im selben Commit nachfuehren.",
+    )
     # Der Doku-Teil dieser Pruefung braucht eine Basis: entfernt wurde ein Symbol IN DIESER
     # Aenderung, nicht irgendwann. Ohne Basis laufen nur die beiden mechanischen Teile.
     code_mb, mb = git("merge-base", "HEAD", FERNREFERENZ)

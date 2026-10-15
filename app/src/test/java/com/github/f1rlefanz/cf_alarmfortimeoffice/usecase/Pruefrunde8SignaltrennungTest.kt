@@ -3,6 +3,7 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.usecase
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.mutablePreferencesOf
+import com.github.f1rlefanz.cf_alarmfortimeoffice.Kerntest
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.DirectBootAlarmStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FakeFeedNeueinlesenStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FakeKalenderVorausschauPrefs
@@ -27,6 +28,7 @@ import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.experimental.categories.Category
 import org.mockito.kotlin.any
 import org.mockito.kotlin.eq
 import org.mockito.kotlin.mock
@@ -114,6 +116,7 @@ class Pruefrunde8SignaltrennungTest {
         )
     }
 
+    @Category(Kerntest::class)
     @Test
     fun `nach einem Schreibfehler wird beim Raeumen trotzdem jeder System-Alarm gecancelt`() = runTest {
         // OHNE DIE TRENNUNG: isPersistenceBlocked() meldet wegen des Schreibfehlers "gesperrt",

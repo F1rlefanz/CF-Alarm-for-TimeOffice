@@ -1,5 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.service
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.Kerntest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -8,6 +9,7 @@ import org.junit.Test
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneId
+import org.junit.experimental.categories.Category
 
 /**
  * Tests fuer den Merker schwebender Snooze-Alarme in [AlarmManagerService].
@@ -30,6 +32,7 @@ import java.time.ZoneId
  */
 class AlarmManagerServiceSnoozeRegistryTest {
 
+    @Category(Kerntest::class)
     @Test
     fun `Eintrag kodiert und parst alle vier Felder verlustfrei`() {
         val entry = AlarmManagerService.encodeSnoozeEntry(
@@ -53,6 +56,7 @@ class AlarmManagerServiceSnoozeRegistryTest {
      * Nutzer, der ueber die Aktualisierung hinweg schlummert, sowohl die Wiederherstellung als
      * auch die Moeglichkeit, diesen Snooze noch abzubrechen.
      */
+    @Category(Kerntest::class)
     @Test
     fun `zweiteiliger Altbestand bleibt lesbar - ohne Anzeigedaten`() {
         val parsed = AlarmManagerService.parseSnoozeEntry("4711|1775000000000")
@@ -68,6 +72,7 @@ class AlarmManagerServiceSnoozeRegistryTest {
      * einem Anzeigetext ist harmlos, ein zerbrochener Eintrag nicht - er wuerde den Snooze
      * unauffindbar machen.
      */
+    @Category(Kerntest::class)
     @Test
     fun `Trennzeichen im Schichtnamen zerbricht den Eintrag nicht`() {
         val entry = AlarmManagerService.encodeSnoozeEntry(
@@ -98,6 +103,7 @@ class AlarmManagerServiceSnoozeRegistryTest {
         assertNull(AlarmManagerService.parseSnoozeEntry("1|2|3|4|5|6"))
     }
 
+    @Category(Kerntest::class)
     @Test
     fun `Selbstreinigung entfernt verstrichene Snooze-Zeiten und behaelt kuenftige`() {
         val now = 1_000_000L
@@ -211,6 +217,7 @@ class AlarmManagerServiceSnoozeRegistryTest {
         assertEquals(listOf(1), ids)
     }
 
+    @Category(Kerntest::class)
     @Test
     fun `Freigabe laesst manuelle Wecker und Eintraege ohne Anker klingeln`() {
         val manuell = AlarmManagerService.encodeSnoozeEntry(1, ms("2026-10-15T05:39"), "Frueh (Manuell)", "", ms("2026-10-15T05:30"))
@@ -222,6 +229,7 @@ class AlarmManagerServiceSnoozeRegistryTest {
         assertTrue(ids.isEmpty())
     }
 
+    @Category(Kerntest::class)
     @Test
     fun `Backstop-Pruefung - leere Freigaben heissen klingeln`() {
         val eintrag = AlarmManagerService.Companion.SnoozeEntry(1, ms("2026-10-15T05:39"), "Frueh", "", ms("2026-10-15T05:30"))

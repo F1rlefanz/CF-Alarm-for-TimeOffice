@@ -1,8 +1,10 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.util
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.Kerntest
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.experimental.categories.Category
 
 /**
  * Tests der reinen Entscheidungsfunktionen von [DeviceLocalFlagsGuard].
@@ -38,6 +40,7 @@ class DeviceLocalFlagsGuardTest {
      * Bestandsinstall seine bereits weggetippten Hinweise. Die bewusst akzeptierte Grenze: ein
      * Restore aus einem Backup, das vor dieser Version entstand, faellt noch in die alte Falle.
      */
+    @Category(Kerntest::class)
     @Test
     fun `fehlender Marker setzt nicht zurueck`() {
         assertFalse(DeviceLocalFlagsGuard.shouldResetFlags(null, "google/sdk_gphone64/…"))
@@ -125,6 +128,7 @@ class DeviceLocalFlagsGuardTest {
      * Nutzereinstellungen anfassen. Alles im selben Store, was Konfiguration ist, muss unberuehrt
      * bleiben.
      */
+    @Category(Kerntest::class)
     @Test
     fun `echte Nutzereinstellungen werden nicht angefasst`() {
         listOf(

@@ -9,6 +9,7 @@ import androidx.test.filters.LargeTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Test
+import org.junit.experimental.categories.Category
 import org.junit.runner.RunWith
 
 /**
@@ -44,6 +45,7 @@ class ColdStartSmokeTest {
      * Hilt-Graph oder `CFAlarmApplication.initializeApp()` kaputt — dann startet die App auf
      * keinem Geraet.
      */
+    @Category(Kerntest::class)
     @Test
     fun applicationKommtHoch() {
         val app = ApplicationProvider.getApplicationContext<Application>()
@@ -61,6 +63,7 @@ class ColdStartSmokeTest {
      * setzt Compose auf und laesst alle `init{}`-Bloecke laufen — inklusive der StateFlow-Collects,
      * die den Absturz vom 05.08.2026 ausgeloest haben.
      */
+    @Category(Kerntest::class)
     @Test
     fun mainActivityErreichtResumedOhneAbsturz() {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->

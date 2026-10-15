@@ -1,5 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.backup
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.Kerntest
 import com.github.f1rlefanz.cf_alarmfortimeoffice.freietage.FreieTageStore
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -7,6 +8,7 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.experimental.categories.Category
 
 /**
  * Tests fuer [ConfigBackupFilter] - der sicherheitskritische Teil des Export/Import-Features.
@@ -19,6 +21,7 @@ class ConfigBackupFilterTest {
      * wuerde sie den Wecker auf dem neuen Geraet stumm schalten - und niemand kommt darauf, die
      * Ursache in einer Importdatei zu suchen.
      */
+    @Category(Kerntest::class)
     @Test
     fun `Master-Pause wird nie exportiert`() {
         assertFalse(ConfigBackupFilter.isExportable("master_pause_enabled"))
@@ -165,6 +168,7 @@ class ConfigBackupFilterTest {
      * Nutzer weitergibt. Die Kalender-IDs einer Kollegin zeigen ausserdem auf Kalender, die es auf
      * diesem Geraet nicht gibt.
      */
+    @Category(Kerntest::class)
     @Test
     fun `Anmeldung, Tokens und Kalenderauswahl werden nie exportiert`() {
         listOf(

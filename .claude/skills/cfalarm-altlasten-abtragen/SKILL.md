@@ -50,6 +50,13 @@ ohne Grund.
 - **Die Weckerkette schneidest du nicht nebenbei.** `alarm/`, `service/`, Dimmer-Planung,
   `AlarmReceiver`, `BootReceiver`: nur mit Charakterisierungstest und Gerätenachweis
   (Direct Boot, Emulator). Ein stummer Wecker ist teurer als jede Altlast.
+- **Kerntests fasst du nicht an.** Die Tests mit `@Category(Kerntest::class)` (Liste:
+  `tools/kerntests/kerntests.txt`, Auswahl 15.10.2026) schützen Verhalten, dessen Bruch Daten oder
+  den Wecker kostet: nicht löschen, nicht zusammenlegen, nicht umbenennen, Erwartungswerte nicht
+  anpassen. Auch wenn zwei davon nach Überschneidung aussehen — sie decken meist Gate und Backstop,
+  also zwei Codepfade. `tools/kerntests/pruefe_kerntests.py` (CI und Schleuse) meldet einen
+  verschwundenen, umbenannten oder per `@Ignore` abgeschalteten Kerntest; geht eine Änderung des
+  Verhaltens bewusst, wird der Test mit Grund geändert und die Liste im selben Commit nachgeführt.
 - **Nichts wird schöner gemacht, wenn es nicht beauftragt ist.** Umbenennen, umstrukturieren,
   „effizienter machen" ist eine Änderung mit eigenem Risiko, kein Aufräumen.
 - **Ein Formatfehler, den das Werkzeug toleriert, bleibt ein Formatfehler.** `app/lint.xml` war

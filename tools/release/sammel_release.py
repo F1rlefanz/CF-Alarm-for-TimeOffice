@@ -65,6 +65,11 @@ IRRELEVANTE_PFADE = (
     "CHANGELOG.md",
     "CLAUDE.md",
     "README.md",
+    # Testquellen landen nicht in der APK. Seit 15.10.2026: das Markieren der Kerntests war ein
+    # reiner Test-Commit und haette sonst jeden Dependabot-Sammel-Release angehalten. Ein Commit,
+    # der daneben auch `app/src/main` anfasst, blockiert weiterhin (`any` in beruehrt_die_app).
+    "app/src/test/",
+    "app/src/androidTest/",
 )
 
 MONATE = {

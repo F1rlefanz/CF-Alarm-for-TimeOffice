@@ -1,6 +1,7 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.auth
 
 import androidx.datastore.core.CorruptionException
+import com.github.f1rlefanz.cf_alarmfortimeoffice.Kerntest
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.security.EncryptedPreferencesSerializer
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.security.TinkEncryptionException
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.security.TinkEncryptionHelper
@@ -15,6 +16,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
 import java.io.ByteArrayOutputStream
+import org.junit.experimental.categories.Category
 import org.mockito.kotlin.any
 import org.mockito.kotlin.anyOrNull
 import org.mockito.kotlin.mock
@@ -33,6 +35,7 @@ import org.mockito.kotlin.whenever
  */
 class EncryptedPreferencesSerializerTest {
 
+    @Category(Kerntest::class)
     @Test
     fun `readFrom uebersetzt einen Tink-Fehler in eine CorruptionException`() = runTest {
         val helper = mock<TinkEncryptionHelper>()
@@ -72,6 +75,7 @@ class EncryptedPreferencesSerializerTest {
      * den gueltigen Ist-Zustand und schreibt ihn beim naechsten Write ueber den noch INTAKTEN
      * Ciphertext - der Token ist dann weg, obwohl er nie unlesbar war.
      */
+    @Category(Kerntest::class)
     @Test
     fun `readFrom degradiert einen unerwarteten Lesefehler nicht still auf leere Preferences`() = runTest {
         val helper = mock<TinkEncryptionHelper>()
@@ -113,6 +117,7 @@ class EncryptedPreferencesSerializerTest {
     /**
      * Die Kehrseite desselben Notausgangs: echte Daten werden NIEMALS unverschluesselt geschrieben.
      */
+    @Category(Kerntest::class)
     @Test
     fun `writeTo schreibt echte Daten niemals unverschluesselt`() = runTest {
         val helper = mock<TinkEncryptionHelper>()

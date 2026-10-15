@@ -74,7 +74,8 @@ ein Mensch eine Version baute.
 Der Ablauf, in dieser Reihenfolge: **prüfen → Rauchtest → bumpen und pushen → ausliefern.**
 
 **Zwei Fragen, in dieser Reihenfolge.** Erst: *ändert der Commit überhaupt die App?* Wer nur an
-`.github/`, `tools/`, `docs/`, `.claude/` oder einer `*.md` arbeitet, liefert eine bit-gleiche APK
+`.github/`, `tools/`, `docs/`, `.claude/`, den Testquellen (`app/src/test/`, `app/src/androidTest/`,
+seit 15.10.2026) oder einer `*.md` arbeitet, liefert eine bit-gleiche APK
 aus — eine Aktualisierung, hinter der für den Tester nichts steht. Solche Commits zählen nicht.
 `gradle/libs.versions.toml`, `gradle.properties` und `settings.gradle.kts` zählen dagegen **sehr
 wohl**: sie sehen nach Bauwerk aus, bestimmen aber, was in der APK landet — dort arbeitet

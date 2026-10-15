@@ -1,5 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.usecase
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.Kerntest
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FakeFeedNeueinlesenStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FakeKalenderVorausschauPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FakeSyncHorizonStore
@@ -29,6 +30,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.experimental.categories.Category
 import org.mockito.kotlin.any
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.whenever
@@ -170,6 +172,7 @@ class TagFreigabeSyncGateTest {
 
     // --- Der reine Helfer ---
 
+    @Category(Kerntest::class)
     @Test
     fun `istTagFreigegeben ankert an der Weckzeit und faellt fail-safe auf NICHT freigegeben`() {
         val wecker = AlarmInfo(
@@ -259,6 +262,7 @@ class TagFreigabeSyncGateTest {
         assertEquals(0, notifier.geloeschtGemeldet)
     }
 
+    @Category(Kerntest::class)
     @Test
     fun `Ein NICHT freigegebener Tag bekommt seinen Wecker wie immer`() = runTest {
         val protokoll = mutableListOf<String>()
@@ -297,6 +301,7 @@ class TagFreigabeSyncGateTest {
         )
     }
 
+    @Category(Kerntest::class)
     @Test
     fun `scheduleSystemAlarm stellt einen MANUELLEN Wecker am freigegebenen Tag trotzdem`() = runTest {
         // Der Nutzer hat frei - und will fuer diesen Tag einen eigenen Wecker stellen (Zahnarzt,

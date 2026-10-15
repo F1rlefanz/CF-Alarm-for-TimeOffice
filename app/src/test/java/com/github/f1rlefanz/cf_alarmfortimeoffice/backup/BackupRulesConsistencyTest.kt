@@ -1,9 +1,11 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.backup
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.Kerntest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
+import org.junit.experimental.categories.Category
 import org.w3c.dom.Element
 import org.w3c.dom.Node
 import java.io.File
@@ -79,6 +81,7 @@ class BackupRulesConsistencyTest {
         )
     }
 
+    @Category(Kerntest::class)
     @Test
     fun `sensible und geraetegebundene Pfade sind in jedem Block ausgeschlossen`() {
         forEachBlock { label, rules ->
@@ -126,6 +129,7 @@ class BackupRulesConsistencyTest {
         }
     }
 
+    @Category(Kerntest::class)
     @Test
     fun `die vom Nutzer konfigurierten DataStore-Dateien werden gesichert`() {
         forEachBlock { label, rules ->

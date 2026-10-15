@@ -1,8 +1,10 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.receiver
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.Kerntest
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
+import org.junit.experimental.categories.Category
 
 /**
  * Ein App-Update VOR der ersten Entsperrung darf den CE-Speicher nicht anfassen.
@@ -23,6 +25,7 @@ class BootReceiverUpdateVorEntsperrungTest {
         File("app/src/main/java/com/github/f1rlefanz/cf_alarmfortimeoffice/alarm/receiver/BootReceiver.kt")
     ).first { it.exists() }.readText()
 
+    @Category(Kerntest::class)
     @Test
     fun `im Update-Zweig steht die Entsperrungs-Pruefung VOR der vollen Recovery`() {
         val zweig = quelle.indexOf("ACTION_MY_PACKAGE_REPLACED ->")

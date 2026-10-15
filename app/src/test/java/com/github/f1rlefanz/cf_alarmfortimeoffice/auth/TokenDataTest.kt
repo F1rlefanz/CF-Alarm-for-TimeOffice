@@ -1,5 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.auth
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.Kerntest
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.data.TokenData
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.data.TokenProvider
 import org.junit.Assert.assertEquals
@@ -7,6 +8,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.experimental.categories.Category
 
 /**
  * Sichert [TokenData]s reine Logik ab: Ablauf-/Puffer-Mathematik, Refresh-Faehigkeit und vor
@@ -158,6 +160,7 @@ class TokenDataTest {
         assertFalse(rotated.validateRotation("irgendeine-fremde-id"))
     }
 
+    @Category(Kerntest::class)
     @Test
     fun `legitime gleichzeitige Rotation sieht NICHT wie ein Replay aus - Regressionstest fuer Bug 1`() {
         // Szenario: Zwei Aufrufer (z.B. AlarmMaintenanceService und
@@ -217,6 +220,7 @@ class TokenDataTest {
         assertTrue(rotated.isLegitimateSuccessorOf(original))
     }
 
+    @Category(Kerntest::class)
     @Test
     fun `frische Neu-Autorisierung ist KEIN Kettenbruch - Regressionstest`() {
         // REALER BEFUND (Pruefrunde 14.08.2026, Dimension "Auth / Token-Rotation"):

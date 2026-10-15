@@ -1,5 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.usecase
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.Kerntest
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FakeFeedNeueinlesenStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FakeKalenderVorausschauPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FakeSyncHorizonStore
@@ -34,6 +35,7 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.experimental.categories.Category
 import org.mockito.kotlin.any
 import org.mockito.kotlin.argumentCaptor
 import org.mockito.kotlin.atLeastOnce
@@ -270,6 +272,7 @@ class AlarmUseCaseDeltaSyncTest {
         verify(manager, never()).setAlarmFromShiftMatch(any(), any(), any())
     }
 
+    @Category(Kerntest::class)
     @Test
     fun `neues Event - bestehender Alarm bleibt erhalten und neuer wird erstellt`() = runTest {
         val evB = futureEvent("evB", "F", 1)
@@ -289,6 +292,7 @@ class AlarmUseCaseDeltaSyncTest {
         verify(manager, atLeastOnce()).setAlarmFromShiftMatch(any(), any(), any())
     }
 
+    @Category(Kerntest::class)
     @Test
     fun `entferntes Event - dessen Alarm wird geloescht, anderes bleibt`() = runTest {
         val evA = futureEvent("evA", "F", 1)
@@ -367,6 +371,7 @@ class AlarmUseCaseDeltaSyncTest {
         assertTrue("Regulaere Schicht darf nicht als still markiert werden", created!!.isSilent == false)
     }
 
+    @Category(Kerntest::class)
     @Test
     fun `ShiftDefinition-Feld aendert sich ohne Event-Aenderung - Update wird trotzdem persistiert`() = runTest {
         // Regression fuer die urspruengliche "unchanged"-Bedingung in syncAlarms(), die nur
@@ -694,6 +699,7 @@ class AlarmUseCaseDeltaSyncTest {
      * Szenario: Urlaubswoche. Im Kalender stehen Termine, aber keiner trifft ein Schichtmuster;
      * der Nutzer hat sich fuer Mittwoch 06:00 einen Wecker fuer einen Arzttermin gestellt.
      */
+    @Category(Kerntest::class)
     @Test
     fun `manueller Alarm bleibt erhalten wenn keine Schicht passt`() = runTest {
         val manual = existingAlarm(id = 77, eventId = "")
@@ -732,6 +738,7 @@ class AlarmUseCaseDeltaSyncTest {
     }
 
     /** Dasselbe fuer den zweiten Abkuerzungs-Zweig: Kalender liefert gar keine Events. */
+    @Category(Kerntest::class)
     @Test
     fun `manueller Alarm bleibt erhalten wenn der Kalender keine Events liefert`() = runTest {
         val manual = existingAlarm(id = 77, eventId = "")
@@ -790,6 +797,7 @@ class AlarmUseCaseDeltaSyncTest {
      * und als "Schicht entfernt" gemeldet. Er muss bleiben - unberuehrt, ungemeldet. Ein Wecker
      * INNERHALB des Fensters ohne Termin ist dagegen weiter eine echte Streichung.
      */
+    @Category(Kerntest::class)
     @Test
     fun `verkleinerte Vorausschau - Wecker hinter dem Abruf-Horizont bleiben und werden nicht gemeldet`() = runTest {
         val evA = futureEvent("evA", "F", 1)

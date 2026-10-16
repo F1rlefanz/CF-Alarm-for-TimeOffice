@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndScheduleUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.waehlbareSchichtNamen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IShiftUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
@@ -71,9 +72,9 @@ class DndViewModel @Inject constructor(
      * sofort sichtbar werden. */
     val shiftNames: StateFlow<List<String>> =
         shiftUseCase.shiftConfig
-            // #142: ein Krankmeldungs-Typ hat keine Dienstzeit - als Regelmuster/Ausnahme
-            // waehlbar, wuerde er nie greifen.
-            .map { config -> config.definitions.filterNot { it.isSickDay }.map { it.name } }
+            // #142/#171: ein Krankmeldungs-, Ignorieren- oder ausgeschalteter Typ hat keine
+            // Dienstzeit - als Ausnahme waehlbar, wuerde er nie greifen.
+            .map { config -> config.definitions.waehlbareSchichtNamen() }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     fun setFollowDimmerEnabled(enabled: Boolean) = viewModelScope.launch {

@@ -41,7 +41,10 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.LetzterSchichtStand
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpan
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftInfo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.NaechsterWeckerKarte
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.istIgnorierterTermin
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.istKrankmeldung
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.waehlbareSchichttypen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.text.kurzesDatum
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.rememberNaechsterWecker
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.schichtTerminText
@@ -131,6 +134,18 @@ internal fun noShiftReason(
     recognizedShiftCount == 0 -> NoShiftReason.NO_PATTERN_MATCH
     else -> NoShiftReason.ONLY_PAST_SHIFTS
 }
+
+/**
+ * PURE, TESTBAR: die Titel-Kostprobe der Karte "Keine Schicht erkannt" - hoechstens drei
+ * verschiedene Titel aus dem Kalender. Ohne Krankmeldungen (#142) und ohne Codes eines
+ * Ignorieren-Typs (#171): "(im Kalender steht: K)" legte nahe, "K" als Schicht-Muster
+ * einzutragen, und das brachte die Wecker an Krank- bzw. ignorierten Tagen zurueck.
+ */
+internal fun kostprobeTitel(titel: List<String>, definitions: List<ShiftDefinition>): List<String> =
+    titel
+        .filterNot { definitions.istKrankmeldung(it) || definitions.istIgnorierterTermin(it) }
+        .distinct()
+        .take(3)
 
 /**
  * Der Zusatz fuer die Master-Pause. Bewusst kurz und ohne den Weg zurueck: den nennt die
@@ -632,13 +647,10 @@ private fun NaechsteSchichtKarte(
                                 errorMessage = ladeFehler,
                                 // Nur eine kleine Kostprobe: die Karte soll erklaeren, nicht den
                                 // Kalender abbilden (dafuer gibt es "Antippen fuer Details").
-                                // #142: ohne Krankmeldungen - "(im Kalender steht: K)" legte
-                                // nahe, "K" als Schicht-Muster einzutragen.
-                                sampleEventTitles = calendarState.events
-                                    .map { it.title }
-                                    .filterNot { shiftConfig?.definitions.orEmpty().istKrankmeldung(it) }
-                                    .distinct()
-                                    .take(3),
+                                sampleEventTitles = kostprobeTitel(
+                                    titel = calendarState.events.map { it.title },
+                                    definitions = shiftConfig?.definitions.orEmpty()
+                                ),
                                 autoAlarmEnabled = shiftConfig?.autoAlarmEnabled != false,
                                 masterPausePaused = masterPausePaused,
                                 vorausschauTage = calendarState.vorausschauTage
@@ -690,9 +702,10 @@ fun HomeTabContent(
             errorMessage = calendarState.error ?: shiftState.error,
             eventCount = calendarState.events.size,
             shiftConfigLoaded = shiftState.currentShiftConfig != null,
-            // #142: ein Krankmeldungs-Typ ist kein Schichttyp, fuer den ein Wecker entsteht.
+            // #142/#171: ein Krankmeldungs- oder Ignorieren-Typ ist kein Schichttyp, fuer den ein
+            // Wecker entsteht.
             enabledShiftTypeCount = shiftState.currentShiftConfig?.definitions
-                ?.count { it.isEnabled && !it.isSickDay } ?: 0,
+                ?.waehlbareSchichttypen()?.size ?: 0,
             recognizedShiftCount = shiftState.recognizedShifts.size,
             krankTerminCount = calendarState.events.count { event ->
                 shiftState.currentShiftConfig?.definitions.orEmpty().istKrankmeldung(event.title)

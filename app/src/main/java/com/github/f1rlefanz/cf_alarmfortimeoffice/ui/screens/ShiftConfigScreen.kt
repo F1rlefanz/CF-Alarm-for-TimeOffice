@@ -1,19 +1,28 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -31,10 +40,12 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -45,12 +56,22 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftKategorie
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftCodeSuggester
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.AufklappHinweis
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.ShiftDefinitionTexte
@@ -59,8 +80,12 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.hilfe.HilfeKnopf
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.hilfe.HilfeThema
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.SchichtFolgen
+import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.SchichttypBlock
+import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.SchichttypTexte
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.ShiftViewModel
-import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.alsText
+import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.kurzform
+import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.listenCode
+import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.schichttypBloecke
 
 /**
  * Die Beispiele, die [SHIFT_RECOGNITION_HINT] nennt - bewusst als Listen und nicht als Prosa im
@@ -93,12 +118,12 @@ internal val SHIFT_RECOGNITION_HINT_KURZ: String =
 
 /** Die Beispiele und der Stationshinweis - aufklappbar, siehe [SHIFT_RECOGNITION_HINT_KURZ]. */
 internal val SHIFT_RECOGNITION_HINT_DETAIL: String =
-    "Welche Muster eine Schicht hat, " +
-        "steht in ihrer Karte in der Liste darunter – die Vorgaben enthalten kurze Codes (" +
+    "Welche Muster ein Typ hat, siehst du, wenn du ihn in der Liste darunter antippst – die Zeile " +
+        "selbst zeigt nur das erste als Code. Die Vorgaben enthalten kurze Codes (" +
         SHIFT_HINT_SHORT_CODE_EXAMPLES.joinToString(", ") +
         ") und ausgeschriebene Bezeichnungen (" +
         SHIFT_HINT_GENERIC_EXAMPLES.joinToString(", ") +
-        "). Nutzt dein Dienstplan andere Kürzel, trage sie dort ein; Kürzel aus deinem Kalender, " +
+        "). Nutzt dein Dienstplan andere Kürzel, trage sie im Typ ein; Kürzel aus deinem Kalender, " +
         "die noch keiner Schicht gehören, schlägt die App dir zum Zuordnen vor. Ohne " +
         "passendes Muster und ohne passenden Namen wird keine Schicht erkannt und es klingelt " +
         "kein Wecker."
@@ -273,74 +298,62 @@ fun ShiftConfigScreen(
                 Spacer(modifier = Modifier.height(SpacingConstants.SPACING_MEDIUM))
             }
 
-            if (shiftState.currentShiftConfig?.definitions?.isEmpty() == true) {
-                // Ohne Liste gibt es nichts, was der Hinweis verdraengen koennte - und wer hier
-                // steht, braucht ihn am dringendsten.
-                SchichterkennungsHinweis()
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surface
-                    ),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-                ) {
-                    Column(
-                        modifier = Modifier.padding(SpacingConstants.PADDING_CARD),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Icon(
-                            Icons.Default.Info,
-                            // dekorativ: "Keine Schichttypen definiert" darunter sagt es bereits
-                            contentDescription = null,
-                            modifier = Modifier.size(SpacingConstants.ICON_SIZE_XXL),
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                        Spacer(modifier = Modifier.height(SpacingConstants.SPACING_SMALL))
-                        Text(
-                            "Keine Schichttypen definiert",
-                            style = MaterialTheme.typography.bodyLarge
-                        )
-                        Text(
-                            "Füge Schichttypen hinzu, um die automatische Erkennung zu aktivieren",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+            // GRUPPIERT WIRD NUR HIER, IN DER ANZEIGE (SPEC 3.1). `definitionen` bleibt, wie gespeichert:
+            // die Reihenfolge entscheidet die Erkennung (erster Treffer gewinnt), und Bearbeiten und
+            // Loeschen unten arbeiten auf genau dieser Liste. Eine NICHT lesbare Konfiguration (null)
+            // bekommt keine Gruppen - sieben "Noch kein Typ"-Zeilen waeren dort eine Aussage ueber
+            // Daten, die gar nicht gelesen werden konnten (die Karte oben sagt es richtig).
+            val definitionen = shiftState.currentShiftConfig?.definitions
+            val bloecke = remember(definitionen) {
+                definitionen?.let { schichttypBloecke(it) }.orEmpty()
+            }
+            LazyColumn(
+                // weight(1f) ist Pflicht, sonst schiebt die Liste den Reset-Knopf aus dem
+                // Bildschirm (ui-texte-und-layout.md).
+                modifier = Modifier.weight(1f),
+                // Fussabstand: ohne ihn schneidet die Liste Rand und Schatten der letzten Karte an.
+                contentPadding = PaddingValues(bottom = SpacingConstants.SPACING_SMALL),
+                verticalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_MEDIUM)
+            ) {
+                // Kuerzel-Vorschlaege aus dem ECHTEN Kalender - steht bewusst GANZ OBEN, denn
+                // wer diesen Screen oeffnet, sucht meist genau das: warum eine Schicht nicht
+                // erkannt wird.
+                if (!shiftState.codeSuggestions.isEmpty) {
+                    item(key = "code-suggestions") {
+                        CodeSuggestionCard(
+                            result = shiftState.codeSuggestions,
+                            onCodeClick = { assigningCode = it }
                         )
                     }
                 }
-            } else {
-                LazyColumn(
-                    // weight(1f) ist Pflicht, sonst schiebt die Liste den Reset-Knopf aus dem
-                    // Bildschirm (ui-texte-und-layout.md).
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_SMALL)
-                ) {
-                    // Kuerzel-Vorschlaege aus dem ECHTEN Kalender - steht bewusst GANZ OBEN, denn
-                    // wer diesen Screen oeffnet, sucht meist genau das: warum eine Schicht nicht
-                    // erkannt wird.
-                    if (!shiftState.codeSuggestions.isEmpty) {
-                        item(key = "code-suggestions") {
-                            CodeSuggestionCard(
-                                result = shiftState.codeSuggestions,
-                                onCodeClick = { assigningCode = it }
-                            )
+
+                // Warum IN der Liste: siehe SchichterkennungsHinweis. Ohne Liste gibt es nichts,
+                // was er verdraengen koennte - und wer hier steht, braucht ihn am dringendsten.
+                item(key = "erkennungs-hinweis") {
+                    SchichterkennungsHinweis()
+                }
+
+                if (definitionen?.isEmpty() == true) {
+                    item(key = "keine-typen") { KeineSchichttypenKarte() }
+                }
+
+                items(
+                    bloecke,
+                    key = { block ->
+                        when (block) {
+                            is SchichttypBlock.Gruppe -> "gruppe-${block.kategorie.schluessel}"
+                            SchichttypBlock.FesteZeile -> "feste-zeile"
                         }
                     }
-
-                    // Warum IN der Liste: siehe SchichterkennungsHinweis.
-                    item(key = "erkennungs-hinweis") {
-                        SchichterkennungsHinweis()
-                    }
-
-                    items(
-                        shiftState.currentShiftConfig?.definitions ?: emptyList(),
-                        key = { it.id }
-                    ) { definition ->
-                        ShiftDefinitionCard(
-                            definition = definition,
-                            folgen = schichtFolgen[definition.id],
-                            onEdit = { editingDefinition = definition },
-                            onDelete = { pendingDelete = definition }
+                ) { block ->
+                    when (block) {
+                        is SchichttypBlock.Gruppe -> SchichttypGruppeKarte(
+                            gruppe = block,
+                            folgen = schichtFolgen,
+                            onEdit = { editingDefinition = it },
+                            onDelete = { pendingDelete = it }
                         )
+                        SchichttypBlock.FesteZeile -> FesteZeileKarte()
                     }
                 }
             }
@@ -647,128 +660,395 @@ private fun CodeSuggestionCard(
     }
 }
 
+
+/** Die Karte fuer eine Konfiguration ohne einen einzigen Typ (nicht: nicht lesbar). */
 @Composable
-private fun ShiftDefinitionCard(
-    definition: ShiftDefinition,
-    /**
-     * Was die Schicht ausserhalb des Weckers ausloest; `null` = (noch) nicht gelesen oder
-     * Schicht deaktiviert. BEWUSST ohne Default (Skill cfalarm-ui-und-navigation: Anzeigepfad).
-     */
-    folgen: SchichtFolgen?,
-    onEdit: () -> Unit,
-    onDelete: () -> Unit
-) {
+private fun KeineSchichttypenKarte() {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        onClick = onEdit
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(SpacingConstants.PADDING_CARD),
-            horizontalArrangement = Arrangement.SpaceBetween,
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Icon(
+                Icons.Default.Info,
+                // dekorativ: "Keine Schichttypen definiert" darunter sagt es bereits
+                contentDescription = null,
+                modifier = Modifier.size(SpacingConstants.ICON_SIZE_XXL),
+                tint = MaterialTheme.colorScheme.primary
+            )
+            Spacer(modifier = Modifier.height(SpacingConstants.SPACING_SMALL))
+            Text(
+                "Keine Schichttypen definiert",
+                style = MaterialTheme.typography.bodyLarge
+            )
+            Text(
+                "Füge Schichttypen hinzu, um die automatische Erkennung zu aktivieren",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+/**
+ * Eine Kategorie als Karte: Titel (mit "Sonderfall"-Marke), darunter ihre Typen in GESPEICHERTER
+ * Reihenfolge, bei keinem Typ der Hinweis "Noch kein Typ in dieser Kategorie." (Prototyp
+ * `zeigeListe`, SPEC 3.1).
+ */
+@Composable
+private fun SchichttypGruppeKarte(
+    gruppe: SchichttypBlock.Gruppe,
+    /**
+     * Was ein Typ ausserhalb des Weckers ausloest, nach `definition.id`; fehlt ein Eintrag, ist es
+     * (noch) nicht gelesen. BEWUSST ohne Default (Skill cfalarm-ui-und-navigation: Anzeigepfad).
+     */
+    folgen: Map<String, SchichtFolgen>,
+    onEdit: (ShiftDefinition) -> Unit,
+    onDelete: (ShiftDefinition) -> Unit
+) {
+    ListenKarte {
+        GruppenKopf(titel = gruppe.titel, sonderfall = gruppe.sonderfall)
+        gruppe.typen.forEach { definition ->
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            SchichttypZeile(
+                definition = definition,
+                folgen = folgen[definition.id],
+                onEdit = { onEdit(definition) },
+                onDelete = { onDelete(definition) }
+            )
+        }
+        if (gruppe.leer) {
+            Text(
+                SchichttypTexte.LEERE_GRUPPE,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(
+                    start = ZEILE_RAND,
+                    end = ZEILE_RAND,
+                    bottom = SpacingConstants.SPACING_MEDIUM
+                )
+            )
+        }
+    }
+}
+
+/**
+ * "Ohne Kalendereintrag" (E5): eine feste Zeile fuer Tage, an denen im Kalender gar nichts steht.
+ * Weder antippbar noch loeschbar - die Wahl "Wie <Typ>" ist ein eigenes Paket, bis dahin verspricht
+ * die Zeile nichts, was es nicht gibt (Skill cfalarm-ui-und-navigation).
+ */
+@Composable
+private fun FesteZeileKarte() {
+    ListenKarte {
+        GruppenKopf(titel = SchichttypBlock.FesteZeile.titel, sonderfall = false)
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = ZEILE_MINDESTHOEHE)
+                .padding(horizontal = ZEILE_RAND, vertical = SpacingConstants.SPACING_MEDIUM),
+            horizontalArrangement = Arrangement.spacedBy(ZEILE_ABSTAND),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            CodeMarke(code = SchichttypBlock.FesteZeile.code, kategorie = null)
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    definition.name,
+                    SchichttypBlock.FesteZeile.titel,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    "Muster: ${definition.keywords.joinToString(", ")}",
-                    style = MaterialTheme.typography.bodySmall
-                )
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    // EINE ANGEZEIGTE WECKZEIT, DIE NIE GESTELLT WIRD, IST DIE GEFAEHRLICHSTE
-                    // ANZEIGE, DIE EINE WECKER-APP HABEN KANN (ui-texte-und-layout.md).
-                    //
-                    // Und der Text sagt seit v1.29.2, was "ausgeschaltet" WIRKLICH kostet: nicht
-                    // nur den Wecker, sondern die ganze Erkennung - damit auch die Schichtspanne,
-                    // aus der Dimmer und DND ihre Fenster ziehen. Am 19.08.2026 ist genau diese
-                    // Verwechslung passiert: eine Rufbereitschaft wurde ausgeschaltet angelegt,
-                    // damit sie nicht klingelt, und sollte trotzdem DND steuern - was sie so nie
-                    // konnte. Der Schalter dafuer heisst "Stille Schicht".
-                    //
-                    // weight(1f, fill = false): der lange Ausgeschaltet-Text bricht um und meldet
-                    // dann die VOLLE Restbreite - ungewichtet bekaemen die Marker-Icons dahinter
-                    // 0 dp und verschwaenden genau an der deaktivierten Schicht (Runde 4 zu #140).
-                    // Gewichtet misst Row die Icons zuerst, der Text nimmt nur den Rest.
-                    //
-                    // #142: eine Krankmeldung hat keine Weckzeit - ihre Zeile sagt, was sie
-                    // stattdessen tut. Das Symbol ist dekorativ, der Text daneben sagt es.
-                    if (definition.isSickDay) {
-                        Icon(
-                            Icons.Default.Sick,
-                            contentDescription = null,
-                            modifier = Modifier.size(SpacingConstants.ICON_SIZE_SMALL),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(modifier = Modifier.width(SpacingConstants.SPACING_SMALL))
-                    }
-                    Text(
-                        modifier = Modifier.weight(1f, fill = false),
-                        text =
-                        if (definition.isSickDay) {
-                            if (definition.isEnabled) {
-                                ShiftDefinitionTexte.KRANKMELDUNG_STATUS
-                            } else {
-                                ShiftDefinitionTexte.KRANKMELDUNG_AUSGESCHALTET
-                            }
-                        } else if (definition.isEnabled) {
-                            "Alarm: ${definition.getAlarmTimeFormatted()}"
-                        } else {
-                            "Ausgeschaltet — wird nicht erkannt: kein Wecker, kein Dimmer- " +
-                                "und kein DND-Fenster (${definition.getAlarmTimeFormatted()})"
-                        },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = if (definition.isEnabled) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.error
-                        }
-                    )
-                    if (definition.isSilent && !definition.isSickDay) {
-                        Spacer(modifier = Modifier.width(SpacingConstants.SPACING_SMALL))
-                        Icon(
-                            Icons.Default.NotificationsOff,
-                            contentDescription = "Stille Schicht - kein Ton/Vibration/Vollbild",
-                            modifier = Modifier.size(SpacingConstants.ICON_SIZE_SMALL),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    if (definition.isOnCall && !definition.isSickDay) {
-                        Spacer(modifier = Modifier.width(SpacingConstants.SPACING_SMALL))
-                        Icon(
-                            Icons.Default.PhoneInTalk,
-                            contentDescription = "Rufbereitschaft - Kalender wird an diesen Tagen stündlich abgefragt",
-                            modifier = Modifier.size(SpacingConstants.ICON_SIZE_SMALL),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-                // Statuszeile (#70): rein lesend, nicht eigens tippbar, keine Warnfarbe - sie
-                // beschreibt die Konfiguration, sie mahnt nicht. Eine DEAKTIVIERTE Schicht zeigt
-                // keine: ihr Text darueber sagt schon "kein Dimmer- und kein DND-Fenster".
-                // #142: eine Krankmeldung ebenso wenig - sie spannt keine Schicht auf.
-                if (definition.isEnabled && !definition.isSickDay && folgen != null) {
-                    Text(
-                        folgen.alsText(),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-            
-            IconButton(onClick = onDelete) {
-                Icon(
-                    Icons.Default.Delete,
-                    contentDescription = "Löschen",
-                    tint = MaterialTheme.colorScheme.error
+                    SchichttypBlock.FesteZeile.kurzform,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
     }
 }
 
+/** Dezente Karte der Liste: `surface` mit Schatten (Skill: nie `surfaceVariant` als Flaeche). */
+@Composable
+private fun ListenKarte(inhalt: @Composable () -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(modifier = Modifier.fillMaxWidth()) { inhalt() }
+    }
+}
 
+/**
+ * Kopf einer Gruppe. FlowRow statt Row: neben einem Namen umbricht die Marke "Sonderfall" bei
+ * 320 dp und grosser Schrift unter den Titel, statt ihn zu quetschen.
+ */
+@Composable
+private fun GruppenKopf(titel: String, sonderfall: Boolean) {
+    FlowRow(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(
+                start = ZEILE_RAND,
+                end = ZEILE_RAND,
+                top = SpacingConstants.SPACING_LARGE,
+                bottom = SpacingConstants.SPACING_SMALL
+            )
+            .semantics { heading() },
+        horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_SMALL),
+        verticalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_EXTRA_SMALL),
+        itemVerticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            titel,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.ExtraBold,
+            letterSpacing = 0.5.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        if (sonderfall) {
+            // Dieselben Farben wie die Marke "Rufbereitschaft" im Prototyp (.badge = violett).
+            val farben = kategorieFarben(ShiftKategorie.RUFBEREITSCHAFT, isSystemInDarkTheme())
+            Surface(shape = RoundedCornerShape(8.dp), color = farben.flaeche) {
+                Text(
+                    SchichttypTexte.SONDERFALL,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = farben.text,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Eine Zeile eines Typs: Code, Name, Statuszeile (Weckzeit bzw. warum es keine gibt) und Kurzform.
+ * Antippen bearbeitet, das Papierkorb-Symbol loescht (mit Rueckfrage) - beides bleibt, bis die
+ * Typ-Seite des Umbaus es uebernimmt.
+ */
+@Composable
+private fun SchichttypZeile(
+    definition: ShiftDefinition,
+    folgen: SchichtFolgen?,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = ZEILE_MINDESTHOEHE)
+            .clickable(onClick = onEdit)
+            .padding(
+                start = ZEILE_RAND,
+                end = ZEILE_ENDE,
+                top = SpacingConstants.SPACING_SMALL,
+                bottom = SpacingConstants.SPACING_SMALL
+            ),
+        horizontalArrangement = Arrangement.spacedBy(ZEILE_ABSTAND),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        CodeMarke(code = definition.listenCode(), kategorie = definition.kategorie)
+        Column(modifier = Modifier.weight(1f)) {
+            // Der Papierkorb steht in der NAMENSZEILE, nicht als dritte Spalte der Zeile: dort nahm er
+            // der Status- und der Kurzform-Zeile 48 dp. Bei 320 dp blieben 146 statt der 208 dp der
+            // alten Karte, und die Abschnitte der Kurzform ("Dimmen: allgemeine Regel", geschuetzte
+            // Leerzeichen) brachen mitten im Wort (Emulator 17.10.2026, gemessen am uiautomator-Dump).
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    definition.name,
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                IconButton(
+                    onClick = onDelete,
+                    // Zurueck an den Kartenrand: die Zeile endet bei ZEILE_ENDE, der Knopf soll
+                    // wie zuvor nur 4 dp davor stehen.
+                    modifier = Modifier.offset(x = ZEILE_ENDE - SpacingConstants.SPACING_EXTRA_SMALL)
+                ) {
+                    Icon(
+                        Icons.Default.Delete,
+                        contentDescription = "Löschen",
+                        tint = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
+            StatusZeile(definition)
+            // Kurzform (SPEC 3.1): rein lesend, nicht eigens tippbar, keine Warnfarbe - sie
+            // beschreibt die Konfiguration, sie mahnt nicht (#70).
+            kurzform(definition, folgen)?.let { kurz ->
+                Text(
+                    kurz,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Die Zeile unter dem Namen, die sagt, OB und WANN der Typ weckt - oder warum nicht. Keine Zeile
+ * bei einem Typ mit `weckerAn = false` (das sagt die Kurzform: "kein Wecker") und bei einem
+ * aktiven Ignorieren-Typ ("wird übergangen").
+ */
+@Composable
+private fun StatusZeile(definition: ShiftDefinition) {
+    val ignoriert = definition.kategorie == ShiftKategorie.IGNORIEREN
+    // EINE ANGEZEIGTE WECKZEIT, DIE NIE GESTELLT WIRD, IST DIE GEFAEHRLICHSTE ANZEIGE, DIE EINE
+    // WECKER-APP HABEN KANN (ui-texte-und-layout.md). Deshalb steht "Alarm: HH:mm" nur bei einem
+    // Typ, der wirklich einen Wecker stellt: erkannt (isEnabled), nicht Krank, nicht Ignorieren
+    // und mit weckerAn (#168 - sonst luegt die Zeile neben "kein Wecker").
+    //
+    // Und der Ausgeschaltet-Text sagt seit v1.29.2, was "ausgeschaltet" WIRKLICH kostet: nicht nur
+    // den Wecker, sondern die ganze Erkennung - damit auch die Schichtspanne, aus der Dimmer und DND
+    // ihre Fenster ziehen. Der Schalter fuer "kein Wecker, Fenster trotzdem" heisst "Stille Schicht".
+    //
+    // #142: eine Krankmeldung hat keine Weckzeit - ihre Zeile sagt, was sie stattdessen tut.
+    val text: String? = when {
+        ignoriert -> if (definition.isEnabled) null else SchichttypTexte.IGNORIEREN_AUSGESCHALTET
+        definition.isSickDay ->
+            if (definition.isEnabled) {
+                ShiftDefinitionTexte.KRANKMELDUNG_STATUS
+            } else {
+                ShiftDefinitionTexte.KRANKMELDUNG_AUSGESCHALTET
+            }
+        !definition.isEnabled ->
+            "Ausgeschaltet — wird nicht erkannt: kein Wecker, kein Dimmer- " +
+                "und kein DND-Fenster (${definition.getAlarmTimeFormatted()})"
+        definition.weckerAn -> "Alarm: ${definition.getAlarmTimeFormatted()}"
+        else -> null
+    }
+    if (text == null) return
+
+    // weight(1f, fill = false): der lange Ausgeschaltet-Text bricht um und meldet dann die VOLLE
+    // Restbreite - ungewichtet bekaemen die Marker-Icons dahinter 0 dp und verschwaenden genau an
+    // der deaktivierten Schicht (Runde 4 zu #140). Gewichtet misst Row die Icons zuerst.
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        if (definition.isSickDay && !ignoriert) {
+            Icon(
+                Icons.Default.Sick,
+                contentDescription = null,
+                modifier = Modifier.size(SpacingConstants.ICON_SIZE_SMALL),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.width(SpacingConstants.SPACING_SMALL))
+        }
+        Text(
+            modifier = Modifier.weight(1f, fill = false),
+            text = text,
+            style = MaterialTheme.typography.bodySmall,
+            color = if (definition.isEnabled) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                MaterialTheme.colorScheme.error
+            }
+        )
+        if (definition.isSilent && !definition.isSickDay && !ignoriert) {
+            Spacer(modifier = Modifier.width(SpacingConstants.SPACING_SMALL))
+            Icon(
+                Icons.Default.NotificationsOff,
+                contentDescription = "Stille Schicht - kein Ton/Vibration/Vollbild",
+                modifier = Modifier.size(SpacingConstants.ICON_SIZE_SMALL),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        if (definition.isOnCall && !definition.isSickDay && !ignoriert) {
+            Spacer(modifier = Modifier.width(SpacingConstants.SPACING_SMALL))
+            Icon(
+                Icons.Default.PhoneInTalk,
+                contentDescription = "Rufbereitschaft - Kalender wird an diesen Tagen stündlich abgefragt",
+                modifier = Modifier.size(SpacingConstants.ICON_SIZE_SMALL),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+/**
+ * Die Code-Marke einer Zeile (Prototyp `.code` + `.k-<kategorie>`). [kategorie] `null` = die feste
+ * Zeile: ohne Flaeche, mit gestricheltem Rand. Hoechstens eine Zeile breit, damit ein langes erstes
+ * Muster die Zeile nicht sprengt.
+ */
+@Composable
+private fun CodeMarke(code: String, kategorie: ShiftKategorie?) {
+    val farben = kategorie?.let { kategorieFarben(it, isSystemInDarkTheme()) }
+    val rand = MaterialTheme.colorScheme.onSurfaceVariant
+    val form = RoundedCornerShape(9.dp)
+    Box(
+        modifier = Modifier
+            .widthIn(min = 44.dp, max = 96.dp)
+            .height(32.dp)
+            .clip(form)
+            .then(
+                if (farben != null) {
+                    Modifier.background(farben.flaeche)
+                } else {
+                    Modifier.drawBehind {
+                        drawRoundRect(
+                            color = rand,
+                            cornerRadius = CornerRadius(9.dp.toPx()),
+                            style = Stroke(
+                                width = 1.5.dp.toPx(),
+                                pathEffect = PathEffect.dashPathEffect(floatArrayOf(5.dp.toPx(), 3.dp.toPx()))
+                            )
+                        )
+                    }
+                }
+            )
+            .padding(horizontal = 10.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            code,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.ExtraBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            color = farben?.text ?: MaterialTheme.colorScheme.onSurface
+        )
+    }
+}
+
+/** Flaeche und Schrift der Code-Marke einer Kategorie. */
+internal data class KategorieFarben(val flaeche: Color, val text: Color)
+
+/**
+ * Hell: die Werte des Prototyps (`.k-dienst` usw.). Dunkel: dieselbe Farbfamilie, Flaeche abgedunkelt
+ * und die helle Flaeche des Prototyps als Schrift. Jedes Paar erreicht mindestens 4,5:1 - das haelt
+ * `ShiftConfigScreenTextTest` fest. Ohne `else`: eine achte Kategorie braucht bewusst eine Farbe.
+ *
+ * Bewusst HIER und nicht in `ui/theme/Color.kt`: ein einziger Verwender. Zieht eine zweite Stelle
+ * (Typ-Seite, Einordnen-Dialog) die Farben mit, gehoeren sie ins Theme.
+ */
+internal fun kategorieFarben(kategorie: ShiftKategorie, dunkel: Boolean): KategorieFarben = when (kategorie) {
+    ShiftKategorie.DIENST ->
+        if (dunkel) KategorieFarben(Color(0xFF5A1A29), Color(0xFFFBE1E4)) else KategorieFarben(Color(0xFFFBE1E4), Color(0xFF8E0F30))
+    ShiftKategorie.RUFBEREITSCHAFT ->
+        if (dunkel) KategorieFarben(Color(0xFF3F2A52), Color(0xFFEEE4F3)) else KategorieFarben(Color(0xFFEEE4F3), Color(0xFF4E2A6B))
+    ShiftKategorie.FREI ->
+        if (dunkel) KategorieFarben(Color(0xFF1F4A25), Color(0xFFE3F1E4)) else KategorieFarben(Color(0xFFE3F1E4), Color(0xFF1B5E20))
+    ShiftKategorie.URLAUB ->
+        if (dunkel) KategorieFarben(Color(0xFF15443F), Color(0xFFDDF0EE)) else KategorieFarben(Color(0xFFDDF0EE), Color(0xFF0F4F4A))
+    ShiftKategorie.FORTBILDUNG ->
+        if (dunkel) KategorieFarben(Color(0xFF243D5A), Color(0xFFE2EAF2)) else KategorieFarben(Color(0xFFE2EAF2), Color(0xFF24476B))
+    ShiftKategorie.KRANK ->
+        if (dunkel) KategorieFarben(Color(0xFF5A3A0C), Color(0xFFFBEBD3)) else KategorieFarben(Color(0xFFFBEBD3), Color(0xFF6E4100))
+    ShiftKategorie.IGNORIEREN ->
+        if (dunkel) KategorieFarben(Color(0xFF3E3B38), Color(0xFFEDEAE7)) else KategorieFarben(Color(0xFFEDEAE7), Color(0xFF5E5955))
+}
+
+/** Zeilenmasse der Liste (Prototyp `.row`: 60 px hoch, 18 px Rand, 14 px Abstand). */
+private val ZEILE_MINDESTHOEHE = 60.dp
+private val ZEILE_RAND = 18.dp
+private val ZEILE_ABSTAND = 14.dp
+private val ZEILE_ENDE = 12.dp

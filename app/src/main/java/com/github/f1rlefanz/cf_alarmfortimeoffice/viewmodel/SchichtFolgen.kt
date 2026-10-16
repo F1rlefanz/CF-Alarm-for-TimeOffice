@@ -7,6 +7,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueSchedule
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.HueRuleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.passtAufSchicht
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftKategorie
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.HellAb
 
 /**
@@ -206,12 +207,49 @@ private fun dndStatus(
  * laenger als eine Kartenzeile bei 320 dp, und ein durchgehend geschuetzter Abschnitt wuerde
  * dann mitten im Wort umbrechen.
  */
-internal fun SchichtFolgen.alsText(): String =
-    listOf(
+internal fun SchichtFolgen.alsText(): String = abschnitte(mitLicht = true)
+
+/**
+ * Wie [alsText], aber ohne den Licht-Abschnitt: Hue-Regeln laufen nur zu einem ALARM
+ * (`AlarmReceiver` -> `executeRulesForAlarm`, `HueSmartScheduler` liest nur Alarme). Ein Typ mit
+ * `weckerAn = false` stellt keinen - sein Licht ist keine Aussage, die die Zeile machen darf
+ * (SPEC E8: ohne Weckzeit gibt es kein Licht).
+ */
+internal fun SchichtFolgen.alsTextOhneLicht(): String = abschnitte(mitLicht = false)
+
+private fun SchichtFolgen.abschnitte(mitLicht: Boolean): String =
+    listOfNotNull(
         teil(Texte.DIMMEN, dimmen.teile()),
-        teil(Texte.LICHT, licht.teile()),
+        if (mitLicht) teil(Texte.LICHT, licht.teile()) else null,
         teil(Texte.DND, dnd.teile())
     ).joinToString(Texte.TRENNER)
+
+/**
+ * Die Kurzform einer Zeile der Schichttypen-Liste (Umbau Etappe 1, SPEC 3.1) - `null`, wenn die
+ * Zeile keine hat und ihre Statuszeile darueber schon alles sagt.
+ *
+ * In Etappe 1 ist sie die heutige Statuszeile ([alsText]) plus zwei Faelle, die die Statuszeile nicht
+ * kennt: „kein Wecker“ (`weckerAn = false`, steht VOR der Statuszeile) und „wird übergangen“
+ * (Ignorieren). Dimm-Kurzformen wie „dimmt 20:00–Wecker“ kommen erst mit Etappe 3. Bei „kein Wecker“ fehlt der Licht-Abschnitt
+ * der Statuszeile ([alsTextOhneLicht]): ohne Alarm laeuft keine Hue-Regel.
+ *
+ * - **Ignorieren** zuerst: ein solcher Typ wirkt weder mit Wecker noch mit Dimmer, Licht oder DND,
+ *   auch wenn das ViewModel ihm [SchichtFolgen] liefert (er passiert dort den Filter). Ein
+ *   AUSGESCHALTETER Ignorieren-Typ uebergeht nichts - dann gibt es keine Kurzform.
+ * - **Ausgeschaltet und Krank** haben keine: ihre Statuszeile sagt, was sie tun bzw. nicht tun.
+ * - **`folgen == null`** heisst „noch nicht gelesen“ und bleibt `null` - eine Zeile „Dimmen: keine“
+ *   waere eine erfundene Aussage.
+ */
+internal fun kurzform(definition: ShiftDefinition, folgen: SchichtFolgen?): String? {
+    if (definition.kategorie == ShiftKategorie.IGNORIEREN) {
+        return if (definition.isEnabled) schuetze(SchichttypTexte.WIRD_UEBERGANGEN) else null
+    }
+    if (!definition.isEnabled || definition.kategorie == ShiftKategorie.KRANK) return null
+    if (definition.weckerAn) return folgen?.alsText()
+    // Geschuetzt wie die Abschnitte der Statuszeile: umbrochen wird nur HINTER dem Trenner.
+    val keinWecker = schuetze(SchichttypTexte.KEIN_WECKER)
+    return if (folgen == null) keinWecker else keinWecker + Texte.TRENNER + folgen.alsTextOhneLicht()
+}
 
 /**
  * Ein Abschnitt: Beschriftung + erstes Stueck geschuetzt, jedes weitere Stueck ebenfalls in sich

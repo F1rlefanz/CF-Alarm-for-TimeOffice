@@ -27,6 +27,8 @@ mechanische Arbeit.
 | Was | Wo |
 |---|---|
 | Spec, Prototyp-Code | `entwurf/umbau-schichttyp/` (öffentlich, nicht unter `docs/`, also nicht auf der Website) |
+| Pflichttexte je Bildschirm | `entwurf/umbau-schichttyp/BILDSCHIRME.md`, geprüft mit `tools/geraet/pruefe_texte.py` (Skill `cfalarm-ui-pruefen`) |
+| Laufzähler eines Pakets | Label `lauf-1` / `lauf-2` (überlebt einen Absturz des Runners) |
 | Gesamtplan | Epic-Issue „Umbau: Schichttyp als Zentrale“ mit einer Checkliste der Etappen-Issues |
 | Arbeitspakete | ein Issue je Paket, Label `umbau` + `etappe-N` |
 | Zustand eines Pakets | Labels `bereit` → `in-arbeit` → (geschlossen); `blockiert` mit Grund im Kommentar |
@@ -36,8 +38,9 @@ mechanische Arbeit.
 | Unbelegte Fehlerhypothesen | `..Projektdateien/umbau/hypothesen.md` – **nie** in ein öffentliches Issue |
 | Lehren für Skills | `entwurf/umbau-schichttyp/skill-nachtraege.md` (headless kann `.claude/**` nicht schreiben; der Eigentümer übernimmt sie interaktiv) |
 
-`tools/sitzungsstart.py` zeigt zusätzlich: aktuelle Etappe, laufendes Issue (seit wann) und das
-nächste freie Issue. So weiß jede neue Sitzung – lokal oder Cloud – sofort, wo der Umbau steht.
+`tools/sitzungsstart.py` zeigt ohne Netzzugriff einen Abschnitt „Umbau“: Pfad dieses Ablaufs,
+Vorsprung des Integrations-Branches und die letzte Zeile von `STATUS.txt` (die der Runner schreibt:
+Etappe, laufendes Paket, seit wann). Den Stand der Pakete liefert `gh issue list --label umbau`.
 
 ## 3. Etappen
 
@@ -61,6 +64,20 @@ Integrations-Branch; erst die fertige Etappe geht nach `main`.
 Die Etappen-Issues werden **erst zu Beginn der jeweiligen Etappe** in Pakete geschnitten (vom
 Betreuer, siehe unten), nicht alle vorab. Der Code sieht nach Etappe 3 anders aus als heute; vorab
 geschnittene Pakete für Etappe 6 wären dann veraltet.
+
+Das Risiko der Etappe ist **nicht** das Risiko jedes Pakets: Der Betreuer stuft jedes Paket einzeln
+ein. Schon Etappe 1 enthält Migration und Erkennung (Opus) und berührt Kerntests
+(`ShiftRecognitionEngineTest`, `AlarmReceiverSilentGateTest`, `KrankSyncTest`,
+`ShiftConfigDecodeTest`) – dort ist das Feld „bewusste Verhaltensänderung“ Pflicht.
+
+**Vor Etappe 3 und vor Etappe 9 ist der Eigentümer dran (interaktiv, etwa 15 Minuten):** Diese
+Etappen entfernen Symbole (globaler Dimm-Schalter, Regel-Editor, DND-Seite, alte Bildschirme), die
+die Skills `cfalarm-dimmer-und-dnd`, `cfalarm-hue` und `cfalarm-ui-und-navigation` nennen.
+`tools/aufraeumen/pruefe_reste.py` meldet jeden Skill-Absatz, der ein entferntes Symbol nennt, und
+die Schleuse blockiert dann den Merge. Headless kann `.claude/**` nicht schreiben. Deshalb werden
+die Skills vorher interaktiv auf den Zielzustand gebracht (oder die Absätze mit „entfernt (Umbau,
+Etappe N)“ als historisch markiert). Der Runner wartet mit `bereit` dieser Etappen, bis das Epic
+das Label `skills-bereit-N` trägt.
 
 ## 4. Aufbau eines Paket-Issues
 
@@ -107,22 +124,46 @@ Transcript ungecacht. Deshalb nur an festen Stellen.
 `tools/umbau/runner.ps1` (nur ASCII, PowerShell 5.1), gebaut nach der Vorlage `run-all.ps1` der
 Prompt-Werkstatt. Er arbeitet in einer Schleife:
 
-1. **Vorabprüfung:** `adb devices` zeigt nur `emulator-5554`. Hängt das Fairphone am Kabel, laufen
-   nur Pakete ohne Gerät (Label `ohne-geraet`), sonst wartet er.
-   Notbremse gesetzt? (Label `umbau-pause` am Epic oder Datei `..Projektdateien/umbau/STOP`) → Ende.
+0. **Beim Start:** Sperrdatei `..Projektdateien/umbau/runner.lock` (mit PID) anlegen; läuft schon
+   ein Runner, sofort beenden. Jedes Issue `in-arbeit` ohne lebenden Runner ist ein Absturzrest: es
+   wird **fortgesetzt** (sein Branch und `lauf-N` sagen, wo es steht), nicht vergessen.
+   Emulator läuft nicht → selbst starten und mit der Test-PIN entsperren.
+1. **Vorabprüfung vor jedem Lauf:** `adb devices` zeigt nur `emulator-5554`. Hängt das Fairphone am
+   Kabel, laufen nur Pakete mit Label `ohne-geraet`, sonst wartet er. Notbremse gesetzt? (Label
+   `umbau-pause` am Epic oder Datei `..Projektdateien/umbau/STOP`) → Ende.
 2. **Nächstes Paket wählen:** offenes Issue mit `umbau` + `bereit`, alle „Blockiert von“ geschlossen,
-   kleinste Nummer zuerst. Kein Paket da, aber die Etappe ist offen → Betreuer-Lauf „Etappe
-   abschließen“. Keine Etappe offen → **Ende**.
-3. **Lauf:** Label `in-arbeit` setzen, eigener Worktree, `claude -p "/goal …" --model
-   <claude-sonnet-5-5 | claude-opus-5-5 nach Risiko> --effort xhigh`. Das Ziel enthält: Issue-Text, Abnahme-Liste, Turn-Cap nach
-   Größe, „keine Rückfragen, Entscheidungen im Issue begründen“, „nach jedem grünen Schritt
-   committen und pushen“, die drei Advisor-Stellen.
+   kleinste Nummer zuerst. Kein Paket wählbar → nur dann Betreuer-Lauf „Etappe abschließen“, wenn
+   **kein** Issue der Etappe offen ist (auch kein `in-arbeit`, kein `blockiert`); sonst **Stopp mit
+   Bericht im Epic**. Keine Etappe offen → **Ende**.
+3. **Lauf:** Labels `in-arbeit` und `lauf-1` (bzw. `lauf-2`) setzen, Worktree unter
+   `..\CFAlarm-umbau-wt\<nr>` anlegen, `keystore.properties` und `local.properties` hineinkopieren
+   (belegt 16.10.2026: so baut er), Gradle vorwärmen (`testDebugUnitTest lintDebug`), dann
+   `claude -p "/goal …" --model <claude-sonnet-5-5 | claude-opus-5-5 nach Risiko> --effort xhigh
+   --max-turns <Cap+5>`. Der Prozess bekommt `ANDROID_SERIAL=emulator-5554` (adb und Gradle-Install
+   treffen dann nur den Emulator, auch wenn das Fairphone währenddessen angesteckt wird),
+   `--strict-mcp-config` ohne MCP-Server (headless laden die Emulator-MCPs ohnehin nicht, am
+   16.10.2026 gemessen; alles läuft über `adb`) und `--disallowedTools` für die PowerShell- und
+   Desktop-Werkzeuge, damit jedes `git` durch die Bash-Schleuse muss.
+   Das Ziel enthält: Issue-Text, Abnahme-Liste, Turn-Cap, „keine Rückfragen, Entscheidungen im Issue
+   begründen“, „nach jedem grünen Schritt committen und pushen“, die drei Advisor-Stellen.
 4. **Ergebnis:** Fertig heißt: Abnahme erfüllt, Prüfer ohne offenen Befund, Branch in
    `feature/umbau-schichttyp` gemergt (Schleuse grün), Issue mit Abschlusskommentar geschlossen.
-   Sonst ein zweiter Lauf mit „Teilarbeit liegt vor, prüfen und fortsetzen“. Scheitert auch der:
-   Label `blockiert`, Grund ins Issue, weiter mit dem nächsten unabhängigen Paket.
+   Endet der Lauf anders (Exit ≠ 0, Turn-Grenze), schreibt **der Runner selbst** den Stand ins Issue
+   (letzte Commits des Branches, Ende des Logs) – der Agent hat nach `--max-turns` keinen Zug mehr.
+   Dann zweiter Lauf mit „Teilarbeit liegt vor, prüfen und fortsetzen“. Scheitert auch der: Label
+   `blockiert`, Grund ins Issue, weiter mit dem nächsten unabhängigen Paket.
+   **Sonderfall Schleuse meldet „Doku nennt entferntes Symbol“:** kein zweiter Lauf, sondern
+   `blockiert` mit „braucht Eigentümer (Skill)“ – das kann headless niemand beheben.
 5. **Limit erreicht** (5-h- oder Wochenlimit): Reset-Zeit aus der Meldung lesen, bis dahin
-   schlafen, dann **dasselbe Paket** fortsetzen. Kein blindes Wiederholen vorher.
+   schlafen, dann **dasselbe Paket** fortsetzen; das zählt nicht als Lauf. Kein blindes
+   Wiederholen vorher.
+6. Nach jedem Schritt eine Zeile in `STATUS.txt` (Zeit, Etappe, Paket, Ergebnis).
+
+**Wo gemergt wird:** Der Runner hat zwei feste Worktrees, `..\CFAlarm-umbau-wt\integration`
+(`feature/umbau-schichttyp`) und `..\CFAlarm-umbau-wt\main` (`main`). Nur dort wird gemergt und
+gepusht, damit die Schleuse den Branch-Namen sieht, den sie für ihre Release-Prüfungen braucht.
+Git erlaubt einen Branch nur in einem Worktree: **solange der Runner läuft, wird `main` im
+Hauptbaum nicht ausgecheckt** (der Runner prüft `git worktree list` vor dem Abschluss).
 
 **Start und Wiederaufnahme sind derselbe Befehl.** Weil der Zustand in GitHub liegt, braucht der
 Runner kein Gedächtnis: nach PC-Neustart, Absturz oder Limit einfach erneut starten. Als Sicherheitsnetz
@@ -147,12 +188,16 @@ läuft, sind die Wachen hier strenger als bisher. Der Betreuer-Lauf macht der Re
    durchklicken · Wecker per Zeitsprung auslösen (Vollbild, Schlummern, Aus) · Direct Boot mit PIN ·
    Migration aus der Export-Vorlage verlustfrei · UI-Prüfung aller Bildschirme der Etappe gegen den Prototyp.
 4. Nur wenn alles grün ist: Merge nach `main`, **Minor-Bump**, Changelog in Nutzersprache, Push. Die
-   Auslieferung übernimmt `veroeffentlichen.yml`.
+   Auslieferung übernimmt `veroeffentlichen.yml`. Lehnt GitHub den Push ab, weil `main` sich
+   inzwischen bewegt hat (Sammel-Release 09:00 UTC, Cloud-Sitzungen): fetch, erneut mergen, erneut
+   pushen – das zählt **nicht** als gescheiterter Versuch. Nur ein Konflikt zählt.
 5. Etappen-Issue schließen, nächste Etappe auf `bereit`, Bericht als Kommentar im Epic (was
    ausgeliefert ist, was am Fairphone anzusehen lohnt).
 
 Fällt danach im Alltag etwas auf: Kommentar im Epic oder Label `umbau-pause`. Rücknahme heißt Revert
-des Etappen-Merges plus Patch-Bump – nie Force-Push.
+des Etappen-Merges plus Patch-Bump – nie Force-Push. Das trägt nur, weil jede Migration **kopiert
+statt verschiebt** (SPEC Abschnitt 4): der zurückgenommene Code findet seinen alten Bestand
+unverändert vor.
 
 ## 8. Harte Grenzen
 
@@ -165,34 +210,32 @@ des Etappen-Merges plus Patch-Bump – nie Force-Push.
 | neue Issues je Etappe | 15 | Runner stoppt |
 | Fund außerhalb des Umfangs | – | Issue mit Label `spaeter`, wird in diesem Umbau **nicht** abgearbeitet (sonst endet die Schleife nie) |
 | Etappen-Abschluss gescheitert | 2 Versuche | Runner stoppt, Bericht im Epic |
-| verboten | Force-Push, History umschreiben, Push auf `main` außer im Etappen-Abschluss, Bump außerhalb des Etappen-Abschlusses, Fairphone ansprechen, Kerntests ändern ohne benannte Verhaltensänderung, `.claude/**` schreiben, `CFALARM_SCHLEUSE=aus` | |
+| Etappe hat offene oder blockierte Pakete, aber kein wählbares | – | Runner stoppt, Bericht im Epic – **kein** Abschluss mit Lücke |
+| verboten | Force-Push, History umschreiben, Push auf `main` außer im Etappen-Abschluss, Bump außerhalb des Etappen-Abschlusses, Fairphone ansprechen, Kerntests ändern ohne benannte Verhaltensänderung, `.claude/**` schreiben, `CFALARM_SCHLEUSE=aus` | Wo möglich mechanisch erzwungen, nicht nur im Ziel-Text: `ANDROID_SERIAL`, gesperrte Werkzeuge, Deny-Regel für `CFALARM_SCHLEUSE` (Abschnitt 9) |
 
 **Ende des Umbaus:** alle Etappen-Issues geschlossen, Abschnitt 5 der Spec erfüllt, Epic
 geschlossen. Dann beendet sich der Runner und sagt das in `STATUS.txt` und im Epic.
 
-## 9. Was vor dem Start noch zu bauen ist (interaktiv, nicht durch den Runner)
+## 9. Vorbereitung vor dem Start (interaktiv, nicht durch den Runner)
 
-1. **Zuordnung Bildschirm → Prototyp-Stelle:** je Bildschirm aus SPEC Abschnitt 3 der Zustand im Prototyp-Code (`zeigeTyp`, `zeigeWoche` …) und die Liste der Pflichttexte in Reihenfolge – daraus prüft der UI-Skill automatisch.
-2. **Skill `cfalarm-ui-pruefen`** (`.claude/skills/`, deshalb interaktiv): Debug-Build, nur auf
-   `emulator-5554` installieren, Bildschirm ansteuern, Texte und Reihenfolge per uiautomator gegen
-   die Pflichttexte, Screenshot per Bewertungsliste (16 Punkte: Inhalt, Reihenfolge, Texte, 320 dp,
-   Dunkelmodus …) gegen den Prototyp-Code.
-3. **`tools/umbau/runner.ps1`** und die Windows-Aufgabe; Labels anlegen; `sitzungsstart.py` erweitern.
-   Was der Runner dabei selbst können muss, sonst steht er am ersten Tag:
-   - **Worktrees bauen nicht von allein:** `keystore.properties` und `local.properties` sind
-     gitignored; der Runner kopiert beide in jeden neuen Worktree (ohne `googleWebClientId` wirft
-     der Build). Vorher mit einem Wegwerf-Worktree und `assembleDebug` belegen.
-   - **Emulator nach PC-Neustart:** selbst starten (`-avd Medium_Phone -timezone Europe/Berlin`) und
-     mit der Test-PIN entsperren.
-   - **Sperrdatei:** die stündliche Aufgabe darf keinen zweiten Runner starten, auch nicht während
-     eines tagelangen Wartens auf das Wochenlimit.
-   - **Workflow-Tool headless:** es startet nur auf ausdrücklichen Wunsch – das Ziel des
-     Etappen-Abschlusses muss „use a workflow“ wörtlich enthalten.
-   - **Werkzeuge im `-p`-Modus:** ob die Emulator-MCP-Werkzeuge headless laden, ist unbelegt. Das
-     ist die erste Prüfung des Probelaufs; sonst `adb` direkt.
-   Erst mit der Erweiterung von `sitzungsstart.py` finden Cloud-Sitzungen den Umbau (Memory ist
-   lokal); bis dahin gibt es keine Pakete `ohne-geraet` für die Cloud.
-4. **Export-Vorlage** einer echten Konfiguration (vom Eigentümer, Fairphone → Export), bereinigt als
-   Testvorlage für die Migration.
-5. **Epic und Etappe-0-Issues** anlegen; die Spec von Fable gegenlesen lassen (wie bei #142: Muss/Soll).
-6. **Probelauf** Etappe 0 beobachtet; Turn-Caps und Verbrauch danach kalibrieren.
+Erledigt (16.10.2026):
+- Zuordnung Bildschirm → Prototyp-Stelle und Pflichttexte: `BILDSCHIRME.md`.
+- Skill `cfalarm-ui-pruefen` und `tools/geraet/pruefe_texte.py` (mit Test, live am Emulator belegt).
+- Sitzungsstart zeigt den Umbau (ohne Netz).
+- Ein frischer Worktree baut, wenn die zwei Schlüsseldateien hineinkopiert werden.
+- Headless hat das Workflow-Tool, aber anfangs keine Emulator-MCPs → alles über `adb`.
+- Unabhängige Prüfung dieses Ablaufs (Fable, ohne Umsetzungskontext): 3 blockierende, 6 wichtige,
+  3 kleine Befunde, alle eingearbeitet.
+
+Offen:
+1. **Schleuse fail-closed machen** (`.claude/settings.json`, braucht die Freigabe des Eigentümers):
+   Die Schleuse braucht im schlechtesten Fall 300 + 300 + 180 = 780 s, der Hook-Timeout ist 600 s,
+   und ein abgelaufener Hook **lässt den Befehl durch**. Ein kalter Worktree ist genau dieser Fall.
+   Änderung: Timeout 900 s, `"onFailure": "block"`, Matcher `Bash|PowerShell`, Deny-Regel für
+   `CFALARM_SCHLEUSE`. Wirkt auch für interaktive Sitzungen.
+2. **`tools/umbau/runner.ps1`** nach Abschnitt 6, die stündliche Windows-Aufgabe, die Labels.
+3. **Migrations-Testvorlage** aus dem Export vom 16.10.2026 (Form klärt der Eigentümer: nachgebaut,
+   bereinigt öffentlich oder nur lokal).
+4. **Epic und Etappe-0-Issues** anlegen.
+5. **Probelauf** Etappe 0 beobachtet: prüfen, ob `/goal`, Advisor und `--max-turns` headless wie
+   erwartet greifen; Turn-Caps und Verbrauch danach kalibrieren.

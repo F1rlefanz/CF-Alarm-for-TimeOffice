@@ -116,6 +116,20 @@ Tageslicht (Standort), Sonstiges (Master-Pause, Wecker-Ton, Schlummern, Export, 
 - Die DataStore-Namensräume bleiben getrennt; jeder neue `preferencesDataStore` bekommt einen
   `corruptionHandler`.
 - Die Regel „genau eine Dimm-Fenster-Quelle“ gilt weiter – die Quelle sind dann die Fenster am Typ.
+- **Übersetzung der heutigen Dimm-Regeln** (hier liegt die bekannte Falle aus
+  `DimmerModellMigration.kt`): Eine Regel mit dem Ziel UNIVERSAL gilt nur für Typen **ohne** eigene
+  Regel; FREI (heute: jeder Tag ohne erkannte Schicht, auch ein freigegebener) geht an „Ohne Kalendereintrag“ und an die Typen der Kategorie Frei; ein freigegebener Tag verhält sich wie heute wie ein freier Tag, also wie „Ohne Kalendereintrag“. Eine Regel mit
+  leerer Fensterliste (heute: Unterdrückung) wird zu einem Typ **ohne** Dimm-Fenster – sie darf nie
+  durch UNIVERSAL aufgefüllt werden.
+- **Ausgeschaltet bleibt ausgeschaltet:** War `dim_enabled`, `dnd_follow_dimmer_enabled` oder
+  `dnd_during_shift_enabled` aus, kommen die migrierten Fenster bzw. DND-Schalter **aus** an.
+  Ohne globalen Schalter würden sie sonst nach dem Update plötzlich wirken.
+- **Kopieren, nicht verschieben:** Der alte Bestand bleibt bis Etappe 9 unverändert liegen. Nur so
+  findet ein per Revert zurückgenommener Stand seine Daten wieder. Die feste Zeile „Ohne
+  Kalendereintrag“ wird so gespeichert, dass alter Code sie überliest statt sie als Schicht mit
+  Mustern zu deuten (vorab per Test gegen den alten Decoder belegen).
+- **Testvorlage:** eine echte Konfiguration vom 16.10.2026 (7 Typen, Regeln mit mehreren Fenstern und
+  Blocktagen, UNIVERSAL-Regel, Hue-Regeln mit Szenen) muss verlustfrei migrieren.
 
 ## 5. Was fertig heißt (für den ganzen Umbau)
 

@@ -15,7 +15,9 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPausePrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmInfo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.MANUELLER_ALARM_SUFFIX
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.istWaehlbareSchicht
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.state.AppErrorState
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.waehlbareSchichttypen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IAlarmRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.AlarmSkipUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.SkipRolledBackException
@@ -1330,11 +1332,9 @@ class AlarmViewModel @Inject constructor(
             try {
                 shiftUseCase.shiftConfig
                     .collect { shiftConfig ->
-                        // #142: ein Krankmeldungs-Typ ist keine Schicht, fuer die man geweckt
-                        // werden kann - er hat keine echte Weckzeit.
-                        uebernehmeSchichtdefinitionen(
-                            shiftConfig.definitions.filter { it.isEnabled && !it.isSickDay }
-                        )
+                        // #142/#171: ein Krankmeldungs- oder Ignorieren-Typ ist keine Schicht, fuer
+                        // die man geweckt werden kann - ohne echte Weckzeit bzw. uebergangen.
+                        uebernehmeSchichtdefinitionen(shiftConfig.definitions.waehlbareSchichttypen())
                     }
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
@@ -1504,8 +1504,8 @@ class AlarmViewModel @Inject constructor(
             // darueber.
             val schicht = if (frischeKonfiguration != null) {
                 val gefunden = frischeKonfiguration.definitions
-                    // #142: inzwischen zum Krankmeldungs-Typ geworden = nicht mehr verfuegbar.
-                    .firstOrNull { it.id == selectedShift.id && it.isEnabled && !it.isSickDay }
+                    // #142/#171: inzwischen zum Krankmeldungs- oder Ignorieren-Typ geworden = nicht mehr verfuegbar.
+                    .firstOrNull { it.id == selectedShift.id && it.istWaehlbareSchicht() }
                 if (gefunden == null) {
                     // Die Definition ist weg oder ausgeschaltet. Nicht mit dem alten Objekt
                     // weitermachen: der Wecker traege eine shiftId, die es nicht mehr gibt, und

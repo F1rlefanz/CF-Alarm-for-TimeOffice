@@ -274,6 +274,17 @@ class GitSicht(unittest.TestCase):
         self.assertTrue(ausliefern, begruendung)
         self.assertEqual([b for _, b in commits], ["chore(deps): Bump okhttp"])
 
+    def test_entwurf_haelt_die_wartung_nicht_an(self):
+        """Spec und Prototyp unter entwurf/ landen nicht in der APK (16.10.2026: der Umbau-Entwurf
+        haette sonst jeden Dependabot-Sammel-Release bis zum naechsten Bump angehalten)."""
+        self.commit("chore(release): v1.0.2 (versionCode 2)", code=2)
+        self._commit_an("docs(umbau): Spec", "entwurf/umbau/SPEC.md")
+        self._commit_an("chore(deps): Bump okhttp", "gradle/libs.versions.toml")
+
+        ausliefern, commits, begruendung = sammel_release_modul.ermitteln()
+        self.assertTrue(ausliefern, begruendung)
+        self.assertEqual([b for _, b in commits], ["chore(deps): Bump okhttp"])
+
     def test_test_commit_mit_produktivcode_blockiert_weiterhin(self):
         self.commit("chore(release): v1.0.2 (versionCode 2)", code=2)
         self._commit_an("test(alarm): Test und Fix", "app/src/test/java/XTest.kt",

@@ -65,6 +65,8 @@ IRRELEVANTE_PFADE = (
     "CHANGELOG.md",
     "CLAUDE.md",
     "README.md",
+    # Entwuerfe (Spec, Prototyp, Soll-Bilder). Seit 16.10.2026 fuer den Umbau Schichttyp.
+    "entwurf/",
     # Testquellen landen nicht in der APK. Seit 15.10.2026: das Markieren der Kerntests war ein
     # reiner Test-Commit und haette sonst jeden Dependabot-Sammel-Release angehalten. Ein Commit,
     # der daneben auch `app/src/main` anfasst, blockiert weiterhin (`any` in beruehrt_die_app).

@@ -176,6 +176,20 @@ geschlossen. Dann beendet sich der Runner und sagt das in `STATUS.txt` und im Ep
    `emulator-5554` installieren, Bildschirm ansteuern, Screenshot, Vergleich mit dem Soll-Bild per
    Bewertungsliste (16 Punkte: Inhalt, Reihenfolge, Texte, 320 dp, Dunkelmodus …), Sonnet bewertet.
 3. **`tools/umbau/runner.ps1`** und die Windows-Aufgabe; Labels anlegen; `sitzungsstart.py` erweitern.
+   Was der Runner dabei selbst können muss, sonst steht er am ersten Tag:
+   - **Worktrees bauen nicht von allein:** `keystore.properties` und `local.properties` sind
+     gitignored; der Runner kopiert beide in jeden neuen Worktree (ohne `googleWebClientId` wirft
+     der Build). Vorher mit einem Wegwerf-Worktree und `assembleDebug` belegen.
+   - **Emulator nach PC-Neustart:** selbst starten (`-avd Medium_Phone -timezone Europe/Berlin`) und
+     mit der Test-PIN entsperren.
+   - **Sperrdatei:** die stündliche Aufgabe darf keinen zweiten Runner starten, auch nicht während
+     eines tagelangen Wartens auf das Wochenlimit.
+   - **Workflow-Tool headless:** es startet nur auf ausdrücklichen Wunsch – das Ziel des
+     Etappen-Abschlusses muss „use a workflow“ wörtlich enthalten.
+   - **Werkzeuge im `-p`-Modus:** ob die Emulator-MCP-Werkzeuge headless laden, ist unbelegt. Das
+     ist die erste Prüfung des Probelaufs; sonst `adb` direkt.
+   Erst mit der Erweiterung von `sitzungsstart.py` finden Cloud-Sitzungen den Umbau (Memory ist
+   lokal); bis dahin gibt es keine Pakete `ohne-geraet` für die Cloud.
 4. **Export-Vorlage** einer echten Konfiguration (vom Eigentümer, Fairphone → Export), bereinigt als
    Testvorlage für die Migration.
 5. **Epic und Etappe-0-Issues** anlegen; die Spec von Fable gegenlesen lassen (wie bei #142: Muss/Soll).

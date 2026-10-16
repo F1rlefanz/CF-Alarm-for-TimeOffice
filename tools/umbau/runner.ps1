@@ -173,7 +173,8 @@ function Worktree([string]$name, [string]$branch, [string]$basis) {
         else { git -C $Root worktree add -q -b $branch $pfad $basis }
         if ($LASTEXITCODE -ne 0) { throw "worktree $name" }
     }
-    foreach ($f in @('keystore.properties', 'local.properties')) {
+    # Die Keystore-Datei braucht der Release-Build im Etappen-Abschluss (16.10.2026 fehlte sie dort).
+    foreach ($f in @('keystore.properties', 'local.properties', 'cf-alarm-release.keystore')) {
         Copy-Item (Join-Path $Root $f) (Join-Path $pfad $f) -Force
     }
     return $pfad

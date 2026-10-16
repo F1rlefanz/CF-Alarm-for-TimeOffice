@@ -4,6 +4,20 @@ Headless ist `.claude/**` schreibgeschützt. Lehren aus Umbau-Paketen stehen hie
 übernimmt sie interaktiv in den passenden Skill und streicht den Eintrag.
 Format: Skill · Paket · die normative Zeile · Hergang in einem Satz.
 
+## cfalarm-wecker-und-boot
+
+- **#168** · Kurzregel (neben „Verstrichene Weckzeit ist KEINE entfernte Schicht"): **Ein Typ mit
+  `weckerAn = false` ist erkannt, aber ohne Wecker: `syncAlarms()` führt seinen Treffer als
+  `SyncKandidat` mit `neuerAlarm = null` (`weckerAus = true`) – wie einen mit verstrichener Weckzeit.
+  Schritt 1 räumt einen gepaarten Wecker ab (Cancel vor Delete), OHNE „Schicht entfernt"; Spannen und
+  Krank-Logik sehen den Treffer weiter. `weckerAn` ist nicht `isEnabled`** (das schaltet die Erkennung
+  ab und mit ihr die Spanne). Den Treffer stattdessen aus den Kandidaten wegzulassen, wäre der Weg, den
+  `isEnabled = false` heute nimmt: die Paarung fände den gestellten Wecker nicht, Schritt 1 meldete ihn
+  als entfernte Schicht. Hergang: Festlegung des Betreuers in #168. Test: `WeckerAusAmTypSyncTest`
+  (auch Paarungsrunde (b) bei gleichzeitig neuer Feed-Kennung). Bekannt und hingenommen: aus → an
+  meldet über `notifyCreated` „Neue Schicht erkannt", wie heute ein wieder aktivierter Typ (es gibt
+  keinen Merker, warum der Wecker fehlte).
+
 ## cfalarm-dimmer-und-dnd
 
 - **#151** · Kurzregel: **`DimWindow.startNurAmWecktag` (Default `false`) lässt einen CLOCK-Start auf

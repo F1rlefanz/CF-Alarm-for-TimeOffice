@@ -53,6 +53,9 @@ object SchichttypTexte {
 
     /** Kurzform eines aktiven Ignorieren-Typs (siehe [kurzform]). */
     const val WIRD_UEBERGANGEN = "wird übergangen"
+
+    /** Statuszeile eines AUSGESCHALTETEN Ignorieren-Typs: er uebergeht seine Codes nicht mehr. */
+    const val IGNORIEREN_AUSGESCHALTET = "Ausgeschaltet — wird nicht mehr übergangen"
 }
 
 /** Die sieben Gruppen in der Reihenfolge der SPEC (E1), danach die feste Zeile. */

@@ -104,6 +104,20 @@ class ShiftConfigScreenTextTest {
     }
 
     @Test
+    fun `Hinweistext verspricht die Muster nicht in der Listenzeile, sondern beim Antippen`() {
+        // Seit der gruppierten Liste (#170) zeigt jede Zeile nur Code, Name und Kurzform - die Muster
+        // stehen im Bearbeiten-Dialog. Der Text sagte "steht in ihrer Karte in der Liste darunter".
+        assertFalse(
+            "Die Zeile zeigt die Muster nicht mehr: $SHIFT_RECOGNITION_HINT",
+            SHIFT_RECOGNITION_HINT.contains("in ihrer Karte")
+        )
+        assertTrue(
+            "Der Text muss sagen, wo man die Muster eines Typs sieht",
+            SHIFT_RECOGNITION_HINT.contains("antippst")
+        )
+    }
+
+    @Test
     fun `die Zusicherung des Hinweistexts gilt im Code - der Name erkennt einen Termin allein`() {
         // Belegt, dass der Text nicht wieder zu viel verspricht: der Name trifft ab zwei Zeichen
         // als eigenes Wort, obwohl er in keinem keyword steht.

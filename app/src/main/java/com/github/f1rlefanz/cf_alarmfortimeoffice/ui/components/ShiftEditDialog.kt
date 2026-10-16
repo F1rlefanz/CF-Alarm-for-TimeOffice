@@ -1,5 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.istZeichenmuster
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -187,16 +188,14 @@ fun ShiftEditDialog(
                                     // fremde Termine - schichterkennung.md. #142: bei einer
                                     // Krankmeldung ist die Folge die UMGEKEHRTE (ein fehlender
                                     // Wecker), der Text folgt dem Schalter.
-                                    supportingText = if (keyword.trim().length == 1) {
+                                    supportingText = ShiftDefinitionTexte.einBuchstabeWarnung(keyword, isSickDay)?.let { warnung ->
                                         {
                                             Text(
-                                                text = ShiftDefinitionTexte.einBuchstabeWarnung(isSickDay),
+                                                text = warnung,
                                                 style = MaterialTheme.typography.bodySmall,
                                                 color = MaterialTheme.colorScheme.error
                                             )
                                         }
-                                    } else {
-                                        null
                                     }
                                 )
                                 
@@ -418,9 +417,15 @@ object ShiftDefinitionTexte {
         "Ein einzelner Buchstabe trifft auch fremde Termine (z. B. \"Termin bei Dr. K\") und " +
             "gibt dann einen Diensttag frei – kein Wecker aus dem Dienstplan."
 
-    /** PURE, TESTBAR: die Warnung unter einem einbuchstabigen Muster. */
-    fun einBuchstabeWarnung(isSickDay: Boolean): String =
-        if (isSickDay) EIN_BUCHSTABE_KRANK else EIN_BUCHSTABE_SCHICHT
+    /**
+     * PURE, TESTBAR: die Warnung unter einem einbuchstabigen Muster - oder null. Ein einzelnes
+     * ZEICHEN ("+") bekommt keine: es trifft seit #150 nur den ganzen Titel, nie fremde Termine.
+     */
+    fun einBuchstabeWarnung(muster: String, isSickDay: Boolean): String? {
+        val m = muster.trim()
+        if (m.length != 1 || istZeichenmuster(m)) return null
+        return if (isSickDay) EIN_BUCHSTABE_KRANK else EIN_BUCHSTABE_SCHICHT
+    }
 
     /** #142: Loesch-Rueckfrage fuer einen Krankmeldungs-Typ - er hat keine Weckzeit, die entfiele,
      * wohl aber Tage, die er freigegeben hat und die ihre Wecker zurueckbekommen. */

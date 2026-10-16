@@ -83,7 +83,7 @@ data class ShiftDefinition(
     private fun matchesAsWholeWord(lowercaseTitle: String, pattern: String): Boolean {
         val needle = pattern.trim().lowercase()
         if (needle.isEmpty()) return false
-        if (!BUCHSTABE_ODER_ZIFFER.containsMatchIn(needle)) return lowercaseTitle.trim() == needle
+        if (istZeichenmuster(needle)) return lowercaseTitle.trim() == needle
         return WordBoundaryPatterns.forNeedle(needle).containsMatchIn(lowercaseTitle)
     }
 }
@@ -152,6 +152,13 @@ private const val WORD_END = "(?![\\p{L}\\p{N}_])"
  * hierauf ist ein Zeichenmuster und trifft nur den ganzen Titel (#150).
  */
 private val BUCHSTABE_ODER_ZIFFER = Regex("[\\p{L}\\p{N}]")
+
+/**
+ * Hat [muster] keinen einzigen Buchstaben und keine Ziffer ("+", "---")? Dann trifft es nur den
+ * ganzen Titel (#150). Die Warnung im Schicht-Editor fragt dasselbe, damit sie nie etwas anderes
+ * behauptet, als die Erkennung tut.
+ */
+internal fun istZeichenmuster(muster: String): Boolean = !BUCHSTABE_ODER_ZIFFER.containsMatchIn(muster)
 
 /**
  * #142/#146: Ist [titel] eine Krankmeldung? Die EINE Regel - nur aktive Krank-Typen, Keyword-Treffer.

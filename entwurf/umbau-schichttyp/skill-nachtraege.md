@@ -93,3 +93,30 @@ Format: Skill · Paket · die normative Zeile · Hergang in einem Satz.
   neue Feld fällt dort still auf den Default (Hinweis in #174).
 - **#166** · Testvorlage: `UmbauTestvorlageTest` findet `..Projektdateien/umbau/testvorlagen/` auch aus einem
   Worktree (über `gitdir:` der `.git`-Datei zum Hauptbaum); fehlt sie, `Assume` mit Meldung.
+
+## cfalarm-ui-und-navigation
+
+- **#170** · Kurzregel (Abschnitt UI-Texte/Compose-Layout): **Die Schichttypen-Liste ist NUR in der Anzeige nach
+  Kategorien gruppiert (`schichttypBloecke`); die gespeicherte Reihenfolge der Typen wird nie umsortiert und nie
+  zurückgeschrieben.** Hergang: die Erkennung nimmt den ersten Treffer in Listenreihenfolge, eine alphabetisch
+  oder nach Kategorie sortierte Speicherung hätte stumm geändert, welcher Wecker gilt. Bearbeiten und Löschen
+  arbeiten auf den Objekten der gespeicherten Liste (per `id`), nie auf Indizes einer Anzeigeliste. Der Code einer
+  Zeile ist das erste nicht leere Muster (`listenCode()`), ohne Muster steht „–“. Test: `SchichttypGruppenTest`.
+- **#170** · Kurzregel (Abschnitt Layout-Fallen, bei „Text links, Bedienelement rechts“): **Eine Zeile mit Marke
+  links UND Papierkorb als eigener Spalte rechts nimmt der Textspalte beide ab — bei 320 dp blieben 146 statt der
+  208 dp der alten Karte, und die mit geschützten Leerzeichen gebauten Abschnitte der Statuszeile
+  (`SchichtFolgen.alsText`, „Dimmen: allgemeine Regel“) brachen mitten im Wort.** Der Papierkorb steht deshalb in
+  der Namenszeile (gemessen am uiautomator-Dump, gleiche Daten, Dichte 540: 145,8 → 199,7 dp). Aufgefallen ist es
+  dem unabhängigen Prüfer durch Rechnen; belegt hat es erst der Dump. Wer eine Zeile aus Marke · Text · Knopf baut,
+  rechnet die Textbreite bei 320 dp nach.
+- **#170** · Kurzregel (Abschnitt Nutzertexte): **Die Kurzform eines Typs mit `weckerAn = false` nennt kein Licht
+  (`alsTextOhneLicht`)** — Hue-Regeln laufen nur zu einem Alarm (`AlarmReceiver` → `executeRulesForAlarm`,
+  `HueSmartScheduler` liest nur Alarme), SPEC E8. Dimmen und „Nicht stören“ bleiben (das Dimm-Fenster fällt ohne
+  Weckzeit auf die Uhrzeit zurück). **Die feste Zeile „Ohne Kalendereintrag“ zeigt fest „kein Wecker“, auch wenn
+  `ShiftConfig.ohneKalendereintragWie` gesetzt ist:** das Feld wirkt noch nirgends, „verhält sich wie F (…)“ wäre
+  eine Aussage über einen Ablauf, den es nicht gibt. Wer die Wahl „Wie <Typ>“ baut, stellt Erkennung UND Kurzform
+  im selben Paket um — nie nur die Anzeige.
+- **#170** · Hinweis zu `cfalarm-ui-pruefen`: `tools/geraet/pruefe_texte.py` scrollt nur NACH UNTEN und liest ab der
+  aktuellen Position — vorher die Liste an den Anfang wischen, sonst meldet es „fehlt“ für Titel, die oberhalb
+  liegen (bei 320 dp „NICHT BESTANDEN“, ab Anfang BESTANDEN). Mit Git Bash und Windows-Python: `--datei` als
+  `$(cygpath -w …)` übergeben, `/tmp/…` löst Python nicht auf.

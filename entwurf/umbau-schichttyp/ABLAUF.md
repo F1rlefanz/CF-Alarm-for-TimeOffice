@@ -93,6 +93,7 @@ Abnahme:
 - [ ] neuer Test, der ohne die Änderung rot ist
 - [ ] UI-Prüfung: <Bildschirm> gegen prototyp/<Datei> (Texte und Reihenfolge per uiautomator, Screenshot bewertet >= 14/16)   (nur bei UI)
 - [ ] Prüfer ohne Umsetzungskontext: keine offenen Befunde
+- [ ] Changelog-Notiz in Nutzersprache im Abschlusskommentar (nur bei Sichtbarem)
 Kerntests: unberührt | bewusste Verhaltensänderung: <welcher Test, warum>
 Größe: S (40 Turns) | M (60) | L -> vorher teilen
 Risiko: niedrig/mittel (Sonnet setzt um) | hoch (Opus setzt um)
@@ -187,7 +188,7 @@ läuft, sind die Wachen hier strenger als bisher. Der Betreuer-Lauf macht der Re
    voller Testlauf + Lint · Release-Build (R8) Kaltstart ohne Absturz · alle Tabs einmal
    durchklicken · Wecker per Zeitsprung auslösen (Vollbild, Schlummern, Aus) · Direct Boot mit PIN ·
    Migration aus der Export-Vorlage verlustfrei · UI-Prüfung aller Bildschirme der Etappe gegen den Prototyp.
-4. Nur wenn alles grün ist: Merge nach `main`, **Minor-Bump**, Changelog in Nutzersprache, Push. Die
+4. Nur wenn alles grün ist: Merge nach `main`, **Minor-Bump** (Etappe 0: Patch), Changelog-Eintrag aus den Notizen der Pakete (Skill `cfalarm-release-und-changelog`), Push. Die
    Auslieferung übernimmt `veroeffentlichen.yml`. Lehnt GitHub den Push ab, weil `main` sich
    inzwischen bewegt hat (Sammel-Release 09:00 UTC, Cloud-Sitzungen): fetch, erneut mergen, erneut
    pushen – das zählt **nicht** als gescheiterter Versuch. Nur ein Konflikt zählt.

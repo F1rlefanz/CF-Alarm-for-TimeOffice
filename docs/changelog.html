@@ -47,7 +47,19 @@
              Dieser Kommentar steht bewusst VOR dem BEGIN-Marker und ueberlebt deshalb. -->
         <!-- CHANGELOG:BEGIN -->
         <div class="content-card">
-            <h3>🆕 Version 1.56.1 <small>(Aktuell – interne Alpha)</small></h3>
+            <h3>🆕 Version 1.56.2 <small>(Aktuell – interne Alpha)</small></h3>
+            <p><strong>Stand:</strong> Oktober 2026</p>
+            <p><em>Der Nachtdienst-Rhythmus dimmt nicht mehr fast den ganzen Tag, und Dienstplan-Einträge wie „+“ lassen sich zuordnen.</em></p>
+
+            <h4>🐛 Behoben</h4>
+            <ul>
+                <li><strong>Nachtdienst-Rhythmus dimmt nicht mehr fast einen ganzen Tag:</strong> Klingelte der Wecker vor 16:00, begann das Dimmen der Vorlage „Nachtdienst-Rhythmus“ schon um 16:00 am Vortag – über 21 Stunden am Stück. An solchen Tagen entfällt jetzt der Abschnitt „Vor dem Dienst“. Eine schon angelegte Regel aus der Vorlage übernimmt das erst, wenn sie gelöscht und neu angelegt wird.</li>
+                <li><strong>Einträge aus reinen Zeichen wie „+“ werden gefunden:</strong> Kalendereinträge, die nur aus Zeichen bestehen – zum Beispiel „+“ für frei – erscheinen jetzt unter „Im Kalender gefunden“ und lassen sich einem Schichttyp zuordnen. Ein solches Muster gilt nur, wenn der Eintrag genau so heißt: „+“ trifft nicht „C++“ oder „Frühdienst + Station“. Deshalb steht darunter auch keine Warnung mehr, es treffe fremde Termine. Wer ein reines Zeichen bisher von Hand als Muster eingetragen hat, damit es in längeren Titeln trifft, muss das Muster anpassen.</li>
+            </ul>
+        </div>
+
+        <div class="content-card">
+            <h3>Version 1.56.1</h3>
             <p><strong>Stand:</strong> Oktober 2026</p>
             <p><em>Kein falscher Alarm mehr beim Öffnen der App.</em></p>
 

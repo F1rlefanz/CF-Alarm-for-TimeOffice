@@ -27,7 +27,18 @@ Schreibkonventionen (der Generator verlässt sich darauf):
 - `### 🐛 Behoben` — Rubrik, mit Emoji wie bisher.
 - `- **Kurzfassung:** Erklärung` — ein Eintrag.
 
-## 🆕 Version 1.56.1 (Aktuell – interne Alpha)
+## 🆕 Version 1.56.2 (Aktuell – interne Alpha)
+
+**Stand:** Oktober 2026
+
+_Der Nachtdienst-Rhythmus dimmt nicht mehr fast den ganzen Tag, und Dienstplan-Einträge wie „+“ lassen sich zuordnen._
+
+### 🐛 Behoben
+
+- **Nachtdienst-Rhythmus dimmt nicht mehr fast einen ganzen Tag:** Klingelte der Wecker vor 16:00, begann das Dimmen der Vorlage „Nachtdienst-Rhythmus“ schon um 16:00 am Vortag – über 21 Stunden am Stück. An solchen Tagen entfällt jetzt der Abschnitt „Vor dem Dienst“. Eine schon angelegte Regel aus der Vorlage übernimmt das erst, wenn sie gelöscht und neu angelegt wird.
+- **Einträge aus reinen Zeichen wie „+“ werden gefunden:** Kalendereinträge, die nur aus Zeichen bestehen – zum Beispiel „+“ für frei – erscheinen jetzt unter „Im Kalender gefunden“ und lassen sich einem Schichttyp zuordnen. Ein solches Muster gilt nur, wenn der Eintrag genau so heißt: „+“ trifft nicht „C++“ oder „Frühdienst + Station“. Deshalb steht darunter auch keine Warnung mehr, es treffe fremde Termine. Wer ein reines Zeichen bisher von Hand als Muster eingetragen hat, damit es in längeren Titeln trifft, muss das Muster anpassen.
+
+## Version 1.56.1
 
 **Stand:** Oktober 2026
 

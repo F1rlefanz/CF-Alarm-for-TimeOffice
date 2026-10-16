@@ -23,6 +23,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftMatch
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftRecognitionEngine
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpan
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpanStore
+import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.uebernommeneRufTermine
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmSkipUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
@@ -641,6 +642,9 @@ class AlarmUseCase @Inject constructor(
                 // den er gerade antritt.
                 val kandidaten = mutableListOf<SyncKandidat>()
                 val now = LocalDateTime.now()
+                // Umbau E3 (#172): Ruf-Termine, an deren Tag ein Dienst steht (der nachgetragene
+                // Einsatz). EINMAL ueber alle Treffer gerechnet - die Frage betrifft zwei Termine.
+                val rufUebernommen = uebernommeneRufTermine(shiftMatches)
 
                 for (shiftMatch in shiftMatches) {
                     try {
@@ -663,7 +667,25 @@ class AlarmUseCase @Inject constructor(
                                 triggerTime = triggerTime,
                                 shiftId = shiftMatch.shiftDefinition.id,
                                 neuerAlarm = null,
-                                weckerAus = true
+                                ohneWecker = OhneWecker.WECKER_AUS
+                            )
+                            continue
+                        }
+
+                        // Umbau E3 (#172): ein Dienst am selben Tag uebernimmt die Rufbereitschaft.
+                        // Derselbe Weg wie „Wecker aus“: Kandidat ohne Alarm, ein gestellter
+                        // Ruf-Wecker geht ueber die Paarung (Cancel vor Delete) OHNE „Schicht
+                        // entfernt“. Die Spanne oben bleibt - Ruf-Abfrage und DND-Ende lesen sie.
+                        // Faellt der Einsatz weg, fehlt der Termin in der Menge, und der naechste
+                        // Lauf stellt den Ruf-Wecker wieder.
+                        if (eventId in rufUebernommen) {
+                            Logger.d(LogTags.ALARM, "📟 SYNC: Dienst am selben Tag uebernimmt, kein Wecker fuer ${shiftMatch.shiftDefinition.name}")
+                            kandidaten += SyncKandidat(
+                                eventId = eventId,
+                                triggerTime = triggerTime,
+                                shiftId = shiftMatch.shiftDefinition.id,
+                                neuerAlarm = null,
+                                ohneWecker = OhneWecker.RUF_UEBERNOMMEN
                             )
                             continue
                         }
@@ -674,7 +696,8 @@ class AlarmUseCase @Inject constructor(
                                 eventId = eventId,
                                 triggerTime = triggerTime,
                                 shiftId = shiftMatch.shiftDefinition.id,
-                                neuerAlarm = null
+                                neuerAlarm = null,
+                                ohneWecker = OhneWecker.VERSTRICHEN
                             )
                             continue
                         }
@@ -751,17 +774,24 @@ class AlarmUseCase @Inject constructor(
                     //     Kandidaten OHNE neuen Alarm gefunden hat.
                     //  3. Der Termin steht weiter im Kalender, aber sein Typ hat den Wecker aus
                     //     (#168) - ebenfalls ein Kandidat ohne neuen Alarm.
-                    // In 2. und 3. wird der Alarm trotzdem geraeumt - er gehoert nicht (mehr) in
-                    // den Bestand -, aber es ist KEINE Aenderung des Dienstplans, also gibt es
-                    // dafuer auch keine Meldung. Die Schichtspanne bleibt davon unberuehrt
+                    //  4. Eine Rufbereitschaft, an deren Tag ein Dienst steht (#172) - auch das ein
+                    //     Kandidat ohne neuen Alarm; den Tag weckt der Dienst.
+                    // In 2. bis 4. wird der Alarm trotzdem geraeumt - er gehoert nicht (mehr) in
+                    // den Bestand -, aber der Termin ist nicht verschwunden, also gibt es dafuer
+                    // keine „Schicht entfernt“-Meldung. Die Schichtspanne bleibt davon unberuehrt
                     // erhalten, damit Dimmer und "Nicht stoeren" die Schicht weiter kennen.
                     val terminBesteht = kandidat != null
-                    if (kandidat?.weckerAus == true) {
-                        Logger.business(LogTags.ALARM, "🔕 SYNC: Wecker am Typ ausgeschaltet, Termin bleibt: ${existingAlarm.shiftName} (eventId: ${existingAlarm.eventId})")
-                    } else if (terminBesteht) {
-                        Logger.business(LogTags.ALARM, "⌛ SYNC: Weckzeit verstrichen, Termin laeuft weiter: ${existingAlarm.shiftName} (eventId: ${existingAlarm.eventId})")
-                    } else {
-                        Logger.business(LogTags.ALARM, "🗑️ SYNC: Deleting alarm for deleted event: ${existingAlarm.shiftName} (eventId: ${existingAlarm.eventId})")
+                    when (kandidat?.ohneWecker) {
+                        OhneWecker.WECKER_AUS ->
+                            Logger.business(LogTags.ALARM, "🔕 SYNC: Wecker am Typ ausgeschaltet, Termin bleibt: ${existingAlarm.shiftName} (eventId: ${existingAlarm.eventId})")
+                        OhneWecker.RUF_UEBERNOMMEN ->
+                            Logger.business(LogTags.ALARM, "📟 SYNC: Dienst am selben Tag uebernimmt die Rufbereitschaft, Ruf-Wecker geht: ${existingAlarm.shiftName} (eventId: ${existingAlarm.eventId})")
+                        OhneWecker.VERSTRICHEN, null ->
+                            if (terminBesteht) {
+                                Logger.business(LogTags.ALARM, "⌛ SYNC: Weckzeit verstrichen, Termin laeuft weiter: ${existingAlarm.shiftName} (eventId: ${existingAlarm.eventId})")
+                            } else {
+                                Logger.business(LogTags.ALARM, "🗑️ SYNC: Deleting alarm for deleted event: ${existingAlarm.shiftName} (eventId: ${existingAlarm.eventId})")
+                            }
                     }
                     // ERST cancellen, DANN loeschen - sonst bleibt ein unabbrechbarer Waise
                     // (Skill cfalarm-wecker-und-boot, reference/wecker-boot-und-wartung.md).
@@ -1635,7 +1665,8 @@ class AlarmUseCase @Inject constructor(
      * Ein Termin der AKTUELLEN Kalenderlesung, so wie ihn der Delta-Sync braucht.
      *
      * [neuerAlarm] ist `null`, wenn der Termin besteht, aber keinen Wecker bekommt: seine Weckzeit
-     * ist bereits verstrichen, oder sein Typ hat den Wecker aus ([weckerAus], #168). Solche
+     * ist bereits verstrichen, sein Typ hat den Wecker aus (#168), oder ein Dienst am selben Tag
+     * uebernimmt die Rufbereitschaft (#172) - der Grund steht in [ohneWecker]. Solche
      * Kandidaten werden trotzdem gefuehrt, weil die Paarung sie braucht: sonst gilt ein Termin,
      * dessen Wecker heute frueh geklingelt hat oder ausgeschaltet wurde, als "aus dem Kalender
      * entfernt" - mit der Meldung "Schicht entfernt" fuer eine Schicht, die noch im Kalender steht.
@@ -1645,9 +1676,21 @@ class AlarmUseCase @Inject constructor(
         val triggerTime: Long,
         val shiftId: String,
         val neuerAlarm: AlarmInfo?,
-        /** Nur fuer das Log: `neuerAlarm == null`, weil der Typ den Wecker aus hat (#168). */
-        val weckerAus: Boolean = false
+        /** Nur fuer das Log: WARUM `neuerAlarm == null` ist. `null` bei einem Kandidaten mit Alarm. */
+        val ohneWecker: OhneWecker? = null
     )
+
+    /** Warum ein bestehender Termin keinen Wecker bekommt - siehe [SyncKandidat.ohneWecker]. */
+    private enum class OhneWecker {
+        /** Die Weckzeit ist verstrichen, der Termin laeuft weiter. */
+        VERSTRICHEN,
+
+        /** Der Typ hat den Wecker aus (#168). */
+        WECKER_AUS,
+
+        /** Ein Dienst am selben Tag uebernimmt die Rufbereitschaft (#172). */
+        RUF_UEBERNOMMEN
+    }
 
     /**
      * Ordnet jedem Kandidaten der aktuellen Lesung hoechstens EINEN bestehenden Alarm zu.

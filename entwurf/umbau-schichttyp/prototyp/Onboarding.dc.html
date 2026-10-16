@@ -1,0 +1,363 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>Ersteinrichtung – Prototyp</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Mulish:wght@400;600;700;800&amp;display=swap">
+<style>
+body{margin:0;font-family:Mulish,system-ui,sans-serif;color:#2D2A28;background:#F0EDEA}
+a{color:#8E0F30}a:hover{color:#5C0016}
+button{font-family:inherit;color:inherit}
+.app{width:412px;height:915px;display:flex;flex-direction:column;background:#F0EDEA;overflow:hidden}
+.kopf{flex:none;padding:22px 22px 14px;background:#FFFFFF;border-bottom:1px solid #E3DED8;display:flex;flex-direction:column;gap:10px}
+.fortschritt{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
+.strich{height:5px;border-radius:3px;background:#E3DED8}
+.strich.on{background:#E2001A}
+.schritt{font-size:13px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:#726D68}
+.kopf h1{margin:0;font-size:24px;font-weight:800;line-height:1.25}
+.kopf p{margin:0;font-size:15px;color:#726D68;line-height:1.45}
+.scroll{flex:1;min-height:0;overflow-y:auto;padding:14px 14px 24px;display:flex;flex-direction:column;gap:12px;box-sizing:border-box}
+.fuss{flex:none;padding:12px 16px 20px;background:#FFFFFF;border-top:1px solid #E3DED8;display:flex;flex-direction:column;gap:8px}
+.card{background:#FFFFFF;border-radius:16px;border:1px solid #E3DED8;overflow:hidden;flex:none}
+.row{width:100%;min-height:60px;display:flex;align-items:center;gap:14px;padding:12px 18px;border:0;border-top:1px solid #F0EDEA;background:transparent;text-align:left;cursor:pointer;box-sizing:border-box}
+.row:first-child{border-top:0}
+.row:hover{background:#F7F4F1}
+.row.static{cursor:default}.row.static:hover{background:transparent}
+.grow{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+.t{font-size:16px;font-weight:700;line-height:1.3}
+.s{font-size:14px;color:#726D68;line-height:1.4}
+.val{flex:none;font-size:16px;font-weight:800}
+.code{flex:none;min-width:48px;height:34px;padding:0 10px;box-sizing:border-box;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:800}
+.k-dienst{background:#FBE1E4;color:#8E0F30}
+.k-ruf{background:#EEE4F3;color:#4E2A6B}
+.k-frei{background:#E3F1E4;color:#1B5E20}
+.k-urlaub{background:#DDF0EE;color:#0F4F4A}
+.k-fortb{background:#E2EAF2;color:#24476B}
+.k-krank{background:#FBEBD3;color:#6E4100}
+.k-ign{background:#EDEAE7;color:#5E5955}
+.k-offen{background:#FFFFFF;color:#B26A00;border:1.5px dashed #B26A00}
+.btn{min-height:52px;padding:0 20px;border-radius:26px;border:1px solid #E3DED8;background:#FFFFFF;font-size:16px;font-weight:800;cursor:pointer;width:100%}
+.btn:hover{background:#F7F4F1}
+.btn.pri{background:#E2001A;border-color:#E2001A;color:#FFFFFF}
+.btn.pri:hover{background:#B80015}
+.btn.pri:disabled{background:#E3DED8;border-color:#E3DED8;color:#726D68;cursor:not-allowed}
+.klein{min-height:44px;padding:0 16px;border-radius:22px;border:1px solid #E3DED8;background:#FFFFFF;font-size:15px;font-weight:700;cursor:pointer;flex:none}
+.klein.ok{background:#E3F1E4;border-color:#E3F1E4;color:#1B5E20}
+.box{flex:none;width:24px;height:24px;border-radius:6px;border:2px solid #726D68;box-sizing:border-box;display:flex;align-items:center;justify-content:center}
+.box.on{background:#E2001A;border-color:#E2001A}
+.wahl{display:flex;flex-direction:column;padding:4px 12px 12px;gap:6px;background:#F7F4F1;border-top:1px solid #F0EDEA}
+.wopt{min-height:48px;display:flex;align-items:center;gap:12px;padding:0 12px;border-radius:12px;border:1px solid #E3DED8;background:#FFFFFF;font-size:15px;font-weight:700;cursor:pointer;text-align:left}
+.wopt.on{border:2px solid #E2001A}
+.punkt{flex:none;width:14px;height:14px;border-radius:4px}
+.badge{margin-left:auto;padding:2px 8px;border-radius:8px;background:#EEE4F3;color:#4E2A6B;font-size:12px;font-weight:800}
+.hero{flex:1;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:18px;padding:32px;text-align:center}
+.hero h1{margin:0;font-size:30px;font-weight:800;line-height:1.2}
+.hero p{margin:0;font-size:16px;color:#726D68;line-height:1.5}
+.zeitfeld{flex:none;min-height:48px;padding:0 12px;border-radius:12px;border:1.5px solid #E3DED8;background:#F7F4F1;font-family:inherit;font-size:18px;font-weight:800;color:#2D2A28}
+.zeitfeld:focus{outline:none;border-color:#E2001A;background:#FFFFFF}
+/* Material3-Switch wie in der App: 52x32, Daumen aus 16 px, an 24 px */
+.sw{flex:none;width:52px;height:32px;box-sizing:border-box;border-radius:16px;border:2px solid #726D68;background:#EDEAE7;position:relative;cursor:pointer;padding:0}
+.sw::after{content:"";position:absolute;top:6px;left:6px;width:16px;height:16px;border-radius:8px;background:#726D68;transition:all .15s}
+.sw.on{background:#E2001A;border-color:#E2001A}
+.sw.on::after{top:2px;left:22px;width:24px;height:24px;border-radius:12px;background:#FFFFFF}
+.sw.dis{opacity:.35;cursor:not-allowed}
+.info{background:#E2EAF2;color:#24476B;border-radius:14px;padding:14px 16px;font-size:14px;line-height:1.45;flex:none}
+</style>
+</helmet>
+<div class="app">
+
+<!-- 0: Willkommen -->
+<sc-if value="{{s0}}" hint-placeholder-val="{{ true }}">
+  <div class="hero">
+    <svg width="88" height="88" viewBox="0 0 24 24" fill="none" stroke="#E2001A" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="13" r="8"></circle><path d="M12 9v4l2.5 2.5M5 3L2 6M19 3l3 3"></path></svg>
+    <h1>Dein Wecker nach Dienstplan</h1>
+    <p>CF Alarm liest deinen TimeOffice-Kalender und weckt dich, wie du es pro Dienst, freiem Tag oder Urlaub willst.</p>
+  </div>
+  <div class="fuss"><button class="btn pri" onClick="{{weiter}}">Mit Google anmelden</button></div>
+</sc-if>
+
+<!-- 1-4: Schritte mit Kopf -->
+<sc-if value="{{mitKopf}}" hint-placeholder-val="{{ false }}">
+  <div class="kopf">
+    <div class="fortschritt">
+      <sc-for list="{{striche}}" as="st" hint-placeholder-count="4"><span class="{{st.klasse}}"></span></sc-for>
+    </div>
+    <span class="schritt">{{schrittText}}</span>
+    <h1>{{kopfTitel}}</h1>
+    <p>{{kopfText}}</p>
+  </div>
+</sc-if>
+
+<!-- 1: Kalender -->
+<sc-if value="{{s1}}" hint-placeholder-val="{{ false }}">
+  <div class="scroll">
+    <div class="card">
+      <sc-for list="{{kalender}}" as="k" hint-placeholder-count="3">
+        <button class="row" aria-pressed="{{k.an}}" onClick="{{k.pick}}">
+          <span class="{{k.box}}"><sc-if value="{{k.an}}" hint-placeholder-val="{{ false }}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"></path></svg></sc-if></span>
+          <span class="grow"><span class="t">{{k.name}}</span><span class="s">{{k.info}}</span></span>
+        </button>
+      </sc-for>
+    </div>
+  </div>
+  <div class="fuss"><button class="btn pri" onClick="{{weiter}}">Kalender durchsuchen</button></div>
+</sc-if>
+
+<!-- 2: Fund einordnen -->
+<sc-if value="{{s2}}" hint-placeholder-val="{{ false }}">
+  <div class="scroll">
+    <sc-for list="{{fund}}" as="f" hint-placeholder-count="6">
+      <div class="card">
+        <button class="row" aria-expanded="{{f.offen}}" onClick="{{f.toggle}}">
+          <span class="code {{f.klasse}}">{{f.code}}</span>
+          <span class="grow"><span class="t">{{f.katText}}</span><span class="s">{{f.anzahl}}</span></span>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#726D68" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg>
+        </button>
+        <sc-if value="{{f.offen}}" hint-placeholder-val="{{ false }}">
+          <div class="wahl">
+            <sc-for list="{{f.wahl}}" as="o" hint-placeholder-count="8">
+              <sc-if value="{{o.istKopf}}" hint-placeholder-val="{{ false }}"><span class="s" style="padding: 10px 4px 2px; font-weight: 700">{{o.label}}</span></sc-if>
+              <sc-if value="{{o.istOption}}" hint-placeholder-val="{{ true }}">
+                <button class="{{o.klasse}}" aria-pressed="{{o.an}}" onClick="{{o.pick}}">
+                  <span class="punkt {{o.farbe}}"></span><span>{{o.label}}</span>
+                  <sc-if value="{{o.besonders}}" hint-placeholder-val="{{ false }}"><span class="badge">Sonderfall</span></sc-if>
+                </button>
+              </sc-if>
+            </sc-for>
+          </div>
+        </sc-if>
+      </div>
+    </sc-for>
+  </div>
+  <div style="padding: 0 14px 12px">
+    <div class="card">
+      <button class="row" aria-expanded="{{ohne.offen}}" onClick="{{ohne.toggle}}">
+        <span class="code k-offen">leer</span>
+        <span class="grow"><span class="t">Tage ganz ohne Eintrag</span><span class="s">{{ohne.text}}</span></span>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#726D68" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg>
+      </button>
+      <sc-if value="{{ohne.offen}}" hint-placeholder-val="{{ false }}">
+        <div class="wahl">
+          <sc-for list="{{ohne.wahl}}" as="o" hint-placeholder-count="3">
+            <button class="{{o.klasse}}" aria-pressed="{{o.an}}" onClick="{{o.pick}}"><span class="punkt {{o.farbe}}"></span><span>{{o.label}}</span></button>
+          </sc-for>
+        </div>
+      </sc-if>
+    </div>
+  </div>
+  <div class="fuss">
+    <span class="s" style="text-align: center">{{offenText}}</span>
+    <button class="btn pri" onClick="{{weiter}}">Weiter</button>
+  </div>
+</sc-if>
+
+<!-- 3: Weckzeiten -->
+<sc-if value="{{s3}}" hint-placeholder-val="{{ false }}">
+  <div class="scroll">
+    <sc-if value="{{hatMitWecker}}" hint-placeholder-val="{{ true }}">
+    <div class="card">
+      <sc-for list="{{mitWecker}}" as="w" hint-placeholder-count="4">
+        <div class="row static">
+          <span class="code {{w.klasse}}">{{w.code}}</span>
+          <label class="grow" for="{{w.feldId}}"><span class="t">{{w.kat}}</span><span class="s">Weckzeit</span></label>
+          <input class="zeitfeld" type="time" id="{{w.feldId}}" value="{{w.zeit}}" onChange="{{w.aendern}}">
+
+        </div>
+      </sc-for>
+    </div>
+    </sc-if>
+    <sc-if value="{{hatOhneWecker}}" hint-placeholder-val="{{ true }}">
+    <div class="card">
+      <div class="row static"><span class="grow"><span class="t">Ohne Wecker voreingestellt</span><span class="s">{{ohneWeckerText}}</span></span></div>
+    </div>
+    </sc-if>
+    <div class="info">Dimmen, „Nicht stören“, stummer Lichtwecker: stellst du später pro Typ ein, unter Einstellungen › Schichttypen.</div>
+  </div>
+  <div class="fuss"><button class="btn pri" onClick="{{weiter}}">Weiter</button></div>
+</sc-if>
+
+<!-- 4: Damit der Wecker sicher klingelt -->
+<sc-if value="{{s4}}" hint-placeholder-val="{{ false }}">
+  <div class="scroll">
+    <div class="card">
+      <sc-for list="{{gates}}" as="g" hint-placeholder-count="4">
+        <div class="row static">
+          <span class="grow"><span class="t">{{g.titel}}</span><span class="s">{{g.text}}</span></span>
+          <button class="{{g.klasse}}" onClick="{{g.pick}}">{{g.knopf}}</button>
+        </div>
+      </sc-for>
+    </div>
+    <div class="info">Diese vier Schritte sind Pflicht: Fehlt einer, kann Android den Wecker still verschlucken.</div>
+  </div>
+  <div class="fuss"><button class="btn pri" disabled="{{gatesOffen}}" onClick="{{weiter}}">Fertig</button></div>
+</sc-if>
+
+<!-- 5: Fertig -->
+<sc-if value="{{s5}}" hint-placeholder-val="{{ false }}">
+  <div class="hero">
+    <svg width="80" height="80" viewBox="0 0 24 24" fill="none" stroke="#2E7D32" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M8 12l3 3 5-6"></path></svg>
+    <h1>Eingerichtet</h1>
+    <p>Nächster Wecker: <b>Mo 19.10., {{naechsteZeit}}</b> (F).</p>
+    <p>{{fertigText}}</p>
+  </div>
+  <div class="fuss"><button class="btn" onClick="{{vonVorn}}">Prototyp von vorn</button></div>
+</sc-if>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":412,"height":915}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = this.start();
+  }
+
+  start() {
+    return {
+      schritt: 0,
+      kalender: { to: true, privat: false, feiertage: false },
+      offen: null,
+      zuordnung: {},
+      ohneWie: null,
+      zeiten: { F: '05:30', S: '10:00', N: '13:30' },
+      gates: { benachrichtigung: false, akku: false, pausieren: false, timeoffice: false }
+    };
+  }
+
+  renderVals() {
+    const s = this.state;
+    const KAT = {
+      dienst: { label: 'Dienst', klasse: 'k-dienst' },
+      ruf: { label: 'Rufbereitschaft', klasse: 'k-ruf', besonders: true },
+      frei: { label: 'Frei', klasse: 'k-frei' },
+      urlaub: { label: 'Urlaub', klasse: 'k-urlaub' },
+      fortb: { label: 'Fortbildung', klasse: 'k-fortb' },
+      krank: { label: 'Krank', klasse: 'k-krank', besonders: true },
+      ign: { label: 'Ignorieren', klasse: 'k-ign' }
+    };
+    const REIHE = ['dienst', 'ruf', 'frei', 'urlaub', 'fortb', 'krank', 'ign'];
+    const CODES = [
+      { code: 'F', n: 8 }, { code: 'IMCF', n: 6 }, { code: 'S', n: 10 }, { code: 'N', n: 6 }, { code: '+', n: 12 },
+      { code: 'U', n: 5 }, { code: 'AD', n: 3 }, { code: 'FBE', n: 2 }, { code: 'FBI', n: 1 },
+      { code: 'K', n: 1 }, { code: 'TB', n: 2 }
+    ];
+    const weiter = () => this.setState({ schritt: s.schritt + 1, offen: null });
+
+    const kalender = [
+      { id: 'to', name: 'TimeOffice – Dienstplan', info: 'Dienste, Frei, Urlaub' },
+      { id: 'privat', name: 'Privat', info: 'Eigene Termine' },
+      { id: 'feiertage', name: 'Feiertage in Deutschland', info: 'Abonniert' }
+    ].map((k) => {
+      const an = !!s.kalender[k.id];
+      return { name: k.name, info: k.info, an: an, box: an ? 'box on' : 'box', pick: () => this.setState({ kalender: Object.assign({}, s.kalender, { [k.id]: !an }) }) };
+    });
+
+    // Zuordnung: Kategorie-Schluessel ODER 'wie:<Code>' (gleicher Typ wie ein anderer Code)
+    const katVon = (code) => {
+      const z = s.zuordnung[code];
+      if (!z) return null;
+      return z.indexOf('wie:') === 0 ? s.zuordnung[z.slice(4)] : z;
+    };
+    const eigeneTypen = CODES.filter((c) => s.zuordnung[c.code] && s.zuordnung[c.code].indexOf('wie:') !== 0 && s.zuordnung[c.code] !== 'ign');
+    const mitglieder = (code) => [code].concat(CODES.filter((c) => s.zuordnung[c.code] === 'wie:' + code).map((c) => c.code));
+
+    const fund = CODES.map((c) => {
+      const z = s.zuordnung[c.code];
+      const kat = katVon(c.code);
+      const offen = s.offen === c.code;
+      const istWie = !!z && z.indexOf('wie:') === 0;
+      const hatAnhang = CODES.some((x) => s.zuordnung[x.code] === 'wie:' + c.code);
+      const wieOptionen = hatAnhang ? [] : eigeneTypen.filter((x) => x.code !== c.code).map((x) => ({
+        label: 'wie ' + x.code + ' (' + KAT[s.zuordnung[x.code]].label + ')', farbe: KAT[s.zuordnung[x.code]].klasse,
+        an: z === 'wie:' + x.code, klasse: z === 'wie:' + x.code ? 'wopt on' : 'wopt',
+        pick: () => this.setState({ zuordnung: Object.assign({}, s.zuordnung, { [c.code]: 'wie:' + x.code }), offen: null })
+      }));
+      return {
+        code: c.code,
+        anzahl: c.n + '× in den nächsten 8 Wochen',
+        klasse: kat ? KAT[kat].klasse : 'k-offen',
+        katText: kat ? (istWie ? KAT[kat].label + ' · gleicher Typ wie ' + z.slice(4) : KAT[kat].label) : 'Noch nicht eingeordnet',
+        offen: offen,
+        toggle: () => this.setState({ offen: offen ? null : c.code }),
+        wahl: [{ istKopf: true, label: 'Eigener Typ in der Kategorie:' }]
+          .concat(REIHE.map((k) => ({
+            istOption: true, label: KAT[k].label, farbe: KAT[k].klasse, besonders: !!KAT[k].besonders,
+            an: z === k, klasse: z === k ? 'wopt on' : 'wopt',
+            pick: () => this.setState({ zuordnung: Object.assign({}, s.zuordnung, { [c.code]: k }), offen: null })
+          })))
+          .concat(wieOptionen.length ? [{ istKopf: true, label: 'Oder gleicher Wecker wie ein anderer Code:' }] : [])
+          .concat(wieOptionen.map((w) => Object.assign({ istOption: true }, w)))
+          .concat(z ? [{ istOption: true, label: 'Zuordnung aufheben', farbe: 'k-offen', an: false, klasse: 'wopt',
+            pick: () => { const neu = Object.assign({}, s.zuordnung); delete neu[c.code]; Object.keys(neu).forEach((x) => { if (neu[x] === 'wie:' + c.code) delete neu[x]; }); this.setState({ zuordnung: neu, offen: null }); } }] : [])
+      };
+    });
+    const nOffen = CODES.filter((c) => !s.zuordnung[c.code]).length;
+    const offenText = nOffen === 0 ? 'Alles eingeordnet.' : nOffen + ' noch offen – die kannst du auch später unter Schichttypen einordnen.';
+
+    const zugeordnet = eigeneTypen;
+    const mitWecker = zugeordnet.filter((c) => s.zuordnung[c.code] === 'dienst').map((c) => ({
+      code: mitglieder(c.code).join(' · '), klasse: 'k-dienst', kat: 'Dienst', zeit: s.zeiten[c.code] || '06:00',
+      feldId: 'zeit-' + c.code,
+      aendern: (e) => { const v = e && e.target ? e.target.value : ''; if (v) this.setState({ zeiten: Object.assign({}, this.state.zeiten, { [c.code]: v }) }); }
+    }));
+    const ohne = zugeordnet.filter((c) => s.zuordnung[c.code] !== 'dienst');
+    const ohneWeckerText = ohne.map((c) => mitglieder(c.code).join(' · ') + ' ('+ KAT[s.zuordnung[c.code]].label + ')').join(', ') + '. Einschalten geht jederzeit am Typ – auch stumm, als Lichtwecker.';
+
+    const gatesDef = [
+      { id: 'benachrichtigung', titel: 'Wecker und Benachrichtigungen', text: 'Genaue Weckzeit und Vollbild erlauben' },
+      { id: 'akku', titel: 'Akku-Optimierung aus', text: 'Sonst schläft die App ein' },
+      { id: 'pausieren', titel: 'Nicht pausieren', text: 'Android pausiert selten geöffnete Apps – und löscht deren Wecker' },
+      { id: 'timeoffice', titel: 'TimeOffice-Abgleich', text: 'Prüfen, dass der Dienstplan im Kalender ankommt' }
+    ];
+    const gates = gatesDef.map((g) => {
+      const ok = !!s.gates[g.id];
+      return { titel: g.titel, text: g.text, knopf: ok ? 'Erledigt' : 'Erlauben', klasse: ok ? 'klein ok' : 'klein', pick: () => this.setState({ gates: Object.assign({}, s.gates, { [g.id]: true }) }) };
+    });
+    const gatesOffen = gatesDef.some((g) => !s.gates[g.id]);
+
+    const kopf = {
+      1: { t: 'Welche Kalender?', p: 'Wähle den Kalender, in den TimeOffice deinen Dienstplan schreibt.' },
+      2: { t: 'Das steht in deinem Kalender', p: 'Ordne jeden Code einer Kategorie zu. Die Kategorie gibt nur Voreinstellungen vor – du kannst später alles pro Typ ändern.' },
+      3: { t: 'Wann willst du aufstehen?', p: 'Für Dienste ist ein Wecker voreingestellt. Alles andere startet ohne Wecker.' },
+      4: { t: 'Damit der Wecker sicher klingelt', p: 'Android braucht dafür vier Erlaubnisse.' }
+    }[s.schritt] || { t: '', p: '' };
+
+    const striche = [1, 2, 3, 4].map((i) => ({ klasse: i <= s.schritt ? 'strich on' : 'strich' }));
+    const nTypen = eigeneTypen.length;
+    // Nur ein Code mit eigenem Typ taugt als Vorbild; wird er umgeordnet, faellt die Wahl auf "eigene" zurueck
+    const ohneZiel = s.ohneWie && eigeneTypen.some((c) => c.code === s.ohneWie) ? s.ohneWie : null;
+
+    return {
+      s0: s.schritt === 0, s1: s.schritt === 1, s2: s.schritt === 2, s3: s.schritt === 3, s4: s.schritt === 4, s5: s.schritt === 5,
+      mitKopf: s.schritt >= 1 && s.schritt <= 4,
+      striche: striche,
+      schrittText: 'Schritt ' + s.schritt + ' von 4',
+      kopfTitel: kopf.t, kopfText: kopf.p,
+      weiter: weiter,
+      kalender: kalender,
+      fund: fund, offenText: offenText,
+      mitWecker: mitWecker, hatMitWecker: mitWecker.length > 0,
+      hatOhneWecker: ohne.length > 0, ohneWeckerText: ohneWeckerText,
+      gates: gates, gatesOffen: gatesOffen,
+      ohne: {
+        offen: s.offen === '__ohne',
+        toggle: () => this.setState({ offen: s.offen === '__ohne' ? null : '__ohne' }),
+        text: ohneZiel ? 'Wie ' + ohneZiel + ' (' + KAT[s.zuordnung[ohneZiel]].label + ') – wenn bei dir „nichts eingetragen“ dasselbe heißt' : 'Eigene Einstellungen – oder wie einer deiner Codes',
+        wahl: [{ code: null, label: 'Eigene Einstellungen', farbe: 'k-offen' }]
+          .concat(eigeneTypen.map((c) => ({ code: c.code, label: 'Wie ' + c.code + ' (' + KAT[s.zuordnung[c.code]].label + ')', farbe: KAT[s.zuordnung[c.code]].klasse })))
+          .map((o) => ({ label: o.label, farbe: o.farbe, an: ohneZiel === o.code, klasse: ohneZiel === o.code ? 'wopt on' : 'wopt', pick: () => this.setState({ ohneWie: o.code, offen: null }) }))
+      },
+      naechsteZeit: s.zeiten.F || '05:30',
+      fertigText: nTypen + ' Typen angelegt. Dimmen, „Nicht stören“ und Licht stellst du unter Einstellungen › Schichttypen ein.',
+      vonVorn: () => this.setState(this.start())
+    };
+  }
+}
+</script>
+</body>
+</html>

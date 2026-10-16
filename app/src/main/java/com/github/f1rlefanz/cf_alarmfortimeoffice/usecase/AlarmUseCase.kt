@@ -650,6 +650,24 @@ class AlarmUseCase @Inject constructor(
                             .toInstant()
                             .toEpochMilli()
 
+                        // Umbau E2 „Wecker aus“ am Typ (#168): erkannt (die Spanne oben ist
+                        // geschrieben), aber kein Wecker. Gefuehrt wie ein abgelaufener Kandidat:
+                        // ueber die Paarung raeumt Schritt 1 einen schon gestellten Wecker ab, erst
+                        // Cancel, dann Delete, und meldet KEINE entfernte Schicht - der Termin steht
+                        // ja noch im Kalender. Vor der Vergangenheits-Pruefung, damit das Log den
+                        // Grund nennt. Manuelle Wecker nehmen an der Paarung nie teil, sie bleiben.
+                        if (!shiftMatch.shiftDefinition.weckerAn) {
+                            Logger.d(LogTags.ALARM, "🔕 SYNC: Wecker am Typ aus, kein Wecker fuer ${shiftMatch.shiftDefinition.name}")
+                            kandidaten += SyncKandidat(
+                                eventId = eventId,
+                                triggerTime = triggerTime,
+                                shiftId = shiftMatch.shiftDefinition.id,
+                                neuerAlarm = null,
+                                weckerAus = true
+                            )
+                            continue
+                        }
+
                         if (shiftMatch.calculatedAlarmTime.isBefore(now)) {
                             Logger.w(LogTags.ALARM, "⏰ SYNC: Skipping alarm in the past: ${shiftMatch.shiftDefinition.name}")
                             kandidaten += SyncKandidat(
@@ -725,18 +743,22 @@ class AlarmUseCase @Inject constructor(
                         continue
                     }
 
-                    // ZWEI verschiedene Gruende, hier zu landen - und nur EINER davon ist eine
+                    // DREI verschiedene Gruende, hier zu landen - und nur EINER davon ist eine
                     // entfernte Schicht:
                     //  1. Der Termin ist wirklich aus dem Kalender verschwunden (keine Paarung).
                     //  2. Der Termin laeuft weiter, nur die WECKZEIT ist verstrichen (der Wecker
                     //     hat heute frueh geklingelt) - erkennbar daran, dass die Paarung einen
-                    //     Kandidaten OHNE neuen Alarm gefunden hat. Der Alarm wird trotzdem
-                    //     geraeumt - ein abgelaufener Alarm gehoert nicht in den Bestand - aber es
-                    //     ist KEINE Aenderung des Dienstplans, also gibt es dafuer auch keine
-                    //     Meldung. Die Schichtspanne bleibt davon unberuehrt erhalten, damit
-                    //     Dimmer und "Nicht stoeren" die laufende Schicht weiter kennen.
-                    val onlyExpired = kandidat != null
-                    if (onlyExpired) {
+                    //     Kandidaten OHNE neuen Alarm gefunden hat.
+                    //  3. Der Termin steht weiter im Kalender, aber sein Typ hat den Wecker aus
+                    //     (#168) - ebenfalls ein Kandidat ohne neuen Alarm.
+                    // In 2. und 3. wird der Alarm trotzdem geraeumt - er gehoert nicht (mehr) in
+                    // den Bestand -, aber es ist KEINE Aenderung des Dienstplans, also gibt es
+                    // dafuer auch keine Meldung. Die Schichtspanne bleibt davon unberuehrt
+                    // erhalten, damit Dimmer und "Nicht stoeren" die Schicht weiter kennen.
+                    val terminBesteht = kandidat != null
+                    if (kandidat?.weckerAus == true) {
+                        Logger.business(LogTags.ALARM, "🔕 SYNC: Wecker am Typ ausgeschaltet, Termin bleibt: ${existingAlarm.shiftName} (eventId: ${existingAlarm.eventId})")
+                    } else if (terminBesteht) {
                         Logger.business(LogTags.ALARM, "⌛ SYNC: Weckzeit verstrichen, Termin laeuft weiter: ${existingAlarm.shiftName} (eventId: ${existingAlarm.eventId})")
                     } else {
                         Logger.business(LogTags.ALARM, "🗑️ SYNC: Deleting alarm for deleted event: ${existingAlarm.shiftName} (eventId: ${existingAlarm.eventId})")
@@ -764,11 +786,11 @@ class AlarmUseCase @Inject constructor(
                     // KrankmeldungNotifier), keine entfernte Schicht. Gefragt wird die KALENDER-Menge,
                     // nicht die Vereinigung: eine Hand-Freigabe aendert den Dienstplan nicht, ein dann
                     // verschwundener Termin ist weiterhin eine echte Aenderung.
-                    val krankTag = !onlyExpired && istKalenderKrankTag(existingAlarm, freigaben.kalender, zone)
+                    val krankTag = !terminBesteht && istKalenderKrankTag(existingAlarm, freigaben.kalender, zone)
                     if (krankTag) {
                         Logger.business(LogTags.ALARM, "🤒 SYNC: Wecker an Krank-Tag entfernt - keine Meldung 'Schicht entfernt'")
                     }
-                    if (!onlyExpired && !krankTag) {
+                    if (!terminBesteht && !krankTag) {
                         try {
                             shiftChangeNotifier.notifyDeleted(existingAlarm)
                         } catch (e: Exception) {
@@ -1612,16 +1634,19 @@ class AlarmUseCase @Inject constructor(
     /**
      * Ein Termin der AKTUELLEN Kalenderlesung, so wie ihn der Delta-Sync braucht.
      *
-     * [neuerAlarm] ist `null`, wenn die Weckzeit dieses Termins bereits verstrichen ist. Solche
+     * [neuerAlarm] ist `null`, wenn der Termin besteht, aber keinen Wecker bekommt: seine Weckzeit
+     * ist bereits verstrichen, oder sein Typ hat den Wecker aus ([weckerAus], #168). Solche
      * Kandidaten werden trotzdem gefuehrt, weil die Paarung sie braucht: sonst gilt ein Termin,
-     * dessen Wecker heute frueh geklingelt hat, als "aus dem Kalender entfernt", sobald der Feed
-     * ihm eine neue Kennung gegeben hat.
+     * dessen Wecker heute frueh geklingelt hat oder ausgeschaltet wurde, als "aus dem Kalender
+     * entfernt" - mit der Meldung "Schicht entfernt" fuer eine Schicht, die noch im Kalender steht.
      */
     private data class SyncKandidat(
         val eventId: String,
         val triggerTime: Long,
         val shiftId: String,
-        val neuerAlarm: AlarmInfo?
+        val neuerAlarm: AlarmInfo?,
+        /** Nur fuer das Log: `neuerAlarm == null`, weil der Typ den Wecker aus hat (#168). */
+        val weckerAus: Boolean = false
     )
 
     /**

@@ -63,10 +63,32 @@ Format: Skill · Paket · die normative Zeile · Hergang in einem Satz.
   wenn er danach fragt. Hergang: unter „erste passende Definition gewinnt" hätte ein vorn stehender
   Ignorieren-Typ einen Dienst geschluckt; deshalb stehen in `IgnorierenErkennungTest` die Ignorieren-Typen
   absichtlich VOR dem Dienst. Der Code-Vorschlag brauchte keine Änderung (jedes Muster zählt als
-  Zuordnung, Test „ein ignorierter Code erscheint nicht als Vorschlag"). **Noch offen, nicht in #167:** die
-  Home-Karte „Keine Schicht erkannt" (`HomeTabContent`) filtert nur Krank heraus, nicht Ignorieren –
-  `enabledShiftTypeCount` (:698) nimmt #171 mit, die Titel-Kostprobe (:639) steht dort als Hinweis;
-  erreichbar erst, wenn ein Ignorieren-Typ angelegt werden kann (#169/#176).
+  Zuordnung, Test „ein ignorierter Code erscheint nicht als Vorschlag"). Die Home-Karte „Keine Schicht
+  erkannt" schließt Ignorieren seit #171 aus (Zählung und Titel-Kostprobe, siehe #171 unten).
+
+- **#171** · Kurzregel (Abschnitt Schichterkennung, neben `findDefinitionFor`/`matchesKeywords`): **Welche
+  Typen eine AUSWAHLLISTE anbieten darf, entscheidet EINE Funktion: `ShiftDefinition.istWaehlbareSchicht()`
+  (`SchichttypAuswahl.kt`, aktiv UND Kategorie weder Krank noch Ignorieren; Dienst, Rufbereitschaft, Frei,
+  Urlaub, Fortbildung bleiben wählbar – SPEC E2). Wer eine Liste baut, ruft `waehlbareSchichttypen()` bzw.
+  `waehlbareSchichtNamen()`, nie eine eigene `isEnabled && !isSickDay`-Bedingung.** Das ist exakt die Menge,
+  aus der `ShiftRecognitionEngine` Schichttreffer macht (`schichtDefinitionen`), die Engine ruft die Funktion
+  aber nicht selbst (Kerntest-Nähe, nicht Teil von #171). Angeschlossen: manueller Wecker (Liste UND frische
+  Abfrage im Erstellungspfad), Dimmer-Regel-Ziele, DND-Ausnahmen, Hue-Regelmuster, Zählung
+  `enabledShiftTypeCount` der Übersichtskarte. **Bewusst NICHT angeschlossen:** `ShiftViewModel.schichtFolgen`
+  (Statuszeile der Typ-Liste) – sie braucht den Ignorieren-Typ, um „wird übergangen" zu sagen
+  (`SchichtFolgen.kt`). Zweite Frage derselben Datei: `istIgnorierterTermin(titel)` (Gegenstück zu
+  `istKrankmeldung`) für die Titel-Kostprobe der Karte „Keine Schicht erkannt" (`kostprobeTitel`) – ohne sie
+  stünde ein ignorierter Code dort als „im Kalender steht: TB" und legte nahe, ihn als Muster einzutragen.
+  Sie prüft einfach (aktiv + Ignorieren + Muster) und nicht in der Engine-Reihenfolge „erst Schicht, dann
+  Ignorieren": die Kostprobe steht nur, wenn nichts erkannt wurde. **Verhaltensänderung, bewusst:** die
+  Listen von Dimmer-Regeln und DND-Ausnahmen schlossen vorher nur Krank aus, jetzt auch ausgeschaltete Typen
+  (wie Hue und manueller Wecker schon vorher) – eine bestehende Ausnahme/Regel auf einen ausgeschalteten
+  Typ bleibt gespeichert, ist aber bis zum Wiedereinschalten nicht als Chip/Option sichtbar. Hergang: die
+  Bedingung stand an sechs Stellen kopiert; die Ignorieren-Kategorie (#166/#167) hätte sechs Änderungen
+  verlangt, und eine vergessene hätte einen Typ angeboten, der nie greift. Tests: `SchichttypAuswahlTest`
+  (reine Funktion), `SchichttypAuswahlVerdrahtungTest` (Dimmer, DND, manueller Wecker inkl. frischer
+  Abfrage – mit den alten Bedingungen an diesen vier Stellen sind alle vier rot, am 17.10.2026 gemessen).
+  Hue-Karte und Übersichts-Zählung sind Einzeiler im Composable und ohne eigenen Test.
 
 - **#169** · Kurzregel (Abschnitt Schichterkennung, neben `withCodeAssignedTo`): **Einordnen läuft über
   `SchichttypEinordnen`: `neuerTypAusCode()` speichert NICHT (erst der Editor nach Bestätigung, sonst wird

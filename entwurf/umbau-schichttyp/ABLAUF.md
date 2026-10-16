@@ -234,8 +234,9 @@ Offen:
    Änderung: Timeout 900 s, `"onFailure": "block"`, Matcher `Bash|PowerShell`, Deny-Regel für
    `CFALARM_SCHLEUSE`. Wirkt auch für interaktive Sitzungen.
 2. **`tools/umbau/runner.ps1`** nach Abschnitt 6, die stündliche Windows-Aufgabe, die Labels.
-3. **Migrations-Testvorlage** aus dem Export vom 16.10.2026 (Form klärt der Eigentümer: nachgebaut,
-   bereinigt öffentlich oder nur lokal).
+3. ~~Migrations-Testvorlage~~ erledigt: der Export vom 16.10.2026 liegt lokal unter
+   `..Projektdateien/umbau/testvorlagen/` (Eigentümer: nur lokal; der Umbau läuft ohnehin auf
+   diesem PC). Die nachgebaute Vorlage fürs Repo entsteht im ersten Migrations-Paket.
 4. **Epic und Etappe-0-Issues** anlegen.
 5. **Probelauf** Etappe 0 beobachtet: prüfen, ob `/goal`, Advisor und `--max-turns` headless wie
    erwartet greifen; Turn-Caps und Verbrauch danach kalibrieren.

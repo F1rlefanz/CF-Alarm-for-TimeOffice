@@ -130,6 +130,10 @@ Tageslicht (Standort), Sonstiges (Master-Pause, Wecker-Ton, Schlummern, Export, 
   Mustern zu deuten (vorab per Test gegen den alten Decoder belegen).
 - **Testvorlage:** eine echte Konfiguration vom 16.10.2026 (7 Typen, Regeln mit mehreren Fenstern und
   Blocktagen, UNIVERSAL-Regel, Hue-Regeln mit Szenen) muss verlustfrei migrieren.
+  Sie liegt **nur lokal** unter `..Projektdateien/umbau/testvorlagen/` (gitignored, Entscheidung des
+  Eigentümers). Der Test liest sie von dort und wird ohne die Datei mit einer klaren Meldung
+  übersprungen (JUnit `Assume`), nie still grün. Zusätzlich gibt es eine nachgebaute Vorlage im
+  Repo, die dieselben Fälle abdeckt, damit die Migration auch in der CI geprüft ist.
 
 ## 5. Was fertig heißt (für den ganzen Umbau)
 

@@ -17,6 +17,21 @@ Format: Skill · Paket · die normative Zeile · Hergang in einem Satz.
   (auch Paarungsrunde (b) bei gleichzeitig neuer Feed-Kennung). Bekannt und hingenommen: aus → an
   meldet über `notifyCreated` „Neue Schicht erkannt", wie heute ein wieder aktivierter Typ (es gibt
   keinen Merker, warum der Wecker fehlte).
+- **#172** · Kurzregel (neben der #168-Zeile): **Steht am selben Tag wie eine Rufbereitschaft ein
+  Treffer der Kategorie Dienst (der nachgetragene Einsatz), führt `syncAlarms()` den Ruf-Treffer als
+  `SyncKandidat` ohne Alarm (`OhneWecker.RUF_UEBERNOMMEN`) – derselbe Weg wie „Wecker aus": ein
+  gestellter Ruf-Wecker geht über die Paarung (Cancel vor Delete) OHNE „Schicht entfernt". Die
+  Ruf-SPANNE bleibt in `persistShiftSpans`, denn aus ihr lesen `RufbereitschaftAbfrage` und
+  `DndOnCallCutoffResolver`. Die Frage stellt EINE reine Funktion, `shift/RufUebernahme.kt`
+  (`uebernommeneRufTermine`); der Tag ist das Datum des Termin-BEGINNS, nicht der Weckzeit** (beim
+  Nachtdienst fallen sie auseinander; ganztägig = sein Datum). Nur Kategorie Dienst übernimmt, und
+  zwar unabhängig von `weckerAn` und verstrichener Weckzeit des Dienstes: der Tag folgt dem Dienst-Typ.
+  Hergang: Festlegung des Betreuers in #172 (SPEC E3, Codes beim Eigentümer AD/AD1). Den Treffer
+  stattdessen aus `shiftMatches` zu entfernen, nähme die Spanne mit – die stündliche Abfrage und das
+  DND-Ende 05:00 fielen an genau dem Tag weg, an dem der Chef angerufen hat. Tests:
+  `RufUebernahmeTest`, `RufUebernahmeSyncTest` (auch Paarungsrunde (b) bei neuer Feed-Kennung).
+  Bekannt und hingenommen wie bei #168: wird der Einsatz gestrichen, meldet der Sync den F-Wecker zu
+  Recht als entfernt und den zurückkehrenden Ruf-Wecker über `notifyCreated` als „Neue Schicht erkannt".
 
 ## cfalarm-dimmer-und-dnd
 

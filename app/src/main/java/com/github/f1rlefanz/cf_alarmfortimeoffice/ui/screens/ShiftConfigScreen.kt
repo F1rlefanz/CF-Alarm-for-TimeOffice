@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -309,6 +310,8 @@ fun ShiftConfigScreen(
                 // weight(1f) ist Pflicht, sonst schiebt die Liste den Reset-Knopf aus dem
                 // Bildschirm (ui-texte-und-layout.md).
                 modifier = Modifier.weight(1f),
+                // Fussabstand: ohne ihn schneidet die Liste Rand und Schatten der letzten Karte an.
+                contentPadding = PaddingValues(bottom = SpacingConstants.SPACING_SMALL),
                 verticalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_MEDIUM)
             ) {
                 // Kuerzel-Vorschlaege aus dem ECHTEN Kalender - steht bewusst GANZ OBEN, denn

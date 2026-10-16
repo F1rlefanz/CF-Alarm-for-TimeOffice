@@ -247,7 +247,10 @@ function StarteClaude([string]$goal, [string]$model, [int]$cap, [string]$cwd, [s
 }
 
 function PaketZiel($issue, [int]$lauf, [int]$cap, [string]$branch) {
-    $start = if ($lauf -gt 1) { "Teilarbeit liegt vor (Branch $branch, git log, Kommentare im Issue): pruefe sie und setze fort." } else { 'Setze das Paket um.' }
+    # Teilarbeit gibt es nicht nur im zweiten Lauf: auch nach einem Limit oder Absturz liegt der Branch
+    # schon auf origin (16.10.2026: #166 lief nach dem Limit mit "Setze das Paket um" weiter).
+    $vorhanden = git -C $Root ls-remote --heads origin $branch
+    $start = if ($lauf -gt 1 -or $vorhanden) { "Teilarbeit liegt vor (Branch $branch, git log, Kommentare im Issue): pruefe sie und setze fort." } else { 'Setze das Paket um.' }
     return @"
 /goal Paket #$($issue.number) des Umbaus "Schichttyp als Zentrale": $($issue.title). $start
 Lies zuerst entwurf/umbau-schichttyp/ABLAUF.md, SPEC.md, das Issue (gh issue view $($issue.number)) und den dort genannten Skill.

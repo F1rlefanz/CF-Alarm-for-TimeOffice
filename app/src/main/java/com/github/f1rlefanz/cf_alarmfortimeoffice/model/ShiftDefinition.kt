@@ -76,7 +76,8 @@ data class ShiftDefinition(
      * Hergang: Skill cfalarm-kalender-und-schichten, reference/schichterkennung.md.
      *
      * AUSNAHME Zeichenmuster (#150): Hat [pattern] keinen Buchstaben und keine Ziffer, finden die
-     * Grenzen keinen Halt - sie pruefen nur, dass neben dem Muster kein Buchstabe steht, und "+"
+     * Grenzen keinen Halt - sie pruefen nur, dass neben dem Muster kein Wortzeichen (Buchstabe,
+     * Ziffer, `_`) steht, und "+"
      * traf so auch "C++" und "x + y". Ein solches Muster muss deshalb dem ganzen Titel entsprechen.
      */
     private fun matchesAsWholeWord(lowercaseTitle: String, pattern: String): Boolean {

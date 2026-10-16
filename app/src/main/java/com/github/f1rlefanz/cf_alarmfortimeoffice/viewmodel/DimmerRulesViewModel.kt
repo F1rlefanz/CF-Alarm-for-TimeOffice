@@ -687,7 +687,10 @@ class DimmerRulesViewModel @Inject constructor(
                             startAnchor = DimAnchor.CLOCK,
                             startClockMinutes = rhythmus.schlafVorDienstAb,
                             endAnchor = DimAnchor.ALARM,
-                            endOffsetMinutes = 0
+                            endOffsetMinutes = 0,
+                            // Vorschlaf = SELBER Tag. Wecker vor dieser Uhrzeit: kein Fenster,
+                            // statt 21,5 h ab dem Vortag (#151).
+                            startNurAmWecktag = true
                         )
                     ),
                     strength = DimOverlayPrefs.DEFAULT_STRENGTH,

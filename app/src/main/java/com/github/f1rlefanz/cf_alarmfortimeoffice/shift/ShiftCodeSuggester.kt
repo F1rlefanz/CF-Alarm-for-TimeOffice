@@ -117,18 +117,21 @@ object ShiftCodeSuggester {
     /**
      * Macht aus einem Termintitel einen Kuerzel-Kandidaten - oder null, wenn er keiner sein kann.
      *
-     * Zwei Ausschlussgruende, beide technisch begruendet und nicht Geschmackssache:
-     *  - Zu lang: Freitext ist als Erkennungsmuster nutzlos (siehe [MAX_CODE_LENGTH]).
-     *  - Kein einziger Buchstabe und keine Ziffer: [com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition.matchesKeywords]
-     *    arbeitet mit Wortgrenzen ueber Unicode-Buchstaben/Ziffern. Ein Titel wie "+" (steht real
-     *    im Dienstplan des Entwicklers) koennte als Muster also NIE treffen - ihn vorzuschlagen
-     *    waere ein Versprechen, das die Erkennung nicht halten kann.
+     * Einziger Ausschlussgrund neben dem leeren Titel, technisch begruendet und nicht
+     * Geschmackssache: zu lang - Freitext ist als Erkennungsmuster nutzlos (siehe [MAX_CODE_LENGTH]).
+     *
+     * Titel aus REINEN ZEICHEN ("+", "-", "*") sind ausdruecklich Kandidaten (#150): Dienstplaene
+     * nutzen sie real, "+" steht beim Entwickler fuer frei. Bis #150 wurden sie hier verworfen, weil
+     * [com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition.matchesKeywords] sie ueber
+     * Wortgrenzen angeblich NIE treffen koenne - das war falsch, die Grenzen sind Lookarounds und
+     * trafen ein von Hand eingetragenes "+" laengst. Wer hier wieder einen Buchstaben verlangt,
+     * versteckt solche Eintraege still; der Nutzer erfaehrt nicht einmal, dass sie existieren.
+     * Dass "+" nicht in "C++" trifft, regelt die Erkennung (ganzer Titel), nicht dieser Filter.
      */
     internal fun normalizeCode(rawTitle: String): String? {
         val code = rawTitle.trim()
         if (code.isEmpty()) return null
         if (code.length > MAX_CODE_LENGTH) return null
-        if (code.none { it.isLetterOrDigit() }) return null
         return code
     }
 }

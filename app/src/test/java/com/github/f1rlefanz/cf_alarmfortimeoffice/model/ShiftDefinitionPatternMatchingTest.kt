@@ -214,4 +214,46 @@ class ShiftDefinitionPatternMatchingTest {
         assertFalse(def.matchesKeywords("Kino"))
         assertFalse(def.matchesKeywords("Ein   Termin"))
     }
+
+    // ---- 4. Muster aus reinen Zeichen (#150) ----
+
+    /**
+     * Ein Muster ohne Buchstabe und ohne Ziffer ("+" fuer frei) hat keine Wortgrenze, an der es
+     * sich festhalten koennte: die Lookarounds sehen nur, dass neben dem Zeichen kein Buchstabe
+     * steht. Dann traf "+" auch "C++" und "x + y". Solche Muster treffen deshalb nur den GANZEN
+     * (getrimmten) Titel - das gilt auch fuer den Schichtnamen als Zusatzmuster.
+     */
+    @Test
+    fun `Zeichenmuster trifft nur den ganzen Titel`() {
+        val def = definition(keywords = listOf("+"), name = "X")
+
+        assertTrue(def.matchesKeywords("+"))
+        assertTrue("Rand-Leerzeichen zaehlen nicht", def.matchesKeywords("  +  "))
+        assertFalse(def.matchesKeywords("C++"))
+        assertFalse(def.matchesKeywords("x + y"))
+        assertFalse(def.matchesKeywords("f +"))
+        assertFalse(def.matchesKeywords("+1"))
+        assertFalse(def.matchesKeywords("a+b"))
+
+        val perName = definition(keywords = emptyList(), name = "++")
+        assertTrue(perName.matchesKeywords("++"))
+        assertFalse(perName.matchesKeywords("x ++"))
+    }
+
+    /**
+     * Gegenprobe: alles mit mindestens einem Buchstaben oder einer Ziffer bleibt beim
+     * Wortgrenzen-Abgleich - auch gemischte Muster wie "N+". Eine Ganz-Titel-Regel fuer jedes
+     * Muster mit Sonderzeichen (oder fuer alle) wuerde hier rot.
+     */
+    @Test
+    fun `Buchstaben-Kuerzel und gemischte Muster treffen weiter als eigenes Wort`() {
+        val def = definition(keywords = listOf("F", "N+"), name = "X")
+
+        assertTrue(def.matchesKeywords("F"))
+        assertTrue(def.matchesKeywords("Meeting F"))
+        assertTrue(def.matchesKeywords("N+ Dienst"))
+        assertFalse(def.matchesKeywords("Fortbildung"))
+        assertFalse(def.matchesKeywords("12F"))
+        assertFalse(def.matchesKeywords("AN+"))
+    }
 }

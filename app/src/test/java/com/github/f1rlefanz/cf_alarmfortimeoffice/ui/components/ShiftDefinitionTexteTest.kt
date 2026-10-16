@@ -1,6 +1,8 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components
 
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -54,12 +56,30 @@ class ShiftDefinitionTexteTest {
 
     @Test
     fun `Die Ein-Buchstaben-Warnung nennt bei einer Krankmeldung den fehlenden Wecker`() {
-        val krank = ShiftDefinitionTexte.einBuchstabeWarnung(isSickDay = true)
+        val krank = ShiftDefinitionTexte.einBuchstabeWarnung("K", isSickDay = true)!!
         assertTrue(krank.contains("Diensttag frei"))
         assertTrue(krank.contains("kein Wecker aus dem Dienstplan"))
         assertFalse("Bei Krank weckt ein fremder Termin nicht, er schweigt", krank.contains("weckt dich"))
 
-        val schicht = ShiftDefinitionTexte.einBuchstabeWarnung(isSickDay = false)
+        val schicht = ShiftDefinitionTexte.einBuchstabeWarnung("F", isSickDay = false)!!
         assertTrue(schicht.contains("weckt dich dann an freien Tagen"))
+    }
+
+    /**
+     * Seit #150 trifft ein Muster aus reinen Zeichen ("+" fuer frei) nur den GANZEN Titel - nie
+     * "Kino mit +" oder "x + y". Die Warnung behauptete das Gegenteil, in Fehlerfarbe, und genau
+     * unter dem Kuerzel, das die App seit #150 selbst vorschlaegt. Sie gilt nur, wo die Erkennung
+     * mit Wortgrenzen arbeitet: ein einzelner Buchstabe oder eine einzelne Ziffer.
+     */
+    @Test
+    fun `Die Ein-Buchstaben-Warnung erscheint nur bei einem Buchstaben oder einer Ziffer`() {
+        for (krank in listOf(false, true)) {
+            assertNotNull(ShiftDefinitionTexte.einBuchstabeWarnung("F", krank))
+            assertNotNull(ShiftDefinitionTexte.einBuchstabeWarnung(" 7 ", krank))
+            assertNull("'+' trifft nur den ganzen Titel", ShiftDefinitionTexte.einBuchstabeWarnung("+", krank))
+            assertNull(ShiftDefinitionTexte.einBuchstabeWarnung(" - ", krank))
+            assertNull(ShiftDefinitionTexte.einBuchstabeWarnung("FR", krank))
+            assertNull(ShiftDefinitionTexte.einBuchstabeWarnung("", krank))
+        }
     }
 }

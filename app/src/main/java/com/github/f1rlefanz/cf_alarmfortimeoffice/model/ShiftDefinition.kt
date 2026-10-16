@@ -52,6 +52,9 @@ data class ShiftDefinition(
      * aus den beiden Wortgrenzen und traefe als LEERER Treffer ueberall dort, wo beide Seiten
      * kein Wortzeichen sind. Der [name] zaehlt als zusaetzliches Muster, aber nur ab
      * [ShiftConfig.MIN_FUZZY_KEYWORD_LENGTH] Zeichen - sonst kehrt die einbuchstabige Falle zurueck.
+     *
+     * Ein Muster aus REINEN ZEICHEN ("+" fuer frei, kein Buchstabe, keine Ziffer) trifft nur den
+     * GANZEN getrimmten Titel (#150) - siehe [matchesAsWholeWord].
      * Hergang: Skill cfalarm-kalender-und-schichten, reference/schichterkennung.md.
      */
     fun matchesKeywords(eventTitle: String): Boolean {
@@ -71,10 +74,16 @@ data class ShiftDefinition(
      * Eigene Grenzpruefung ueber Unicode-Kategorien statt `\b` (ASCII-basiert, invertiert die
      * Semantik bei Umlauten) und statt `(?U)` (definiert `\w`/`\d`/`\s` im ganzen Ausdruck um).
      * Hergang: Skill cfalarm-kalender-und-schichten, reference/schichterkennung.md.
+     *
+     * AUSNAHME Zeichenmuster (#150): Hat [pattern] keinen Buchstaben und keine Ziffer, finden die
+     * Grenzen keinen Halt - sie pruefen nur, dass neben dem Muster kein Wortzeichen (Buchstabe,
+     * Ziffer, `_`) steht, und "+"
+     * traf so auch "C++" und "x + y". Ein solches Muster muss deshalb dem ganzen Titel entsprechen.
      */
     private fun matchesAsWholeWord(lowercaseTitle: String, pattern: String): Boolean {
         val needle = pattern.trim().lowercase()
         if (needle.isEmpty()) return false
+        if (istZeichenmuster(needle)) return lowercaseTitle.trim() == needle
         return WordBoundaryPatterns.forNeedle(needle).containsMatchIn(lowercaseTitle)
     }
 }
@@ -137,6 +146,19 @@ private const val WORD_START = "(?<![\\p{L}\\p{N}_])"
 
 /** Dasselbe rechts des Musters. Siehe [WORD_START]. */
 private const val WORD_END = "(?![\\p{L}\\p{N}_])"
+
+/**
+ * Dieselben Zeichenklassen wie [WORD_START]/[WORD_END]: ein Muster ohne einen einzigen Treffer
+ * hierauf ist ein Zeichenmuster und trifft nur den ganzen Titel (#150).
+ */
+private val BUCHSTABE_ODER_ZIFFER = Regex("[\\p{L}\\p{N}]")
+
+/**
+ * Hat [muster] keinen einzigen Buchstaben und keine Ziffer ("+", "---")? Dann trifft es nur den
+ * ganzen Titel (#150). Die Warnung im Schicht-Editor fragt dasselbe, damit sie nie etwas anderes
+ * behauptet, als die Erkennung tut.
+ */
+internal fun istZeichenmuster(muster: String): Boolean = !BUCHSTABE_ODER_ZIFFER.containsMatchIn(muster)
 
 /**
  * #142/#146: Ist [titel] eine Krankmeldung? Die EINE Regel - nur aktive Krank-Typen, Keyword-Treffer.

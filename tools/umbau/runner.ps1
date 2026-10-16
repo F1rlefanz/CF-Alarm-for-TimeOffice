@@ -146,6 +146,7 @@ function LimitWarten([string]$text) {
 
 function StarteClaude([string]$goal, [string]$model, [int]$cap, [string]$cwd, [string]$logName) {
     $env:ANDROID_SERIAL = $Emu
+    Remove-Item Env:CFALARM_SCHLEUSE -ErrorAction SilentlyContinue   # Notausgang der Schleuse nie erben
     $log = Join-Path $Logs "$logName.json"
     $a = @('-p', $goal, '--model', $model, '--effort', 'xhigh', '--max-turns', "$($cap + 5)",
            '--strict-mcp-config', '--output-format', 'json',

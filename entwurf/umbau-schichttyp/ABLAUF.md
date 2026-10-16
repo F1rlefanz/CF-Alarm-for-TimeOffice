@@ -212,7 +212,7 @@ unverändert vor.
 | Fund außerhalb des Umfangs | – | Issue mit Label `spaeter`, wird in diesem Umbau **nicht** abgearbeitet (sonst endet die Schleife nie) |
 | Etappen-Abschluss gescheitert | 2 Versuche | Runner stoppt, Bericht im Epic |
 | Etappe hat offene oder blockierte Pakete, aber kein wählbares | – | Runner stoppt, Bericht im Epic – **kein** Abschluss mit Lücke |
-| verboten | Force-Push, History umschreiben, Push auf `main` außer im Etappen-Abschluss, Bump außerhalb des Etappen-Abschlusses, Fairphone ansprechen, Kerntests ändern ohne benannte Verhaltensänderung, `.claude/**` schreiben, `CFALARM_SCHLEUSE=aus` | Wo möglich mechanisch erzwungen, nicht nur im Ziel-Text: `ANDROID_SERIAL`, gesperrte Werkzeuge, Deny-Regel für `CFALARM_SCHLEUSE` (Abschnitt 9) |
+| verboten | Force-Push, History umschreiben, Push auf `main` außer im Etappen-Abschluss, Bump außerhalb des Etappen-Abschlusses, Fairphone ansprechen, Kerntests ändern ohne benannte Verhaltensänderung, `.claude/**` schreiben, `CFALARM_SCHLEUSE=aus` | Wo möglich mechanisch erzwungen, nicht nur im Ziel-Text: `ANDROID_SERIAL`, gesperrte Werkzeuge, Schleuse fail-closed, Notausgang nicht vererbt (Abschnitt 9) |
 
 **Ende des Umbaus:** alle Etappen-Issues geschlossen, Abschnitt 5 der Spec erfüllt, Epic
 geschlossen. Dann beendet sich der Runner und sagt das in `STATUS.txt` und im Epic.
@@ -229,11 +229,10 @@ Erledigt (16.10.2026):
   3 kleine Befunde, alle eingearbeitet.
 
 Offen:
-1. **Schleuse fail-closed machen** (`.claude/settings.json`, braucht die Freigabe des Eigentümers):
-   Die Schleuse braucht im schlechtesten Fall 300 + 300 + 180 = 780 s, der Hook-Timeout ist 600 s,
-   und ein abgelaufener Hook **lässt den Befehl durch**. Ein kalter Worktree ist genau dieser Fall.
-   Änderung: Timeout 900 s, `"onFailure": "block"`, Matcher `Bash|PowerShell`, Deny-Regel für
-   `CFALARM_SCHLEUSE`. Wirkt auch für interaktive Sitzungen.
+1. ~~Schleuse fail-closed~~ erledigt (Freigabe des Eigentümers 16.10.2026): Hook-Timeout 900 s,
+   `"onFailure": "block"`, eigener Eintrag für `PowerShell(git *)`. Eine Deny-Regel für
+   `CFALARM_SCHLEUSE` braucht es nicht: die Schleuse liest den Notausgang aus der Umgebung von
+   Claude Code, nicht aus dem Befehl; der Runner entfernt die Variable vor jedem Lauf.
 2. ~~Runner~~ erledigt: `tools/umbau/runner.ps1` (mit `-DryRun` ohne Wirkung prüfbar) und
    `tools/umbau/aufgabe_einrichten.ps1` für die stündliche Windows-Aufgabe (führt der Eigentümer
    einmal selbst aus, es ändert die Systemaufgaben).

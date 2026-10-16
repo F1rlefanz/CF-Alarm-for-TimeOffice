@@ -2,13 +2,22 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Bash",
+        "matcher": "Bash|PowerShell",
         "hooks": [
           {
             "type": "command",
             "command": "cd \"$(git rev-parse --show-toplevel)\" && python tools/schleuse/pruefe_schleuse.py",
             "if": "Bash(git *)",
-            "timeout": 600,
+            "timeout": 900,
+            "onFailure": "block",
+            "statusMessage": "Schleuse prueft..."
+          },
+          {
+            "type": "command",
+            "command": "cd \"$(git rev-parse --show-toplevel)\" && python tools/schleuse/pruefe_schleuse.py",
+            "if": "PowerShell(git *)",
+            "timeout": 900,
+            "onFailure": "block",
             "statusMessage": "Schleuse prueft..."
           }
         ]

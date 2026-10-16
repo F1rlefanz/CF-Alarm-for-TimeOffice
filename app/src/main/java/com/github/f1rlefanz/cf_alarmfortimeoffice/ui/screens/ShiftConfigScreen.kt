@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -848,7 +849,7 @@ private fun SchichttypZeile(
             .clickable(onClick = onEdit)
             .padding(
                 start = ZEILE_RAND,
-                end = SpacingConstants.SPACING_EXTRA_SMALL,
+                end = ZEILE_ENDE,
                 top = SpacingConstants.SPACING_SMALL,
                 bottom = SpacingConstants.SPACING_SMALL
             ),
@@ -857,11 +858,30 @@ private fun SchichttypZeile(
     ) {
         CodeMarke(code = definition.listenCode(), kategorie = definition.kategorie)
         Column(modifier = Modifier.weight(1f)) {
-            Text(
-                definition.name,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
+            // Der Papierkorb steht in der NAMENSZEILE, nicht als dritte Spalte der Zeile: dort nahm er
+            // der Status- und der Kurzform-Zeile 48 dp. Bei 320 dp blieben 146 statt der 208 dp der
+            // alten Karte, und die Abschnitte der Kurzform ("Dimmen: allgemeine Regel", geschuetzte
+            // Leerzeichen) brachen mitten im Wort (Emulator 17.10.2026, gemessen am uiautomator-Dump).
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    definition.name,
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                IconButton(
+                    onClick = onDelete,
+                    // Zurueck an den Kartenrand: die Zeile endet bei ZEILE_ENDE, der Knopf soll
+                    // wie zuvor nur 4 dp davor stehen.
+                    modifier = Modifier.offset(x = ZEILE_ENDE - SpacingConstants.SPACING_EXTRA_SMALL)
+                ) {
+                    Icon(
+                        Icons.Default.Delete,
+                        contentDescription = "Löschen",
+                        tint = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
             StatusZeile(definition)
             // Kurzform (SPEC 3.1): rein lesend, nicht eigens tippbar, keine Warnfarbe - sie
             // beschreibt die Konfiguration, sie mahnt nicht (#70).
@@ -872,13 +892,6 @@ private fun SchichttypZeile(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-        }
-        IconButton(onClick = onDelete) {
-            Icon(
-                Icons.Default.Delete,
-                contentDescription = "Löschen",
-                tint = MaterialTheme.colorScheme.error
-            )
         }
     }
 }
@@ -1038,3 +1051,4 @@ internal fun kategorieFarben(kategorie: ShiftKategorie, dunkel: Boolean): Katego
 private val ZEILE_MINDESTHOEHE = 60.dp
 private val ZEILE_RAND = 18.dp
 private val ZEILE_ABSTAND = 14.dp
+private val ZEILE_ENDE = 12.dp

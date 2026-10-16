@@ -402,10 +402,28 @@ class SchichtFolgenTest {
 
     @Test
     fun `Kurzform - Wecker aus heisst kein Wecker vor der Statuszeile`() {
+        // Ohne den Licht-Abschnitt: ohne Alarm laeuft keine Hue-Regel (siehe der Test darunter).
         assertEquals(
-            "kein Wecker · $volleFolgen",
+            "kein Wecker · Dimmen: keine · Nicht stören: aus",
             kurz(def().copy(weckerAn = false))
         )
+    }
+
+    @Test
+    fun `Kurzform - Wecker aus nennt kein Licht, auch wenn eine Hue-Regel passt`() {
+        // Hue laeuft nur zu einem ALARM (AlarmReceiver -> executeRulesForAlarm); ein Typ mit
+        // weckerAn = false stellt keinen. "Licht: 1 Regel + allgemeine" neben "kein Wecker" waere ein
+        // Ablauf, den es nicht gibt (Pruefer-Befund zu #170, SPEC E8).
+        val regeln = Result.success(listOf(hueRegel("h1", "AD1"), hueRegel("h2", "ALL")))
+        val ohneWecker = def().copy(weckerAn = false)
+        val f = folgen(definition = ohneWecker, hueRegeln = regeln)
+        assertEquals("Testvoraussetzung: die Statuszeile kennt die Regeln", "Licht: 1 Regel + allgemeine", licht(f))
+
+        val text = kurz(ohneWecker, f)!!
+        assertFalse("Ohne Alarm laeuft keine Hue-Regel: $text", text.contains("Licht"))
+        assertEquals("kein Wecker · Dimmen: keine · Nicht stören: aus", text)
+        // Mit Wecker bleibt die Regel Teil der Zeile.
+        assertTrue(kurz(def(), folgen(hueRegeln = regeln))!!.contains("Licht: 1 Regel + allgemeine"))
     }
 
     @Test

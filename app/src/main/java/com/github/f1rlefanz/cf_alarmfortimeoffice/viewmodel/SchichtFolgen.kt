@@ -207,10 +207,20 @@ private fun dndStatus(
  * laenger als eine Kartenzeile bei 320 dp, und ein durchgehend geschuetzter Abschnitt wuerde
  * dann mitten im Wort umbrechen.
  */
-internal fun SchichtFolgen.alsText(): String =
-    listOf(
+internal fun SchichtFolgen.alsText(): String = abschnitte(mitLicht = true)
+
+/**
+ * Wie [alsText], aber ohne den Licht-Abschnitt: Hue-Regeln laufen nur zu einem ALARM
+ * (`AlarmReceiver` -> `executeRulesForAlarm`, `HueSmartScheduler` liest nur Alarme). Ein Typ mit
+ * `weckerAn = false` stellt keinen - sein Licht ist keine Aussage, die die Zeile machen darf
+ * (SPEC E8: ohne Weckzeit gibt es kein Licht).
+ */
+internal fun SchichtFolgen.alsTextOhneLicht(): String = abschnitte(mitLicht = false)
+
+private fun SchichtFolgen.abschnitte(mitLicht: Boolean): String =
+    listOfNotNull(
         teil(Texte.DIMMEN, dimmen.teile()),
-        teil(Texte.LICHT, licht.teile()),
+        if (mitLicht) teil(Texte.LICHT, licht.teile()) else null,
         teil(Texte.DND, dnd.teile())
     ).joinToString(Texte.TRENNER)
 
@@ -220,7 +230,8 @@ internal fun SchichtFolgen.alsText(): String =
  *
  * In Etappe 1 ist sie die heutige Statuszeile ([alsText]) plus zwei Faelle, die die Statuszeile nicht
  * kennt: „kein Wecker“ (`weckerAn = false`, steht VOR der Statuszeile) und „wird übergangen“
- * (Ignorieren). Dimm-Kurzformen wie „dimmt 20:00–Wecker“ kommen erst mit Etappe 3.
+ * (Ignorieren). Dimm-Kurzformen wie „dimmt 20:00–Wecker“ kommen erst mit Etappe 3. Bei „kein Wecker“ fehlt der Licht-Abschnitt
+ * der Statuszeile ([alsTextOhneLicht]): ohne Alarm laeuft keine Hue-Regel.
  *
  * - **Ignorieren** zuerst: ein solcher Typ wirkt weder mit Wecker noch mit Dimmer, Licht oder DND,
  *   auch wenn das ViewModel ihm [SchichtFolgen] liefert (er passiert dort den Filter). Ein
@@ -237,7 +248,7 @@ internal fun kurzform(definition: ShiftDefinition, folgen: SchichtFolgen?): Stri
     if (definition.weckerAn) return folgen?.alsText()
     // Geschuetzt wie die Abschnitte der Statuszeile: umbrochen wird nur HINTER dem Trenner.
     val keinWecker = schuetze(SchichttypTexte.KEIN_WECKER)
-    return if (folgen == null) keinWecker else keinWecker + Texte.TRENNER + folgen.alsText()
+    return if (folgen == null) keinWecker else keinWecker + Texte.TRENNER + folgen.alsTextOhneLicht()
 }
 
 /**

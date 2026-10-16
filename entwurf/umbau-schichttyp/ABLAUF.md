@@ -233,7 +233,9 @@ Offen:
    und ein abgelaufener Hook **lässt den Befehl durch**. Ein kalter Worktree ist genau dieser Fall.
    Änderung: Timeout 900 s, `"onFailure": "block"`, Matcher `Bash|PowerShell`, Deny-Regel für
    `CFALARM_SCHLEUSE`. Wirkt auch für interaktive Sitzungen.
-2. **`tools/umbau/runner.ps1`** nach Abschnitt 6, die stündliche Windows-Aufgabe, die Labels.
+2. ~~Runner~~ erledigt: `tools/umbau/runner.ps1` (mit `-DryRun` ohne Wirkung prüfbar) und
+   `tools/umbau/aufgabe_einrichten.ps1` für die stündliche Windows-Aufgabe (führt der Eigentümer
+   einmal selbst aus, es ändert die Systemaufgaben).
 3. ~~Migrations-Testvorlage~~ erledigt: der Export vom 16.10.2026 liegt lokal unter
    `..Projektdateien/umbau/testvorlagen/` (Eigentümer: nur lokal; der Umbau läuft ohnehin auf
    diesem PC). Die nachgebaute Vorlage fürs Repo entsteht im ersten Migrations-Paket.

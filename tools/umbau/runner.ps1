@@ -15,6 +15,9 @@
 param([switch]$DryRun)
 
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+# Der Auftrag geht per Standardeingabe an claude (siehe StarteClaude); ohne UTF-8 hier wuerde
+# PowerShell 5.1 Umlaute dabei zu Fragezeichen machen.
+$OutputEncoding = [System.Text.Encoding]::UTF8
 # 'Continue': unter PS 5.1 wird jede stderr-Zeile eines externen Programms (git, gh, adb) bei
 # 'Stop' zur Ausnahme. Fehler werden stattdessen ueber `$LASTEXITCODE geprueft.
 $ErrorActionPreference = 'Continue'
@@ -36,21 +39,61 @@ $SkillEtappen = @(3, 9)   # brauchen vorher Label skills-bereit-N am Epic (ABLAU
 
 New-Item -ItemType Directory -Force $Logs | Out-Null
 
-function Log([string]$text) {
-    $zeile = "$(Get-Date -Format s)  $text"
-    Write-Host $zeile
-    if ($DryRun) { return }
+function Anhaengen([string]$pfad, [string]$zeile) {
     # Mitleser (Get-Content -Wait, tail -F) halten die Datei offen; Add-Content scheiterte daran
     # am 16.10.2026 mit "von einem anderen Prozess verwendet" (Zeilen fehlten). Deshalb mit
     # geteiltem Zugriff und bis zu 10 Versuchen.
     for ($v = 0; $v -lt 10; $v++) {
         try {
-            $fs = [System.IO.File]::Open($Status, 'Append', 'Write', 'ReadWrite')
+            $fs = [System.IO.File]::Open($pfad, 'Append', 'Write', 'ReadWrite')
             $b = [System.Text.Encoding]::UTF8.GetBytes($zeile + "`r`n")
             $fs.Write($b, 0, $b.Length); $fs.Close(); return
         } catch { Start-Sleep -Milliseconds 300 }
     }
-    Write-Host "WARNUNG: STATUS.txt nicht schreibbar"
+    Write-Host "WARNUNG: $pfad nicht schreibbar"
+}
+
+function Log([string]$text) {
+    $zeile = "$(Get-Date -Format s)  $text"
+    Write-Host $zeile
+    if (-not $DryRun) { Anhaengen $Status $zeile }
+}
+
+function Kurz([string]$t, [int]$n) {
+    $t = ($t -replace '\s+', ' ').Trim()
+    if ($t.Length -gt $n) { return $t.Substring(0, $n) + ' ...' }
+    return $t
+}
+
+function Ereigniszeile([string]$roh) {
+    # Eine Zeile von --output-format stream-json in eine lesbare Zeile fuer das Live-Log.
+    # $null = nichts anzeigen (Hooks, Denk-Zaehler, Werkzeug-Ergebnisse ohne Fehler).
+    if (-not $roh.StartsWith('{')) { return "  ! $(Kurz $roh 200)" }
+    try { $e = $roh | ConvertFrom-Json } catch { return $null }
+    $zeit = Get-Date -Format 'HH:mm:ss'
+    if ($e.type -eq 'assistant') {
+        $teile = @()
+        foreach ($c in $e.message.content) {
+            if ($c.type -eq 'text' -and $c.text) { $teile += "$zeit  $(Kurz $c.text 400)" }
+            elseif ($c.type -eq 'tool_use') {
+                $i = $c.input
+                $was = if ($i.description) { $i.description } elseif ($i.command) { $i.command } elseif ($i.file_path) { $i.file_path } elseif ($i.pattern) { $i.pattern } elseif ($i.prompt) { $i.prompt } else { '' }
+                $teile += "$zeit  -> $($c.name): $(Kurz "$was" 160)"
+            }
+        }
+        if ($teile.Count) { return ($teile -join "`r`n") }
+        return $null
+    }
+    if ($e.type -eq 'user') {
+        foreach ($c in $e.message.content) {
+            if ($c.type -eq 'tool_result' -and $c.is_error) { return "$zeit     Fehler: $(Kurz "$($c.content)" 200)" }
+        }
+        return $null
+    }
+    if ($e.type -eq 'result') {
+        return "$zeit  == ENDE: $($e.subtype), $($e.num_turns) Turns, $([math]::Round($e.duration_ms / 60000, 1)) min"
+    }
+    return $null
 }
 
 function GhAufruf([string[]]$a) {
@@ -137,7 +180,16 @@ function Worktree([string]$name, [string]$branch, [string]$basis) {
 }
 
 function LimitWarten([string]$text) {
-    # Meldung z. B. "You've hit your session limit ... resets 4pm (Europe/Berlin)". Ohne lesbare Zeit: 30 min.
+    # Bevorzugt die genaue Reset-Zeit aus dem rate_limit_event (StarteClaude haengt sie als
+    # LIMIT_RESET=<epoch> an). Sonst Meldung z. B. "You've hit your session limit ... resets 4pm".
+    # Ohne lesbare Zeit: 30 min.
+    if ($text -match 'LIMIT_RESET=(\d+)') {
+        $ziel = [DateTimeOffset]::FromUnixTimeSeconds([long]$Matches[1]).LocalDateTime.AddMinutes(2)
+        $warte = [math]::Max(1, [math]::Ceiling(($ziel - (Get-Date)).TotalMinutes))
+        Log "Limit erreicht - warte bis $(Get-Date $ziel -Format 'ddd HH:mm') ($warte min)"
+        if (-not $DryRun) { Start-Sleep -Seconds ($warte * 60) }
+        return $true
+    }
     # Nur ein FEHLER-Ergebnis zaehlt: ein Agent, der in seiner Antwort ueber Limits schreibt, ist keins.
     try { $j = $text | ConvertFrom-Json; if (-not $j.is_error) { return $false }; $text = "$($j.result) $($j.subtype)" } catch {}
     if ($text -notmatch '(?i)(hit your|usage limit|session limit|weekly limit|rate limit)') { return $false }
@@ -158,15 +210,39 @@ function LimitWarten([string]$text) {
 function StarteClaude([string]$goal, [string]$model, [int]$cap, [string]$cwd, [string]$logName) {
     $env:ANDROID_SERIAL = $Emu
     Remove-Item Env:CFALARM_SCHLEUSE -ErrorAction SilentlyContinue   # Notausgang der Schleuse nie erben
-    $log = Join-Path $Logs "$logName.json"
-    $a = @('-p', $goal, '--model', $model, '--effort', 'xhigh', '--max-turns', "$($cap + 5)",
-           '--strict-mcp-config', '--output-format', 'json',
+    $roh = Join-Path $Logs "$logName.jsonl"
+    $live = Join-Path $Logs "$logName.log"
+    $a = @('-p', '--model', $model, '--effort', 'xhigh', '--max-turns', "$($cap + 5)",
+           '--strict-mcp-config', '--output-format', 'stream-json', '--verbose',
            '--disallowedTools', 'PowerShell', 'mcp__desktop-commander__start_process',
            'mcp__desktop-commander__interact_with_process', 'mcp__Windows-MCP__Powershell-Tool')
     Push-Location $cwd
-    try { $out = & claude @a 2>&1 | Out-String } finally { Pop-Location }
-    Set-Content -Path $log -Value $out -Encoding UTF8
-    return $out
+    # Live mitlesen: Get-Content ..Projektdateien\umbau\logs\<paket>.log -Wait
+    Anhaengen $live "$(Get-Date -Format s)  Start $logName ($model, Cap $cap)"
+    $ergebnis = $null; $reset = $null; $rest = New-Object System.Collections.Generic.List[string]
+    try {
+        # Der Auftrag per Standardeingabe, NICHT als Argument: PowerShell 5.1 zerlegt ein Argument mit
+        # Anfuehrungszeichen in mehrere (16.10.2026: '"Schichttyp als Zentrale"' im Ziel, dahinter
+        # stehende Teile kamen als unbekannte Optionen an).
+        $goal | & claude @a 2>&1 | ForEach-Object {
+            $z = "$_"
+            Anhaengen $roh $z
+            $t = Ereigniszeile $z
+            if ($t) { Anhaengen $live $t }
+            if ($z.StartsWith('{')) {
+                try {
+                    $e = $z | ConvertFrom-Json
+                    if ($e.type -eq 'result') { $ergebnis = $z }
+                    if ($e.type -eq 'rate_limit_event' -and $e.rate_limit_info.status -eq 'rejected') { $reset = $e.rate_limit_info.resetsAt }
+                } catch {}
+            }
+            $rest.Add($z); if ($rest.Count -gt 40) { $rest.RemoveAt(0) }
+        }
+    } finally { Pop-Location }
+    # Das Ergebnis-Objekt (wie frueher mit --output-format json); fehlt es (Absturz), die letzten Zeilen.
+    $text = if ($ergebnis) { $ergebnis } else { $rest -join "`n" }
+    if ($reset) { $text = "LIMIT_RESET=$reset`n$text" }
+    return $text
 }
 
 function PaketZiel($issue, [int]$lauf, [int]$cap, [string]$branch) {

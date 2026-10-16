@@ -18,6 +18,7 @@ erst bei Bedarf.
 | `cfalarm-hue` | Philips Hue: API-Semantik, Bridge, Regeln, Vorschau |
 | `cfalarm-persistenz-und-auth` | DataStore, Token-Rotation, Fehlerbehandlung, Gerätewechsel/Export |
 | `cfalarm-ui-und-navigation` | Compose-Layout, Nutzertexte, Zurück-Verhalten |
+| `cfalarm-ui-pruefen` | UI-Abnahme am Emulator gegen den Prototyp des Umbaus (`entwurf/umbau-schichttyp/`) |
 | `cfalarm-bauen-und-testen` | Gradle-Eigenheiten, Emulator, Gerätetests |
 | `cfalarm-release-und-changelog` | Versionsbump, Changelog, Release-Ablauf |
 | `cfalarm-altlasten-abtragen` | Toten Code, überholte Kommentare, Duplikate entfernen — und was dabei verworfen ist |

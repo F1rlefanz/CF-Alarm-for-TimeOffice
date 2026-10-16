@@ -1,0 +1,1194 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>Schichttypen – Prototyp</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Mulish:wght@400;600;700;800&amp;display=swap">
+<style>
+body{margin:0;font-family:Mulish,system-ui,sans-serif;color:#2D2A28;background:#F0EDEA}
+a{color:#8E0F30}a:hover{color:#5C0016}
+button{font-family:inherit;color:inherit}
+.app{width:412px;height:915px;display:flex;flex-direction:column;background:#F0EDEA;overflow:hidden}
+.bar{height:64px;flex:none;display:flex;align-items:center;gap:4px;padding:0 8px;background:#FFFFFF;border-bottom:1px solid #E3DED8;box-sizing:border-box}
+.bar h1{margin:0;padding-left:4px;font-size:18px;font-weight:800;flex:1;min-width:0;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.app{position:relative}
+.schleier{position:absolute;inset:0;background:rgba(45,42,40,.45);z-index:5;border:0;padding:0;cursor:pointer}
+.schublade{position:absolute;top:0;left:0;bottom:0;width:300px;background:#FFFFFF;z-index:6;display:flex;flex-direction:column;padding:20px 0;box-sizing:border-box;box-shadow:4px 0 24px rgba(0,0,0,.18)}
+.schublade h2{margin:0 0 12px;padding:0 22px;font-size:20px;font-weight:800}
+.nav{width:100%;min-height:52px;display:flex;align-items:center;gap:14px;padding:0 22px;border:0;background:transparent;font-size:16px;font-weight:700;text-align:left;cursor:pointer;box-sizing:border-box}
+.nav:hover{background:#F7F4F1}
+.nav.on{background:#FBE1E4;color:#8E0F30}
+.nav.aus{color:#726D68;cursor:default;font-weight:600}
+.nav.aus:hover{background:transparent}
+.icon{flex:none;width:48px;height:48px;border:0;background:transparent;border-radius:24px;display:flex;align-items:center;justify-content:center;cursor:pointer}
+.icon:hover{background:#F0EDEA}
+.scroll{flex:1;min-height:0;overflow-y:auto;padding:14px 14px 40px;display:flex;flex-direction:column;gap:14px;box-sizing:border-box}
+.card{background:#FFFFFF;border-radius:16px;border:1px solid #E3DED8;overflow:hidden;flex:none}
+.scroll>*,.scroll>*>*{flex-shrink:0}
+.bar>*{flex-shrink:0}
+.bar h1{flex-shrink:1}
+.sec{padding:16px 18px 6px;font-size:13px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:#726D68}
+.row{width:100%;min-height:60px;display:flex;align-items:center;gap:14px;padding:12px 18px;border:0;border-top:1px solid #F0EDEA;background:transparent;text-align:left;cursor:pointer;box-sizing:border-box}
+.row:hover{background:#F7F4F1}
+.row.static{cursor:default}.row.static:hover{background:transparent}
+.row.aus{opacity:.45}
+.grow{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+.t{font-size:16px;font-weight:700;line-height:1.3}
+.s{font-size:14px;color:#726D68;line-height:1.4}
+.code{flex:none;min-width:44px;height:32px;padding:0 10px;box-sizing:border-box;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800}
+.k-dienst{background:#FBE1E4;color:#8E0F30}
+.k-ruf{background:#EEE4F3;color:#4E2A6B}
+.k-frei{background:#E3F1E4;color:#1B5E20}
+.k-urlaub{background:#DDF0EE;color:#0F4F4A}
+.k-fortb{background:#E2EAF2;color:#24476B}
+.k-krank{background:#FBEBD3;color:#6E4100}
+.k-ign{background:#EDEAE7;color:#5E5955}
+.k-fest{background:#FFFFFF;color:#2D2A28;border:1.5px dashed #726D68}
+.hint{padding:12px 18px 16px;font-size:14px;color:#726D68;line-height:1.45}
+.fund{background:#FFFFFF;border:1.5px dashed #B26A00;border-radius:16px;padding:16px 18px;display:flex;flex-direction:column;gap:14px;flex:none}
+.fundeintrag{display:flex;flex-direction:column;gap:10px;padding-top:12px;border-top:1px solid #F0EDEA}
+.zeile{display:flex;align-items:center;gap:12px}
+.knoepfe{display:flex;gap:10px;flex-wrap:wrap}
+.btn{min-height:44px;padding:0 18px;border-radius:22px;border:1px solid #E3DED8;background:#FFFFFF;font-size:15px;font-weight:700;cursor:pointer}
+.btn:hover{background:#F7F4F1}
+.btn.pri{background:#E2001A;border-color:#E2001A;color:#FFFFFF}
+.btn.pri:hover{background:#B80015}
+/* Material3-Switch wie in der App: 52x32, Daumen aus 16 px, an 24 px */
+.sw{flex:none;width:52px;height:32px;box-sizing:border-box;border-radius:16px;border:2px solid #726D68;background:#EDEAE7;position:relative;cursor:pointer;padding:0}
+.sw::after{content:"";position:absolute;top:6px;left:6px;width:16px;height:16px;border-radius:8px;background:#726D68;transition:all .15s}
+.sw.on{background:#E2001A;border-color:#E2001A}
+.sw.on::after{top:2px;left:22px;width:24px;height:24px;border-radius:12px;background:#FFFFFF}
+.sw.dis{opacity:.35;cursor:not-allowed}
+.val{flex:none;font-size:16px;font-weight:800}
+.chev{color:#726D68;flex:none}
+.zeitfeld{flex:none;min-height:48px;padding:0 12px;border-radius:12px;border:1.5px solid #E3DED8;background:#F7F4F1;font-family:inherit;font-size:18px;font-weight:800;color:#2D2A28}
+.muster{display:inline-flex;align-items:center;gap:2px;min-height:40px;padding:0 4px 0 14px;border-radius:20px;background:#F0EDEA;font-size:15px;font-weight:500}
+.musterweg{width:36px;height:36px;border:0;border-radius:18px;background:transparent;font-size:20px;line-height:1;cursor:pointer;color:#726D68}
+.musterweg:hover{background:#E3DED8}
+.fenster{display:flex;flex-direction:column;gap:8px;margin:4px 14px 12px;padding:12px 14px;border:1px solid #E3DED8;border-radius:14px;background:#FCFBFA}
+.chipzeile{display:flex;flex-wrap:wrap;gap:8px}
+.wchip{min-height:40px;padding:0 14px;border-radius:20px;border:1px solid #E3DED8;background:#FFFFFF;font-size:14px;font-weight:600;cursor:pointer}
+.wchip.on{border:2px solid #E2001A;background:#FBE1E4;color:#8E0F30}
+.frow{display:flex;align-items:center;gap:10px;min-height:48px}
+.bez{min-height:64px;padding:8px 12px;border-radius:12px;border:1px solid #E3DED8;background:#FFFFFF;text-align:left;cursor:pointer}
+.bez.on{border:2px solid #E2001A;background:#FBE1E4}
+.strip{position:relative;height:66px;border-radius:10px;background:#F7F4F1;overflow:hidden}
+.strip.g24{background-image:repeating-linear-gradient(90deg,transparent 0,transparent calc(25% - 1px),#E3DED8 calc(25% - 1px),#E3DED8 25%)}
+.strip.g48{background-image:repeating-linear-gradient(90deg,transparent 0,transparent calc(12.5% - 1px),#E3DED8 calc(12.5% - 1px),#E3DED8 12.5%)}
+.band{position:absolute;height:9px;border-radius:5px}
+.muster-zeichen{flex:none;width:28px;height:20px;display:flex;align-items:center;justify-content:center;margin-top:1px}
+.z-band{display:block;width:26px;height:9px;border-radius:5px}
+.z-strich{display:block;width:3px;height:20px;border-radius:2px}
+.z-rahmen{display:block;width:26px;height:13px;border:2px dashed #E2001A;border-radius:6px;box-sizing:border-box}
+.abschnitt{padding:6px 4px 0;font-size:16px;font-weight:800;flex:none}
+.textknopf{align-self:flex-start;min-height:44px;padding:0 6px;border:0;background:transparent;color:#8E0F30;font-size:15px;font-weight:700;cursor:pointer;flex:none}
+.fab{position:absolute;right:20px;bottom:24px;width:60px;height:60px;border-radius:18px;border:0;background:#E2001A;box-shadow:0 6px 16px rgba(142,15,48,.35);display:flex;align-items:center;justify-content:center;cursor:pointer;z-index:4}
+.fab-klein{flex:none;width:52px;height:52px;border-radius:16px;border:0;background:#E2001A;box-shadow:0 4px 12px rgba(142,15,48,.3);display:flex;align-items:center;justify-content:center;cursor:pointer}
+.vollbild{position:absolute;inset:0;z-index:6;background:#FFFFFF;display:flex;flex-direction:column}
+.kal{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));row-gap:4px;padding:0 12px}
+sc-for,sc-if{display:contents}
+.kal-kopf{text-align:center;font-size:13px;font-weight:700;color:#726D68;padding:6px 0}
+.kz{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;min-width:0;height:50px;margin:0;padding:0;border:0;background:transparent;font-size:15px;line-height:1.1;cursor:pointer;color:#2D2A28}
+.kz-code{font-size:10px;font-weight:800;color:#726D68}
+.kz.ende .kz-code{color:#FFFFFF}
+.kz.leer{visibility:hidden}
+.kz.aus{color:#C7C0BA;cursor:default}
+.kz.kz-mitte{background:#FBE1E4}
+.kz.ende{background:#E2001A;color:#FFFFFF;border-radius:22px;font-weight:800}
+.kz.heute{box-shadow:inset 0 0 0 1.5px #2D2A28;border-radius:22px}
+.textknopf:disabled{color:#C7C0BA;cursor:not-allowed}
+.blatt{position:absolute;left:0;right:0;bottom:0;z-index:6;background:#FFFFFF;border-radius:22px 22px 0 0;padding:12px 20px 28px;display:flex;flex-direction:column;gap:12px;box-shadow:0 -6px 24px rgba(0,0,0,.18)}
+.griff{align-self:center;width:36px;height:4px;border-radius:2px;background:#CFC8C1}
+.btn.pri:disabled{background:#E3DED8;border-color:#E3DED8;color:#726D68;cursor:not-allowed}
+.menue{position:absolute;right:0;bottom:46px;z-index:8;min-width:200px;background:#FFFFFF;border:1px solid #E3DED8;border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.18);padding:6px 0;display:flex;flex-direction:column}
+.menuepunkt{min-height:44px;padding:0 16px;border:0;background:transparent;text-align:left;font-size:15px;cursor:pointer}
+.menuepunkt:hover{background:#F7F4F1}
+.toast{position:absolute;left:20px;right:20px;bottom:100px;z-index:7;background:#2D2A28;color:#FFFFFF;border-radius:12px;padding:12px 16px;font-size:14px}
+.zs-rahmen{position:relative;margin:0 14px 8px}
+.zs-scroll{cursor:grab;user-select:none;overflow-x:auto;overflow-y:hidden;border-radius:10px;background:#F7F4F1;scrollbar-width:none}
+.zs-scroll::-webkit-scrollbar,.scroll::-webkit-scrollbar{display:none}
+.scroll{scrollbar-width:none}
+.zs-innen{position:relative;height:136px}
+.zs-wecker{position:absolute;top:20px;width:13px;height:13px;margin-left:-6px}
+.zband{position:absolute;height:12px;border-radius:6px;display:flex;align-items:center;padding-left:2px;box-sizing:border-box;overflow:hidden}
+.zband.l-eintrag{top:2px}.zband.l-dim{top:17px}.zband.l-dnd{top:32px}.zband.l-licht{top:47px}.zband.l-ruf{top:62px}
+.zs-tag{position:absolute;top:0;height:132px;border-left:2px solid #CFC8C1;padding:2px 0 0 5px;font-size:12px;font-weight:800;color:#2D2A28;white-space:nowrap;box-sizing:border-box}
+.zs-strip{position:absolute;left:0;right:0;top:36px;height:78px;background-image:repeating-linear-gradient(90deg,transparent 0,transparent 113px,#E3DED8 113px,#E3DED8 114px)}
+.zs-std{position:absolute;bottom:4px;font-size:11px;color:#726D68;transform:translateX(-50%)}
+.zs-mitte{position:absolute;top:0;bottom:0;left:50%;width:2px;margin-left:-1px;background:#2D2A28;border-radius:1px;pointer-events:none}
+.l-eintrag{top:5px;background:#2D2A28}
+.l-dim{top:17px;background:#6B3FA0}
+.l-dnd{top:29px;background:#2F6FB0}
+.l-licht{top:41px;background:#E39B1B}
+.l-ruf{top:53px;background:repeating-linear-gradient(90deg,#4E2A6B 0,#4E2A6B 6px,transparent 6px,transparent 10px)}
+.tick{position:absolute;top:0;bottom:0;width:3px;margin-left:-1px;background:#E2001A}
+.konflikt{position:absolute;top:15px;height:13px;border:2px dashed #E2001A;border-radius:6px;box-sizing:border-box}
+.achse{position:relative;height:16px;font-size:11px;color:#726D68}
+.achse span{position:absolute;transform:translateX(-50%);white-space:nowrap}
+.legende{display:flex;flex-wrap:wrap;gap:6px 14px;padding:4px 18px 12px;font-size:13px;color:#2D2A28}
+.legende span{display:inline-flex;align-items:center;gap:6px}
+.dot{display:inline-block;flex:none;width:12px;height:12px;border-radius:6px}
+.ev{display:flex;align-items:flex-start;gap:12px;padding:8px 18px;border-top:1px solid #F0EDEA}
+.ev .zeit{flex:none;width:92px;font-size:14px;font-weight:800}
+.ev .was{flex:1;min-width:0;font-size:14px;line-height:1.4}
+.tagkopf{width:100%;display:flex;align-items:center;gap:10px;padding:12px 14px 8px;border:0;background:transparent;text-align:left;cursor:pointer}
+.zeitfeld:focus{outline:none;border-color:#E2001A;background:#FFFFFF}
+.opt{width:100%;display:flex;align-items:center;gap:14px;padding:12px 18px;min-height:60px;border:0;border-top:1px solid #F0EDEA;background:transparent;text-align:left;cursor:pointer;box-sizing:border-box}
+.opt:hover{background:#F7F4F1}
+.opt.dis{cursor:not-allowed;opacity:.5}
+.opt.dis:hover{background:transparent}
+.radio{flex:none;width:22px;height:22px;border-radius:11px;border:2px solid #726D68;box-sizing:border-box}
+.radio.on{border:7px solid #E2001A}
+.banner{background:#FBEBD3;color:#4D2E00;border-radius:14px;padding:14px 16px;font-size:14px;line-height:1.45;flex:none}
+.besonders{background:#EEE4F3;color:#3B1F52;border-radius:14px;padding:14px 16px;font-size:14px;line-height:1.45;flex:none;display:flex;flex-direction:column;gap:6px}
+.besonders b{font-size:15px}
+.badge{display:inline-block;margin-left:8px;padding:2px 8px;border-radius:8px;background:#EEE4F3;color:#4E2A6B;font-size:12px;font-weight:800;vertical-align:middle}
+.pchip{min-height:48px;padding:0 16px;border-radius:12px;border:1px solid #E3DED8;background:#FFFFFF;font-size:15px;font-weight:700;cursor:pointer;text-align:left}
+.pchip.on{border:2px solid #E2001A;background:#FBE1E4}
+.foot{font-size:13px;color:#726D68;text-align:center;padding:4px 16px;line-height:1.4}
+</style>
+</helmet>
+<div class="app">
+
+<div class="bar">
+  <sc-if value="{{zeigeZurueck}}" hint-placeholder-val="{{ false }}">
+    <button class="icon" aria-label="Zurück" onClick="{{zurueck}}">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#2D2A28" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"></path></svg>
+    </button>
+  </sc-if>
+  <sc-if value="{{zeigeMenue}}" hint-placeholder-val="{{ true }}">
+    <button class="icon" aria-label="Menü" onClick="{{menueAuf}}">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#2D2A28" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"></path></svg>
+    </button>
+  </sc-if>
+  <h1>{{titel}}</h1>
+</div>
+
+<!-- ============ 1. Typliste ============ -->
+<sc-if value="{{zeigeListe}}" hint-placeholder-val="{{ true }}">
+<div class="scroll">
+
+  <sc-if value="{{hatFund}}" hint-placeholder-val="{{ true }}">
+  <div class="fund">
+    <div class="t">Im Kalender gefunden, noch nicht eingeordnet</div>
+    <sc-for list="{{fund}}" as="v" hint-placeholder-count="2">
+      <div class="fundeintrag">
+        <div class="zeile">
+          <span class="code k-ign">{{v.code}}</span>
+          <span class="grow"><span class="s">{{v.text}}</span></span>
+        </div>
+        <div class="knoepfe">
+          <button class="btn pri" onClick="{{v.einordnen}}">Einordnen …</button>
+          <button class="btn" onClick="{{v.ignorieren}}">Ignorieren</button>
+        </div>
+      </div>
+    </sc-for>
+  </div>
+  </sc-if>
+
+  <sc-for list="{{gruppen}}" as="g" hint-placeholder-count="5">
+    <div class="card">
+      <div class="sec">{{g.titel}}<sc-if value="{{g.besonders}}" hint-placeholder-val="{{ false }}"><span class="badge">Sonderfall</span></sc-if></div>
+      <sc-for list="{{g.items}}" as="it" hint-placeholder-count="2">
+        <button class="row" onClick="{{it.oeffnen}}">
+          <span class="code {{it.klasse}}">{{it.code}}</span>
+          <span class="grow"><span class="t">{{it.name}}</span><span class="s">{{it.zeile}}</span></span>
+          <svg class="chev" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M9 6l6 6-6 6"></path></svg>
+        </button>
+      </sc-for>
+      <sc-if value="{{g.leer}}" hint-placeholder-val="{{ false }}">
+        <div class="hint" style="padding-top: 4px">Noch kein Typ in dieser Kategorie.</div>
+      </sc-if>
+    </div>
+  </sc-for>
+
+  <button class="btn" style="align-self: center" onClick="{{zuEinstellungen}}">So sehen die Einstellungen dann aus</button>
+  <div class="foot">Prototyp – Werte sind Beispiele, nichts wird gespeichert.</div>
+</div>
+</sc-if>
+
+<!-- ============ 2. Kategorie wählen ============ -->
+<sc-if value="{{zeigeKatWahl}}" hint-placeholder-val="{{ false }}">
+<div class="scroll">
+  <div class="banner">{{katWahlIntro}}</div>
+  <sc-if value="{{zeigeZuTyp}}" hint-placeholder-val="{{ false }}">
+  <div class="card">
+    <div class="sec">Gehört zu einem bestehenden Typ</div>
+    <div class="hint" style="padding-top: 0">Zum Beispiel F und IMCF: fürs Aufstehen dasselbe. Der Code wird dort als weiteres Muster eingetragen.</div>
+    <sc-for list="{{zuTyp}}" as="z" hint-placeholder-count="5">
+      <button class="row" onClick="{{z.pick}}">
+        <span class="code {{z.klasse}}">{{z.code}}</span>
+        <span class="grow"><span class="t">{{z.name}}</span><span class="s">{{z.muster}}</span></span>
+      </button>
+    </sc-for>
+  </div>
+  <div class="sec" style="padding: 4px 4px 0">Oder als neuer Typ in der Kategorie</div>
+  </sc-if>
+  <div class="card">
+    <sc-for list="{{katWahl}}" as="k" hint-placeholder-count="8">
+      <button class="opt" aria-pressed="{{k.an}}" onClick="{{k.pick}}">
+        <span class="{{k.radio}}"></span>
+        <span class="code {{k.klasse}}" style="min-width: 16px; width: 16px; height: 16px; padding: 0; border-radius: 4px"></span>
+        <span class="grow"><span class="t">{{k.label}}<sc-if value="{{k.besonders}}" hint-placeholder-val="{{ false }}"><span class="badge">Sonderfall</span></sc-if></span><span class="s">{{k.beschr}}</span></span>
+      </button>
+    </sc-for>
+  </div>
+  <div class="foot">Die Kategorie sortiert nur. Wecker, Dimmen, „Nicht stören“ und Licht stellst du danach am Typ selbst ein.</div>
+</div>
+</sc-if>
+
+<!-- ============ 3. Typ-Seite ============ -->
+<sc-if value="{{zeigeTyp}}" hint-placeholder-val="{{ false }}">
+<div class="scroll">
+
+  <sc-if value="{{typ.neuBanner}}" hint-placeholder-val="{{ false }}">
+    <div class="banner">Neu angelegt aus dem Kalender-Code <b>{{typ.code}}</b> als „{{typ.katLabel}}“. Alles darunter ist eine Voreinstellung – stell es ein, wie du an diesen Tagen leben willst.</div>
+  </sc-if>
+
+  <div class="card">
+    <div class="sec">Typ</div>
+    <div class="row static"><span class="grow"><span class="s">Name</span><span class="t">{{typ.name}}</span></span></div>
+    <sc-if value="{{typ.nichtFest}}" hint-placeholder-val="{{ true }}">
+      <div class="row static" style="flex-direction: column; align-items: stretch; gap: 10px">
+        <span class="grow"><span class="s">Muster im Kalender – alle Codes, die zu diesem Typ gehören</span></span>
+        <div style="display: flex; flex-wrap: wrap; gap: 8px">
+          <sc-for list="{{typ.musterListe}}" as="m" hint-placeholder-count="2">
+            <span class="muster">{{m.text}}<button class="musterweg" aria-label="Muster {{m.text}} entfernen" onClick="{{m.weg}}">×</button></span>
+          </sc-for>
+        </div>
+        <div style="display: flex; gap: 8px">
+          <input class="zeitfeld" style="flex: 1; min-width: 0; font-size: 16px; font-weight: 400" type="text" aria-label="Weiteres Muster" placeholder="Weiteres Muster, z. B. IMCF" value="{{typ.neuesMuster}}" onChange="{{typ.tippeMuster}}">
+          <button class="btn" style="flex: none; width: 48px; min-height: 48px; padding: 0; border-radius: 12px; font-size: 24px; line-height: 1" aria-label="Muster hinzufügen" title="Muster hinzufügen" onClick="{{typ.musterDazu}}">+</button>
+        </div>
+      </div>
+      <button class="row" onClick="{{typ.katAendern}}">
+        <span class="code {{typ.klasse}}" style="min-width: 16px; width: 16px; height: 16px; padding: 0; border-radius: 4px"></span>
+        <span class="grow"><span class="s">Kategorie</span><span class="t">{{typ.katLabel}}</span></span>
+        <svg class="chev" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M9 6l6 6-6 6"></path></svg>
+      </button>
+    </sc-if>
+    <sc-if value="{{typ.fest}}" hint-placeholder-val="{{ false }}">
+      <div class="hint">Feste Zeile: gilt für jeden Tag, an dem im Kalender gar nichts steht – etwa wenn kein „+“ eingetragen wurde oder der Dienstplan noch nicht veröffentlicht ist.</div>
+    </sc-if>
+  </div>
+
+  <sc-if value="{{typ.fest}}" hint-placeholder-val="{{ false }}">
+  <div class="card">
+    <div class="sec">Tage ohne Eintrag verhalten sich</div>
+    <sc-for list="{{typ.wieOptionen}}" as="w" hint-placeholder-count="3">
+      <button class="opt" aria-pressed="{{w.an}}" onClick="{{w.pick}}">
+        <span class="{{w.radio}}"></span>
+        <span class="grow"><span class="t">{{w.label}}</span><span class="s">{{w.beschr}}</span></span>
+      </button>
+    </sc-for>
+  </div>
+  <sc-if value="{{typ.wieAktiv}}" hint-placeholder-val="{{ false }}">
+    <div class="banner">Wecker, Dimmen, „Nicht stören“ und Licht kommen dann vom Typ „{{typ.wieName}}“. <button class="btn" style="margin-top: 10px" onClick="{{typ.wieOeffnen}}">„{{typ.wieName}}“ öffnen</button></div>
+  </sc-if>
+  </sc-if>
+
+  <sc-if value="{{typ.zeigeTag}}" hint-placeholder-val="{{ true }}">
+  <div class="card">
+    <div class="sec">So läuft ein Tag „{{typ.name}}“</div>
+    <div class="hint" style="padding: 0 18px 10px">Von 18 Uhr am Vortag bis 18 Uhr am Folgetag. Ändere unten etwas – die Leiste rechnet sofort mit.</div>
+    <sc-if value="{{leiste.zeigePos}}" hint-placeholder-val="{{ false }}">
+      <div class="chipzeile" style="padding: 0 18px 10px">
+        <sc-for list="{{leiste.pos}}" as="p" hint-placeholder-count="4"><button class="{{p.klasse}}" aria-pressed="{{p.an}}" onClick="{{p.pick}}">{{p.label}}</button></sc-for>
+      </div>
+    </sc-if>
+    <div style="padding: 0 18px 4px">
+      <div class="strip g48">
+        <sc-for list="{{leiste.bars}}" as="b" hint-placeholder-count="4"><span class="band {{b.klasse}}" style="left: {{b.left}}%; width: {{b.width}}%"></span></sc-for>
+        <sc-for list="{{leiste.ticks}}" as="k" hint-placeholder-count="1"><span class="tick" style="left: {{k.left}}%"></span></sc-for>
+      </div>
+      <div class="achse">
+        <sc-for list="{{leiste.achse}}" as="a" hint-placeholder-count="7"><span style="left: {{a.left}}%">{{a.text}}</span></sc-for>
+      </div>
+    </div>
+    <div class="legende">
+      <span><i class="dot" style="background: #2D2A28"></i>Eintrag</span>
+      <span><i class="dot" style="background: #6B3FA0"></i>Dimmen</span>
+      <span><i class="dot" style="background: #2F6FB0"></i>Nicht stören</span>
+      <span><i class="dot" style="background: #E39B1B"></i>Licht</span>
+      <span><i class="dot" style="background: #4E2A6B"></i>Ruf-Abfrage</span>
+      <span><i class="dot" style="background: #E2001A"></i>Wecker</span>
+    </div>
+    <sc-for list="{{leiste.events}}" as="e" hint-placeholder-count="5">
+      <div class="ev"><span class="zeit">{{e.zeit}}</span><i class="dot" style="background: {{e.farbe}}; margin-top: 4px"></i><span class="was">{{e.text}}</span></div>
+    </sc-for>
+    <button class="row" onClick="{{zurWoche}}"><span class="t" style="color: #8E0F30">Im Bereich „Wecker“ über die ganze Woche ansehen</span></button>
+  </div>
+  </sc-if>
+
+  <sc-if value="{{typ.istRuf}}" hint-placeholder-val="{{ false }}">
+    <div class="besonders">
+      <b>Sonderfall Rufbereitschaft</b>
+      <span>Die App prüft an diesen Tagen stündlich den Kalender. Wird ein Einsatz als Dienst nachgetragen, gelten für den Tag dessen Wecker und Einstellungen – nicht die von hier.</span>
+      <span>Steht nur die Rufbereitschaft im Kalender, gilt das hier Eingestellte.</span>
+    </div>
+  </sc-if>
+  <sc-if value="{{typ.istKrank}}" hint-placeholder-val="{{ false }}">
+    <div class="besonders">
+      <b>Sonderfall Krank</b>
+      <span>Steht am selben Tag auch ein Dienst im Kalender, gewinnt Krank: der Dienst-Wecker entfällt, es gilt das hier Eingestellte.</span>
+    </div>
+  </sc-if>
+  <sc-if value="{{typ.istIgnoriert}}" hint-placeholder-val="{{ false }}">
+    <div class="banner">Dieser Eintrag wird übergangen. Steht an dem Tag sonst nichts im Kalender, gilt „Ohne Kalendereintrag“. Die App schlägt {{typ.code}} nicht mehr vor.</div>
+  </sc-if>
+
+  <sc-if value="{{typ.zeigeTag}}" hint-placeholder-val="{{ true }}">
+  <div class="card">
+    <div class="sec">Wecker</div>
+    <div class="row static">
+      <span class="grow"><span class="t">Wecker an diesem Tag</span><span class="s">{{typ.weckerHinweis}}</span></span>
+      <button class="{{typ.weckerKlasse}}" aria-label="Wecker an diesem Tag" aria-pressed="{{typ.wecker}}" onClick="{{typ.toggleWecker}}"></button>
+    </div>
+    <div class="{{typ.weckerZeilenKlasse}}"><label class="grow" for="typ-weckzeit"><span class="t">Weckzeit</span><span class="s">Direkt hier ändern</span></label><input class="zeitfeld" type="time" id="typ-weckzeit" value="{{typ.zeit}}" disabled="{{typ.ohneWecker}}" onChange="{{typ.aendereZeit}}"></div>
+    <div class="{{typ.weckerZeilenKlasse}}">
+      <span class="grow"><span class="t">Stummer Wecker</span><span class="s">Kein Ton, kein Vollbild. Licht, Dimmer und „Nicht stören“ richten sich trotzdem nach der Weckzeit – ein Lichtwecker.</span></span>
+      <button class="{{typ.stillKlasse}}" disabled="{{typ.ohneWecker}}" aria-label="Stummer Wecker" aria-pressed="{{typ.still}}" onClick="{{typ.toggleStill}}"></button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="sec">Bildschirm dimmen</div>
+    <sc-if value="{{typ.keinFenster}}" hint-placeholder-val="{{ false }}"><div class="hint" style="padding-top: 0">An diesen Tagen wird nicht gedimmt.</div></sc-if>
+    <sc-for list="{{typ.fenster}}" as="f" hint-placeholder-count="1">
+      <div class="fenster">
+        <div class="zeile"><span class="t" style="flex: 1">{{f.titel}}</span><button class="icon" aria-label="{{f.wegLabel}}" onClick="{{f.weg}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#726D68" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg></button></div>
+        <span class="s">Wann</span>
+        <div class="chipzeile">
+          <sc-for list="{{f.bezug}}" as="b" hint-placeholder-count="3"><button class="{{b.klasse}}" aria-pressed="{{b.an}}" onClick="{{b.pick}}">{{b.label}}</button></sc-for>
+        </div>
+        <span class="s">{{f.bezugText}}</span>
+        <sc-if value="{{f.zeigeVon}}" hint-placeholder-val="{{ true }}">
+          <div class="frow"><label class="grow" for="{{f.idVon}}"><span class="t">Von</span></label><input class="zeitfeld" type="time" id="{{f.idVon}}" value="{{f.von}}" onChange="{{f.setVon}}"></div>
+        </sc-if>
+        <sc-if value="{{f.nachher}}" hint-placeholder-val="{{ false }}">
+          <div class="frow"><span class="grow"><span class="t">Von</span></span><span class="val">Dienstende</span></div>
+        </sc-if>
+        <div class="frow"><label class="grow" for="{{f.idBis}}"><span class="t">Bis</span><span class="s">{{f.bisHinweis}}</span></label><input class="zeitfeld" type="time" id="{{f.idBis}}" value="{{f.bis}}" onChange="{{f.setBis}}"></div>
+        <div class="frow"><label class="grow" for="{{f.idPro}}"><span class="t">Mit</span></label><input class="zeitfeld" style="width: 84px" type="number" min="0" max="100" step="5" id="{{f.idPro}}" value="{{f.prozent}}" onChange="{{f.setProzent}}"><span class="val">%</span></div>
+        <sc-if value="{{f.zeigeBeimWecker}}" hint-placeholder-val="{{ true }}">
+          <div class="frow"><span class="grow"><span class="t">Schon beim Wecker enden</span></span><button class="{{f.weckerKlasse}}" aria-label="Schon beim Wecker enden" aria-pressed="{{f.beimWecker}}" onClick="{{f.toggleWecker}}"></button></div>
+        </sc-if>
+        <sc-if value="{{f.zeigeTage}}" hint-placeholder-val="{{ false }}">
+          <span class="s">Gilt an diesen Tagen eines Blocks</span>
+          <div class="chipzeile">
+            <sc-for list="{{f.tage}}" as="c" hint-placeholder-count="5"><button class="{{c.klasse}}" aria-pressed="{{c.an}}" onClick="{{c.pick}}">{{c.label}}</button></sc-for>
+          </div>
+        </sc-if>
+      </div>
+    </sc-for>
+    <button class="row" onClick="{{typ.fensterDazu}}"><span class="t" style="color: #8E0F30">+ Weiteres Fenster</span></button>
+    <button class="row" onClick="{{zumDimmen}}">
+      <span class="grow"><span class="t" style="color: #8E0F30">Weitere Optionen</span><span class="s">Nachlauf bis es hell ist, Dimmen ein paar Minuten nach dem Wecker</span></span>
+      <svg class="chev" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M9 6l6 6-6 6"></path></svg>
+    </button>
+  </div>
+
+  <div class="card">
+    <div class="sec">Nicht stören</div>
+    <div class="row static">
+      <span class="grow"><span class="t">Solange gedimmt wird</span><span class="s">In jedem Dimm-Fenster oben – endet mit dem Wecker</span></span>
+      <button class="{{typ.dndDimKlasse}}" aria-label="Nicht stören, solange gedimmt wird" aria-pressed="{{typ.dndDim}}" onClick="{{typ.toggleDndDim}}"></button>
+    </div>
+    <div class="row static">
+      <span class="grow"><span class="t">Während des Kalendereintrags</span><span class="s">{{typ.dndEintragText}}</span></span>
+      <button class="{{typ.dndEintragKlasse}}" disabled="{{typ.dndEintragGesperrt}}" aria-label="Nicht stören während des Kalendereintrags" aria-pressed="{{typ.dndEintrag}}" onClick="{{typ.toggleDndEintrag}}"></button>
+    </div>
+    <sc-if value="{{typ.istRuf}}" hint-placeholder-val="{{ false }}">
+      <div class="row static"><span class="grow"><span class="t">Endet spätestens um</span><span class="s">Damit du für einen Einsatz erreichbar bist.</span></span><span class="val">05:00</span></div>
+    </sc-if>
+  </div>
+
+  <div class="card">
+    <div class="sec">Licht (Hue)</div>
+    <sc-for list="{{typ.licht}}" as="l" hint-placeholder-count="1">
+      <div class="row static">
+        <span class="grow"><span class="t">{{l.text}}</span><span class="s">Bad und Flur · 0 → 80 %</span></span>
+        <button class="icon" aria-label="Lichtregel entfernen" onClick="{{l.weg}}">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#726D68" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg>
+        </button>
+      </div>
+    </sc-for>
+    <sc-if value="{{typ.lichtMoeglich}}" hint-placeholder-val="{{ true }}">
+      <button class="row" onClick="{{typ.lichtDazu}}"><span class="t" style="color: #8E0F30">+ Lichtregel hinzufügen</span></button>
+    </sc-if>
+    <sc-if value="{{typ.lichtGesperrt}}" hint-placeholder-val="{{ false }}">
+      <div class="hint">Licht startet mit dem Wecker. Ohne Weckzeit gibt es an diesem Tag kein Licht – schalte oben den Wecker ein, gern stumm.</div>
+    </sc-if>
+  </div>
+  </sc-if>
+
+</div>
+</sc-if>
+
+<!-- ============ 4. Dimmen für einen Typ ============ -->
+<sc-if value="{{zeigeDimmen}}" hint-placeholder-val="{{ false }}">
+<div class="scroll">
+  <div class="banner">Hier landen die selteneren Optionen des heutigen Regel-Editors, fest auf „{{typ.name}}“ eingestellt. Im Prototyp nur angedeutet.</div>
+  <div class="card">
+    <div class="sec">Weitere Optionen</div>
+    <div class="row static"><span class="grow"><span class="t">Nachlauf bis es hell ist</span><span class="s">Nach dem Wecker weiter dimmen, solange es draußen dunkel ist</span></span></div>
+    <div class="row static"><span class="grow"><span class="t">Nur an bestimmten Tagen im Dienstblock</span><span class="s">Erster, mittlerer, letzter oder einzelner Tag</span></span></div>
+    <div class="row static"><span class="grow"><span class="t">Zweites Fenster</span><span class="s">Etwa zusätzlich mittags vor dem Nachtdienst</span></span></div>
+  </div>
+</div>
+</sc-if>
+
+<!-- ============ 7. Woche ============ -->
+<sc-if value="{{zeigeWoche}}" hint-placeholder-val="{{ false }}">
+<div class="scroll">
+  <div class="card">
+    <div class="row static">
+      <span class="grow"><span class="t">Manueller Wecker</span><span class="s">Unabhängig vom Dienstplan</span></span>
+      <button class="fab-klein" aria-label="Manuellen Wecker stellen" onClick="{{manuell.auf}}"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="13" r="8"></circle><path d="M12 10v6M9 13h6M5 3L2 6M19 3l3 3"></path></svg></button>
+    </div>
+  </div>
+  <div class="card">
+    <div class="row static">
+      <span class="grow"><span class="t">Dienst fällt aus</span><span class="s">Einen oder mehrere Tage freigeben – kein Dienst-Wecker, eigene Wecker bleiben</span></span>
+      <button class="fab-klein" aria-label="Tage auswählen: Dienst fällt aus" onClick="{{freigabe.auf}}"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"></rect><path d="M8 3v4M16 3v4M3 10h18M9 15l6 4M15 15l-6 4"></path></svg></button>
+    </div>
+  </div>
+  <div class="card">
+    <div class="row static"><span class="grow"><span class="t">Wie der Wecker klingt</span><span class="s">Schlummern, sanftes Lauterwerden, Probehören</span></span><button class="fab-klein" aria-label="Probehören" title="Probehören"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4z"></path><path d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"></path></svg></button></div>
+    <div class="row static" style="border-top: 0; padding-top: 2px"><span class="grow"><span class="t">Schlummer-Dauer</span><span class="s">Gilt für Vollbild und Benachrichtigung</span></span><span class="val">10 Min</span></div>
+    <div class="row static"><span class="grow"><span class="t">Sanft lauter werden</span><span class="s">Der Wecker beginnt leise und wird bis zu deiner eingestellten Alarm-Lautstärke lauter.</span></span><span class="sw on" aria-hidden="true"></span></div>
+    <div class="row static"><span class="grow"><span class="t">Anlaufzeit</span><span class="s">Bis zur vollen Lautstärke</span></span><span class="val">30 s</span></div>
+    <div class="row static"><span class="grow"><span class="t">Startlautstärke</span><span class="s">Anteil deiner Alarm-Lautstärke am Anfang</span></span><span class="val">20 %</span></div>
+  </div>
+  
+  <div class="card">
+    <div class="row static"><span class="grow"><span class="t">Automatische Alarme</span><span class="s">Wecker nach Dienstplan stellen</span></span><span class="sw on" aria-hidden="true"></span></div>
+  </div>
+  <div class="abschnitt">Gestellte Wecker</div>
+  
+  <sc-for list="{{woche}}" as="d" hint-placeholder-count="8">
+    <div class="card">
+      <button class="tagkopf" aria-expanded="{{d.offen}}" onClick="{{d.toggle}}">
+        <span class="code {{d.klasse}}">{{d.code}}</span>
+        <span class="grow"><span class="t">{{d.datum}}</span><span class="s">{{d.name}}</span></span>
+        <svg class="chev" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg>
+      </button>
+      <div style="padding: 0 14px 6px">
+        <div class="strip g24">
+          <sc-for list="{{d.bars}}" as="b" hint-placeholder-count="3"><span class="band {{b.klasse}}" style="left: {{b.left}}%; width: {{b.width}}%"></span></sc-for>
+          <sc-for list="{{d.konflikte}}" as="c" hint-placeholder-count="0"><span class="konflikt" style="left: {{c.left}}%; width: {{c.width}}%"></span></sc-for>
+          <sc-for list="{{d.ticks}}" as="k" hint-placeholder-count="1"><span class="tick" style="left: {{k.left}}%"></span></sc-for>
+        </div>
+        <div class="achse"><span style="left: 25%">6</span><span style="left: 50%">12</span><span style="left: 75%">18</span></div>
+      </div>
+      <sc-if value="{{d.hatHinweis}}" hint-placeholder-val="{{ false }}">
+        <div class="hint" style="padding-top: 0; color: #8E0F30">{{d.hinweis}}</div>
+      </sc-if>
+      <sc-if value="{{d.offen}}" hint-placeholder-val="{{ false }}">
+        <sc-for list="{{d.events}}" as="e" hint-placeholder-count="4">
+          <div class="ev"><span class="zeit">{{e.zeit}}</span><i class="dot" style="background: {{e.farbe}}; margin-top: 4px"></i><span class="was">{{e.text}}</span></div>
+        </sc-for>
+        <sc-if value="{{d.keineEvents}}" hint-placeholder-val="{{ false }}"><div class="ev"><span class="was">An diesem Tag passiert nichts.</span></div></sc-if>
+        <sc-if value="{{d.frei}}" hint-placeholder-val="{{ false }}"><button class="row" onClick="{{d.zuruecknehmen}}"><span class="t" style="color: #8E0F30">Zurücknehmen – Dienst findet doch statt</span></button></sc-if>
+        <button class="row" onClick="{{d.typOeffnen}}"><span class="t" style="color: #8E0F30">Typ „{{d.typName}}“ einstellen</span></button>
+      </sc-if>
+    </div>
+  </sc-for>
+  
+</div>
+</sc-if>
+
+<!-- ============ 6. Einstellungen (nur noch Geraet und Konto) ============ -->
+<sc-if value="{{zeigeEinstellungen}}" hint-placeholder-val="{{ false }}">
+<div class="scroll">
+  
+  <div class="card">
+    <div class="sec">Kalender</div>
+    <div class="row static"><span class="grow"><span class="t">Kalender auswählen</span><span class="s">TimeOffice – Dienstplan</span></span></div>
+    <button class="row" onClick="{{zurListe}}"><span class="grow"><span class="t">Schichttypen einrichten</span><span class="s">Wecker, Dimmen, „Nicht stören“ und Licht pro Typ</span></span></button>
+  </div>
+  <div class="card">
+    <div class="sec">Bildschirm dimmen</div>
+    <div class="row static"><span class="grow"><span class="t">Bedienungshilfe</span><span class="s">Erlaubt – ohne sie kann die App nicht dimmen</span></span><span class="val" style="color: #1B5E20">OK</span></div>
+    <div class="row static"><span class="grow"><span class="t">Farbwärme</span></span><span class="val">40 %</span></div>
+    <div class="row static"><span class="grow"><span class="t">Vorschau</span><span class="s">10 Sekunden testen</span></span></div>
+  </div>
+  <div class="card">
+    <div class="sec">Nicht stören</div>
+    <div class="row static"><span class="grow"><span class="t">Zugriff auf „Nicht stören“</span><span class="s">Erlaubt</span></span><span class="val" style="color: #1B5E20">OK</span></div>
+    <div class="row static"><span class="grow"><span class="t">Wer trotzdem durchkommt</span><span class="s">Wiederholte Anrufer, Wecker, Medien – gilt für alle Typen</span></span></div>
+  </div>
+  <div class="card">
+    <div class="sec">Philips Hue</div>
+    <div class="row static"><span class="grow"><span class="t">Bridge</span><span class="s">Verbunden · 6 Lampen</span></span><span class="val" style="color: #1B5E20">OK</span></div>
+  </div>
+  <div class="card">
+    <div class="sec">Tageslicht</div>
+    <div class="row static"><span class="grow"><span class="t">Standort</span><span class="s">Für „bis es hell ist“ und Sonnenaufgang</span></span></div>
+  </div>
+  <div class="card">
+    <div class="sec">Sonstiges</div>
+    <div class="row static"><span class="grow"><span class="t">Master-Pause, Wecker-Ton, Schlummern, Export, Logs</span><span class="s">wie heute</span></span></div>
+  </div>
+</div>
+</sc-if>
+
+<!-- ============ 8. Uebersicht ============ -->
+<sc-if value="{{zeigeUebersicht}}" hint-placeholder-val="{{ false }}">
+<div class="scroll">
+  <div class="card">
+    <div class="sec">Nächster Wecker</div>
+    <div class="row static"><span class="grow"><span class="t" style="font-size: 22px">{{naechster.zeit}}</span><span class="s">{{naechster.text}}</span></span></div>
+  </div>
+  <div class="card">
+    <div class="sec">Nächste Schicht</div>
+    <div class="row static"><span class="code k-dienst">F</span><span class="grow"><span class="t">Mo 19.10., 06:00–14:15</span><span class="s">Frühdienst</span></span></div>
+  </div>
+  <div class="card">
+    <div class="sec">Dein Zeitstrahl</div>
+    <div class="zeile" style="padding: 4px 18px 10px">
+      <span class="code {{zs.fokus.klasse}}">{{zs.fokus.code}}</span>
+      <span class="grow"><span class="t">{{zs.fokus.kopf}}</span><span class="s">{{zs.fokus.name}}</span></span>
+    </div>
+    <div class="zs-rahmen">
+      <div class="zs-scroll" onScroll="{{zs.scroll}}" ref="{{zs.ref}}">
+        <div class="zs-innen" style="width: {{zs.breite}}px">
+          <sc-for list="{{zs.tage}}" as="g" hint-placeholder-count="8"><span class="zs-tag" style="left: {{g.left}}px">{{g.text}}</span></sc-for>
+          <sc-for list="{{zs.ticks}}" as="k" hint-placeholder-count="8"><span class="zs-wecker" style="left: {{k.left}}px"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#E2001A" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="13" r="8"></circle><path d="M12 9v4l2.5 2.5M5 3L2 6M19 3l3 3"></path></svg></span></sc-for>
+          <div class="zs-strip">
+            <sc-for list="{{zs.bars}}" as="b" hint-placeholder-count="20"><span class="zband {{b.klasse}}" style="left: {{b.left}}px; width: {{b.width}}px"><sc-if value="{{b.i_eintrag}}" hint-placeholder-val="{{ false }}"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="7" width="18" height="13" rx="2"></rect><path d="M9 7V5h6v2"></path></svg></sc-if><sc-if value="{{b.i_dim}}" hint-placeholder-val="{{ false }}"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"></path></svg></sc-if><sc-if value="{{b.i_dnd}}" hint-placeholder-val="{{ false }}"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M7 12h10"></path></svg></sc-if><sc-if value="{{b.i_licht}}" hint-placeholder-val="{{ false }}"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18h6M10 21h4"></path><path d="M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z"></path></svg></sc-if><sc-if value="{{b.i_ruf}}" hint-placeholder-val="{{ false }}"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2"></path></svg></sc-if></span></sc-for>
+            <sc-for list="{{zs.konflikte}}" as="c" hint-placeholder-count="0"><span class="konflikt" style="left: {{c.left}}px; width: {{c.width}}px"></span></sc-for>
+            <sc-for list="{{zs.ticks}}" as="k" hint-placeholder-count="8"><span class="tick" style="left: {{k.left}}px"></span></sc-for>
+          </div>
+          <sc-for list="{{zs.stunden}}" as="h" hint-placeholder-count="24"><span class="zs-std" style="left: {{h.left}}px">{{h.text}}</span></sc-for>
+        </div>
+      </div>
+      <span class="zs-mitte" aria-hidden="true"></span>
+    </div>
+    <div class="ev"><span class="was"><b>Gerade:</b> {{zs.fokus.aktiv}}</span></div>
+    <div class="ev"><span class="was"><b>Als Nächstes:</b> {{zs.fokus.naechstes}}</span></div>
+    <button class="row" aria-expanded="{{legendeOffen}}" onClick="{{toggleLegende}}"><span class="grow"><span class="t">Legende</span></span><svg class="chev" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="{{legendePfeil}}"></path></svg></button>
+    <sc-if value="{{legendeOffen}}" hint-placeholder-val="{{ false }}">
+      <sc-for list="{{legendeLang}}" as="l" hint-placeholder-count="7">
+        <div class="ev"><span class="muster-zeichen"><span class="{{l.zeichen}}" style="{{l.stil}}"></span></span><span class="was"><b>{{l.name}}</b> – {{l.text}}</span></div>
+      </sc-for>
+    </sc-if>
+    <button class="row" onClick="{{zurWoche}}"><span class="t" style="color: #8E0F30">Alle Tage im Bereich „Wecker“</span></button>
+  </div>
+  <button class="btn" style="align-self: stretch">Mit Google Kalender abgleichen</button>
+</div>
+</sc-if>
+
+<sc-if value="{{manuell.offen}}" hint-placeholder-val="{{ false }}">
+  <button class="schleier" aria-label="Schließen" onClick="{{manuell.zu}}"></button>
+  <div class="blatt" role="dialog" aria-label="Manueller Alarm">
+    <span class="griff"></span>
+    <div class="t" style="font-size: 18px">Manueller Alarm</div>
+    <div class="frow"><span class="grow"><span class="s">Datum:</span></span><button class="wchip">Mo 19.10.2026</button></div>
+    <div class="frow" style="position: relative"><span class="grow"><span class="s">Schicht:</span></span>
+      <button class="wchip" aria-haspopup="listbox" aria-expanded="{{manuell.menueOffen}}" onClick="{{manuell.menue}}">{{manuell.knopf}} ▾</button>
+      <sc-if value="{{manuell.menueOffen}}" hint-placeholder-val="{{ false }}">
+        <div class="menue" role="listbox">
+          <sc-for list="{{manuell.schichten}}" as="m" hint-placeholder-count="3"><button class="menuepunkt" role="option" aria-selected="{{m.an}}" onClick="{{m.pick}}">{{m.name}}</button></sc-for>
+        </div>
+      </sc-if>
+    </div>
+    <sc-if value="{{manuell.hatZeit}}" hint-placeholder-val="{{ false }}"><div class="banner">Weckzeit: {{manuell.zeit}}</div></sc-if>
+    <button class="btn pri" disabled="{{manuell.gesperrt}}" onClick="{{manuell.erstellen}}">Alarm erstellen</button>
+  </div>
+</sc-if>
+<sc-if value="{{manuell.erstellt}}" hint-placeholder-val="{{ false }}"><div class="toast">{{manuell.erstelltText}}</div></sc-if>
+
+<sc-if value="{{freigabe.offen}}" hint-placeholder-val="{{ false }}">
+  <div class="vollbild" role="dialog" aria-label="Dienst fällt aus">
+    <div class="t" style="font-size: 20px; padding: 18px 22px 4px">Dienst fällt aus</div>
+    <div class="s" style="padding: 0 22px 10px">Oktober 2026</div>
+    <div class="kal">
+      <sc-for list="{{freigabe.wochentage}}" as="w" hint-placeholder-count="7"><span class="kal-kopf">{{w}}</span></sc-for>
+      <sc-for list="{{freigabe.zellen}}" as="z" hint-placeholder-count="35"><button class="{{z.klasse}}" disabled="{{z.gesperrt}}" aria-pressed="{{z.an}}" aria-label="{{z.label}}" onClick="{{z.pick}}"><span>{{z.text}}</span><span class="kz-code">{{z.code}}</span></button></sc-for>
+    </div>
+    <div class="s" style="padding: 14px 22px; color: #2D2A28">{{freigabe.zusammenfassung}}</div>
+    <div class="frow" style="gap: 10px; justify-content: flex-end; padding: 0 16px 16px; margin-top: auto">
+      <button class="textknopf" onClick="{{freigabe.zu}}">Abbrechen</button>
+      <button class="textknopf" disabled="{{freigabe.gesperrt}}" onClick="{{freigabe.ok}}">Freigeben</button>
+    </div>
+  </div>
+</sc-if>
+
+<!-- ============ Schublade ============ -->
+<sc-if value="{{drawer}}" hint-placeholder-val="{{ false }}">
+  <button class="schleier" aria-label="Menü schließen" onClick="{{menueZu}}"></button>
+  <nav class="schublade" aria-label="Hauptmenü">
+    <h2>CF Alarm</h2>
+    <sc-for list="{{navPunkte}}" as="n" hint-placeholder-count="5">
+      <button class="{{n.klasse}}" disabled="{{n.gesperrt}}" onClick="{{n.pick}}"><span class="grow"><span>{{n.label}}</span><span class="s" style="font-weight: 500">{{n.hinweis}}</span></span></button>
+    </sc-for>
+  </nav>
+</sc-if>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":412,"height":915}}'>
+class Component extends DCLogic {
+  // "22:00 bis Wecker · 55 %" -> Felder; "bis Wecker" heisst: endet beim Wecker, spaetestens 07:00
+  static dimAus(text) {
+    const m = /^(\d\d:\d\d) bis (Wecker|\d\d:\d\d) · (\d+) %$/.exec(text || '');
+    if (!m) return { dimAn: false, dimVon: '22:00', dimBis: '07:00', dimBeimWecker: false, dimProzent: 40, dimBezug: 'vorher' };
+    return { dimAn: true, dimVon: m[1], dimBis: m[2] === 'Wecker' ? '07:00' : m[2], dimBeimWecker: m[2] === 'Wecker', dimProzent: Number(m[3]), dimBezug: 'vorher' };
+  }
+
+  static fensterText(f, wecker) {
+    const pro = ' · ' + f.prozent + ' %';
+    if (f.bezug === 'nachher') return 'Nach dem Dienst bis ' + f.bis + pro;
+    const ende = f.beimWecker && wecker ? 'Wecker, spätestens ' + f.bis : f.bis;
+    return (f.bezug === 'danach' ? 'Abends ' : '') + f.von + ' bis ' + ende + pro;
+  }
+
+  static dimText(t) {
+    const fen = Component.normal(t).fenster;
+    if (!fen.length) return 'Nicht dimmen';
+    return fen.map((f) => Component.fensterText(f, t.wecker)).join(' + ');
+  }
+  // Altes Ein-Fenster-Format -> Liste von Fenstern + zwei DND-Schalter (wie in der echten App)
+  static normal(t) {
+    if (t.fenster) return t;
+    const fenster = t.dimAn ? [{ id: 'f1', bezug: t.dimBezug || 'vorher', von: t.dimVon, bis: t.dimBis, beimWecker: !!t.dimBeimWecker, prozent: t.dimProzent, tage: 'alle' }] : [];
+    return Object.assign({}, t, { fenster: fenster, dndDim: t.dnd === 'dimmer', dndEintrag: t.dnd === 'eintrag' });
+  }
+
+  constructor(props) {
+    super(props);
+    const typ = (id, name, code, muster, kat, wecker, zeit, still, dim, dnd, licht) =>
+      Object.assign({ id: id, name: name, code: code, muster: muster, kat: kat, wecker: wecker, zeit: zeit, still: still, dnd: dnd, licht: licht }, Component.dimAus(dim));
+    this.state = {
+      screen: 'uebersicht',
+      sel: null,
+      herkunft: 'liste',
+      katFuer: null,
+      neuId: null,
+      types: [
+        typ('f', 'Frühdienst', 'F', 'F', 'dienst', true, '05:30', false, '20:00 bis Wecker · 55 %', 'dimmer', ['Sonnenaufgang 30 min vor Wecker']),
+        typ('s', 'Spätdienst', 'S', 'S', 'dienst', true, '10:00', false, '23:30 bis 10:00 · 55 %', 'dimmer', []),
+        Object.assign(typ('n', 'Nachtdienst', 'N', 'N, ND', 'dienst', true, '19:30', false, '', 'aus', ['Sonnenaufgang 30 min vor Wecker']), {
+          // So wie der Eigentuemer seine ND-Bloecke lebt: nach dem Dienst schlafen, nachmittags Vorschlaf bis zum Wecker
+          fenster: [
+            { id: 'f1', bezug: 'nachher', von: '07:00', bis: '14:00', beimWecker: false, prozent: 70, tage: ['E', 'M'] },
+            { id: 'f2', bezug: 'nachher', von: '07:00', bis: '12:00', beimWecker: false, prozent: 70, tage: ['L', 'S'] },
+            { id: 'f3', bezug: 'vorher', von: '16:00', bis: '19:30', beimWecker: true, prozent: 60, tage: 'alle' }
+          ],
+          dndDim: true, dndEintrag: true
+        }),
+        typ('rb', 'Rufbereitschaft', 'AD', 'AD, AD1', 'ruf', false, '06:00', false, '22:00 bis 07:00 · 40 %', 'dimmer', []),
+        Object.assign(typ('p', 'Frei', '+', '+', 'frei', true, '07:30', true, '22:00 bis Wecker · 40 %', 'dimmer', ['Sonnenaufgang 30 min vor Wecker']), { dimBezug: 'danach', dimBis: '08:00' }),
+        typ('u', 'Urlaub', 'U', 'U', 'urlaub', false, '08:00', true, 'Nicht dimmen', 'aus', []),
+        Object.assign(typ('k', 'Krank', 'K', 'K, AU', 'krank', false, '08:00', true, '21:00 bis 09:00 · 40 %', 'aus', []), { dimBezug: 'danach' }),
+        typ('tb', 'Teambesprechung', 'TB', 'TB', 'ign', false, '08:00', false, '', 'aus', []),
+        Object.assign(typ('ohne', 'Ohne Kalendereintrag', '–', '', 'fest', false, '07:00', true, '22:00 bis Wecker · 40 %', 'aus', []), { wie: null, dimBezug: 'danach' })
+      ].map((x) => Component.normal(x)),
+      neuesMuster: '',
+      leistePos: 'M',
+      fund: [ { code: 'IMCF', n: 6, bsp: 'Di 21.10.' }, { code: 'FBE', n: 2, bsp: 'Do 23.10.' }, { code: 'FBI', n: 1, bsp: 'Mi 05.11.' } ]
+    };
+  }
+
+  upd(id, patch) {
+    this.setState({ types: this.state.types.map((t) => (t.id === id ? Object.assign({}, t, patch) : t)) });
+  }
+
+  renderVals() {
+    const s = this.state;
+    const KAT = {
+      dienst: { label: 'Dienst', klasse: 'k-dienst', beschr: 'Arbeitstage nach Dienstplan.' },
+      ruf: { label: 'Rufbereitschaft', klasse: 'k-ruf', besonders: true, beschr: 'Bereitschaftsdienst. Wird ein Einsatz als Dienst nachgetragen, gilt dessen Wecker.' },
+      frei: { label: 'Frei', klasse: 'k-frei', beschr: 'Dienstfreie Tage, z. B. „+“.' },
+      urlaub: { label: 'Urlaub', klasse: 'k-urlaub', beschr: 'Urlaubstage – auf Wunsch ganz ohne Wecker und Dimmer.' },
+      fortb: { label: 'Fortbildung', klasse: 'k-fortb', beschr: 'Intern oder extern, Kongress, Uni.' },
+      krank: { label: 'Krank', klasse: 'k-krank', besonders: true, beschr: 'Hebt einen Dienst am selben Tag auf.' },
+      ign: { label: 'Ignorieren', klasse: 'k-ign', beschr: 'Steht im Kalender, ist für die App bedeutungslos.' },
+      fest: { label: 'Ohne Kalendereintrag', klasse: 'k-fest', beschr: '' }
+    };
+    const REIHE = ['dienst', 'ruf', 'frei', 'urlaub', 'fortb', 'krank', 'ign'];
+    const DND = { aus: 'DND aus', dimmer: 'DND wie Dimmer', eintrag: 'DND während Eintrag' };
+
+    const zeile = (t) => {
+      if (t.kat === 'ign') return 'wird übergangen';
+      if (t.kat === 'fest' && t.wie) { const z = s.types.find((x) => x.id === t.wie); return 'verhält sich wie ' + (z ? z.name + ' (' + z.code + ')' : '?'); }
+      const teile = [];
+      if (t.wecker) teile.push((t.still ? 'stumm ' : 'Wecker ') + t.zeit);
+      const tn = Component.normal(t);
+      if (tn.fenster.length === 1) { const f = tn.fenster[0]; teile.push(f.bezug === 'nachher' ? 'dimmt nach Dienst' : 'dimmt ' + f.von + '–' + (f.beimWecker && tn.wecker ? 'Wecker' : f.bis)); } else if (tn.fenster.length > 1) teile.push(tn.fenster.length + ' Dimm-Fenster');
+      if (tn.dndDim || tn.dndEintrag) teile.push('DND');
+      if (t.licht.length > 0 && t.wecker) teile.push('Licht');
+      if (teile.length === 0) return 'An diesem Tag passiert nichts';
+      return teile.join(' · ');
+    };
+
+    const oeffne = (id, herkunft) => this.setState({ screen: 'typ', sel: id, herkunft: herkunft });
+
+    const gruppen = REIHE.concat(['fest']).map((k) => {
+      const items = s.types.filter((t) => t.kat === k).map((t) => ({
+        name: t.name, code: t.code, klasse: KAT[t.kat].klasse, zeile: zeile(t),
+        oeffnen: () => oeffne(t.id, 'liste')
+      }));
+      return { titel: KAT[k].label, besonders: !!KAT[k].besonders, items: items, leer: items.length === 0 };
+    }).filter((g) => !(g.leer && g.titel === 'Ignorieren'));
+
+    const fund = s.fund.map((v) => ({
+      code: v.code,
+      text: v.n + '× in den nächsten Wochen, zuerst ' + v.bsp,
+      einordnen: () => this.setState({ screen: 'katwahl', katFuer: { neuCode: v.code } }),
+      ignorieren: () => this.setState({
+        types: s.types.concat([{ id: 'ign-' + v.code, name: v.code, code: v.code, muster: v.code, kat: 'ign', wecker: false, zeit: '07:00', still: false, dnd: 'aus', licht: [], dimAn: false, dimVon: '22:00', dimBis: '07:00', dimBeimWecker: false, dimProzent: 40 }].map((x) => Component.normal(x))),
+        fund: s.fund.filter((x) => x.code !== v.code)
+      })
+    }));
+
+    const t = Component.normal(s.types.find((x) => x.id === s.sel) || s.types[0]);
+
+    // Kategorie waehlen: fuer einen neuen Code (Voreinstellungen) oder fuer einen bestehenden Typ (Einstellungen bleiben)
+    const neuCode = s.katFuer && s.katFuer.neuCode;
+    const aktuelleKat = neuCode ? null : t.kat;
+    const katWahl = REIHE.map((k) => ({
+      label: KAT[k].label, beschr: KAT[k].beschr, klasse: KAT[k].klasse, besonders: !!KAT[k].besonders,
+      an: aktuelleKat === k, radio: aktuelleKat === k ? 'radio on' : 'radio',
+      pick: () => {
+        if (neuCode) {
+          const id = 'neu-' + neuCode;
+          const dienstartig = k === 'dienst';
+          const neu = Component.normal(Object.assign({ id: id, name: neuCode, code: neuCode, muster: neuCode, kat: k, wecker: dienstartig, zeit: dienstartig ? '06:00' : '07:00', still: !dienstartig, dnd: dienstartig ? 'dimmer' : 'aus', licht: [] }, Component.dimAus(dienstartig ? '22:00 bis Wecker · 55 %' : '')));
+          this.setState({ types: s.types.concat([neu]), fund: s.fund.filter((x) => x.code !== neuCode), screen: 'typ', sel: id, herkunft: 'liste', neuId: id, katFuer: null });
+        } else {
+          this.upd(t.id, { kat: k });
+          this.setState({ screen: 'typ', katFuer: null });
+        }
+      }
+    }));
+    const zuTyp = neuCode ? s.types.filter((x) => x.kat !== 'fest' && x.kat !== 'ign').map((x) => ({
+      name: x.name, code: x.code, klasse: KAT[x.kat].klasse, muster: 'Muster: ' + x.muster,
+      pick: () => {
+        this.upd(x.id, { muster: x.muster + ', ' + neuCode });
+        this.setState({ fund: s.fund.filter((f) => f.code !== neuCode), screen: 'typ', sel: x.id, herkunft: 'liste', katFuer: null });
+      }
+    })) : [];
+    const katWahlIntro = neuCode
+      ? 'Wohin gehört „' + neuCode + '“? Zu einem Typ, den es schon gibt – oder als neuer Typ. Die Kategorie gibt nur Voreinstellungen vor.'
+      : 'Kategorie für „' + t.name + '“ ändern. Deine Einstellungen bleiben, wie sie sind.';
+
+    const ganztags = ['urlaub', 'frei', 'krank', 'fortb'].indexOf(t.kat) >= 0;
+    const zeitAus = (feld) => (e) => { const v = e && e.target ? e.target.value : ''; if (v) this.upd(t.id, { [feld]: v }); };
+
+    const typ = {
+      name: t.name, code: t.code, muster: t.muster || '–',
+      musterListe: (t.muster ? t.muster.split(', ') : []).map((m) => ({
+        text: m,
+        weg: () => this.upd(t.id, { muster: t.muster.split(', ').filter((x) => x !== m).join(', ') })
+      })),
+      neuesMuster: s.neuesMuster || '',
+      tippeMuster: (e) => this.setState({ neuesMuster: e && e.target ? e.target.value : '' }),
+      musterDazu: () => {
+        const m = (this.state.neuesMuster || '').trim();
+        if (!m) return;
+        this.upd(t.id, { muster: t.muster ? t.muster + ', ' + m : m });
+        this.setState({ neuesMuster: '' });
+      },
+      katLabel: KAT[t.kat].label, klasse: KAT[t.kat].klasse,
+      fest: t.kat === 'fest', nichtFest: t.kat !== 'fest',
+      neuBanner: s.neuId === t.id,
+      katAendern: () => this.setState({ screen: 'katwahl', katFuer: { typId: t.id } }),
+      istRuf: t.kat === 'ruf', istKrank: t.kat === 'krank', istIgnoriert: t.kat === 'ign',
+      zeigeTag: t.kat !== 'ign' && !(t.kat === 'fest' && t.wie),
+      wieOptionen: [{ id: null, label: 'Eigene Einstellungen', beschr: 'Wecker, Dimmen usw. direkt hier einstellen.' }]
+        .concat(s.types.filter((x) => x.kat !== 'fest' && x.kat !== 'ign').map((x) => ({ id: x.id, label: 'Wie ' + x.name + ' (' + x.code + ')', beschr: 'Kategorie ' + KAT[x.kat].label })))
+        .map((o) => ({ label: o.label, beschr: o.beschr, an: t.wie === o.id, radio: t.wie === o.id ? 'radio on' : 'radio', pick: () => this.upd(t.id, { wie: o.id }) })),
+      wieAktiv: t.kat === 'fest' && !!t.wie,
+      wieName: (s.types.find((x) => x.id === t.wie) || {}).name || '',
+      wieOeffnen: () => this.setState({ sel: t.wie }),
+      wecker: t.wecker, ohneWecker: !t.wecker,
+      weckerKlasse: t.wecker ? 'sw on' : 'sw',
+      weckerZeilenKlasse: t.wecker ? 'row static' : 'row static aus',
+      weckerHinweis: t.wecker ? 'Klingelt an jedem Tag dieses Typs.' : 'Aus – an diesen Tagen weckt dich die App nicht.',
+      toggleWecker: () => this.upd(t.id, { wecker: !t.wecker }),
+      zeit: t.zeit,
+      aendereZeit: (e) => { const v = e && e.target ? e.target.value : ''; if (v) this.upd(t.id, { zeit: v }); },
+      still: t.still, stillKlasse: t.wecker ? (t.still ? 'sw on' : 'sw') : 'sw dis',
+      toggleStill: () => { if (t.wecker) this.upd(t.id, { still: !t.still }); },
+      keinFenster: t.fenster.length === 0,
+      fenster: t.fenster.map((f, n) => {
+        const setF = (patch) => this.upd(t.id, { fenster: t.fenster.map((g) => (g.id === f.id ? Object.assign({}, g, patch) : g)) });
+        const wert = (e) => (e && e.target ? e.target.value : '');
+        const tage = f.tage === 'alle' ? ['E', 'M', 'L', 'S'] : f.tage;
+        const TAGE = [['alle', 'Alle'], ['E', 'Erster'], ['M', 'Mittlere'], ['L', 'Letzter'], ['S', 'Einzeln']];
+        const BEZ = { vorher: 'Vom Vorabend bis zum Aufstehen an diesem Tag', danach: 'Ab dem Abend dieses Tages', nachher: 'Ab Dienstende laut Kalender – z. B. Tagschlaf' };
+        return {
+          titel: 'Fenster ' + (n + 1) + ': ' + Component.fensterText(f, t.wecker),
+          wegLabel: 'Fenster ' + (n + 1) + ' entfernen',
+          weg: () => this.upd(t.id, { fenster: t.fenster.filter((g) => g.id !== f.id) }),
+          bezug: [['vorher', 'Nacht davor'], ['danach', 'Abend danach'], ['nachher', 'Nach dem Dienst']].map((b) => ({
+            label: b[1], an: f.bezug === b[0], klasse: f.bezug === b[0] ? 'wchip on' : 'wchip', pick: () => setF({ bezug: b[0] })
+          })),
+          bezugText: BEZ[f.bezug],
+          zeigeVon: f.bezug !== 'nachher', nachher: f.bezug === 'nachher',
+          idVon: 'von-' + f.id, idBis: 'bis-' + f.id, idPro: 'pro-' + f.id,
+          von: f.von, bis: f.bis, prozent: f.prozent,
+          bisHinweis: f.bezug === 'vorher' ? 'am Tag selbst' : (f.bezug === 'danach' ? 'am Folgetag, wenn früher als „Von“' : 'nach Dienstende'),
+          setVon: (e) => { if (wert(e)) setF({ von: wert(e) }); },
+          setBis: (e) => { if (wert(e)) setF({ bis: wert(e) }); },
+          setProzent: (e) => { const z = Number(wert(e)); if (z >= 0 && z <= 100) setF({ prozent: z }); },
+          zeigeBeimWecker: f.bezug !== 'nachher' && t.wecker, beimWecker: f.beimWecker,
+          weckerKlasse: f.beimWecker ? 'sw on' : 'sw', toggleWecker: () => setF({ beimWecker: !f.beimWecker }),
+          zeigeTage: t.kat === 'dienst' || t.kat === 'ruf',
+          tage: TAGE.map((c) => {
+            const an = c[0] === 'alle' ? f.tage === 'alle' : (f.tage !== 'alle' && tage.indexOf(c[0]) >= 0);
+            return { label: c[1], an: an, klasse: an ? 'wchip on' : 'wchip', pick: () => {
+              if (c[0] === 'alle') return setF({ tage: 'alle' });
+              let neu = f.tage === 'alle' ? [] : tage.slice();
+              neu = neu.indexOf(c[0]) >= 0 ? neu.filter((x) => x !== c[0]) : neu.concat([c[0]]);
+              setF({ tage: neu.length === 0 || neu.length === 4 ? 'alle' : neu });
+            } };
+          })
+        };
+      }),
+      fensterDazu: () => this.upd(t.id, { fenster: t.fenster.concat([{ id: 'f' + Date.now(), bezug: 'vorher', von: '22:00', bis: '07:00', beimWecker: !!t.wecker, prozent: 50, tage: 'alle' }]) }),
+      dndDim: t.dndDim, dndDimKlasse: t.dndDim ? 'sw on' : 'sw', toggleDndDim: () => this.upd(t.id, { dndDim: !t.dndDim }),
+      dndEintrag: t.dndEintrag, dndEintragGesperrt: t.kat === 'fest',
+      dndEintragKlasse: t.kat === 'fest' ? 'sw dis' : (t.dndEintrag ? 'sw on' : 'sw'),
+      toggleDndEintrag: () => { if (t.kat !== 'fest') this.upd(t.id, { dndEintrag: !t.dndEintrag }); },
+      dndEintragText: t.kat === 'fest' ? 'Gibt es hier nicht – an diesen Tagen steht nichts im Kalender.' : (['urlaub', 'frei', 'krank', 'fortb'].indexOf(t.kat) >= 0 ? 'Bei ganztägigen Einträgen: den ganzen Tag.' : 'Von Beginn bis Ende laut Kalender – z. B. während des Nachtdienstes.'),
+      licht: t.wecker ? t.licht.map((text, i) => ({ text: text, weg: () => this.upd(t.id, { licht: t.licht.filter((_, j) => j !== i) }) })) : [],
+      lichtMoeglich: t.wecker, lichtGesperrt: !t.wecker,
+      lichtDazu: () => this.upd(t.id, { licht: t.licht.concat([t.licht.length === 0 ? 'Sonnenaufgang 30 min vor Wecker' : 'Licht an zum Wecker']) })
+    };
+
+
+    const dimUebersicht = s.types.filter((x) => x.kat !== 'ign').map((x) => ({
+      name: x.name, code: x.code, klasse: KAT[x.kat].klasse, dim: Component.dimText(x), oeffnen: () => oeffne(x.id, 'dimmerTab')
+    }));
+
+    // ---------- Zeitstrahl: rechnet aus den Typ-Einstellungen, Minuten ab So 18.10. 00:00 ----------
+    const min = (x) => { const p = (x || '00:00').split(':'); return Number(p[0]) * 60 + Number(p[1]); };
+    const uhr = (m) => { const x = ((m % 1440) + 1440) % 1440; return String(Math.floor(x / 60)).padStart(2, '0') + ':' + String(x % 60).padStart(2, '0'); };
+    const DIENSTZEIT = { f: [360, 855], s: [825, 1320], n: [1245, 1860], rb: [420, 1860] };
+    const GANZTAGS = ['frei', 'urlaub', 'krank', 'fortb'];
+    const FARBE = { eintrag: '#2D2A28', dim: '#6B3FA0', dnd: '#2F6FB0', licht: '#E39B1B', ruf: '#4E2A6B', wecker: '#E2001A', cutoff: '#2F6FB0' };
+    const wirkt = (x) => (x.kat === 'fest' && x.wie ? (s.types.find((y) => y.id === x.wie) || x) : x);
+    const spanVon = (x, base) => {
+      if (DIENSTZEIT[x.id]) return [base + DIENSTZEIT[x.id][0], base + DIENSTZEIT[x.id][1]];
+      if (x.kat === 'dienst') return [base + 360, base + 840];
+      if (x.kat === 'ruf') return [base + 420, base + 1860];
+      if (GANZTAGS.indexOf(x.kat) >= 0) return [base, base + 1440];
+      return null;
+    };
+    const weckerVon = (x, i) => { if (!x || x.kat === 'ign') return null; const e = wirkt(x); return e.wecker ? i * 1440 + min(e.zeit) : null; };
+    const ereignisse = (x, i, alleWecker, pos) => {
+      const base = i * 1440;
+      const bars = []; const punkte = [];
+      if (!x || x.kat === 'ign') return { bars: bars, punkte: punkte };
+      const e = wirkt(x);
+      const span = spanVon(x, base);
+      const ganz = GANZTAGS.indexOf(x.kat) >= 0;
+      if (span) bars.push({ lane: 'eintrag', s: span[0], e: span[1], an: ganz ? x.name + ' (ganztägig)' : x.name + ' beginnt', aus: ganz ? null : x.name + ' endet' });
+      const wecker = weckerVon(x, i);
+      if (wecker !== null) punkte.push({ lane: 'wecker', t: wecker, text: (e.still ? 'Stummer Wecker' : 'Wecker') + ' – ' + x.name });
+      const en0 = Component.normal(e);
+      en0.fenster.filter((f) => f.tage === 'alle' || f.tage.indexOf(pos) >= 0).forEach((f) => {
+        let dim = null;
+        if (f.bezug === 'nachher') {
+          if (span) { const st = span[1]; let en = Math.floor(st / 1440) * 1440 + min(f.bis); if (en <= st) en += 1440; dim = { s: st, e: en, grund: '' }; }
+        } else {
+          let st = base + min(f.von); let en = base + min(f.bis);
+          if (f.bezug === 'danach') { if (en <= st) en += 1440; } else if (st >= en) st -= 1440;
+          let grund = '';
+          if (f.beimWecker) { const a = alleWecker.filter((w) => w > st && w < en).sort((p, q) => p - q)[0]; if (a !== undefined) { en = a; grund = ' – der Wecker klingelt'; } }
+          dim = { s: st, e: en, grund: grund };
+        }
+        if (!dim) return;
+        bars.push({ lane: 'dim', s: dim.s, e: dim.e, an: 'Dimmen beginnt – ' + f.prozent + ' % (' + x.name + ')', aus: 'Dimmen endet (' + x.name + ')' + dim.grund, staerke: f.prozent, typ: x.name, tag: i, bezug: f.bezug });
+        if (en0.dndDim) bars.push({ lane: 'dnd', s: dim.s, e: dim.e, an: '„Nicht stören“ an (Dimm-Fenster)', aus: '„Nicht stören“ aus' });
+      });
+      if (en0.dndEintrag && span) bars.push({ lane: 'dnd', s: span[0], e: span[1], an: '„Nicht stören“ an (Kalendereintrag)', aus: '„Nicht stören“ aus' });
+      if (wecker !== null) e.licht.forEach((l) => {
+        if (l.indexOf('Sonnenaufgang') === 0) bars.push({ lane: 'licht', s: wecker - 30, e: wecker, an: 'Licht: Sonnenaufgang beginnt', aus: null });
+        else bars.push({ lane: 'licht', s: wecker, e: wecker + 30, an: 'Licht an', aus: 'Licht aus' });
+      });
+      if (x.kat === 'ruf' && span) {
+        bars.push({ lane: 'ruf', s: span[0], e: span[1], an: 'Rufbereitschaft: Kalender wird stündlich geprüft', aus: 'Stündliche Prüfung endet' });
+        let cut = Math.floor(span[0] / 1440) * 1440 + 300; if (span[0] % 1440 >= 300) cut += 1440;
+        punkte.push({ lane: 'cutoff', t: cut, text: '„Nicht stören“ endet spätestens jetzt – erreichbar sein (Rufbereitschaft)' });
+      }
+      return { bars: bars, punkte: punkte };
+    };
+    const kappen = (bars, punkte) => punkte.filter((p) => p.lane === 'cutoff').forEach((p) => bars.forEach((b) => {
+      if (b.lane === 'dnd' && b.s < p.t && b.e > p.t) { b.e = p.t; b.aus = null; }
+    }));
+    // Nicht stoeren ist EIN Schalter: aneinanderstossende Fenster sind fuer den Nutzer ein Stueck
+    const dndVereinen = (bars) => {
+      const dnd = bars.filter((b) => b.lane === 'dnd').sort((a, b) => a.s - b.s);
+      const rest = bars.filter((b) => b.lane !== 'dnd');
+      const zus = [];
+      dnd.forEach((b) => { const l = zus[zus.length - 1]; if (l && b.s <= l.e) { if (b.e > l.e) { l.e = b.e; l.aus = b.aus; } } else zus.push(Object.assign({}, b)); });
+      return rest.concat(zus);
+    };
+    const eventsIn = (bars, punkte, von, bis, praefix) => {
+      const ev = [];
+      bars.forEach((b) => {
+        if (b.s >= von && b.s < bis && b.an) ev.push({ t: b.s, text: b.an, farbe: FARBE[b.lane] });
+        if (b.e >= von && b.e < bis && b.aus) ev.push({ t: b.e, text: b.aus, farbe: FARBE[b.lane] });
+      });
+      punkte.forEach((p) => { if (p.t >= von && p.t < bis) ev.push({ t: p.t, text: p.text, farbe: FARBE[p.lane] }); });
+      return ev.sort((a, b) => a.t - b.t).map((x) => ({ zeit: praefix(x.t) + uhr(x.t), text: x.text, farbe: x.farbe }));
+    };
+    const balken = (bars, von, dauer) => bars.filter((b) => b.e > von && b.s < von + dauer).map((b) => {
+      const a = Math.max(b.s, von), z = Math.min(b.e, von + dauer);
+      return { klasse: 'l-' + b.lane, left: ((a - von) / dauer * 100).toFixed(2), width: Math.max(0.6, (z - a) / dauer * 100).toFixed(2) };
+    });
+
+    // Tagesleiste fuer den geoeffneten Typ: 18:00 Vortag bis 18:00 Folgetag
+    const lw = weckerVon(t, 1);
+    const lr = ereignisse(t, 1, lw === null ? [] : [lw], s.leistePos || 'M');
+    kappen(lr.bars, lr.punkte);
+    lr.bars = dndVereinen(lr.bars);
+    const L0 = 1440 - 360, LD = 2880;
+    const leiste = {
+      bars: balken(lr.bars, L0, LD),
+      ticks: lr.punkte.filter((p) => p.lane === 'wecker' && p.t >= L0 && p.t < L0 + LD).map((p) => ({ left: ((p.t - L0) / LD * 100).toFixed(2) })),
+      achse: [[12.5, 'Tag 0:00'], [25, '6'], [37.5, '12'], [50, '18'], [62.5, 'Folgetag'], [75, '6'], [87.5, '12']].map((a) => ({ left: a[0], text: a[1] })),
+      zeigePos: t.kat === 'dienst' || t.kat === 'ruf',
+      pos: [['E', 'Erster Tag im Block'], ['M', 'Mittendrin'], ['L', 'Letzter'], ['S', 'Einzeln']].map((p) => ({
+        label: p[1], an: (s.leistePos || 'M') === p[0], klasse: (s.leistePos || 'M') === p[0] ? 'wchip on' : 'wchip', pick: () => this.setState({ leistePos: p[0] })
+      })),
+      events: eventsIn(lr.bars, lr.punkte, L0, L0 + LD, (m) => (m < 1440 ? 'Vortag ' : (m >= 2880 ? 'Folgetag ' : '')))
+    };
+
+    // Woche: Beispielfolge wie im Kalender
+    const PLAN = [['ohne', '–'], ['f', 'F'], ['f', 'IMCF'], ['s', 'S'], ['n', 'N'], ['n', 'N'], ['p', '+'], ['rb', 'AD']];
+    const DATUM = ['So 18.10.', 'Mo 19.10.', 'Di 20.10.', 'Mi 21.10.', 'Do 22.10.', 'Fr 23.10.', 'Sa 24.10.', 'So 25.10.'];
+    const freiTage = s.freiTage || [];
+    const frei = freiTage.map((t) => t - 18).filter((i) => i >= 0 && i < PLAN.length);
+    const ohneTyp = s.types.find((y) => y.kat === 'fest');
+    const wTage = PLAN.map((p, i) => (frei.indexOf(i) >= 0 ? ohneTyp : s.types.find((y) => y.id === p[0])));
+    const alleWecker = wTage.map((x, i) => weckerVon(x, i)).filter((w) => w !== null);
+    let wBars = []; let wPunkte = [];
+    const blockPos = (i) => {
+      const id = wTage[i] && wTage[i].id; const vor = i > 0 && wTage[i - 1] && wTage[i - 1].id === id; const nach = wTage[i + 1] && wTage[i + 1].id === id;
+      return vor && nach ? 'M' : (vor ? 'L' : (nach ? 'E' : 'S'));
+    };
+    wTage.forEach((x, i) => { const r = ereignisse(x, i, alleWecker, blockPos(i)); wBars = wBars.concat(r.bars); wPunkte = wPunkte.concat(r.punkte); });
+    kappen(wBars, wPunkte);
+    wBars = dndVereinen(wBars);
+    const dims = wBars.filter((b) => b.lane === 'dim');
+    const konflikte = [];
+    for (let a = 0; a < dims.length; a++) for (let b = a + 1; b < dims.length; b++) {
+      const k0 = Math.max(dims[a].s, dims[b].s), k1 = Math.min(dims[a].e, dims[b].e);
+      if (k0 < k1 && dims[a].typ !== dims[b].typ) {
+        const st = dims[a].staerke >= dims[b].staerke ? dims[a] : dims[b];
+        const BEZUG = { vorher: 'die Nacht davor', danach: 'den Abend danach', nachher: 'die Zeit nach dem Dienst' };
+        const wer = (d) => DATUM[d.tag].slice(0, 2) + ' „' + d.typ + '“ (' + BEZUG[d.bezug] + ')';
+        const regel = dims[a].staerke === dims[b].staerke ? 'Beide gleich stark (' + st.staerke + ' %).' : 'Es gilt das stärkere: „' + st.typ + '“ mit ' + st.staerke + ' %.';
+        konflikte.push({ s: k0, e: k1, text: 'Dieselbe Nacht gehört zwei Tagen: ' + wer(dims[a]) + ' und ' + wer(dims[b]) + '. Von ' + uhr(k0) + ' bis ' + uhr(k1) + ' wollen beide dimmen. ' + regel });
+      }
+    }
+    const offenTag = s.offenTag === undefined ? 1 : s.offenTag;
+    const woche = wTage.map((x, i) => {
+      const base = i * 1440;
+      const meine = konflikte.filter((k) => k.s >= base && k.s < base + 1440);
+      const ev = eventsIn(wBars, wPunkte, base, base + 1440, () => '');
+      const x0 = x || s.types[0];
+      return {
+        datum: DATUM[i], code: PLAN[i][1], klasse: KAT[x0.kat].klasse,
+        name: frei.indexOf(i) >= 0 ? 'Dienst fällt aus (' + (s.types.find((y) => y.id === PLAN[i][0]) || {}).name + ') – wie ohne Eintrag' : (x0.kat === 'fest' && x0.wie ? 'Nichts eingetragen – verhält sich wie ' + wirkt(x0).name : x0.name),
+        frei: frei.indexOf(i) >= 0,
+        zuruecknehmen: () => this.setState({ freiTage: freiTage.filter((t) => t !== 18 + i) }),
+        bars: balken(wBars, base, 1440),
+        konflikte: konflikte.filter((k) => k.e > base && k.s < base + 1440).map((k) => { const a = Math.max(k.s, base), z = Math.min(k.e, base + 1440); return { left: ((a - base) / 1440 * 100).toFixed(2), width: ((z - a) / 1440 * 100).toFixed(2) }; }),
+        ticks: wPunkte.filter((p) => p.lane === 'wecker' && p.t >= base && p.t < base + 1440).map((p) => ({ left: ((p.t - base) / 1440 * 100).toFixed(2) })),
+        hatHinweis: meine.length > 0, hinweis: meine.map((k) => k.text).join(' '),
+        offen: offenTag === i, events: ev, keineEvents: ev.length === 0,
+        toggle: () => this.setState({ offenTag: offenTag === i ? -1 : i }),
+        typName: x0.name, typOeffnen: () => oeffne(x0.id, 'woche')
+      };
+    });
+
+    // Fortlaufender Zeitstrahl: 15 px je Stunde, ein Fokus in der Mitte bestimmt Kopfzeile und "Gerade"
+    const PXH = 19, PXM = PXH / 60;
+    const GESAMT = PLAN.length * 1440;
+    const START_X = Math.round((1440 + 300) * PXM - 178);
+    const scrollX = s.scrollX === undefined ? START_X : s.scrollX;
+    const fokusMin = Math.max(0, Math.min(GESAMT - 1, Math.round((scrollX + (s.viewW || 356) / 2) / PXM)));
+    const fTag = Math.floor(fokusMin / 1440);
+    const fx = wTage[fTag] || s.types[0];
+    const LANE_NAME = { eintrag: null, dim: 'Dimmen', dnd: 'Nicht stören', licht: 'Licht', ruf: 'Ruf-Abfrage' };
+    const aktiv = wBars.filter((b) => b.s <= fokusMin && b.e > fokusMin).map((b) => (b.lane === 'eintrag' ? (b.an || '').replace(/ beginnt$/, '') : (b.lane === 'dim' ? 'Dimmen ' + b.staerke + ' %' : LANE_NAME[b.lane])));
+    const alleT = []; wBars.forEach((b) => { if (b.an) alleT.push({ t: b.s, x: b.an }); if (b.aus) alleT.push({ t: b.e, x: b.aus }); }); wPunkte.forEach((q) => alleT.push({ t: q.t, x: q.text }));
+    const nae = alleT.filter((q) => q.t > fokusMin && q.t < GESAMT).sort((p, q) => p.t - q.t)[0];
+    const zs = {
+      breite: Math.round(GESAMT * PXM),
+      tage: DATUM.map((d, i) => ({ left: Math.round(i * 1440 * PXM), text: d + ' · ' + PLAN[i][1] })),
+      stunden: [].concat.apply([], DATUM.map((d, i) => [6, 12, 18].map((h) => ({ left: Math.round((i * 1440 + h * 60) * PXM), text: String(h) })))),
+      bars: wBars.map((b) => {
+        const w = Math.max(b.lane === 'licht' ? 12 : 3, Math.round((b.e - b.s) * PXM));
+        const o = { klasse: 'l-' + b.lane, left: Math.round(b.s * PXM), width: w };
+        ['eintrag', 'dim', 'dnd', 'licht', 'ruf'].forEach((k) => { o['i_' + k] = b.lane === k && w >= 12; });
+        return o;
+      }).filter((b) => b.left + b.width > 0),
+      konflikte: konflikte.map((k) => ({ left: Math.round(k.s * PXM), width: Math.round((k.e - k.s) * PXM) })),
+      ticks: wPunkte.filter((q) => q.lane === 'wecker').map((q) => ({ left: Math.round(q.t * PXM) })),
+      scroll: (ev) => { const el = ev && (ev.currentTarget || ev.target); if (el) this.setState({ scrollX: el.scrollLeft, viewW: el.clientWidth }); },
+      ref: (el) => {
+        if (!el) return;
+        this._zsEl = el;
+        if (!this._zsGesetzt) { this._zsGesetzt = true; el.scrollLeft = scrollX; }
+        if (el._cfMaus) return;
+        el._cfMaus = true;
+        // Mausrad: senkrechtes Drehen schiebt den Zeitstrahl waagerecht
+        el.addEventListener('wheel', (w) => { if (Math.abs(w.deltaY) > Math.abs(w.deltaX)) { el.scrollLeft += w.deltaY; w.preventDefault(); } }, { passive: false });
+        // Ziehen mit gedrueckter Maustaste
+        let zieh = null;
+        el.addEventListener('pointerdown', (d) => { if (d.pointerType !== 'mouse') return; zieh = { x: d.clientX, l: el.scrollLeft }; el.setPointerCapture(d.pointerId); el.style.cursor = 'grabbing'; });
+        el.addEventListener('pointermove', (m) => { if (zieh) el.scrollLeft = zieh.l - (m.clientX - zieh.x); });
+        const ende = () => { zieh = null; el.style.cursor = 'grab'; };
+        el.addEventListener('pointerup', ende); el.addEventListener('pointercancel', ende);
+      },
+      fokus: {
+        code: PLAN[fTag][1], klasse: KAT[fx.kat].klasse,
+        kopf: DATUM[fTag] + ', ' + uhr(fokusMin) + ' Uhr',
+        name: fx.kat === 'fest' && fx.wie ? 'Nichts eingetragen – wie ' + wirkt(fx).name : fx.name,
+        aktiv: aktiv.length ? aktiv.join(' · ') : 'nichts – Bildschirm normal, Ton an',
+        naechstes: nae ? DATUM[Math.floor(nae.t / 1440)].slice(0, 2) + ' ' + uhr(nae.t) + ' – ' + nae.x : 'nichts mehr in diesem Zeitraum'
+      }
+    };
+
+    const mSchichten = s.types.filter((x) => x.kat === 'dienst');
+    const mWahl = mSchichten.find((x) => x.id === s.manuellTyp);
+    const manuell = {
+      offen: !!s.manuellOffen,
+      auf: () => this.setState({ manuellOffen: true, manuellErstellt: false }),
+      zu: () => this.setState({ manuellOffen: false }),
+      schichten: mSchichten.map((x) => ({ name: x.name, an: s.manuellTyp === x.id, klasse: s.manuellTyp === x.id ? 'wchip on' : 'wchip', pick: () => this.setState({ manuellTyp: x.id, manuellMenue: false }) })),
+      menueOffen: !!s.manuellMenue,
+      menue: () => this.setState({ manuellMenue: !s.manuellMenue }),
+      knopf: mWahl ? mWahl.name : 'Schicht wählen',
+      hatZeit: !!mWahl, zeit: mWahl ? mWahl.zeit : '', gesperrt: !mWahl,
+      erstellen: () => { if (mWahl) this.setState({ manuellOffen: false, manuellErstellt: true }); },
+      erstellt: !!s.manuellErstellt && s.screen === 'woche',
+      erstelltText: mWahl ? 'Manueller Alarm gestellt: Mo 19.10., ' + mWahl.zeit + ' (' + mWahl.name + ')' : ''
+    };
+
+    // Zeitraum wie im echten DateRangePicker: erster Tipp = Beginn, zweiter = Ende, dritter beginnt neu
+    const kv = s.kalVon, kb = s.kalBis;
+    const HEUTE = 16;
+    const tippe = (t) => {
+      if (!kv || kb) this.setState({ kalVon: t, kalBis: null });
+      else if (t < kv) this.setState({ kalVon: t, kalBis: null });
+      else this.setState({ kalBis: t });
+    };
+    const zellen = [];
+    for (let i = 0; i < 3; i++) zellen.push({ text: '', code: '', label: '', klasse: 'kz leer', gesperrt: true, an: false, pick: () => {} });
+    for (let t = 1; t <= 31; t++) {
+      const ende = t === kv || t === kb; const imBand = kv && kb && t > kv && t < kb;
+      const aus = t < HEUTE;
+      const pIdx = t - 18; const code = pIdx >= 0 && pIdx < PLAN.length ? PLAN[pIdx][1] : ''; const typN = code ? ((s.types.find((y) => y.id === PLAN[pIdx][0]) || {}).name || '') : '';
+      zellen.push({ text: String(t), code: code, label: t + '. Oktober' + (typN ? ', ' + typN : ''), gesperrt: aus, an: ende || !!imBand, klasse: 'kz' + (aus ? ' aus' : '') + (ende ? ' ende' : (imBand ? ' kz-mitte' : '')) + (t === HEUTE && !ende ? ' heute' : ''), pick: () => { if (!aus) tippe(t); } });
+    }
+    const bisT = kb || kv;
+    const anzahl = kv ? bisT - kv + 1 : 0;
+    const freigabe = {
+      offen: !!s.freigabeOffen,
+      auf: () => this.setState({ freigabeOffen: true, kalVon: null, kalBis: null }),
+      zu: () => this.setState({ freigabeOffen: false }),
+      wochentage: ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'],
+      zellen: zellen,
+      zusammenfassung: !kv ? 'Wähle den ersten Tag, bei mehreren Tagen auch den letzten.'
+        : (anzahl === 1 ? kv + '.10.: kein Wecker aus dem Dienstplan, eigene Wecker bleiben.'
+          : kv + '.10. – ' + bisT + '.10. (' + anzahl + ' Tage): kein Wecker aus dem Dienstplan, eigene Wecker bleiben.'),
+      gesperrt: !kv,
+      ok: () => { const neu = []; for (let t = kv; t <= bisT; t++) if (freiTage.indexOf(t) < 0) neu.push(t); this.setState({ freiTage: freiTage.concat(neu), freigabeOffen: false }); }
+    };
+
+    const HAUPT = ['uebersicht', 'woche', 'einstellungen'];
+    const ersterWecker = wPunkte.filter((p) => p.lane === 'wecker' && p.t >= 12 * 60).sort((a, b) => a.t - b.t)[0];
+    const naechster = ersterWecker
+      ? { zeit: DATUM[Math.floor(ersterWecker.t / 1440)] + ', ' + uhr(ersterWecker.t), text: ersterWecker.text }
+      : { zeit: 'Kein Wecker', text: 'In den nächsten Tagen klingelt nichts.' };
+    const navPunkte = [
+      { k: 'uebersicht', label: 'Übersicht', hinweis: '' },
+      { k: 'woche', label: 'Wecker', hinweis: 'Deine Tage mit Zeitstrahl' },
+      { k: null, label: 'Philips Hue', hinweis: 'Bridge und Lampen – wie heute' },
+      { k: null, label: 'System-Status', hinweis: 'wie heute' },
+      { k: 'einstellungen', label: 'Einstellungen', hinweis: 'Schichttypen, Geräte' },
+      { k: null, label: 'Schicht-Dimmer', hinweis: 'entfällt – steht jetzt am Typ' }
+    ].map((n) => ({
+      label: n.label, hinweis: n.hinweis, gesperrt: !n.k,
+      klasse: !n.k ? 'nav aus' : (s.screen === n.k ? 'nav on' : 'nav'),
+      pick: () => { if (n.k) this.setState({ screen: n.k, drawer: false }); }
+    }));
+
+    const titel = { uebersicht: 'Übersicht', woche: 'Wecker', liste: 'Schichttypen', katwahl: 'Kategorie wählen', typ: t.name, dimmen: 'Dimmen: ' + t.name, dimmerTab: 'Typen im Vergleich', einstellungen: 'Einstellungen' }[s.screen];
+
+    return {
+      titel: titel,
+      zeigeZurueck: HAUPT.indexOf(s.screen) < 0,
+      zeigeMenue: HAUPT.indexOf(s.screen) >= 0,
+      drawer: !!s.drawer,
+      menueAuf: () => this.setState({ drawer: true }),
+      menueZu: () => this.setState({ drawer: false }),
+      navPunkte: navPunkte,
+      zeigeUebersicht: s.screen === 'uebersicht',
+      naechster: naechster,
+      zs: zs,
+      manuell: manuell,
+      freigabe: freigabe,
+      zurueck: () => {
+        if (s.screen === 'dimmen') this.setState({ screen: 'typ' });
+        else if (s.screen === 'katwahl') this.setState({ screen: neuCode ? 'liste' : 'typ', katFuer: null });
+        else if (s.screen === 'typ') this.setState({ screen: s.herkunft, neuId: null });
+        else if (s.screen === 'dimmerTab' || s.screen === 'liste') this.setState({ screen: 'einstellungen' });
+        else this.setState({ screen: 'uebersicht' });
+      },
+      zeigeListe: s.screen === 'liste',
+      zeigeKatWahl: s.screen === 'katwahl',
+      zeigeTyp: s.screen === 'typ',
+      zeigeDimmen: s.screen === 'dimmen',
+      zeigeDimmerTab: s.screen === 'dimmerTab',
+      hatFund: fund.length > 0,
+      fund: fund,
+      gruppen: gruppen,
+      katWahl: katWahl,
+      katWahlIntro: katWahlIntro,
+      zeigeZuTyp: zuTyp.length > 0,
+      zuTyp: zuTyp,
+      typ: typ,
+      dimUebersicht: dimUebersicht,
+      zumDimmen: () => this.setState({ screen: 'dimmen' }),
+      zumDimmerTab: () => this.setState({ screen: 'dimmerTab' }),
+      zeigeEinstellungen: s.screen === 'einstellungen',
+      zuEinstellungen: () => this.setState({ screen: 'einstellungen' }),
+      zumVergleich: () => this.setState({ screen: 'dimmerTab' }),
+      zurListe: () => this.setState({ screen: 'liste' }),
+      zeigeWoche: s.screen === 'woche',
+      zurWoche: () => this.setState({ screen: 'woche' }),
+      woche: woche,
+      leiste: leiste,
+      legendeOffen: !!s.legendeOffen,
+      legendePfeil: s.legendeOffen ? 'M6 15l6-6 6 6' : 'M6 9l6 6 6-6',
+      toggleLegende: () => this.setState({ legendeOffen: !s.legendeOffen }),
+      legendeLang: [
+        { zeichen: 'z-band', stil: 'background: #2D2A28', name: 'Eintrag', text: 'Dein Dienst oder ein ganztägiger Eintrag (Urlaub, Frei …) laut Kalender.' },
+        { zeichen: 'z-band', stil: 'background: #6B3FA0', name: 'Dimmen', text: 'Der Bildschirm ist abgedunkelt – aus den Dimm-Fenstern des Typs.' },
+        { zeichen: 'z-band', stil: 'background: #2F6FB0', name: 'Nicht stören', text: 'Das Handy ist stumm, so wie am Typ eingestellt.' },
+        { zeichen: 'z-band', stil: 'background: #E39B1B', name: 'Licht', text: 'Hue-Licht, z. B. ein Sonnenaufgang vor dem Wecker.' },
+        { zeichen: 'z-band', stil: 'background: repeating-linear-gradient(90deg, #4E2A6B 0, #4E2A6B 6px, transparent 6px, transparent 10px)', name: 'Ruf-Abfrage (gestrichelt)', text: 'Rufbereitschaft: der Kalender wird stündlich auf Einsätze geprüft.' },
+        { zeichen: 'z-strich', stil: 'background: #E2001A', name: 'Roter Strich', text: 'Hier klingelt ein Wecker – im Zeitstrahl zusätzlich mit Weckersymbol darüber. Die kleinen weißen Symbole am Anfang der Bänder: Tasche = Eintrag, Mond = Dimmen, Kreis mit Strich = Nicht stören, Glühbirne = Hue-Licht, Hörer = Ruf-Abfrage.' },
+        { zeichen: 'z-strich', stil: 'background: #2D2A28', name: 'Schwarzer Strich in der Mitte', text: 'Nur im Zeitstrahl: dein Zeitpunkt. Wische nach links oder rechts – Tag, Typ, „Gerade“ und „Als Nächstes“ springen mit.' },
+        { zeichen: 'z-rahmen', stil: '', name: 'Rot gestrichelter Rahmen', text: 'Zwei Tage wollen dieselbe Zeit dimmen – der Hinweis darunter sagt, was gilt.' }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

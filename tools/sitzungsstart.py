@@ -266,6 +266,38 @@ def offene_punkte():
     return text + "\n\nEinzelheiten: Memory `project_offene_punkte`"
 
 
+UMBAU_ABLAUF = "entwurf/umbau-schichttyp/ABLAUF.md"
+UMBAU_BRANCH = "feature/umbau-schichttyp"
+UMBAU_STATUS = os.path.join(WURZEL, "..Projektdateien", "umbau", "logs", "STATUS.txt")
+
+
+def umbau():
+    """Wegweiser zum Umbau "Schichttyp als Zentrale" (seit 16.10.2026).
+
+    Der Stand der Pakete liegt in GitHub-Issues; die abzufragen waere Netzzugriff (siehe oben).
+    Ausgegeben wird deshalb nur, was lokal ableitbar ist: dass es den Umbau gibt, wo sein Ablauf
+    steht, wie weit der Integrations-Branch ist und die letzte Zeile des lokalen Runners.
+    Ohne diesen Abschnitt faende eine Cloud-Sitzung den Umbau nicht - das Memory ist lokal.
+    """
+    hier = os.path.exists(os.path.join(WURZEL, UMBAU_ABLAUF))
+    ref = "origin/" + UMBAU_BRANCH
+    hat_branch = git("rev-parse", "--verify", "--quiet", ref) is not None
+    if not hier and not hat_branch:
+        return None
+    zeilen = ["Umbau Schichttyp als Zentrale - Ablauf: `{}`; Pakete: `gh issue list --label umbau`"
+              .format(UMBAU_ABLAUF)]
+    if hat_branch:
+        vorne = git("rev-list", "--count", "origin/{}..{}".format(INTEGRATIONSBRANCH, ref))
+        if vorne is not None:
+            zeilen.append("Integrations-Branch `{}`: {} Commits vor origin/{}".format(
+                UMBAU_BRANCH, vorne.strip(), INTEGRATIONSBRANCH))
+    status = lies(UMBAU_STATUS)
+    if status and status.strip():
+        alter = alter_in_worten(time.time() - os.path.getmtime(UMBAU_STATUS))
+        zeilen.append("Runner zuletzt ({}): {}".format(alter, status.strip().splitlines()[-1]))
+    return "\n".join("- " + z for z in zeilen)
+
+
 def main():
     # Der eigene Text ist ASCII, die Titel der offenen Punkte sind es NICHT
     # (echte Umlaute, Gedankenstriche). Ohne diese Zeile zerlegt die
@@ -278,6 +310,7 @@ def main():
     bloecke = []
     for titel, inhalt in (
         ("Arbeitsstand", arbeitsstand()),
+        ("Umbau", umbau()),
         ("Offen", offene_punkte()),
     ):
         if inhalt:

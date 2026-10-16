@@ -3,6 +3,7 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.shift
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.CalendarEvent
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftKategorie
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -240,5 +241,24 @@ class ShiftCodeSuggesterTest {
         val result = ShiftCodeSuggester.suggest(echteTitel, ShiftConfig.getDefaultConfig())
 
         assertEquals(listOf("+", "AD1", "FBE", "IMCF"), result.suggestions.map { it.code })
+    }
+
+    /**
+     * Umbau E1 (#167), SPEC 3.3: „Die App schlaegt <Code> nicht mehr vor.“ Ein Code, der als Muster
+     * an einem Typ der Kategorie Ignorieren steht, IST zugeordnet - nur eben zu „bedeutungslos“.
+     * Faellt dieser Test, hat jemand die Ignorieren-Typen aus den Zuordnungen herausgefiltert, und
+     * die Karte fordert den Nutzer erneut auf, einen Code einzuordnen, den er bewusst ignoriert.
+     */
+    @Test
+    fun `ein ignorierter Code erscheint nicht als Vorschlag`() {
+        val config = ShiftConfig(
+            autoAlarmEnabled = true,
+            definitions = listOf(definition("Teambesprechung", listOf("TB")).mitKategorie(ShiftKategorie.IGNORIEREN))
+        )
+        val events = listOf(event("TB", 10), event("TB", 11), event("FBE", 12))
+
+        val result = ShiftCodeSuggester.suggest(events, config)
+
+        assertEquals(listOf("FBE"), result.suggestions.map { it.code })
     }
 }

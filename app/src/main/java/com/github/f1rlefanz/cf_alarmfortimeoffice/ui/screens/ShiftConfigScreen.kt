@@ -1007,17 +1007,17 @@ private fun CodeMarke(code: String, kategorie: ShiftKategorie?) {
 }
 
 /** Flaeche und Schrift der Code-Marke einer Kategorie. */
-private data class KategorieFarben(val flaeche: Color, val text: Color)
+internal data class KategorieFarben(val flaeche: Color, val text: Color)
 
 /**
  * Hell: die Werte des Prototyps (`.k-dienst` usw.). Dunkel: dieselbe Farbfamilie, Flaeche abgedunkelt
- * und die helle Flaeche des Prototyps als Schrift. Jedes Paar erreicht mindestens 4,5:1 (nachgerechnet:
- * kleinster Wert hell 5,8:1, dunkel 8,7:1). Ohne `else`: eine achte Kategorie braucht bewusst eine Farbe.
+ * und die helle Flaeche des Prototyps als Schrift. Jedes Paar erreicht mindestens 4,5:1 - das haelt
+ * `ShiftConfigScreenTextTest` fest. Ohne `else`: eine achte Kategorie braucht bewusst eine Farbe.
  *
  * Bewusst HIER und nicht in `ui/theme/Color.kt`: ein einziger Verwender. Zieht eine zweite Stelle
  * (Typ-Seite, Einordnen-Dialog) die Farben mit, gehoeren sie ins Theme.
  */
-private fun kategorieFarben(kategorie: ShiftKategorie, dunkel: Boolean): KategorieFarben = when (kategorie) {
+internal fun kategorieFarben(kategorie: ShiftKategorie, dunkel: Boolean): KategorieFarben = when (kategorie) {
     ShiftKategorie.DIENST ->
         if (dunkel) KategorieFarben(Color(0xFF5A1A29), Color(0xFFFBE1E4)) else KategorieFarben(Color(0xFFFBE1E4), Color(0xFF8E0F30))
     ShiftKategorie.RUFBEREITSCHAFT ->

@@ -1,12 +1,17 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens
 
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftKategorie
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.LocalTime
+import kotlin.math.max
+import kotlin.math.min
 
 /**
  * Haelt die zwei Zusicherungen des Schicht-Konfigurationsscreens fest, die man nur am Text bzw. an
@@ -129,5 +134,24 @@ class ShiftConfigScreenTextTest {
             zwischendienst.keywords.any { it.equals("Zwischendienst", ignoreCase = true) }
         )
         assertTrue(zwischendienst.matchesKeywords("Zwischendienst"))
+    }
+
+    @Test
+    fun `jede Code-Marke der Liste erreicht AA in hell und dunkel`() {
+        // Die Marken tragen kleinen Text auf einer GEFUELLTEN Flaeche (wie die Etiketten in
+        // ThemeKontrastTest): WCAG AA verlangt 4,5:1. Das Dunkel-Paar sieht man im Screenshot nicht
+        // verlaesslich - dieser Test ist die Absicherung, auch fuer eine spaeter ergaenzte Kategorie.
+        fun kontrast(a: Color, b: Color): Double {
+            val la = a.luminance().toDouble()
+            val lb = b.luminance().toDouble()
+            return (max(la, lb) + 0.05) / (min(la, lb) + 0.05)
+        }
+        ShiftKategorie.entries.forEach { kategorie ->
+            listOf(false, true).forEach { dunkel ->
+                val farben = kategorieFarben(kategorie, dunkel)
+                val k = kontrast(farben.text, farben.flaeche)
+                assertTrue("$kategorie dunkel=$dunkel: Kontrast %.2f < 4,5".format(k), k >= 4.5)
+            }
+        }
     }
 }

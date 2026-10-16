@@ -377,8 +377,13 @@ try {
             continue
         }
         $commits = (git -C $wt log --oneline -5 2>$null | Out-String)
-        $ende = ($out -split "`n" | Select-Object -Last 15) -join "`n"
-        Kommentar $nr "Runner: Lauf $lauf endete ohne Abschluss.`n`nLetzte Commits auf ${branch}:`n``````n$commits``````n`nEnde des Logs:`n``````n$ende`n``````"
+        # Lesbar fuer den naechsten Lauf und fuer Menschen: Grund, Commits, letzte Schritte aus dem
+        # Live-Log - nicht das rohe Ergebnis-JSON (16.10.2026, #170).
+        $grund = try { ($out | ConvertFrom-Json).subtype } catch { 'unbekannt' }
+        $live = Join-Path $Logs "paket-$nr-lauf$lauf.log"
+        $ende = if (Test-Path $live) { (Get-Content $live -Tail 15 -Encoding UTF8) -join "`n" } else { ($out -split "`n" | Select-Object -Last 15) -join "`n" }
+        $z = '```'
+        Kommentar $nr "Runner: Lauf $lauf endete ohne Abschluss ($grund).`n`nLetzte Commits auf ${branch}:`n$z`n$commits$z`n`nLetzte Schritte:`n$z`n$ende`n$z"
         if ($lauf -ge 2) {
             Label $nr @('blockiert') @('in-arbeit')
             Log "#${nr}: nach 2 Laeufen blockiert"

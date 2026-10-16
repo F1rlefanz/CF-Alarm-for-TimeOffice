@@ -170,7 +170,7 @@ data class DimWindow(
      *
      * WARUM DAS ES GIBT: Das Vorschlaf-Fenster der Nachtdienst-Vorlage ("16:00 bis zum Wecker")
      * loeste bei einem Wecker um 13:30 zu 16:00 des VORTAGS auf und dimmte 21,5 Stunden am Stueck
-     * (samt "Nicht stoeren", wenn es dem Dimmer folgt). Der Rueckspruenge selbst ist fuer alle
+     * (samt "Nicht stoeren", wenn es dem Dimmer folgt). Der Ruecksprung selbst ist fuer alle
      * anderen CLOCK-Starts gewollt ("20:00" vor einem 05:30-Wecker = Vorabend), deshalb eine
      * Kennzeichnung am einzelnen Fenster statt einer Aenderung der allgemeinen Aufloesung.
      *

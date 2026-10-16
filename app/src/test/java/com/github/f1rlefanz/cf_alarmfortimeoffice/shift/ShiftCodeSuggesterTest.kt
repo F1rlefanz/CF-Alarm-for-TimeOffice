@@ -4,6 +4,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.model.CalendarEvent
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -114,18 +115,45 @@ class ShiftCodeSuggesterTest {
     }
 
     /**
-     * "+" steht real im Dienstplan. Als Erkennungsmuster koennte es NIE treffen, weil
-     * `matchesKeywords` mit Wortgrenzen ueber Buchstaben/Ziffern arbeitet. Es vorzuschlagen waere
-     * ein Versprechen, das die Erkennung nicht halten kann.
+     * UMGEKEHRTE ENTSCHEIDUNG (#150) - bis dahin stand hier das Gegenteil: "+" koenne als Muster
+     * NIE treffen, weil `matchesKeywords` mit Wortgrenzen arbeite. Das war falsch - die Grenzen
+     * sind negative Lookarounds und trafen ein von Hand eingetragenes "+" laengst. Dienstplaene
+     * nutzen solche Zeichen real ("+" fuer frei); wer so einen hat, erfuhr nicht einmal, dass der
+     * Eintrag existiert.
      */
     @Test
-    fun `Titel ohne Buchstaben oder Ziffern werden nicht vorgeschlagen`() {
+    fun `Titel aus reinen Zeichen werden vorgeschlagen`() {
         val result = ShiftCodeSuggester.suggest(
             listOf(event("+", 10), event("+", 11), event("---", 12), event("F", 13)),
             leereKonfiguration
         )
 
-        assertEquals(listOf("F"), result.suggestions.map { it.code })
+        assertEquals(listOf("+", "---", "F"), result.suggestions.map { it.code })
+        assertEquals(2, result.suggestions.first().occurrences)
+    }
+
+    /**
+     * Der ganze Ablauf, den der Nutzer erlebt: "+" wird vorgeschlagen, er ordnet es zu, danach
+     * trifft das Muster den Titel und der Vorschlag ist weg. Und es trifft NUR den ganzen Titel -
+     * "C++" bleibt ein eigener, unzugeordneter Eintrag, statt still von "+" geschluckt zu werden.
+     */
+    @Test
+    fun `zugeordnetes Zeichen-Kuerzel trifft seinen Titel und verschwindet aus den Vorschlaegen`() {
+        val config = ShiftConfig(
+            autoAlarmEnabled = true,
+            definitions = listOf(definition("Frei", emptyList()))
+        )
+        val events = listOf(event("+", 10), event("+", 11), event("C++", 12))
+
+        val vorher = ShiftCodeSuggester.suggest(events, config)
+        assertEquals(listOf("+", "C++"), vorher.suggestions.map { it.code })
+
+        val zugeordnet = requireNotNull(config.withCodeAssignedTo(vorher.suggestions.first().code, "frei"))
+        val frei = zugeordnet.definitions.single()
+
+        assertTrue("Nach der Zuordnung muss '+' den Titel '+' treffen", frei.matchesKeywords("+"))
+        assertFalse("'+' darf 'C++' nicht treffen", frei.matchesKeywords("C++"))
+        assertEquals(listOf("C++"), ShiftCodeSuggester.suggest(events, zugeordnet).suggestions.map { it.code })
     }
 
     @Test
@@ -184,10 +212,11 @@ class ShiftCodeSuggesterTest {
     }
 
     @Test
-    fun `normalizeCode weist leere und reine Symboltitel ab`() {
+    fun `normalizeCode weist leere Titel ab und laesst reine Zeichen durch`() {
         assertNull(ShiftCodeSuggester.normalizeCode(""))
         assertNull(ShiftCodeSuggester.normalizeCode("   "))
-        assertNull(ShiftCodeSuggester.normalizeCode("+"))
+        // #150: reine Zeichen sind ein Kuerzel wie jedes andere ("+" fuer frei).
+        assertEquals("+", ShiftCodeSuggester.normalizeCode(" + "))
         assertEquals("F", ShiftCodeSuggester.normalizeCode(" F "))
         assertEquals("S2", ShiftCodeSuggester.normalizeCode("S2"))
         // Umlaute muessen durchkommen - matchesKeywords kann sie seit dem Unicode-Fix treffen.
@@ -199,6 +228,8 @@ class ShiftCodeSuggesterTest {
      * was wirklich unbekannt ist. "AD1" (Rufbereitschaft) ist bewusst nicht in den Vorgaben - genau
      * dieses Kuerzel soll der Nutzer hier angeboten bekommen. Seit #128 gilt dasselbe fuer das
      * Stationskuerzel "IMCF": die Vorgaben kennen es nicht mehr, also bietet der Vorschlag es an.
+     * Seit #150 auch "+" (steht beim Entwickler fuer frei) - bei Gleichstand vorn, weil die
+     * Sortierung nach Zeichencode geht.
      */
     @Test
     fun `mit der Standardkonfiguration bleibt genau das Unbekannte uebrig`() {
@@ -208,6 +239,6 @@ class ShiftCodeSuggesterTest {
 
         val result = ShiftCodeSuggester.suggest(echteTitel, ShiftConfig.getDefaultConfig())
 
-        assertEquals(listOf("AD1", "FBE", "IMCF"), result.suggestions.map { it.code })
+        assertEquals(listOf("+", "AD1", "FBE", "IMCF"), result.suggestions.map { it.code })
     }
 }

@@ -40,6 +40,20 @@ Format: Skill · Paket · die normative Zeile · Hergang in einem Satz.
   macht; beide-true ist heute speicherbar und schon wirkungslos, weil `ShiftRecognitionEngine` Krank vor jeder
   Schichtspanne abzweigt. Tests: `ShiftKategorieTest`.
 
+- **#167** · Kurzregel (Abschnitt Schichterkennung, neben der Krank-Regel): **Ein Typ der Kategorie Ignorieren
+  ergibt keine Schicht; die Engine liefert solche Termine getrennt (`erkenne()` → `Erkennung.ignorierteTermine`,
+  derselbe Cache, dieselbe Epoche) – `getAllMatchingShifts` enthält sie NICHT.** Anders als Krank wird
+  Ignorieren erst NACH der Schicht-Suche gefragt: ein Ignorieren-Typ verdrängt nie einen echten Treffer
+  („F TB" mit Dienst F und Ignorieren TB ist Schicht F, egal in welcher Reihenfolge die Typen stehen – im
+  Zweifel wecken). Wer einen neuen Konsumenten der Erkennung baut, bekommt Ignoriert – wie Krank – nur,
+  wenn er danach fragt. Hergang: unter „erste passende Definition gewinnt" hätte ein vorn stehender
+  Ignorieren-Typ einen Dienst geschluckt; deshalb stehen in `IgnorierenErkennungTest` die Ignorieren-Typen
+  absichtlich VOR dem Dienst. Der Code-Vorschlag brauchte keine Änderung (jedes Muster zählt als
+  Zuordnung, Test „ein ignorierter Code erscheint nicht als Vorschlag"). **Noch offen, nicht in #167:** die
+  Home-Karte „Keine Schicht erkannt" (`HomeTabContent`) filtert nur Krank heraus, nicht Ignorieren –
+  `enabledShiftTypeCount` (:698) nimmt #171 mit, die Titel-Kostprobe (:639) steht dort als Hinweis;
+  erreichbar erst, wenn ein Ignorieren-Typ angelegt werden kann (#169/#176).
+
 ## cfalarm-persistenz-und-auth
 
 - **#166** · Kurzregel (Abschnitt Persistenz): **Ein neues Feld an `ShiftDefinition`/`ShiftConfig` hat einen

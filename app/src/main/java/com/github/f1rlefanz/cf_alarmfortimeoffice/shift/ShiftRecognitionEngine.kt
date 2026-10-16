@@ -2,6 +2,7 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.shift
 
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.CalendarEvent
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftKategorie
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.istKrankmeldung
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IShiftConfigRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
@@ -18,8 +19,17 @@ import java.time.LocalDateTime
  * #142: Ergebnis EINES Erkennungslaufs - Schichttreffer und Krank-Termine aus demselben Stand.
  * Ein gemeinsames Objekt statt zweier Laeufe: sonst koennte eine Konfigurationsaenderung zwischen
  * beiden Abfragen einen Termin in BEIDE Listen oder in KEINE stecken.
+ *
+ * Umbau E1 (#167): [ignorierteTermine] sind Termine, die NUR ein aktiver Typ der Kategorie
+ * Ignorieren trifft - keine Schicht, also kein Wecker und keine Schichtspanne. Getrennt gemeldet,
+ * damit „Ohne Kalendereintrag“ ihren Tag als leer zaehlen kann. Jeder Termin steht in hoechstens
+ * EINER der drei Listen.
  */
-data class Erkennung(val schichten: List<ShiftMatch>, val krankTermine: List<CalendarEvent>)
+data class Erkennung(
+    val schichten: List<ShiftMatch>,
+    val krankTermine: List<CalendarEvent>,
+    val ignorierteTermine: List<CalendarEvent>
+)
 
 /**
  * @param recognitionDispatcher der Dispatcher, auf dem die Erkennung wirklich rechnet - siehe
@@ -38,8 +48,8 @@ class ShiftRecognitionEngine(
      * `@Volatile`-Referenz ist unteilbar, drei einzelne Felder waeren es nicht.
      * Hergang: Skill cfalarm-kalender-und-schichten, reference/schichterkennung.md.
      *
-     * #142: [erkennung] traegt Schicht- UND Krank-Treffer in EINEM Objekt - beide Listen teilen
-     * damit dieselbe Epoche und denselben Veroeffentlichungszeitpunkt.
+     * #142: [erkennung] traegt Schicht- UND Krank-Treffer (seit #167 auch die ignorierten Termine) in
+     * EINEM Objekt - alle Listen teilen damit dieselbe Epoche und denselben Veroeffentlichungszeitpunkt.
      */
     private data class RecognitionCache(
         val eventsHash: Int,
@@ -132,7 +142,10 @@ class ShiftRecognitionEngine(
         Logger.d(LogTags.SHIFT_RECOGNITION, "🔄 ADAPTIVE-CACHE-CLEAR: Recognition cache cleared due to configuration change (change #$configChangeCount)")
     }
     
-    /** Unveraenderter Vertrag fuer alle bisherigen Konsumenten: OHNE Krank-Treffer (#142, Review S4). */
+    /**
+     * Unveraenderter Vertrag fuer alle bisherigen Konsumenten: OHNE Krank-Treffer (#142, Review S4)
+     * und OHNE ignorierte Termine (#167). Wer eine davon braucht, fragt [erkenne].
+     */
     suspend fun getAllMatchingShifts(events: List<CalendarEvent>): List<ShiftMatch> = erkenne(events).schichten
 
     /**
@@ -173,7 +186,7 @@ class ShiftRecognitionEngine(
 
                     if (cacheAge < adaptiveCacheValidity) {
                         cacheHitCount++
-                        Logger.d(LogTags.SHIFT_RECOGNITION, "✅ ADAPTIVE-CACHE-HIT: Same events processed recently (${cacheAge}ms ago, validity=${adaptiveCacheValidity}ms), returning cached ${snapshot.erkennung.schichten.size} matches + ${snapshot.erkennung.krankTermine.size} Krank-Termine (hit #$cacheHitCount)")
+                        Logger.d(LogTags.SHIFT_RECOGNITION, "✅ ADAPTIVE-CACHE-HIT: Same events processed recently (${cacheAge}ms ago, validity=${adaptiveCacheValidity}ms), returning cached ${snapshot.erkennung.schichten.size} matches + ${snapshot.erkennung.krankTermine.size} Krank-Termine + ${snapshot.erkennung.ignorierteTermine.size} ignoriert (hit #$cacheHitCount)")
                         return@withLock snapshot.erkennung
                     } else {
                         Logger.d(LogTags.SHIFT_RECOGNITION, "⏰ ADAPTIVE-CACHE-EXPIRED: Cache is ${cacheAge}ms old (validity=${adaptiveCacheValidity}ms), needs refresh")
@@ -204,7 +217,7 @@ class ShiftRecognitionEngine(
                     Logger.d(LogTags.SHIFT_RECOGNITION, "🔄 CACHE-STALE: Konfiguration wurde waehrend der Erkennung geaendert (Epoche $epochAtStart -> $cacheEpoch), Ergebnis wird nicht als frisch gecacht")
                 }
 
-                Logger.d(LogTags.SHIFT_RECOGNITION, "✅ ADAPTIVE-RECOGNITION: Completed with ${erkennung.schichten.size} matches + ${erkennung.krankTermine.size} Krank-Termine (cache validity: ${getAdaptiveCacheValidity()}ms)")
+                Logger.d(LogTags.SHIFT_RECOGNITION, "✅ ADAPTIVE-RECOGNITION: Completed with ${erkennung.schichten.size} matches + ${erkennung.krankTermine.size} Krank-Termine + ${erkennung.ignorierteTermine.size} ignoriert (cache validity: ${getAdaptiveCacheValidity()}ms)")
                 erkennung
             }
         }
@@ -221,9 +234,13 @@ class ShiftRecognitionEngine(
         // Zeit vor dem Deaktivieren behielte sonst seine Regeln nicht. Hergang: Skill cfalarm-kalender-und-schichten, reference/schichterkennung.md.
         val shiftDefinitions = allDefinitions.filter { it.isEnabled }
         // #142: Krankmeldungs-Typen sind KEINE Schichten - getrennt, bevor die Schleife laeuft.
-        val schichtDefinitionen = shiftDefinitions.filterNot { it.isSickDay }
+        // #167: Ignorieren-Typen ebenso. `kategorie` ist ein berechneter Getter, deshalb EINMAL hier
+        // aufgeteilt und nicht je Termin. IGNORIEREN schliesst isSickDay aus (ShiftKategorie.ableiten).
+        val ignorierDefinitionen = shiftDefinitions.filter { it.kategorie == ShiftKategorie.IGNORIEREN }
+        val schichtDefinitionen = shiftDefinitions.filterNot { it.isSickDay || it.kategorie == ShiftKategorie.IGNORIEREN }
         val matches = mutableListOf<ShiftMatch>()
         val krank = mutableListOf<CalendarEvent>()
+        val ignoriert = mutableListOf<CalendarEvent>()
 
         val skipped = allDefinitions.size - shiftDefinitions.size
         if (skipped > 0) {
@@ -247,24 +264,27 @@ class ShiftRecognitionEngine(
                 krank += event
                 continue
             }
-            for (definition in schichtDefinitionen) {
-                if (definition.matchesKeywords(event.title)) {
-                    val alarmTime = calculateAlarmTime(event, definition)
-                    matches.add(
-                        ShiftMatch(
-                            shiftDefinition = definition,
-                            calendarEvent = event,
-                            calculatedAlarmTime = alarmTime
-                        )
+            // Only match first matching definition per event
+            val definition = schichtDefinitionen.firstOrNull { it.matchesKeywords(event.title) }
+            if (definition != null) {
+                matches.add(
+                    ShiftMatch(
+                        shiftDefinition = definition,
+                        calendarEvent = event,
+                        calculatedAlarmTime = calculateAlarmTime(event, definition)
                     )
-                    Logger.i(LogTags.SHIFT_RECOGNITION, "✅ MATCH found: '${event.title}' matches '${definition.name}' with keywords ${definition.keywords}")
-                    break // Only match first matching definition per event
-                }
+                )
+                Logger.i(LogTags.SHIFT_RECOGNITION, "✅ MATCH found: '${event.title}' matches '${definition.name}' with keywords ${definition.keywords}")
+            } else if (ignorierDefinitionen.any { it.matchesKeywords(event.title) }) {
+                // #167 ERST NACH der Schicht-Suche, nicht wie Krank davor: ein Ignorieren-Typ
+                // verdraengt nie einen echten Treffer. „F TB“ mit Dienst F und Ignorieren TB ist
+                // Schicht F, egal in welcher Reihenfolge die Typen stehen - im Zweifel wecken.
+                ignoriert += event
             }
         }
 
-        Logger.i(LogTags.SHIFT_RECOGNITION, "Recognition complete: Found ${matches.size} shifts, ${krank.size} Krank-Termine")
-        return Erkennung(matches.sortedBy { it.calculatedAlarmTime }, krank)
+        Logger.i(LogTags.SHIFT_RECOGNITION, "Recognition complete: Found ${matches.size} shifts, ${krank.size} Krank-Termine, ${ignoriert.size} ignoriert")
+        return Erkennung(matches.sortedBy { it.calculatedAlarmTime }, krank, ignoriert)
     }
     
     private fun calculateAlarmTime(event: CalendarEvent, definition: ShiftDefinition): LocalDateTime {

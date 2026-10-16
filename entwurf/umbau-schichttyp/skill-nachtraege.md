@@ -68,6 +68,19 @@ Format: Skill · Paket · die normative Zeile · Hergang in einem Satz.
   `enabledShiftTypeCount` (:698) nimmt #171 mit, die Titel-Kostprobe (:639) steht dort als Hinweis;
   erreichbar erst, wenn ein Ignorieren-Typ angelegt werden kann (#169/#176).
 
+- **#169** · Kurzregel (Abschnitt Schichterkennung, neben `withCodeAssignedTo`): **Einordnen läuft über
+  `SchichttypEinordnen`: `neuerTypAusCode()` speichert NICHT (erst der Editor nach Bestätigung, sonst wird
+  eine geratene Weckzeit scharf), `ignorieren()` geht über `withCodeAssignedTo()` an den ersten AKTIVEN
+  Ignorieren-Typ – ein ausgeschalteter wird nie Ziel, sonst schaltete `withCodeAssignedTo()` ihn ein und
+  ignorierte still auch seine alten Codes.** Hergang: (1) Ein neu angelegter Ignorieren-Typ startet OHNE
+  Muster – trüge er den Code schon, sähe `withCodeAssignedTo()` beim Normalfall (frisch gefundener Code an
+  keinem Typ) nichts zu tun und lieferte `null`, der Klick verpuffte; die Mutationsprobe hat genau diese
+  Lücke im ersten Testsatz gezeigt (Test „ignorieren eines Codes, den noch kein Typ traegt“). (2) Wer den
+  neuen Typ aus `neuerTypAusCode()` später speichert, hängt ihn an UND ruft `withCodeAssignedTo(code,
+  neu.id)` – sonst behält ein ausgeschalteter Typ, der den Code noch trägt, ein zweites Exemplar, und
+  `findDefinitionFor` entscheidet nach Listenreihenfolge. Voreinstellung: Wecker an nur bei Dienst und
+  Fortbildung (Festlegung des Betreuers, weicht vom Prototyp ab, der nur Dienst „dienstartig“ nennt).
+
 ## cfalarm-persistenz-und-auth
 
 - **#166** · Kurzregel (Abschnitt Persistenz): **Ein neues Feld an `ShiftDefinition`/`ShiftConfig` hat einen

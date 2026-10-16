@@ -36,9 +36,11 @@ geschrieben. Alle Pflichtregeln aus `CLAUDE.md` und den Skills gelten unverände
 
 ## 3. Bildschirme (Soll)
 
-Die Soll-Bilder liegen unter `soll/` (je Bildschirm ein PNG). Die Quellen des klickbaren
-Prototyps liegen unter `prototyp/`. Sie laufen nur im Design-Werkzeug, nicht allein im Browser.
-Maßgeblich ist bei Widerspruch **dieser Text**, nicht das Bild.
+Die Vorlage ist der Code des klickbaren Prototyps unter `prototyp/` (läuft nur im Design-Werkzeug,
+nicht allein im Browser). Er ist die **Quelle**, nicht nur ein Bild: Texte, Reihenfolge, Abstände
+und Farben werden von dort übernommen, und die Rechenlogik im Skriptteil (Tagesleiste, Zeitstrahl,
+Bereichskalender, Kurzform der Typ-Zeilen) ist die Vorlage für die Kotlin-Umsetzung. Maßgeblich ist
+bei Widerspruch **dieser Text**, dann der Prototyp-Code.
 
 ### 3.1 Einstellungen → Schichttypen (Liste)
 - Oben, nur wenn vorhanden: **„Im Kalender gefunden, noch nicht eingeordnet“** – je Code „Einordnen …“
@@ -117,7 +119,7 @@ Tageslicht (Standort), Sonstiges (Master-Pause, Wecker-Ton, Schlummern, Export, 
 
 ## 5. Was fertig heißt (für den ganzen Umbau)
 
-1. Alle Bildschirme aus Abschnitt 3 sind gebaut, am Emulator per Soll-Ist-Vergleich abgenommen und
+1. Alle Bildschirme aus Abschnitt 3 sind gebaut, am Emulator gegen den Prototyp abgenommen und
    ohne Abschneiden bei 320 dp Breite.
 2. Die alten Bildschirme (Schicht-Dimmer, Regel-Editor, DND-Seite, Hue-Regel-Seite, soweit ersetzt)
    und ihr Code sind entfernt – keine Funktion ohne Bedienoberfläche, kein toter Code.

@@ -4,7 +4,7 @@ Stand: 16.10.2026. Was gebaut wird, steht in [`SPEC.md`](SPEC.md). Diese Datei b
 Agenten arbeiten viele kleine Issues nacheinander ab, sichern jeden Schritt in Git und machen nach
 einem Limit oder Absturz von selbst dort weiter, wo der letzte Stand liegt.
 
-Entscheidungen des Eigentümers (16.10.2026): Spec und Soll-Bilder liegen öffentlich im Repo · der
+Entscheidungen des Eigentümers (16.10.2026): Spec und Prototyp-Code liegen öffentlich im Repo · der
 Runner läuft **lokal und headless** · **Etappen werden vollautonom ausgeliefert** · Haiku nur für
 mechanische Arbeit.
 
@@ -26,7 +26,7 @@ mechanische Arbeit.
 
 | Was | Wo |
 |---|---|
-| Spec, Soll-Bilder, Prototyp-Quellen | `entwurf/umbau-schichttyp/` (öffentlich, nicht unter `docs/`, also nicht auf der Website) |
+| Spec, Prototyp-Code | `entwurf/umbau-schichttyp/` (öffentlich, nicht unter `docs/`, also nicht auf der Website) |
 | Gesamtplan | Epic-Issue „Umbau: Schichttyp als Zentrale“ mit einer Checkliste der Etappen-Issues |
 | Arbeitspakete | ein Issue je Paket, Label `umbau` + `etappe-N` |
 | Zustand eines Pakets | Labels `bereit` → `in-arbeit` → (geschlossen); `blockiert` mit Grund im Kommentar |
@@ -74,10 +74,11 @@ Skill: <cfalarm-...>
 Abnahme:
 - [ ] ./gradlew testDebugUnitTest grün (Ausgabe im Log)
 - [ ] neuer Test, der ohne die Änderung rot ist
-- [ ] verify-ui: <Bildschirm> gegen soll/<bild>.png, Bewertung >= 14/16   (nur bei UI)
-- [ ] Sonnet-Prüfer ohne Umsetzungskontext: keine offenen Befunde
+- [ ] UI-Prüfung: <Bildschirm> gegen prototyp/<Datei> (Texte und Reihenfolge per uiautomator, Screenshot bewertet >= 14/16)   (nur bei UI)
+- [ ] Prüfer ohne Umsetzungskontext: keine offenen Befunde
 Kerntests: unberührt | bewusste Verhaltensänderung: <welcher Test, warum>
 Größe: S (40 Turns) | M (60) | L -> vorher teilen
+Risiko: niedrig/mittel (Sonnet setzt um) | hoch (Opus setzt um)
 ```
 
 Das Feld **Dateien** ist nötig, damit zwei Pakete parallel laufen können (nur ohne gemeinsame
@@ -88,14 +89,14 @@ Dateien) und damit der Prüfer merkt, wenn ein Lauf ausufert.
 | Rolle | Modell | Aufgabe |
 |---|---|---|
 | **Betreuer** | Opus 5.5, Effort xhigh, Advisor Fable | Zu Beginn einer Etappe: Etappe in Pakete schneiden (Issues anlegen), Abhängigkeiten setzen. Am Ende: Etappen-Abschluss (Abschnitt 7). Er setzt nichts selbst um. |
-| **Umsetzer** | Opus 5.5, xhigh | Ein Paket pro Lauf. Fragt den Advisor an genau drei Stellen: vor dem Plan, beim zweiten gleichen Fehler, vor der Fertigmeldung. |
-| **Handlanger** | Haiku 5.5 als Subagent | Nur Mechanisches: Code umziehen samt Importen, Texte, Screenshot-Läufe, Doku nachziehen. Nach jedem Handlanger-Schritt laufen Tests und der Sonnet-Prüfer. |
-| **Prüfer** | Sonnet 5.5 als Subagent | Sieht nur `git diff`, Issue und Soll-Bild, nicht den Weg. Befund nur mit Beleg (Datei, Zeile, Eingabe, Soll/Ist). |
+| **Umsetzer** | nach Risiko des Pakets: **Sonnet 5.5** (niedrig/mittel: UI-Umzug, Texte, Zeitstrahl, Bildschirme) oder **Opus 5.5** (hoch: Wecker, Persistenz, Migration, Erkennung), jeweils xhigh | Ein Paket pro Lauf. Fragt den Advisor an genau drei Stellen: vor dem Plan, beim zweiten gleichen Fehler, vor der Fertigmeldung. |
+| **Handlanger** | Haiku 5.5 als Subagent | Nur Mechanisches: Code umziehen samt Importen, Texte, Screenshot-Läufe, Doku nachziehen. Nach jedem Handlanger-Schritt laufen Tests und der Prüfer. |
+| **Prüfer** | immer ein anderes Modell als der Umsetzer: Opus prüft Sonnet, Sonnet prüft Opus | Sieht nur `git diff`, Issue, Spec und Prototyp-Code, nicht den Weg. Befund nur mit Beleg (Datei, Zeile, Eingabe, Soll/Ist). |
 | **Gegenprüfer** | Fable 5.1 (Etappen-Review) + 3er-Widerlegung | Wie bisher: Dimensionen nach Risiko, jeder Befund von drei unabhängigen Agenten zu widerlegen versucht. |
 
 Zu Haiku: Die Prompt-Werkstatt (`stand-pruefen/references/annahmen.md`, geprüft 12.10.2026, offizielle
 Quelle) ordnet Haiku 5.5 für eng umrissene Teilaufgaben ein, nicht für komplexes agentisches Coding.
-Dieser Code hat viele stille Invarianten (Wecker, Persistenz); deshalb setzt Opus um und Haiku zieht
+Dieser Code hat viele stille Invarianten (Wecker, Persistenz); deshalb setzen Sonnet oder Opus um, und Haiku zieht
 nur um. Nach Etappe 0 lässt sich an echten Zahlen prüfen, ob Haiku mehr übernehmen kann.
 
 Kosten: Fable läuft auf Max über Nutzungsguthaben und liest bei jedem Advisor-Aufruf das ganze
@@ -113,10 +114,10 @@ Prompt-Werkstatt. Er arbeitet in einer Schleife:
    kleinste Nummer zuerst. Kein Paket da, aber die Etappe ist offen → Betreuer-Lauf „Etappe
    abschließen“. Keine Etappe offen → **Ende**.
 3. **Lauf:** Label `in-arbeit` setzen, eigener Worktree, `claude -p "/goal …" --model
-   claude-opus-5-5 --effort xhigh`. Das Ziel enthält: Issue-Text, Abnahme-Liste, Turn-Cap nach
+   <claude-sonnet-5-5 | claude-opus-5-5 nach Risiko> --effort xhigh`. Das Ziel enthält: Issue-Text, Abnahme-Liste, Turn-Cap nach
    Größe, „keine Rückfragen, Entscheidungen im Issue begründen“, „nach jedem grünen Schritt
    committen und pushen“, die drei Advisor-Stellen.
-4. **Ergebnis:** Fertig heißt: Abnahme erfüllt, Sonnet-Prüfer ohne offenen Befund, Branch in
+4. **Ergebnis:** Fertig heißt: Abnahme erfüllt, Prüfer ohne offenen Befund, Branch in
    `feature/umbau-schichttyp` gemergt (Schleuse grün), Issue mit Abschlusskommentar geschlossen.
    Sonst ein zweiter Lauf mit „Teilarbeit liegt vor, prüfen und fortsetzen“. Scheitert auch der:
    Label `blockiert`, Grund ins Issue, weiter mit dem nächsten unabhängigen Paket.
@@ -144,7 +145,7 @@ läuft, sind die Wachen hier strenger als bisher. Der Betreuer-Lauf macht der Re
 3. **Volle Prüfung am Emulator**, jede mit Beleg im Log:
    voller Testlauf + Lint · Release-Build (R8) Kaltstart ohne Absturz · alle Tabs einmal
    durchklicken · Wecker per Zeitsprung auslösen (Vollbild, Schlummern, Aus) · Direct Boot mit PIN ·
-   Migration aus der Export-Vorlage verlustfrei · Soll-Ist-Vergleich aller Bildschirme der Etappe.
+   Migration aus der Export-Vorlage verlustfrei · UI-Prüfung aller Bildschirme der Etappe gegen den Prototyp.
 4. Nur wenn alles grün ist: Merge nach `main`, **Minor-Bump**, Changelog in Nutzersprache, Push. Die
    Auslieferung übernimmt `veroeffentlichen.yml`.
 5. Etappen-Issue schließen, nächste Etappe auf `bereit`, Bericht als Kommentar im Epic (was
@@ -171,10 +172,11 @@ geschlossen. Dann beendet sich der Runner und sagt das in `STATUS.txt` und im Ep
 
 ## 9. Was vor dem Start noch zu bauen ist (interaktiv, nicht durch den Runner)
 
-1. **Soll-Bilder** je Bildschirm aus dem Prototyp nach `soll/`.
+1. **Zuordnung Bildschirm → Prototyp-Stelle:** je Bildschirm aus SPEC Abschnitt 3 der Zustand im Prototyp-Code (`zeigeTyp`, `zeigeWoche` …) und die Liste der Pflichttexte in Reihenfolge – daraus prüft der UI-Skill automatisch.
 2. **Skill `cfalarm-ui-pruefen`** (`.claude/skills/`, deshalb interaktiv): Debug-Build, nur auf
-   `emulator-5554` installieren, Bildschirm ansteuern, Screenshot, Vergleich mit dem Soll-Bild per
-   Bewertungsliste (16 Punkte: Inhalt, Reihenfolge, Texte, 320 dp, Dunkelmodus …), Sonnet bewertet.
+   `emulator-5554` installieren, Bildschirm ansteuern, Texte und Reihenfolge per uiautomator gegen
+   die Pflichttexte, Screenshot per Bewertungsliste (16 Punkte: Inhalt, Reihenfolge, Texte, 320 dp,
+   Dunkelmodus …) gegen den Prototyp-Code.
 3. **`tools/umbau/runner.ps1`** und die Windows-Aufgabe; Labels anlegen; `sitzungsstart.py` erweitern.
    Was der Runner dabei selbst können muss, sonst steht er am ersten Tag:
    - **Worktrees bauen nicht von allein:** `keystore.properties` und `local.properties` sind

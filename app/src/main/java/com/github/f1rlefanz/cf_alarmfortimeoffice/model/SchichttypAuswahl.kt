@@ -4,8 +4,9 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.model
  * Darf eine AUSWAHLLISTE diesen Schichttyp anbieten? (Umbau Etappe 1, #171)
  *
  * Die EINE Regel hinter dem manuellen Wecker, den Zielen einer Dimmer-Regel, einer DND-Ausnahme
- * und einer Hue-Regel und der Zaehlung in der Uebersicht - vorher an sechs Stellen als
- * `isEnabled && !isSickDay` kopiert. Eine Auswahl, die einen Typ anbietet, der nie greift, ist
+ * und einer Hue-Regel und der Zaehlung in der Uebersicht - vorher an sechs Stellen kopiert, vier
+ * davon als `isEnabled && !isSickDay`, Dimmer und DND nur als `!isSickDay`. Eine Auswahl, die einen
+ * Typ anbietet, der nie greift, ist
  * "angezeigt, wirkt nicht":
  *
  * - **deaktiviert**: die Erkennung ueberspringt ihn, er spannt keine Schicht auf.

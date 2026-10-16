@@ -39,7 +39,18 @@ New-Item -ItemType Directory -Force $Logs | Out-Null
 function Log([string]$text) {
     $zeile = "$(Get-Date -Format s)  $text"
     Write-Host $zeile
-    if (-not $DryRun) { Add-Content -Path $Status -Value $zeile -Encoding UTF8 }
+    if ($DryRun) { return }
+    # Mitleser (Get-Content -Wait, tail -F) halten die Datei offen; Add-Content scheiterte daran
+    # am 16.10.2026 mit "von einem anderen Prozess verwendet" (Zeilen fehlten). Deshalb mit
+    # geteiltem Zugriff und bis zu 10 Versuchen.
+    for ($v = 0; $v -lt 10; $v++) {
+        try {
+            $fs = [System.IO.File]::Open($Status, 'Append', 'Write', 'ReadWrite')
+            $b = [System.Text.Encoding]::UTF8.GetBytes($zeile + "`r`n")
+            $fs.Write($b, 0, $b.Length); $fs.Close(); return
+        } catch { Start-Sleep -Milliseconds 300 }
+    }
+    Write-Host "WARNUNG: STATUS.txt nicht schreibbar"
 }
 
 function GhAufruf([string[]]$a) {

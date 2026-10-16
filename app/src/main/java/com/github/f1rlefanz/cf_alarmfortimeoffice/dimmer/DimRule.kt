@@ -115,7 +115,7 @@ enum class Blockposition {
  * - [DimAnchor.ALARM]: Weckzeit + Offset ([startOffsetMinutes]/[endOffsetMinutes]).
  *
  * CLOCK-Auflösung an einem Schicht-Tag zielt bewusst auf die Uhrzeit **vor** der Weckzeit
- * (z. B. „20:00" vor einem 05:30-Wecker = Vorabend). Bei freien Tagen (kein Wecker) sind nur
+ * (z. B. „20:00" vor einem 05:30-Wecker = Vorabend); Ausnahme: [startNurAmWecktag]. Bei freien Tagen (kein Wecker) sind nur
  * CLOCK-Anker sinnvoll; Fenster über Mitternacht (Start ≥ Ende) werden erkannt.
  */
 @Serializable
@@ -162,5 +162,23 @@ data class DimWindow(
      * liest sich so (kotlinx-Default). Fehlt der Ort, gilt ebenfalls der volle Nachlauf.
      * "Nicht stoeren" bleibt unberuehrt: es bekommt den Nachlauf gar nicht erst.
      */
-    val nachlaufBisHell: HellAb = HellAb.IMMER
+    val nachlaufBisHell: HellAb = HellAb.IMMER,
+    /**
+     * Nur fuer Start [DimAnchor.CLOCK] mit Ende [DimAnchor.ALARM]/[DimAnchor.SHIFT_END]: die Uhrzeit
+     * meint den KALENDERTAG DER WECKZEIT, nie den Vortag. Liegt die Weckzeit vor dieser Uhrzeit,
+     * entfaellt das Fenster an diesem Tag, statt auf den Vortag zurueckzuspringen (#151).
+     *
+     * WARUM DAS ES GIBT: Das Vorschlaf-Fenster der Nachtdienst-Vorlage ("16:00 bis zum Wecker")
+     * loeste bei einem Wecker um 13:30 zu 16:00 des VORTAGS auf und dimmte 21,5 Stunden am Stueck
+     * (samt "Nicht stoeren", wenn es dem Dimmer folgt). Der Rueckspruenge selbst ist fuer alle
+     * anderen CLOCK-Starts gewollt ("20:00" vor einem 05:30-Wecker = Vorabend), deshalb eine
+     * Kennzeichnung am einzelnen Fenster statt einer Aenderung der allgemeinen Aufloesung.
+     *
+     * Default `false` = Verhalten wie bisher; ein Bestand ohne dieses Feld liest sich so
+     * (kotlinx-Default). Regeln, die vor #151 aus der Vorlage entstanden sind, tragen es nicht -
+     * sie wirken weiter wie bisher, bis sie neu angelegt oder im Umbau (Etappe 3) migriert werden.
+     * Eine Oberflaeche dafuer gibt es bewusst noch nicht: im Umbau waehlt der Nutzer pro Typ
+     * "Nacht davor" / "Abend danach" / "Nach dem Dienst" und sieht damit, was gilt.
+     */
+    val startNurAmWecktag: Boolean = false
 )

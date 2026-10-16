@@ -114,8 +114,14 @@ object DimWindowResolver {
             // ALARM_SONST_CLOCK ist kein START-Anker (siehe DimAnchor-KDoc) - am Start verhaelt er
             // sich wie CLOCK, statt das Fenster wegen eines unmoeglichen Falls verschwinden zu
             // lassen. "Nicht dimmen" waere hier die schlechtere Degradation als "wie eingestellt".
-            DimAnchor.CLOCK, DimAnchor.ALARM_SONST_CLOCK ->
+            DimAnchor.CLOCK, DimAnchor.ALARM_SONST_CLOCK -> {
+                // #151: ein so gekennzeichnetes Fenster meint die Uhrzeit am Tag der Weckzeit. Liegt
+                // die Weckzeit davor, entfaellt es an diesem Tag, statt auf den Vortag zu springen.
+                if (w.startNurAmWecktag && wallClock(dateOf(alarmEpoch, zone), w.startClockMinutes, zone) > alarmEpoch) {
+                    return null
+                }
                 clockAtOrBefore(alarmEpoch, w.startClockMinutes, zone)
+            }
             DimAnchor.SHIFT_END -> {
                 if (shiftEndEpoch == 0L) return null
                 shiftEndEpoch + w.startOffsetMinutes * MIN_MS

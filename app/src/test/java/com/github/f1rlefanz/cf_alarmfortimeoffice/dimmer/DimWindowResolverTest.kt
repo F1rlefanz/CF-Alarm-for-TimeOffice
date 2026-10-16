@@ -37,6 +37,39 @@ class DimWindowResolverTest {
         assertEquals(ep(2026, 1, 15, 5, 30), r.last)  // Weckzeit
     }
 
+    // --- startNurAmWecktag (#151): CLOCK-Start meint den Tag der Weckzeit, nie den Vortag ---
+
+    private val nurAmWecktag = DimWindow(
+        startAnchor = DimAnchor.CLOCK, startClockMinutes = 16 * 60,
+        endAnchor = DimAnchor.ALARM, endOffsetMinutes = 0,
+        startNurAmWecktag = true
+    )
+
+    @Test
+    fun `startNurAmWecktag - Weckzeit vor der Uhrzeit ergibt kein Fenster statt des Vortags`() {
+        val alarm = ep(2026, 10, 20, 13, 30)
+
+        assertNull(DimWindowResolver.resolveShiftWindow(nurAmWecktag, alarm, 0, zone))
+        // Gegenprobe: dasselbe Fenster ohne Kennzeichnung springt auf den Vortag (bisheriges Verhalten).
+        val ohne = DimWindowResolver.resolveShiftWindow(nurAmWecktag.copy(startNurAmWecktag = false), alarm, 0, zone)!!
+        assertEquals(ep(2026, 10, 19, 16, 0), ohne.first)
+    }
+
+    @Test
+    fun `startNurAmWecktag - Weckzeit nach der Uhrzeit loest am selben Tag auf`() {
+        val alarm = ep(2026, 10, 20, 19, 30)
+
+        val r = DimWindowResolver.resolveShiftWindow(nurAmWecktag, alarm, 0, zone)!!
+
+        assertEquals(ep(2026, 10, 20, 16, 0), r.first)
+        assertEquals(alarm, r.last)
+    }
+
+    @Test
+    fun `startNurAmWecktag - Weckzeit genau auf der Uhrzeit ergibt kein Fenster`() {
+        assertNull(DimWindowResolver.resolveShiftWindow(nurAmWecktag, ep(2026, 10, 20, 16, 0), 0, zone))
+    }
+
     @Test
     fun `ALARM-Anker loesen relativ zur Weckzeit auf`() {
         val w = DimWindow(

@@ -1,0 +1,80 @@
+{
+  "formatVersion": 1,
+  "appVersion": "1.56.1",
+  "createdAt": "2026-10-16T08:00:00",
+  "shiftConfig": {
+    "autoAlarmEnabled": true,
+    "definitions": [
+      {
+        "id": "morgendienst",
+        "name": "Morgendienst",
+        "keywords": ["MD", "MDS"],
+        "alarmTime": "05:45",
+        "isEnabled": true,
+        "isSilent": false,
+        "isOnCall": false,
+        "isSickDay": false
+      },
+      {
+        "id": "mittagsdienst",
+        "name": "Mittagsdienst",
+        "keywords": ["MI", "MIS"],
+        "alarmTime": "12:15",
+        "isEnabled": true,
+        "isSilent": false,
+        "isOnCall": false,
+        "isSickDay": false
+      },
+      {
+        "id": "nachtwache",
+        "name": "Nachtwache",
+        "keywords": ["NW", "NWS"],
+        "alarmTime": "19:45",
+        "isEnabled": true,
+        "isSilent": false,
+        "isOnCall": false,
+        "isSickDay": false
+      },
+      {
+        "id": "teildienst",
+        "name": "Teildienst",
+        "keywords": ["TD"],
+        "alarmTime": "14:15",
+        "isEnabled": true,
+        "isSilent": false,
+        "isOnCall": false,
+        "isSickDay": false
+      },
+      {
+        "id": "buerodienst",
+        "name": "Bürodienst",
+        "keywords": ["BD"],
+        "alarmTime": "07:30",
+        "isEnabled": true,
+        "isSilent": false,
+        "isOnCall": false,
+        "isSickDay": false
+      },
+      {
+        "id": "hintergrund",
+        "name": "Hintergrunddienst",
+        "keywords": ["HG"],
+        "alarmTime": "05:15",
+        "isEnabled": true,
+        "isSilent": true,
+        "isOnCall": true,
+        "isSickDay": false
+      },
+      {
+        "id": "arbeitsunfaehig",
+        "name": "Arbeitsunfähig",
+        "keywords": ["AU"],
+        "alarmTime": "06:30",
+        "isEnabled": true,
+        "isSilent": false,
+        "isOnCall": false,
+        "isSickDay": true
+      }
+    ]
+  }
+}

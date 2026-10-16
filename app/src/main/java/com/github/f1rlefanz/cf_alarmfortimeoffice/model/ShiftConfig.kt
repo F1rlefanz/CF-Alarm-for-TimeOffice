@@ -8,8 +8,25 @@ import java.time.LocalTime
 @Serializable
 data class ShiftConfig(
     val autoAlarmEnabled: Boolean = true,
-    val definitions: List<ShiftDefinition> = emptyList()
+    val definitions: List<ShiftDefinition> = emptyList(),
+    /**
+     * Umbau E5, die feste Zeile „Ohne Kalendereintrag“: die `id` des Typs, wie den sich ein Tag
+     * ganz ohne Eintrag verhalten soll; `null` = „eigene Einstellungen“ (wie heute: kein Wecker).
+     * Bewusst ein Feld hier und NIE ein Eintrag in [definitions]: eine aeltere App ueberliest den
+     * unbekannten Schluessel, statt die Zeile als Schicht mit Mustern zu deuten (SPEC 4).
+     * Wirkt erst mit den Paketen zu „Tage ohne Kalendereintrag“. Lesen ueber [ohneKalendereintragWieTyp].
+     */
+    val ohneKalendereintragWie: String? = null
 ) {
+    /**
+     * Der Typ, auf den „Ohne Kalendereintrag“ verweist, oder `null` fuer „eigene Einstellungen“.
+     * Ein VERWAISTER Verweis (Typ inzwischen geloescht) liest sich ebenfalls als `null` - der
+     * Verweis wird nicht beim Loeschen nachgezogen, sondern hier aufgeloest.
+     */
+    fun ohneKalendereintragWieTyp(): ShiftDefinition? =
+        ohneKalendereintragWie?.let { id -> definitions.firstOrNull { it.id == id } }
+
+
     /**
      * Ordnet ein Schichtkuerzel aus dem Kalender GENAU EINER Definition zu (Vorschlags-Karte im
      * Schicht-Konfigurations-Screen). REIN und testbar, damit die drei Fallen unten festgehalten

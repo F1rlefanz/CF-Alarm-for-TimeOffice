@@ -19,9 +19,10 @@ internal val MAX_NIGHT_SHIFT_LEAD_TIME: Duration = Duration.ofHours(12)
  * Weckzeit - so laesst sie sich auch mit einer Dienstzeit aus [ShiftSpanStore] und der Weckzeit
  * eines ungespeicherten Entwurfs aufrufen.
  *
- * Gerechnet wird auf der WANDUHR (`LocalDateTime`), auch die 12-h-Grenze: am Tag der
- * Zeitumstellung sind 18:00 bis 06:00 auf der Uhr 12 h, verstrichen aber 13 h bzw. 11 h. Echte Dauer
- * verschoebe den Wecker an diesen Tagen um einen Tag. `WeckzeitpunktTest` haelt beide Tage fest.
+ * Gerechnet wird auf der WANDUHR (`LocalDateTime`), auch die 12-h-Grenze. Am Umstellungstag im
+ * Herbst sind 18:00 bis 06:00 auf der Uhr 12 h (Vortag), verstrichen aber 13 h; im Fruehjahr sind
+ * 17:30 bis 06:00 auf der Uhr 12 h 30 (derselbe Tag), verstrichen aber 11 h 30. Echte Dauer
+ * verschoebe den Wecker in beiden Faellen um einen Tag. `WeckzeitpunktTest` haelt beide Tage fest.
  */
 fun weckzeitpunkt(beginn: LocalDateTime, ganztaegig: Boolean, weckzeit: LocalTime): LocalDateTime {
     // Calculate alarm time on the same date as the shift

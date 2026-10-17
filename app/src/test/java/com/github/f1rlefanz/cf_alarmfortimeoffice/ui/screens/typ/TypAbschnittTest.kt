@@ -138,6 +138,22 @@ class TypAbschnittTest {
         assertFalse(TypSeiteEntwurf.hatAenderungen(ausgang, TypAbschnittLogik.mitEingabe(ausgang, "F")))
     }
 
+    @Test
+    fun `die Meldung Ein Typ braucht mindestens ein Muster folgt demselben Stand wie Speichern`() {
+        val ohneMuster = TypEntwurf.aus(frueh.copy(keywords = emptyList()))
+
+        assertTrue("Nichts da, nichts im Feld: die Meldung erklaert das graue Speichern",
+            TypAbschnittLogik.fehltMuster(ohneMuster, ""))
+        assertFalse("Text im Feld wird mitgespeichert - dann fehlt kein Muster",
+            TypAbschnittLogik.fehltMuster(ohneMuster, "FD"))
+        assertTrue("Leerzeichen im Feld ersetzen kein Muster", TypAbschnittLogik.fehltMuster(ohneMuster, "   "))
+        // Dieselbe Rechnung wie „Speichern“: genau dann speicherbar, wenn kein Muster fehlt.
+        listOf("", "FD", "  ").forEach { eingabe ->
+            assertEquals("'$eingabe'", !TypAbschnittLogik.fehltMuster(ohneMuster, eingabe),
+                TypAbschnittLogik.mitEingabe(ohneMuster, eingabe).speicherbar)
+        }
+    }
+
     // --- Kategorie ---
 
     @Test

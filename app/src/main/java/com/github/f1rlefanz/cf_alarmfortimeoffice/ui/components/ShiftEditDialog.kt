@@ -168,7 +168,9 @@ private val ZEIT_ANZEIGE: DateTimeFormatter = DateTimeFormatter.ofPattern(DateTi
  * Typ bearbeitet die Typ-Seite. [vorlage] ist ein noch NICHT gespeicherter, vorbelegter Typ (Umbau:
  * aus „Im Kalender gefunden“, `SchichttypEinordnen.neuerTypAusCode`): der Editor zeigt seine
  * Werte, meldet sich aber als Neuanlage - `onSave` bekommt ihn mit seiner eigenen `id`, und der
- * Aufrufer haengt ihn an. Das Formular selbst ist [typFormularFelder], dasselbe wie auf der Seite.
+ * Aufrufer haengt ihn an. Das Formular selbst ist [typFormularFelder]; die Typ-Seite teilt davon nur
+ * [typWeckerFelder] und [AktiviertSchalter] - Name, Muster und Kategorie zeigt sie als Karte „Typ“
+ * (`TypAbschnitt`, Umbau #188).
  */
 @Composable
 fun ShiftEditDialog(
@@ -255,8 +257,9 @@ fun ShiftEditDialog(
 }
 
 /**
- * Die Felder des Typ-Editors, in dieser Reihenfolge - EINE Quelle fuer den Dialog (Neuanlage) und
- * die Typ-Seite (Bearbeiten, Umbau #187). Der Aufrufer besitzt den Zustand: [entwurf] wird
+ * Die Felder des Neuanlage-Dialogs, in dieser Reihenfolge: [typKopfFelder], [typWeckerFelder],
+ * [AktiviertSchalter]. Die Typ-Seite (Bearbeiten, Umbau #187/#188) setzt sie anders zusammen: Karte
+ * „Typ“, dann nur noch [typWeckerFelder]. Der Aufrufer besitzt den Zustand: [entwurf] wird
  * angezeigt, jede Eingabe laeuft als Umformung durch [aendere]. Eine Umformung statt eines
  * fertigen Werts, damit zwei Eingaben im selben Frame sich nicht gegenseitig mit einem
  * veralteten Stand ueberschreiben. [bestehenderName] ist der gespeicherte Name des bearbeiteten

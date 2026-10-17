@@ -112,6 +112,13 @@ internal object TypAbschnittLogik {
     fun mitEingabe(entwurf: TypEntwurf, eingabe: String): TypEntwurf = musterHinzufuegen(entwurf, eingabe)
 
     /**
+     * Fehlt dem Typ ein Muster - gerechnet wie beim Speichern, also MIT dem Text im „+“-Feld? Nur dann
+     * ist „Ein Typ braucht mindestens ein Muster.“ wahr: der Text im Feld wird mitgespeichert.
+     */
+    fun fehltMuster(entwurf: TypEntwurf, eingabe: String): Boolean =
+        sichtbareMuster(mitEingabe(entwurf, eingabe)).isEmpty()
+
+    /**
      * Ein Wechsel der Kategorie behaelt ALLES andere (SPEC E2): Muster, Weckzeit, Wecker an/aus,
      * stummer Wecker. `isSickDay` und `isOnCall` setzt erst das Speichern (`mitKategorie`).
      */
@@ -252,13 +259,14 @@ private fun MusterBereich(
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
 
-        if (muster.isEmpty()) {
+        if (TypAbschnittLogik.fehltMuster(entwurf, neuesMuster)) {
             Text(
                 TypAbschnittTexte.KEIN_MUSTER,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.error
             )
-        } else {
+        }
+        if (muster.isNotEmpty()) {
             FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_SMALL),
                 verticalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_SMALL)

@@ -1,10 +1,15 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.SchichttypEinordnen
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftKategorie
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.time.LocalTime
 
 /**
  * #142: Die Krankmeldungs-Texte im Schicht-Editor und auf der Schicht-Karte duerfen nur zusagen,
@@ -81,5 +86,194 @@ class ShiftDefinitionTexteTest {
             assertNull(ShiftDefinitionTexte.einBuchstabeWarnung("FR", krank))
             assertNull(ShiftDefinitionTexte.einBuchstabeWarnung("", krank))
         }
+    }
+
+    /** Umbau E1: jede Kategorie hat eine Kurzbeschreibung; die der Rufbereitschaft nennt die Uebernahme (#172). */
+    @Test
+    fun `Jede Kategorie hat eine Kurzbeschreibung`() {
+        ShiftKategorie.entries.forEach { kategorie ->
+            assertTrue(kategorie.name, ShiftDefinitionTexte.kategorieBeschreibung(kategorie).isNotBlank())
+        }
+        assertTrue(
+            ShiftDefinitionTexte.kategorieBeschreibung(ShiftKategorie.RUFBEREITSCHAFT).contains("Einsatz")
+        )
+    }
+
+    /**
+     * SPEC 3.3 verspricht beim stummen Wecker auch Licht. Heute ueberspringen AlarmReceiver und
+     * HueSmartScheduler bei einer stillen Schicht jede Hue-Regel - der Text darf es nicht zusagen.
+     */
+    @Test
+    fun `Der Stummer-Wecker-Hinweis verspricht kein Licht, das heute nicht startet`() {
+        val text = ShiftDefinitionTexte.STUMMER_WECKER_HINWEIS
+        assertFalse(text, text.contains("Lichtwecker"))
+        assertTrue("Dimmer und DND richten sich weiter nach der Weckzeit", text.contains("Dimmer"))
+        assertTrue(text.contains("startet dann nicht"))
+    }
+
+    @Test
+    fun `Die Wecker-Texte benennen Schalter und Wirkung wie der Prototyp`() {
+        assertEquals("Wecker an diesem Tag", ShiftDefinitionTexte.WECKER_AN_TITEL)
+        assertEquals("Stummer Wecker", ShiftDefinitionTexte.STUMMER_WECKER_TITEL)
+        assertFalse(
+            "Ob er klingelt, regelt der Stumm-Schalter darunter",
+            ShiftDefinitionTexte.WECKER_AN_HINWEIS.contains("klingelt")
+        )
+        // Der Aktiviert-Hinweis verwies auf „Stille Schicht“ - den Schalter gibt es so nicht mehr.
+        assertFalse(ShiftDefinitionTexte.AKTIVIERT_HINWEIS.contains("Stille Schicht"))
+        assertTrue(ShiftDefinitionTexte.AKTIVIERT_HINWEIS.contains("„Wecker an diesem Tag“"))
+    }
+
+    @Test
+    fun `Der Ignorieren-Hinweis beginnt wie im Prototyp und nennt den Vorrang des Dienstes`() {
+        val text = ShiftDefinitionTexte.IGNORIEREN_STATT_WECKER
+        assertTrue(text.startsWith("Dieser Eintrag wird übergangen."))
+        assertTrue(text.contains("gilt der Dienst"))
+    }
+}
+
+/**
+ * Umbau Etappe 1, #174: was der Schicht-Editor beim Speichern aus dem Formular baut. Eigene Klasse
+ * in derselben Datei wie die Editor-Texte, weil beides zu `ShiftEditDialog.kt` gehoert.
+ *
+ * Gemeinsame Absicht: ein Test faengt, dass der Editor wieder ein NEUES `ShiftDefinition(...)`
+ * baut (dann fielen Kategorie und Wecker-Schalter still auf ihren Default) oder die Flags nicht
+ * mit der Kategorie setzt (dann sieht die Ruf-Abfrage die Rufbereitschaft nicht).
+ */
+class ShiftEditFormularTest {
+
+    private fun dienst(
+        name: String = "Frueh",
+        keywords: List<String> = listOf("F", "IMCF"),
+        zeit: LocalTime = LocalTime.of(5, 30)
+    ) = ShiftDefinition(id = "id-1", name = name, keywords = keywords, alarmTime = zeit)
+
+    private fun speichere(
+        ausgang: ShiftDefinition?,
+        kategorie: ShiftKategorie,
+        name: String = ausgang?.name ?: "Neu",
+        muster: List<String> = ausgang?.keywords ?: listOf("X"),
+        zeit: LocalTime = ausgang?.alarmTime ?: LocalTime.of(6, 30),
+        isEnabled: Boolean = ausgang?.isEnabled ?: true,
+        weckerAn: Boolean = ausgang?.weckerAn ?: true,
+        isSilent: Boolean = ausgang?.isSilent ?: false
+    ) = ShiftEditFormular.speichern(
+        ausgang = ausgang,
+        name = name,
+        muster = muster,
+        alarmTime = zeit,
+        isEnabled = isEnabled,
+        weckerAn = weckerAn,
+        isSilent = isSilent,
+        kategorie = kategorie,
+        neueId = { "neue-id" }
+    )
+
+    @Test
+    fun `Speichern mit Kategorie Rufbereitschaft setzt isOnCall`() {
+        val neu = speichere(ausgang = null, kategorie = ShiftKategorie.RUFBEREITSCHAFT)
+        assertTrue("Die stuendliche Abfrage und das DND-Ende lesen das Flag", neu.isOnCall)
+        assertFalse(neu.isSickDay)
+        assertEquals(ShiftKategorie.RUFBEREITSCHAFT, neu.kategorie)
+        assertEquals("neue-id", neu.id)
+    }
+
+    @Test
+    fun `Speichern mit Kategorie Krank setzt isSickDay und nimmt isOnCall zurueck`() {
+        val ruf = dienst().mitKategorie(ShiftKategorie.RUFBEREITSCHAFT)
+        val krank = speichere(ausgang = ruf, kategorie = ShiftKategorie.KRANK)
+        assertTrue(krank.isSickDay)
+        assertFalse("Nie beide Flags", krank.isOnCall)
+        assertEquals(ShiftKategorie.KRANK, krank.kategorie)
+    }
+
+    @Test
+    fun `Urlaub mit Wecker aus ergibt einen Typ ohne Wecker`() {
+        val urlaub = speichere(ausgang = null, kategorie = ShiftKategorie.URLAUB, weckerAn = false)
+        assertFalse(urlaub.weckerAn)
+        assertEquals(ShiftKategorie.URLAUB, urlaub.kategorie)
+        assertFalse(urlaub.isSickDay)
+        assertFalse(urlaub.isOnCall)
+        assertTrue("Wecker aus heisst nicht „nicht erkannt“", urlaub.isEnabled)
+    }
+
+    @Test
+    fun `Ein Kategoriewechsel behaelt Weckzeit, Muster und Einstellungen`() {
+        val ausgang = dienst().copy(isSilent = true)
+        // Hin und her ueber den Sonderfall Krank: nichts davon geht verloren (E2).
+        val weg = speichere(ausgang, ShiftKategorie.KRANK)
+        val zurueck = speichere(weg, ShiftKategorie.DIENST)
+        listOf(weg, zurueck).forEach { typ ->
+            assertEquals(LocalTime.of(5, 30), typ.alarmTime)
+            assertEquals(listOf("F", "IMCF"), typ.keywords)
+            assertTrue("Stummer Wecker bleibt stehen", typ.isSilent)
+            assertTrue(typ.weckerAn)
+            assertEquals("id-1", typ.id)
+        }
+        assertEquals(ShiftKategorie.DIENST, zurueck.kategorie)
+    }
+
+    /** Der Hinweis aus #166: ein neu gebautes ShiftDefinition(...) machte hieraus „Dienst, Wecker an“. */
+    @Test
+    fun `Nur den Namen aendern laesst Kategorie Urlaub und Wecker aus stehen`() {
+        val urlaub = dienst(name = "Urlaub", keywords = listOf("U"))
+            .copy(weckerAn = false)
+            .mitKategorie(ShiftKategorie.URLAUB)
+        val umbenannt = speichere(urlaub, ShiftKategorie.URLAUB, name = "  Erholungsurlaub ")
+        assertEquals("Erholungsurlaub", umbenannt.name)
+        assertEquals(ShiftKategorie.URLAUB, umbenannt.kategorie)
+        assertFalse(umbenannt.weckerAn)
+    }
+
+    @Test
+    fun `Ein vorbelegter, noch nicht gespeicherter Typ behaelt id und Voreinstellung`() {
+        val vorlage = SchichttypEinordnen.neuerTypAusCode("FBE", ShiftKategorie.FORTBILDUNG) { "vorlage-id" }!!
+        val gespeichert = speichere(vorlage, ShiftKategorie.FORTBILDUNG, name = "Fortbildung extern")
+        assertEquals("vorlage-id", gespeichert.id)
+        assertEquals(listOf("FBE"), gespeichert.keywords)
+        assertEquals(vorlage.weckerAn, gespeichert.weckerAn)
+        assertEquals(ShiftKategorie.FORTBILDUNG, gespeichert.kategorie)
+
+        val urlaub = SchichttypEinordnen.neuerTypAusCode("U", ShiftKategorie.URLAUB) { "u-id" }!!
+        assertFalse("Voreinstellung Urlaub: Wecker aus", urlaub.weckerAn)
+        assertFalse(speichere(urlaub, ShiftKategorie.URLAUB, name = "Urlaub").weckerAn)
+    }
+
+    @Test
+    fun `Die Weckzeit sperrt das Speichern nur, wenn sie etwas bewirkt`() {
+        val ausgang = dienst(zeit = LocalTime.of(5, 30))
+        // Wecker an, Dienst: eine kaputte Eingabe ist nicht speicherbar.
+        assertNull(ShiftEditFormular.zeitZumSpeichern(ShiftKategorie.DIENST, true, null, ausgang))
+        assertEquals(
+            LocalTime.of(7, 0),
+            ShiftEditFormular.zeitZumSpeichern(ShiftKategorie.DIENST, true, LocalTime.of(7, 0), ausgang)
+        )
+        // Wecker aus, Krank, Ignorieren: das Feld ist verborgen oder ausgegraut und sperrt nichts.
+        listOf(
+            Triple(ShiftKategorie.DIENST, false, "Wecker aus"),
+            Triple(ShiftKategorie.KRANK, true, "Krank"),
+            Triple(ShiftKategorie.IGNORIEREN, true, "Ignorieren")
+        ).forEach { (kategorie, weckerAn, fall) ->
+            assertEquals(fall, LocalTime.of(5, 30), ShiftEditFormular.zeitZumSpeichern(kategorie, weckerAn, null, ausgang))
+        }
+        // Ohne Vorgaenger gilt die Vorgabe der App (06:00), nicht 00:00 (spaeter eingeschaltet klaenge es um Mitternacht).
+        assertEquals(
+            LocalTime.of(6, 0),
+            ShiftEditFormular.zeitZumSpeichern(ShiftKategorie.KRANK, true, null, null)
+        )
+    }
+
+    @Test
+    fun `Nur Krank und Ignorieren zeigen keinen Wecker-Block`() {
+        val ohneBlock = ShiftKategorie.entries.filterNot { ShiftEditFormular.zeigtWeckerBlock(it) }
+        assertEquals(listOf(ShiftKategorie.KRANK, ShiftKategorie.IGNORIEREN), ohneBlock)
+    }
+
+    @Test
+    fun `Muster werden getrimmt, ohne Leere und ohne Doppelte gespeichert`() {
+        assertEquals(
+            listOf("F", "IMCF"),
+            ShiftEditFormular.bereinigteMuster(listOf(" F ", "", "IMCF", "F", "  "))
+        )
     }
 }

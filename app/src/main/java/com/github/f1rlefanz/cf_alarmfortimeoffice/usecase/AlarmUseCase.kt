@@ -1592,20 +1592,6 @@ class AlarmUseCase @Inject constructor(
         alarmRepository.getAllAlarms()
     
     /**
-     * Schreibt den Schichtspannen-Bestand ([ShiftSpanStore]) - die Quelle, aus der Dimmer und
-     * "Nicht stoeren" ihre Dienstzeit-Fenster beziehen, seit klar ist, dass der Alarm-Bestand die
-     * Weckzeit nicht ueberlebt.
-     *
-     * **Eigenes try/catch, bewusst nicht-fatal.** Dieselbe Haltung wie bei den drei
-     * [ShiftChangeNotifier]-Aufrufen: ein fehlgeschlagener Nebenschauplatz darf die eigentlich
-     * kritische Alarm-Synchronisation niemals abbrechen oder rueckgaengig machen. Im
-     * Fehlerfall behalten Dimmer/DND ihren letzten bekannten Stand - schlechter als frisch, aber
-     * unendlich besser als ein ausgefallener Wecker.
-     *
-     * [CancellationException] wird weitergeworfen: sie ist kein Schreibfehler, sondern die Ansage,
-     * dass die umgebende Coroutine endet.
-     */
-    /**
      * #175: die leeren Tage dieses Laufs ([tageOhneEintrag]), ohne HEUTE, wenn heute schon ein Dienst
      * zu Ende gegangen ist ([heuteDurchBeendeteSpanneBelegt]). Gelesen wird der Spannen-Stand VOR dem
      * Schreiben dieses Laufs - er traegt die beendeten Spannen noch. Ist er nicht lesbar, faellt
@@ -1640,6 +1626,20 @@ class AlarmUseCase @Inject constructor(
         return tage.filterNot { it.datum == heute }
     }
 
+    /**
+     * Schreibt den Schichtspannen-Bestand ([ShiftSpanStore]) - die Quelle, aus der Dimmer und
+     * "Nicht stoeren" ihre Dienstzeit-Fenster beziehen, seit klar ist, dass der Alarm-Bestand die
+     * Weckzeit nicht ueberlebt.
+     *
+     * **Eigenes try/catch, bewusst nicht-fatal.** Dieselbe Haltung wie bei den drei
+     * [ShiftChangeNotifier]-Aufrufen: ein fehlgeschlagener Nebenschauplatz darf die eigentlich
+     * kritische Alarm-Synchronisation niemals abbrechen oder rueckgaengig machen. Im
+     * Fehlerfall behalten Dimmer/DND ihren letzten bekannten Stand - schlechter als frisch, aber
+     * unendlich besser als ein ausgefallener Wecker.
+     *
+     * [CancellationException] wird weitergeworfen: sie ist kein Schreibfehler, sondern die Ansage,
+     * dass die umgebende Coroutine endet.
+     */
     private suspend fun persistShiftSpans(spans: List<ShiftSpan>) {
         try {
             shiftSpanStore.replaceAll(spans)

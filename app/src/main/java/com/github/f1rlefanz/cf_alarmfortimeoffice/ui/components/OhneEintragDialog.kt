@@ -54,7 +54,8 @@ object OhneEintragTexte {
     const val TITEL = "Ohne Kalendereintrag"
     const val ERKLAERUNG =
         "Feste Zeile: gilt für jeden Tag, an dem im Kalender gar nichts steht – etwa wenn kein „+“ " +
-            "eingetragen wurde oder der Dienstplan noch nicht veröffentlicht ist."
+            "eingetragen wurde oder der Dienstplan noch nicht veröffentlicht ist. Steht in der ganzen " +
+            "Kalender-Vorausschau kein einziger Termin, stellt die App vorsichtshalber keinen Wecker."
     const val WAHL_TITEL = "Tage ohne Eintrag verhalten sich"
     const val EIGENE_EINSTELLUNGEN = "Eigene Einstellungen"
 

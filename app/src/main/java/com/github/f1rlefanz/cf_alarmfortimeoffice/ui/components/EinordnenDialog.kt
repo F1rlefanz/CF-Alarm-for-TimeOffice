@@ -50,15 +50,23 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.listenCode
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.titel
 import java.time.format.DateTimeFormatter
 
-/** Die Texte der Kategorie-Wahl (Prototyp `zeigeKatWahl`, `BILDSCHIRME.md` B2) - wortgleich zur Vorlage. */
+/**
+ * Die Texte der Kategorie-Wahl (Prototyp `zeigeKatWahl`, `BILDSCHIRME.md` B2) - wortgleich zur
+ * Vorlage, ausser wo die Vorlage mehr verspricht, als der Typ in Etappe 1 kann.
+ */
 object EinordnenTexte {
     const val TITEL = "Einordnen"
     const val GEHOERT_ZU_TITEL = "Gehört zu einem bestehenden Typ"
     const val GEHOERT_ZU_HINWEIS =
         "Zum Beispiel F und IMCF: fürs Aufstehen dasselbe. Der Code wird dort als weiteres Muster eingetragen."
     const val NEUER_TYP_TITEL = "Oder als neuer Typ in der Kategorie"
+    /**
+     * Die Vorlage nennt hier auch Dimmen, „Nicht stören“ und Licht - die kommen erst mit Etappe 3/4
+     * an den Typ (SPEC 3.3 Punkte 6-8), bis dahin bietet der Editor nur den Wecker. Dann den Satz
+     * der Vorlage zurueckholen.
+     */
     const val KATEGORIE_HINWEIS =
-        "Die Kategorie sortiert nur. Wecker, Dimmen, „Nicht stören“ und Licht stellst du danach am Typ selbst ein."
+        "Die Kategorie sortiert nur. Wecker und Weckzeit stellst du danach am Typ selbst ein."
 
     /** Ein ausgeschalteter Typ wird durch „Gehört zu“ eingeschaltet ([com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig.withCodeAssignedTo]). */
     const val AUSGESCHALTET_WIRD_EINGESCHALTET = "ausgeschaltet – wird dabei eingeschaltet"

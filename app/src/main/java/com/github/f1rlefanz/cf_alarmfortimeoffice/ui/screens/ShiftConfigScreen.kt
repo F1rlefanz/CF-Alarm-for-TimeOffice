@@ -143,6 +143,21 @@ internal val SHIFT_RECOGNITION_HINT_DETAIL: String =
 internal val SHIFT_RECOGNITION_HINT: String =
     SHIFT_RECOGNITION_HINT_KURZ + " " + SHIFT_RECOGNITION_HINT_DETAIL
 
+/** Texte der Typ-Liste, die ein Test festhaelt (Beschriftungen wortgleich zum Editor). */
+internal object ShiftConfigTexte {
+    /** Nennt auch die Wahl der festen Zeile: [resetToDefaultsPreservingAutoAlarm] setzt sie zurueck. */
+    const val RESET_RUECKFRAGE =
+        "Alle Schichtdefinitionen werden durch die Standardwerte ersetzt – eigene Namen, " +
+            "Erkennungsmuster, Kategorien, Weckzeiten, die Schalter „Wecker an diesem Tag“ und " +
+            "„Stummer Wecker“ sowie die Wahl bei „Ohne Kalendereintrag“ gehen verloren. Alle " +
+            "kommenden Wecker werden mit den Standard-Weckzeiten neu gesetzt. Der Schalter " +
+            "„Automatische Alarme“ im Bereich „Wecker“ bleibt dabei unverändert. Das lässt sich " +
+            "nicht rückgängig machen."
+
+    /** contentDescription des Symbols an einer Zeile mit stummem Wecker. */
+    const val STUMM_SYMBOL = "Stummer Wecker – kein Ton, keine Vibration, kein Vollbild"
+}
+
 /**
  * PURE, TESTBAR: Was "Auf Standardwerte zuruecksetzen" wirklich schreibt.
  *
@@ -491,14 +506,7 @@ fun ShiftConfigScreen(
             onDismissRequest = { showResetConfirmation = false },
             title = { Text("Auf Standardwerte zurücksetzen?") },
             text = {
-                Text(
-                    "Alle Schichtdefinitionen werden durch die Standardwerte ersetzt – eigene " +
-                        "Namen, Erkennungsmuster, Weckzeiten und die Einstellung \"Stille " +
-                        "Schicht\" gehen verloren. Alle kommenden Wecker werden mit den " +
-                        "Standard-Weckzeiten neu gesetzt. Der Schalter \"Automatische Alarme\" " +
-                        "im Bereich „Wecker“ bleibt dabei unverändert. Das lässt sich nicht rückgängig " +
-                        "machen."
-                )
+                Text(ShiftConfigTexte.RESET_RUECKFRAGE)
             },
             confirmButton = {
                 TextButton(
@@ -982,7 +990,7 @@ private fun StatusZeile(definition: ShiftDefinition) {
             Spacer(modifier = Modifier.width(SpacingConstants.SPACING_SMALL))
             Icon(
                 Icons.Default.NotificationsOff,
-                contentDescription = "Stille Schicht - kein Ton/Vibration/Vollbild",
+                contentDescription = ShiftConfigTexte.STUMM_SYMBOL,
                 modifier = Modifier.size(SpacingConstants.ICON_SIZE_SMALL),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant
             )

@@ -5,6 +5,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmInfo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.MANUELLER_ALARM_SUFFIX
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpan
+import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.AlarmUseCase
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -614,5 +615,35 @@ class WeckerTageTest {
 
         assertTrue(dienst.flatMap { it.eintraege }.none { it is WeckerEintrag.Schlummert })
         assertTrue(eigener.flatMap { it.eintraege }.any { it is WeckerEintrag.Schlummert })
+    }
+
+    /**
+     * Gegenpruefung Etappe 1: ein Wecker „wie <Typ>“ an einem Tag ohne Kalendereintrag hat keine
+     * Schichtspanne (#175, Festlegung 5). „Nicht stören“, Dimmen und die Rufbereitschafts-Abfrage
+     * des Typs haengen an der Spanne und treten an diesem Tag nicht ein - der Tag nennt deshalb
+     * keinen Dienst und keins ihrer Kaertchen. Licht dagegen haengt am Wecker und bleibt.
+     */
+    @Test
+    fun `Tag ohne Eintrag nennt keinen Dienst und nur das Licht, das am Wecker haengt`() {
+        val wirkungen = mapOf(
+            "Frühdienst" to wirkung(
+                isOnCall = true,
+                dndAn = true,
+                dimmen = DimmStatus.Wirksam(DimmArt.EIGENE, 0),
+                licht = LichtStatus.Regeln(eigene = 1, allgemeine = 0)
+            )
+        )
+        val ohneEintrag = alarm(1, "2026-10-15T05:00")
+            .copy(eventId = AlarmUseCase.ohneEintragKennung(LocalDate.of(2026, 10, 15)))
+
+        val tag = tage(listOf(ohneEintrag), wirkungen = wirkungen).single()
+
+        assertEquals(1, tag.wecker().size)
+        assertTrue("Kein Dienst an einem Tag ohne Kalendereintrag: ${tag.schichten}", tag.schichten.isEmpty())
+        assertEquals(listOf(Kaertchen.LICHT), tag.kaertchen)
+
+        // Stumm: auch das Licht startet nicht.
+        val stumm = tage(listOf(ohneEintrag.copy(isSilent = true)), wirkungen = wirkungen).single()
+        assertTrue(stumm.kaertchen.isEmpty())
     }
 }

@@ -173,7 +173,8 @@ function Worktree([string]$name, [string]$branch, [string]$basis) {
         else { git -C $Root worktree add -q -b $branch $pfad $basis }
         if ($LASTEXITCODE -ne 0) { throw "worktree $name" }
     }
-    foreach ($f in @('keystore.properties', 'local.properties')) {
+    # Die Keystore-Datei braucht der Release-Build im Etappen-Abschluss (16.10.2026 fehlte sie dort).
+    foreach ($f in @('keystore.properties', 'local.properties', 'cf-alarm-release.keystore')) {
         Copy-Item (Join-Path $Root $f) (Join-Path $pfad $f) -Force
     }
     return $pfad
@@ -246,7 +247,10 @@ function StarteClaude([string]$goal, [string]$model, [int]$cap, [string]$cwd, [s
 }
 
 function PaketZiel($issue, [int]$lauf, [int]$cap, [string]$branch) {
-    $start = if ($lauf -gt 1) { "Teilarbeit liegt vor (Branch $branch, git log, Kommentare im Issue): pruefe sie und setze fort." } else { 'Setze das Paket um.' }
+    # Teilarbeit gibt es nicht nur im zweiten Lauf: auch nach einem Limit oder Absturz liegt der Branch
+    # schon auf origin (16.10.2026: #166 lief nach dem Limit mit "Setze das Paket um" weiter).
+    $vorhanden = git -C $Root ls-remote --heads origin $branch
+    $start = if ($lauf -gt 1 -or $vorhanden) { "Teilarbeit liegt vor (Branch $branch, git log, Kommentare im Issue): pruefe sie und setze fort." } else { 'Setze das Paket um.' }
     return @"
 /goal Paket #$($issue.number) des Umbaus "Schichttyp als Zentrale": $($issue.title). $start
 Lies zuerst entwurf/umbau-schichttyp/ABLAUF.md, SPEC.md, das Issue (gh issue view $($issue.number)) und den dort genannten Skill.
@@ -373,8 +377,13 @@ try {
             continue
         }
         $commits = (git -C $wt log --oneline -5 2>$null | Out-String)
-        $ende = ($out -split "`n" | Select-Object -Last 15) -join "`n"
-        Kommentar $nr "Runner: Lauf $lauf endete ohne Abschluss.`n`nLetzte Commits auf ${branch}:`n``````n$commits``````n`nEnde des Logs:`n``````n$ende`n``````"
+        # Lesbar fuer den naechsten Lauf und fuer Menschen: Grund, Commits, letzte Schritte aus dem
+        # Live-Log - nicht das rohe Ergebnis-JSON (16.10.2026, #170).
+        $grund = try { ($out | ConvertFrom-Json).subtype } catch { 'unbekannt' }
+        $live = Join-Path $Logs "paket-$nr-lauf$lauf.log"
+        $ende = if (Test-Path $live) { (Get-Content $live -Tail 15 -Encoding UTF8) -join "`n" } else { ($out -split "`n" | Select-Object -Last 15) -join "`n" }
+        $z = '```'
+        Kommentar $nr "Runner: Lauf $lauf endete ohne Abschluss ($grund).`n`nLetzte Commits auf ${branch}:`n$z`n$commits$z`n`nLetzte Schritte:`n$z`n$ende`n$z"
         if ($lauf -ge 2) {
             Label $nr @('blockiert') @('in-arbeit')
             Log "#${nr}: nach 2 Laeufen blockiert"

@@ -137,7 +137,7 @@ Prompt-Werkstatt. Er arbeitet in einer Schleife:
    **kein** Issue der Etappe offen ist (auch kein `in-arbeit`, kein `blockiert`); sonst **Stopp mit
    Bericht im Epic**. Keine Etappe offen → **Ende**.
 3. **Lauf:** Labels `in-arbeit` und `lauf-1` (bzw. `lauf-2`) setzen, Worktree unter
-   `..\CFAlarm-umbau-wt\<nr>` anlegen, `keystore.properties` und `local.properties` hineinkopieren
+   `..\CFAlarm-umbau-wt\<nr>` anlegen, `keystore.properties`, `local.properties` und die Keystore-Datei hineinkopieren
    (belegt 16.10.2026: so baut er), Gradle vorwärmen (`testDebugUnitTest lintDebug`), dann
    `claude -p "/goal …" --model <claude-sonnet-5-5 | claude-opus-5-5 nach Risiko> --effort xhigh
    --max-turns <Cap+5>`. Der Prozess bekommt `ANDROID_SERIAL=emulator-5554` (adb und Gradle-Install

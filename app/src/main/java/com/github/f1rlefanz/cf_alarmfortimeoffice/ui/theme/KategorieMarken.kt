@@ -100,8 +100,8 @@ internal data class KategorieFarben(val flaeche: Color, val text: Color)
  * und die helle Flaeche des Prototyps als Schrift. Jedes Paar erreicht mindestens 4,5:1 - das haelt
  * `ShiftConfigScreenTextTest` fest. Ohne `else`: eine achte Kategorie braucht bewusst eine Farbe.
  *
- * Geteilt von der Typ-Liste, dem Einordnen-Dialog (#176), dem Dialog "Ohne Kalendereintrag" und der
- * Typ-Seite des Umbaus - deshalb hier und nicht in `ShiftConfigScreen`.
+ * Geteilt von der Typ-Liste, dem Einordnen-Dialog (#176) und dem Dialog "Ohne Kalendereintrag", ab dem
+ * naechsten Paket auch von der Typ-Seite des Umbaus - deshalb hier und nicht in `ShiftConfigScreen`.
  */
 internal fun kategorieFarben(kategorie: ShiftKategorie, dunkel: Boolean): KategorieFarben = when (kategorie) {
     ShiftKategorie.DIENST ->

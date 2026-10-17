@@ -200,3 +200,12 @@ Format: Skill · Paket · die normative Zeile · Hergang in einem Satz.
   Kategoriewechsel-Test rot), `ShiftDefinitionTexteTest`. **Website zieht nicht mit:** `docs/advanced-setup.html:90-93`,
   `index.html:186-189`, `troubleshooting.html:96-97` nennen noch die Schalter „Krankmeldung“, „Stille Schicht“ und
   „Rufbereitschaft“ – Etappe 9 (SPEC 5.4), Issue mit `umbau` + `spaeter` angelegt.
+- **#174** (Fortsetzung, Prüfer-Befunde) · **Die Ein-Buchstaben-Warnung im Editor richtet sich nach Kategorie UND
+  Wecker-Schalter** (`ShiftDefinitionTexte.einBuchstabeWarnung(muster, kategorie, weckerAn)`): nur ein Typ, der wirklich
+  einen Wecker stellt, bekommt „weckt dich dann an freien Tagen“, Krank behält seinen Text, Ignorieren und „Wecker aus“
+  bekommen `EIN_BUCHSTABE_OHNE_WECKER`. **Der Aktiviert-Hinweis hat bei Ignorieren einen eigenen Text**
+  (`IGNORIEREN_AKTIVIERT_HINWEIS`): der allgemeine verwies auf „Wecker an diesem Tag“, den es dort nicht gibt. Hergang: der
+  unabhängige Prüfer (Opus, nur Diff/Issue/Spec/Prototyp) fand beides; erst #174 macht diese Zustände im Editor
+  einstellbar. **Weitergereicht:** #181 (Fenster-Ende folgt bei Wecker aus weiter `alarmTriggerTime`, Etappe 3), #180
+  (Website). Wer künftig einen Text unter einem Editor-Feld baut, prüft ihn gegen ALLE Kategorien, in denen das Feld
+  sichtbar ist - nicht nur gegen Dienst.

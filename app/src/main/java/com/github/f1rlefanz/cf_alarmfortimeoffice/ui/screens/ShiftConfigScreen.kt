@@ -176,7 +176,9 @@ internal fun resetToDefaultsPreservingAutoAlarm(current: ShiftConfig?): ShiftCon
 @Composable
 fun ShiftConfigScreen(
     shiftViewModel: ShiftViewModel,
-    onNavigateBack: () -> Unit
+    onNavigateBack: () -> Unit,
+    /** Ein Tipp auf einen bestehenden Typ: oeffnet seine Typ-Seite (Umbau #187), `id` ist die stabile Kennung. */
+    onTypOeffnen: (String) -> Unit
 ) {
     // collectAsStateWithLifecycle statt collectAsState: reiner Anzeige-Zustand. Sammeln pausiert
     // unterhalb von STARTED, es haengt also kein Seiteneffekt daran - der Zustand ist ein heisser
@@ -186,7 +188,6 @@ fun ShiftConfigScreen(
     // (WhileSubscribed) - nicht schon der App-Start, an dem das ViewModel entsteht.
     val schichtFolgen by shiftViewModel.schichtFolgen.collectAsStateWithLifecycle()
     var showAddDialog by remember { mutableStateOf(false) }
-    var editingDefinition by remember { mutableStateOf<ShiftDefinition?>(null) }
 
     // Beide destruktiven Aktionen dieses Screens laufen ueber eine Rueckfrage. Ohne sie war ein
     // Fehlgriff nicht wiederherstellbar: `updateShiftConfig()` persistiert sofort UND ruft
@@ -380,7 +381,7 @@ fun ShiftConfigScreen(
                         is SchichttypBlock.Gruppe -> SchichttypGruppeKarte(
                             gruppe = block,
                             folgen = schichtFolgen,
-                            onEdit = { editingDefinition = it },
+                            onEdit = { onTypOeffnen(it.id) },
                             onDelete = { pendingDelete = it }
                         )
                         SchichttypBlock.FesteZeile -> FesteZeileKarte(
@@ -411,10 +412,10 @@ fun ShiftConfigScreen(
         }
     }
 
-    // Add/Edit Dialog - auch der Editor fuer „Als neuer Typ“ aus dem Fund (Vorlage statt bestehendem Typ).
-    if (showAddDialog || editingDefinition != null || neuerTypAusFund != null) {
+    // Neuanlage-Dialog („+“) - auch der Editor fuer „Als neuer Typ“ aus dem Fund (Vorlage). Einen
+    // BESTEHENDEN Typ bearbeitet die Typ-Seite (onTypOeffnen), nicht mehr dieser Dialog.
+    if (showAddDialog || neuerTypAusFund != null) {
         ShiftEditDialog(
-            shift = editingDefinition,
             vorlage = neuerTypAusFund?.vorlage,
             onSave = { newDefinition ->
                 val ausFund = neuerTypAusFund
@@ -423,25 +424,16 @@ fun ShiftConfigScreen(
                     shiftViewModel.legeTypAusCodeAn(ausFund.code, newDefinition)
                 } else {
                     shiftState.currentShiftConfig?.let { config ->
-                        val updatedDefinitions = if (editingDefinition != null) {
-                            config.definitions.map {
-                                if (it.id == editingDefinition?.id) newDefinition else it
-                            }
-                        } else {
-                            config.definitions + newDefinition
-                        }
                         shiftViewModel.updateShiftConfig(
-                            config.copy(definitions = updatedDefinitions)
+                            config.copy(definitions = config.definitions + newDefinition)
                         )
                     }
                 }
                 showAddDialog = false
-                editingDefinition = null
                 neuerTypAusFund = null
             },
             onDismiss = {
                 showAddDialog = false
-                editingDefinition = null
                 neuerTypAusFund = null
             }
         )
@@ -534,9 +526,11 @@ fun ShiftConfigScreen(
             OhneEintragDialog(
                 config = config,
                 onWaehle = { shiftViewModel.waehleOhneEintrag(it) },
+                // Der Link zum Typ („Wie <Typ> öffnen“) fuehrt auf dieselbe Typ-Seite wie ein Tipp
+                // in der Liste - sonst haette ein Typ je nach Einstieg zwei verschiedene Editoren.
                 onTypOeffnen = { typ ->
                     ohneEintragOffen = false
-                    editingDefinition = typ
+                    onTypOeffnen(typ.id)
                 },
                 onDismiss = { ohneEintragOffen = false }
             )

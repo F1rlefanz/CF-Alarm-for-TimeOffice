@@ -409,7 +409,21 @@ fun MainScreen(
             is NavigationState.ShiftConfig -> {
                 ShiftConfigScreen(
                     shiftViewModel = shiftViewModel,
-                    onNavigateBack = { navigationViewModel.navigateBackToMain() }
+                    onNavigateBack = { navigationViewModel.navigateBackToMain() },
+                    // Den Herkunfts-Tab der Liste weiterreichen: Zurueck aus der Typ-Seite fuehrt zur
+                    // Liste, von dort aus wie bisher in den Tab, aus dem sie geoeffnet wurde.
+                    onTypOeffnen = { id -> navigationViewModel.navigateToTypSeite(id, state.returnToTab) }
+                )
+            }
+
+            is NavigationState.TypSeite -> {
+                // Zurueck (Pfeil, System-Taste ueber den BackHandler oben, "Verwerfen", Speichern)
+                // loest allein navigateBackFrom() auf; der Entwurf-Schutz in der Seite fragt nur
+                // vorher und entscheidet nie ueber das Ziel.
+                com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.typ.TypSeite(
+                    definitionId = state.definitionId,
+                    shiftViewModel = shiftViewModel,
+                    onZurueck = { navigationViewModel.navigateBackFrom(state) }
                 )
             }
 

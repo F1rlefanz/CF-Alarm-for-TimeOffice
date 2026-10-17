@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material.icons.Icons
@@ -53,56 +54,125 @@ import java.util.Locale
 import java.util.UUID
 
 /**
- * Der Schicht-Editor. [shift] ist der BESTEHENDE Typ, den er bearbeitet (`null` = Neuanlage).
- * [vorlage] ist ein noch NICHT gespeicherter, vorbelegter Typ (Umbau: aus „Im Kalender gefunden“,
- * `SchichttypEinordnen.neuerTypAusCode`): der Editor zeigt seine Werte, meldet sich aber als
- * Neuanlage - `onSave` bekommt ihn mit seiner eigenen `id`, und der Aufrufer haengt ihn an.
+ * Der Formularstand des Typ-Editors als EIN Wert (Umbau #187). Vorher sieben einzelne
+ * `remember`-Zustaende im Dialog; als Wert teilen ihn der Dialog (Neuanlage) und die Typ-Seite
+ * (Bearbeiten), und die Seite kann ihn als Entwurf ueber Drehen, Dunkelmodus und Schriftgroesse
+ * retten ([alsSpeicherListe]). Die Weckzeit bleibt der eingetippte TEXT - ein halb getipptes
+ * "06:" ist ein gueltiger Zwischenstand, kein Fehler.
+ */
+internal data class TypEntwurf(
+    val name: String,
+    val muster: List<String>,
+    val weckzeitText: String,
+    val isEnabled: Boolean,
+    val isSilent: Boolean,
+    val weckerAn: Boolean,
+    val kategorie: ShiftKategorie
+) {
+    val isSickDay: Boolean get() = kategorie == ShiftKategorie.KRANK
+
+    /** Die eingetippte Weckzeit - `null`, solange sie kein gueltiges HH:mm ist. */
+    val weckzeit: LocalTime? get() = runCatching { LocalTime.parse(weckzeitText, ZEIT_ANZEIGE) }.getOrNull()
+
+    /**
+     * Wird hier gerade ein BESTEHENDER Typ ([bestehenderName], `null` = Neuanlage) umbenannt?
+     * Massstab ist der Vergleich, den die Regelsuche selbst anlegt (`equals(ignoreCase = true)`) -
+     * eine reine Schreibweisenaenderung bricht dort nichts und braucht deshalb keinen Hinweis.
+     * Getrimmt, weil genau das gespeichert wird.
+     */
+    fun istUmbenennungVon(bestehenderName: String?): Boolean =
+        bestehenderName != null &&
+            name.trim().isNotBlank() &&
+            !name.trim().equals(bestehenderName, ignoreCase = true)
+
+    /** Darf gespeichert werden? Die Weckzeit sperrt nur, wenn sie etwas bewirkt (#142). */
+    val speicherbar: Boolean
+        get() = name.isNotBlank() &&
+            muster.any { it.isNotBlank() } &&
+            (!ShiftEditFormular.weckzeitPflicht(kategorie, weckerAn) || weckzeit != null)
+
+    /**
+     * Der Typ, der gespeichert wird: [ausgang] (der bearbeitete oder der vorbelegte Typ) mit den
+     * Formularwerten, oder `null`, wenn das Formular nicht speicherbar ist. Trimmen ist Pflicht
+     * (Wortgrenzen-Regex), distinct gegen Doppel - schichterkennung.md.
+     */
+    fun alsDefinition(ausgang: ShiftDefinition?): ShiftDefinition? {
+        val bereinigt = ShiftEditFormular.bereinigteMuster(muster)
+        // #142: bei Krankmeldung ist die Weckzeit formal (Serialisierung), darf also nicht
+        // blockieren - ebenso bei Wecker aus und Ignorieren (E2: der Wert bleibt).
+        val zeit = ShiftEditFormular.zeitZumSpeichern(kategorie, weckerAn, weckzeit, ausgang)
+        if (name.isBlank() || bereinigt.isEmpty() || zeit == null) return null
+        return ShiftEditFormular.speichern(
+            ausgang = ausgang,
+            name = name,
+            muster = bereinigt,
+            alarmTime = zeit,
+            isEnabled = isEnabled,
+            weckerAn = weckerAn,
+            isSilent = isSilent,
+            kategorie = kategorie
+        )
+    }
+
+    /** Fuer `rememberSaveable`: nur Typen, die ein Bundle kennt (Text, Wahrheitswert, Liste). */
+    fun alsSpeicherListe(): List<Any> =
+        listOf(name, ArrayList(muster), weckzeitText, isEnabled, isSilent, weckerAn, kategorie.schluessel)
+
+    companion object {
+        /** Der Ausgangsstand des Formulars: der Typ, wie er ist, oder die Vorgaben einer Neuanlage. */
+        fun aus(ausgang: ShiftDefinition?): TypEntwurf = TypEntwurf(
+            name = ausgang?.name ?: "",
+            // Ein Typ ohne Muster (frisch angelegter Ignorieren-Typ, #169) bekommt ein leeres Feld
+            // statt einer leeren Liste - sonst gaebe es nichts zum Eintippen und das Speichern
+            // bliebe gesperrt.
+            muster = ausgang?.keywords?.ifEmpty { listOf("") } ?: listOf(""),
+            // TIME_ONLY (ANZEIGE), NICHT PERSIST_TIME: diese beiden Stellen zeigen die vom Nutzer
+            // eingetippte Weckzeit an und parsen sie zurueck. Persistiert wird sie danach ueber
+            // LocalTimeSerializer, der bewusst PERSIST_TIME benutzt. Die Formate sind entkoppelt -
+            // wer sie spaeter zusammenlegt, koppelt die Eingabe-Interpretation an ein
+            // Persistenzformat.
+            weckzeitText = ausgang?.alarmTime?.format(ZEIT_ANZEIGE)
+                ?: String.format(Locale.ROOT, "%02d:%02d", AlarmConstants.DEFAULT_ALARM_HOUR, AlarmConstants.DEFAULT_ALARM_MINUTE),
+            isEnabled = ausgang?.isEnabled ?: true,
+            isSilent = ausgang?.isSilent ?: false,
+            weckerAn = ausgang?.weckerAn ?: true,
+            // Die Kategorie ersetzt die Schalter „Krankmeldung“ und „Rufbereitschaft“ (Umbau E1).
+            // Beim Speichern setzt `mitKategorie` beide Flags mit - die lesen alle heutigen Verbraucher.
+            kategorie = ausgang?.kategorie ?: ShiftKategorie.DIENST
+        )
+
+        /** Gegenstueck zu [alsSpeicherListe]; `null` bei einem Stand, den es nicht lesen kann. */
+        fun ausSpeicherListe(liste: List<Any?>): TypEntwurf? = runCatching {
+            TypEntwurf(
+                name = liste[0] as String,
+                muster = (liste[1] as List<*>).map { it as String },
+                weckzeitText = liste[2] as String,
+                isEnabled = liste[3] as Boolean,
+                isSilent = liste[4] as Boolean,
+                weckerAn = liste[5] as Boolean,
+                kategorie = ShiftKategorie.vonSchluessel(liste[6] as String) ?: ShiftKategorie.DIENST
+            )
+        }.getOrNull()
+    }
+}
+
+private val ZEIT_ANZEIGE: DateTimeFormatter = DateTimeFormatter.ofPattern(DateTimeFormats.TIME_ONLY)
+
+/**
+ * Der Schicht-Editor als Dialog - seit Umbau #187 nur noch fuer die NEUANLAGE; einen bestehenden
+ * Typ bearbeitet die Typ-Seite. [vorlage] ist ein noch NICHT gespeicherter, vorbelegter Typ (Umbau:
+ * aus „Im Kalender gefunden“, `SchichttypEinordnen.neuerTypAusCode`): der Editor zeigt seine
+ * Werte, meldet sich aber als Neuanlage - `onSave` bekommt ihn mit seiner eigenen `id`, und der
+ * Aufrufer haengt ihn an. Das Formular selbst ist [typFormularFelder], dasselbe wie auf der Seite.
  */
 @Composable
 fun ShiftEditDialog(
-    shift: ShiftDefinition?,
     onDismiss: () -> Unit,
     onSave: (ShiftDefinition) -> Unit,
     vorlage: ShiftDefinition? = null
 ) {
-    val isNewShift = shift == null
-    val ausgang = shift ?: vorlage
+    var entwurf by remember { mutableStateOf(TypEntwurf.aus(vorlage)) }
 
-    var name by remember { mutableStateOf(ausgang?.name ?: "") }
-    // Ein Typ ohne Muster (frisch angelegter Ignorieren-Typ, #169) bekommt ein leeres Feld statt
-    // einer leeren Liste - sonst gaebe es nichts zum Eintippen und das Speichern bliebe gesperrt.
-    var keywords by remember { mutableStateOf(ausgang?.keywords?.ifEmpty { listOf("") } ?: listOf("")) }
-    // TIME_ONLY (ANZEIGE), NICHT PERSIST_TIME: diese beiden Stellen zeigen die vom Nutzer
-    // eingetippte Weckzeit an und parsen sie zurueck. Persistiert wird sie danach ueber
-    // LocalTimeSerializer, der bewusst PERSIST_TIME benutzt. Die Formate sind entkoppelt - wer
-    // sie spaeter zusammenlegt, koppelt die Eingabe-Interpretation an ein Persistenzformat.
-    var alarmTimeString by remember {
-        mutableStateOf(ausgang?.alarmTime?.format(DateTimeFormatter.ofPattern(DateTimeFormats.TIME_ONLY))
-            ?: String.format(Locale.ROOT, "%02d:%02d", AlarmConstants.DEFAULT_ALARM_HOUR, AlarmConstants.DEFAULT_ALARM_MINUTE))
-    }
-    var isEnabled by remember { mutableStateOf(ausgang?.isEnabled ?: true) }
-    var isSilent by remember { mutableStateOf(ausgang?.isSilent ?: false) }
-    var weckerAn by remember { mutableStateOf(ausgang?.weckerAn ?: true) }
-    // Die Kategorie ersetzt die Schalter „Krankmeldung“ und „Rufbereitschaft“ (Umbau E1). Beim
-    // Speichern setzt `mitKategorie` beide Flags mit - die lesen alle heutigen Verbraucher.
-    var kategorie by remember { mutableStateOf(ausgang?.kategorie ?: ShiftKategorie.DIENST) }
-    val isSickDay = kategorie == ShiftKategorie.KRANK
-
-    /**
-     * Wird hier gerade eine BESTEHENDE Schicht umbenannt? Massstab ist der Vergleich, den die
-     * Regelsuche selbst anlegt (`equals(ignoreCase = true)`) - eine reine Schreibweisenaenderung
-     * bricht dort nichts und braucht deshalb auch keinen Hinweis. Getrimmt, weil genau das
-     * gespeichert wird.
-     */
-    val istUmbenennung = shift != null &&
-        name.trim().isNotBlank() &&
-        !name.trim().equals(shift.name, ignoreCase = true)
-
-    val timeFormatter = remember { DateTimeFormatter.ofPattern(DateTimeFormats.TIME_ONLY) }
-    val parsedAlarmTime = remember(alarmTimeString) {
-        runCatching { LocalTime.parse(alarmTimeString, timeFormatter) }.getOrNull()
-    }
-    
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)
@@ -124,7 +194,7 @@ fun ShiftEditDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = if (isNewShift) "Neue Schichtdefinition" else "Schicht bearbeiten",
+                        text = "Neue Schichtdefinition",
                         style = MaterialTheme.typography.headlineSmall,
                         fontWeight = FontWeight.Bold,
                         // weight(1f): sonst lief der Titel bei 320 dp + Schrift 1,3 bis unter das X
@@ -134,284 +204,23 @@ fun ShiftEditDialog(
                         Icon(Icons.Default.Close, contentDescription = "Schließen")
                     }
                 }
-                
+
                 Spacer(modifier = Modifier.height(SpacingConstants.SPACING_LARGE))
-                
+
                 // Content
                 LazyColumn(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_LARGE)
                 ) {
-                    item {
-                        OutlinedTextField(
-                            value = name,
-                            onValueChange = { name = it },
-                            label = { Text("Schichtname") },
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true,
-                            isError = name.isBlank(),
-                            // Keine unbedingte Zusage: planeSchichtUmbenennungen() kann den Nachzug
-                            // blockieren, das Ergebnis meldet regelNachzugHinweis - Hergang schichterkennung.md.
-                            supportingText = if (istUmbenennung) {
-                                {
-                                    Text(
-                                        text = "Dimmer- und Hue-Regeln, die auf \"${shift.name}\" " +
-                                            "zeigen, werden beim Speichern nach Möglichkeit auf " +
-                                            "den neuen Namen umgestellt. Klappt das nicht – etwa " +
-                                            "weil der neue Name schon vergeben ist –, sagt die " +
-                                            "App es dir; dann wählst du die Schicht in der " +
-                                            "betroffenen Regel neu aus.",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            } else {
-                                null
-                            }
-                        )
-                    }
-                    
-                    item {
-                        Text(
-                            text = "Erkennungsmuster",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            text = "Ein Muster trifft, wenn es im Titel des Kalendertermins als " +
-                                "eigenes Wort vorkommt (\"FD\" trifft \"FD Station 3\", nicht " +
-                                "\"FD2\"). Der Schichtname oben zählt ab zwei Zeichen " +
-                                "ebenfalls als Muster.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    
-                    // Pattern inputs
-                    keywords.forEachIndexed { index, keyword ->
-                        item {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_SMALL),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                OutlinedTextField(
-                                    value = keyword,
-                                    onValueChange = { newValue ->
-                                        keywords = keywords.toMutableList().apply {
-                                            this[index] = newValue
-                                        }
-                                    },
-                                    label = { Text("Muster ${index + 1}") },
-                                    modifier = Modifier.weight(1f),
-                                    singleLine = true,
-                                    isError = keyword.isBlank(),
-                                    // Warnen statt verbieten: einbuchstabige Muster treffen
-                                    // fremde Termine - schichterkennung.md. #142: bei einer
-                                    // Krankmeldung ist die Folge die UMGEKEHRTE (ein fehlender
-                                    // Wecker), der Text folgt dem Schalter.
-                                    supportingText = ShiftDefinitionTexte.einBuchstabeWarnung(keyword, kategorie, weckerAn)?.let { warnung ->
-                                        {
-                                            Text(
-                                                text = warnung,
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.error
-                                            )
-                                        }
-                                    }
-                                )
-                                
-                                if (keywords.size > 1) {
-                                    IconButton(
-                                        onClick = {
-                                            keywords = keywords.filterIndexed { i, _ -> i != index }
-                                        }
-                                    ) {
-                                        Icon(
-                                            Icons.Default.Remove,
-                                            contentDescription = "Muster entfernen",
-                                            tint = MaterialTheme.colorScheme.error
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    
-                    item {
-                        TextButton(
-                            onClick = { keywords = keywords + "" },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            // dekorativ: "Weiteres Muster hinzufügen" steht als Knopftext daneben
-                            Icon(Icons.Default.Add, contentDescription = null)
-                            Spacer(modifier = Modifier.width(SpacingConstants.SPACING_SMALL))
-                            Text("Weiteres Muster hinzufügen")
-                        }
-                    }
-
-                    // Umbau E1: die Kategorie steht direkt unter den Mustern, weil sie entscheidet,
-                    // was darunter etwas bedeutet (#142: Krank stellt nie einen Wecker). Sieben
-                    // Zeilen mit Kurzbeschreibung statt der Schalter „Krankmeldung“ und
-                    // „Rufbereitschaft“; ein Wechsel behaelt alle Einstellungen (E2).
-                    item {
-                        Text(
-                            text = ShiftDefinitionTexte.KATEGORIE_TITEL,
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            text = ShiftDefinitionTexte.KATEGORIE_HINWEIS,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-
-                    item {
-                        Column(modifier = Modifier.fillMaxWidth().selectableGroup()) {
-                            ShiftKategorie.entries.forEach { option ->
-                                KategorieZeile(
-                                    option = option,
-                                    gewaehlt = kategorie == option,
-                                    onWahl = { kategorie = option }
-                                )
-                                // Der Text erklaert das WARUM, nicht nur das Was: welches Kuerzel eine
-                                // Rufbereitschaft ist, weiss nur der Nutzer seiner Station - die App
-                                // kann es nicht erraten, und ohne die Begruendung ("kein Stups vom
-                                // Kalender") wirkt der stuendliche Abruf wie Batterieverschwendung.
-                                if (kategorie == option && option == ShiftKategorie.RUFBEREITSCHAFT) {
-                                    Text(
-                                        text = ShiftDefinitionTexte.RUFBEREITSCHAFT_HINWEIS,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.padding(
-                                            start = KATEGORIE_TEXT_EINZUG,
-                                            bottom = SpacingConstants.SPACING_SMALL
-                                        )
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    if (ShiftEditFormular.zeigtWeckerBlock(kategorie)) {
-                        item {
-                            Text(
-                                text = ShiftDefinitionTexte.WECKER_ABSCHNITT_TITEL,
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-
-                        item {
-                            SwitchRow(
-                                title = ShiftDefinitionTexte.WECKER_AN_TITEL,
-                                description = if (weckerAn) {
-                                    ShiftDefinitionTexte.WECKER_AN_HINWEIS
-                                } else {
-                                    ShiftDefinitionTexte.WECKER_AUS_HINWEIS
-                                },
-                                checked = weckerAn,
-                                onCheckedChange = { weckerAn = it },
-                                titleFontWeight = FontWeight.Normal
-                            )
-                        }
-
-                        // Weckzeit und „Stummer Wecker“ wirken nur bei eingeschaltetem Wecker: sie
-                        // bleiben sichtbar, aber ausgegraut (wie im Prototyp), ihre Werte bleiben stehen.
-                        item {
-                            Text(
-                                text = ShiftDefinitionTexte.WECKZEIT_TITEL,
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold
-                            )
-
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_LARGE),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                OutlinedTextField(
-                                    value = alarmTimeString,
-                                    onValueChange = { newValue ->
-                                        // Validate time format
-                                        if (newValue.matches(Regex("^\\d{0,2}:?\\d{0,2}$"))) {
-                                            alarmTimeString = newValue
-                                        }
-                                    },
-                                    label = { Text("Zeit (HH:mm)") },
-                                    modifier = Modifier.weight(1f),
-                                    singleLine = true,
-                                    enabled = weckerAn,
-                                    isError = weckerAn && parsedAlarmTime == null
-                                )
-
-                                Text(
-                                    text = "Format: 06:30",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-
-                        // SwitchRow statt drei handgebauter Zeilen (#132, G2-05): weight(1f) am Text und
-                        // 12 dp Abstand - vorher stiess der Text am Schalter an (Bildvergleich 01.10.2026).
-                        item {
-                            Column(modifier = Modifier.alpha(if (weckerAn) 1f else AUSGEGRAUT_ALPHA)) {
-                                SwitchRow(
-                                    title = ShiftDefinitionTexte.STUMMER_WECKER_TITEL,
-                                    description = ShiftDefinitionTexte.STUMMER_WECKER_HINWEIS,
-                                    checked = isSilent,
-                                    onCheckedChange = { isSilent = it },
-                                    enabled = weckerAn,
-                                    titleFontWeight = FontWeight.Normal
-                                )
-                            }
-                        }
-                    } else {
-                        // #142/#167: statt der Weckzeit der Hinweis, was dieser Typ tatsaechlich tut -
-                        // ein Feld ohne Wirkung wuerde einen Wecker zeigen, den es nie gibt.
-                        item {
-                            Text(
-                                text = if (isSickDay) {
-                                    ShiftDefinitionTexte.KRANKMELDUNG_HINWEIS
-                                } else {
-                                    ShiftDefinitionTexte.IGNORIEREN_STATT_WECKER
-                                },
-                                style = MaterialTheme.typography.bodyMedium
-                            )
-                        }
-                    }
-
-                    item {
-                        // Der Schalter daneben hat eine Erklaerung, dieser hatte keine - und
-                        // genau daran ist am 19.08.2026 eine Rufbereitschaft gescheitert: sie
-                        // wurde AUSGESCHALTET angelegt, damit sie nicht klingelt, sollte aber
-                        // weiterhin "Nicht stoeren" steuern. Ausschalten beendet jedoch die
-                        // ERKENNUNG, und ohne erkannte Schicht gibt es keine Schichtspanne -
-                        // also auch kein DND- und kein Dimmer-Fenster. Wer "kein Wecker, aber
-                        // Zeitfenster" will, schaltet „Wecker an diesem Tag“ aus (#168).
-                        SwitchRow(
-                            title = "Schichtdefinition aktiviert",
-                            // #142: der Wecker-aus-Verweis passt nicht auf eine Krankmeldung -
-                            // dort kostet "aus" die Tagesfreigabe, nicht ein Zeitfenster.
-                            description = when {
-                                isSickDay -> ShiftDefinitionTexte.KRANKMELDUNG_AKTIVIERT_HINWEIS
-                                // Ignorieren ergibt nie einen Wecker, und der Schalter „Wecker an diesem
-                                // Tag“ ist dort ausgeblendet - der allgemeine Hinweis verwiese ins Leere.
-                                kategorie == ShiftKategorie.IGNORIEREN ->
-                                    ShiftDefinitionTexte.IGNORIEREN_AKTIVIERT_HINWEIS
-                                else -> ShiftDefinitionTexte.AKTIVIERT_HINWEIS
-                            },
-                            checked = isEnabled,
-                            onCheckedChange = { isEnabled = it },
-                            titleFontWeight = FontWeight.Normal
-                        )
-                    }
+                    typFormularFelder(
+                        entwurf = entwurf,
+                        bestehenderName = null,
+                        aendere = { aenderung -> entwurf = aenderung(entwurf) }
+                    )
                 }
-                
+
                 Spacer(modifier = Modifier.height(SpacingConstants.SPACING_LARGE))
-                
+
                 // Actions - KnopfZeile + CompactButton statt Row + weight(1f) + Button: bei 320 dp
                 // mit Schrift 1,3 blieben im rechten Knopf 68 dp fuer "Speichern" (Wortbruch).
                 KnopfZeile(
@@ -422,40 +231,308 @@ fun ShiftEditDialog(
                         onClick = onDismiss,
                         text = "Abbrechen"
                     )
-                    
-                    CompactButton(
-                        text = if (isNewShift) "Erstellen" else "Speichern",
-                        onClick = {
-                            // Trimmen ist Pflicht (Wortgrenzen-Regex), distinct gegen Doppel - schichterkennung.md.
-                            val validKeywords = ShiftEditFormular.bereinigteMuster(keywords)
-                            // #142: bei Krankmeldung ist die Weckzeit formal (Serialisierung), darf also
-                            // nicht blockieren - ebenso bei Wecker aus und Ignorieren (E2: der Wert bleibt).
-                            val zeit = ShiftEditFormular.zeitZumSpeichern(kategorie, weckerAn, parsedAlarmTime, ausgang)
 
-                            if (name.isNotBlank() && validKeywords.isNotEmpty() && zeit != null) {
-                                onSave(
-                                    ShiftEditFormular.speichern(
-                                        ausgang = ausgang,
-                                        name = name,
-                                        muster = validKeywords,
-                                        alarmTime = zeit,
-                                        isEnabled = isEnabled,
-                                        weckerAn = weckerAn,
-                                        isSilent = isSilent,
-                                        kategorie = kategorie
-                                    )
-                                )
+                    CompactButton(
+                        text = "Erstellen",
+                        onClick = {
+                            entwurf.alsDefinition(vorlage)?.let { definition ->
+                                onSave(definition)
                                 onDismiss()
                             }
                         },
                         // #142: das verborgene Zeitfeld darf das Speichern nicht grundlos sperren.
-                        enabled = name.isNotBlank() &&
-                                 keywords.any { it.isNotBlank() } &&
-                                 (!ShiftEditFormular.weckzeitPflicht(kategorie, weckerAn) || parsedAlarmTime != null)
+                        enabled = entwurf.speicherbar
                     )
                 }
             }
         }
+    }
+}
+
+/**
+ * Die Felder des Typ-Editors, in dieser Reihenfolge - EINE Quelle fuer den Dialog (Neuanlage) und
+ * die Typ-Seite (Bearbeiten, Umbau #187). Der Aufrufer besitzt den Zustand: [entwurf] wird
+ * angezeigt, jede Eingabe laeuft als Umformung durch [aendere]. Eine Umformung statt eines
+ * fertigen Werts, damit zwei Eingaben im selben Frame sich nicht gegenseitig mit einem
+ * veralteten Stand ueberschreiben. [bestehenderName] ist der gespeicherte Name des bearbeiteten
+ * Typs (`null` = Neuanlage) - nur er loest den Umbenennungs-Hinweis aus.
+ */
+internal fun LazyListScope.typFormularFelder(
+    entwurf: TypEntwurf,
+    bestehenderName: String?,
+    aendere: ((TypEntwurf) -> TypEntwurf) -> Unit
+) {
+    val kategorie = entwurf.kategorie
+    val weckerAn = entwurf.weckerAn
+    val isSickDay = entwurf.isSickDay
+
+    item {
+        OutlinedTextField(
+            value = entwurf.name,
+            onValueChange = { neu -> aendere { it.copy(name = neu) } },
+            label = { Text("Schichtname") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            isError = entwurf.name.isBlank(),
+            // Keine unbedingte Zusage: planeSchichtUmbenennungen() kann den Nachzug
+            // blockieren, das Ergebnis meldet regelNachzugHinweis - Hergang schichterkennung.md.
+            supportingText = if (entwurf.istUmbenennungVon(bestehenderName)) {
+                {
+                    Text(
+                        text = "Dimmer- und Hue-Regeln, die auf \"$bestehenderName\" " +
+                            "zeigen, werden beim Speichern nach Möglichkeit auf " +
+                            "den neuen Namen umgestellt. Klappt das nicht – etwa " +
+                            "weil der neue Name schon vergeben ist –, sagt die " +
+                            "App es dir; dann wählst du die Schicht in der " +
+                            "betroffenen Regel neu aus.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            } else {
+                null
+            }
+        )
+    }
+
+    item {
+        Text(
+            text = "Erkennungsmuster",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold
+        )
+        Text(
+            text = "Ein Muster trifft, wenn es im Titel des Kalendertermins als " +
+                "eigenes Wort vorkommt (\"FD\" trifft \"FD Station 3\", nicht " +
+                "\"FD2\"). Der Schichtname oben zählt ab zwei Zeichen " +
+                "ebenfalls als Muster.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+
+    // Pattern inputs
+    entwurf.muster.forEachIndexed { index, keyword ->
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_SMALL),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedTextField(
+                    value = keyword,
+                    onValueChange = { newValue ->
+                        aendere { e ->
+                            e.copy(muster = e.muster.toMutableList().apply {
+                                if (index in indices) this[index] = newValue
+                            })
+                        }
+                    },
+                    label = { Text("Muster ${index + 1}") },
+                    modifier = Modifier.weight(1f),
+                    singleLine = true,
+                    isError = keyword.isBlank(),
+                    // Warnen statt verbieten: einbuchstabige Muster treffen
+                    // fremde Termine - schichterkennung.md. #142: bei einer
+                    // Krankmeldung ist die Folge die UMGEKEHRTE (ein fehlender
+                    // Wecker), der Text folgt dem Schalter.
+                    supportingText = ShiftDefinitionTexte.einBuchstabeWarnung(keyword, kategorie, weckerAn)?.let { warnung ->
+                        {
+                            Text(
+                                text = warnung,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
+                    }
+                )
+
+                if (entwurf.muster.size > 1) {
+                    IconButton(
+                        onClick = {
+                            aendere { e -> e.copy(muster = e.muster.filterIndexed { i, _ -> i != index }) }
+                        }
+                    ) {
+                        Icon(
+                            Icons.Default.Remove,
+                            contentDescription = "Muster entfernen",
+                            tint = MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    item {
+        TextButton(
+            onClick = { aendere { it.copy(muster = it.muster + "") } },
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            // dekorativ: "Weiteres Muster hinzufügen" steht als Knopftext daneben
+            Icon(Icons.Default.Add, contentDescription = null)
+            Spacer(modifier = Modifier.width(SpacingConstants.SPACING_SMALL))
+            Text("Weiteres Muster hinzufügen")
+        }
+    }
+
+    // Umbau E1: die Kategorie steht direkt unter den Mustern, weil sie entscheidet,
+    // was darunter etwas bedeutet (#142: Krank stellt nie einen Wecker). Sieben
+    // Zeilen mit Kurzbeschreibung statt der Schalter „Krankmeldung“ und
+    // „Rufbereitschaft“; ein Wechsel behaelt alle Einstellungen (E2).
+    item {
+        Text(
+            text = ShiftDefinitionTexte.KATEGORIE_TITEL,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold
+        )
+        Text(
+            text = ShiftDefinitionTexte.KATEGORIE_HINWEIS,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+
+    item {
+        Column(modifier = Modifier.fillMaxWidth().selectableGroup()) {
+            ShiftKategorie.entries.forEach { option ->
+                KategorieZeile(
+                    option = option,
+                    gewaehlt = kategorie == option,
+                    onWahl = { aendere { it.copy(kategorie = option) } }
+                )
+                // Der Text erklaert das WARUM, nicht nur das Was: welches Kuerzel eine
+                // Rufbereitschaft ist, weiss nur der Nutzer seiner Station - die App
+                // kann es nicht erraten, und ohne die Begruendung ("kein Stups vom
+                // Kalender") wirkt der stuendliche Abruf wie Batterieverschwendung.
+                if (kategorie == option && option == ShiftKategorie.RUFBEREITSCHAFT) {
+                    Text(
+                        text = ShiftDefinitionTexte.RUFBEREITSCHAFT_HINWEIS,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(
+                            start = KATEGORIE_TEXT_EINZUG,
+                            bottom = SpacingConstants.SPACING_SMALL
+                        )
+                    )
+                }
+            }
+        }
+    }
+
+    if (ShiftEditFormular.zeigtWeckerBlock(kategorie)) {
+        item {
+            Text(
+                text = ShiftDefinitionTexte.WECKER_ABSCHNITT_TITEL,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+        }
+
+        item {
+            SwitchRow(
+                title = ShiftDefinitionTexte.WECKER_AN_TITEL,
+                description = if (weckerAn) {
+                    ShiftDefinitionTexte.WECKER_AN_HINWEIS
+                } else {
+                    ShiftDefinitionTexte.WECKER_AUS_HINWEIS
+                },
+                checked = weckerAn,
+                onCheckedChange = { neu -> aendere { it.copy(weckerAn = neu) } },
+                titleFontWeight = FontWeight.Normal
+            )
+        }
+
+        // Weckzeit und „Stummer Wecker“ wirken nur bei eingeschaltetem Wecker: sie
+        // bleiben sichtbar, aber ausgegraut (wie im Prototyp), ihre Werte bleiben stehen.
+        item {
+            Text(
+                text = ShiftDefinitionTexte.WECKZEIT_TITEL,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_LARGE),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedTextField(
+                    value = entwurf.weckzeitText,
+                    onValueChange = { newValue ->
+                        // Validate time format
+                        if (newValue.matches(Regex("^\\d{0,2}:?\\d{0,2}$"))) {
+                            aendere { it.copy(weckzeitText = newValue) }
+                        }
+                    },
+                    label = { Text("Zeit (HH:mm)") },
+                    modifier = Modifier.weight(1f),
+                    singleLine = true,
+                    enabled = weckerAn,
+                    isError = weckerAn && entwurf.weckzeit == null
+                )
+
+                Text(
+                    text = "Format: 06:30",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        // SwitchRow statt drei handgebauter Zeilen (#132, G2-05): weight(1f) am Text und
+        // 12 dp Abstand - vorher stiess der Text am Schalter an (Bildvergleich 01.10.2026).
+        item {
+            Column(modifier = Modifier.alpha(if (weckerAn) 1f else AUSGEGRAUT_ALPHA)) {
+                SwitchRow(
+                    title = ShiftDefinitionTexte.STUMMER_WECKER_TITEL,
+                    description = ShiftDefinitionTexte.STUMMER_WECKER_HINWEIS,
+                    checked = entwurf.isSilent,
+                    onCheckedChange = { neu -> aendere { it.copy(isSilent = neu) } },
+                    enabled = weckerAn,
+                    titleFontWeight = FontWeight.Normal
+                )
+            }
+        }
+    } else {
+        // #142/#167: statt der Weckzeit der Hinweis, was dieser Typ tatsaechlich tut -
+        // ein Feld ohne Wirkung wuerde einen Wecker zeigen, den es nie gibt.
+        item {
+            Text(
+                text = if (isSickDay) {
+                    ShiftDefinitionTexte.KRANKMELDUNG_HINWEIS
+                } else {
+                    ShiftDefinitionTexte.IGNORIEREN_STATT_WECKER
+                },
+                style = MaterialTheme.typography.bodyMedium
+            )
+        }
+    }
+
+    item {
+        // Der Schalter daneben hat eine Erklaerung, dieser hatte keine - und
+        // genau daran ist am 19.08.2026 eine Rufbereitschaft gescheitert: sie
+        // wurde AUSGESCHALTET angelegt, damit sie nicht klingelt, sollte aber
+        // weiterhin "Nicht stoeren" steuern. Ausschalten beendet jedoch die
+        // ERKENNUNG, und ohne erkannte Schicht gibt es keine Schichtspanne -
+        // also auch kein DND- und kein Dimmer-Fenster. Wer "kein Wecker, aber
+        // Zeitfenster" will, schaltet „Wecker an diesem Tag“ aus (#168).
+        SwitchRow(
+            title = "Schichtdefinition aktiviert",
+            // #142: der Wecker-aus-Verweis passt nicht auf eine Krankmeldung -
+            // dort kostet "aus" die Tagesfreigabe, nicht ein Zeitfenster.
+            description = when {
+                isSickDay -> ShiftDefinitionTexte.KRANKMELDUNG_AKTIVIERT_HINWEIS
+                // Ignorieren ergibt nie einen Wecker, und der Schalter „Wecker an diesem
+                // Tag“ ist dort ausgeblendet - der allgemeine Hinweis verwiese ins Leere.
+                kategorie == ShiftKategorie.IGNORIEREN ->
+                    ShiftDefinitionTexte.IGNORIEREN_AKTIVIERT_HINWEIS
+                else -> ShiftDefinitionTexte.AKTIVIERT_HINWEIS
+            },
+            checked = entwurf.isEnabled,
+            onCheckedChange = { neu -> aendere { it.copy(isEnabled = neu) } },
+            titleFontWeight = FontWeight.Normal
+        )
     }
 }
 

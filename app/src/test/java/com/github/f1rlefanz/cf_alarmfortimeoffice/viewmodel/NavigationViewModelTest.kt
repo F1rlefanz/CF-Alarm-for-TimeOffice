@@ -428,6 +428,43 @@ class NavigationViewModelTest {
         assertEquals(NavigationState.HueSettings(MainTab.HUE), vm.navigationState.value)
     }
 
+    // ---- Typ-Seite (Umbau #187) ---------------------------------------------------------
+
+    @Test
+    fun `NavigateToTypSeite setzt TypSeite mit id und Herkunftstab`() {
+        val vm = newViewModel()
+        vm.handleNavigationAction(NavigationAction.NavigateToTypSeite("typ-1", MainTab.WECKER))
+        assertEquals(NavigationState.TypSeite("typ-1", MainTab.WECKER), vm.navigationState.value)
+    }
+
+    @Test
+    fun `Zurueck aus der Typ-Seite fuehrt zur Typ-Liste und von dort zum Tab - nie still auf HOME`() {
+        // Ohne den Zweig in rueckwegZiel faellt TypSeite in den else-Zweig und landet auf HOME;
+        // der Compiler meldet das nicht. Die Kette prueft beide Stufen mit einem Tab, der NICHT
+        // der Default ist (SETTINGS ist Default der Typ-Seite, WECKER nicht).
+        val vm = newViewModel()
+        vm.navigateToShiftConfig(MainTab.WECKER)
+        vm.navigateToTypSeite("typ-1", MainTab.WECKER)
+
+        vm.navigateBackToMain()
+        assertEquals(NavigationState.ShiftConfig(MainTab.WECKER), vm.navigationState.value)
+
+        vm.navigateBackToMain()
+        assertEquals(NavigationState.MainContent(MainTab.WECKER), vm.navigationState.value)
+    }
+
+    @Test
+    fun `navigateBackFrom mit dem gerenderten TypSeite-Zustand ist idempotent`() {
+        // BackHandler, Zurueck-Pfeil, Speichern und "Verwerfen" rufen alle navigateBackFrom(state)
+        // mit dem GERENDERTEN Zustand: ein zweiter Tipp springt nicht von der Liste weiter nach Main.
+        val vm = newViewModel()
+        vm.navigateToTypSeite("typ-1", MainTab.STATUS)
+        val gerendert = vm.navigationState.value
+        vm.navigateBackFrom(gerendert)
+        vm.navigateBackFrom(gerendert)
+        assertEquals(NavigationState.ShiftConfig(MainTab.STATUS), vm.navigationState.value)
+    }
+
     @Test
     fun `navigationState startet als MainContent HOME`() {
         val vm = newViewModel()

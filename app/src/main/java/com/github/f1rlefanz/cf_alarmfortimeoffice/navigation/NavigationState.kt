@@ -14,6 +14,18 @@ sealed class NavigationState {
     data class ShiftConfig(val returnToTab: MainTab = MainTab.WECKER) : NavigationState()
     data class EventList(val returnToTab: MainTab = MainTab.HOME) : NavigationState()
 
+    /**
+     * Die Typ-Seite (Umbau, SPEC 3.3): ein Schichttyp als eigener Bildschirm, erreichbar nur aus
+     * [ShiftConfig]. Zurueck fuehrt dorthin (NavigationViewModel.rueckwegZiel), mit demselben
+     * [returnToTab] - nicht auf die Uebersicht. [definitionId] ist die stabile id des Typs, nie sein
+     * Name (der ist frei aenderbar). Der Entwurf liegt im Bildschirm, nicht hier: dieser Zustand
+     * bleibt eine reine Adresse.
+     */
+    data class TypSeite(
+        val definitionId: String,
+        val returnToTab: MainTab = MainTab.SETTINGS
+    ) : NavigationState()
+
     // Onboarding-Screens
     data class BatteryExemption(val returnToTab: MainTab = MainTab.HOME) : NavigationState()
     data class UnusedAppRestrictions(val returnToTab: MainTab = MainTab.HOME) : NavigationState()
@@ -106,6 +118,10 @@ sealed class NavigationAction {
     data class NavigateToCalendarSelection(val fromTab: MainTab = MainTab.HOME) : NavigationAction()
     data class NavigateToShiftConfig(val fromTab: MainTab = MainTab.SETTINGS) : NavigationAction()
     data class NavigateToEventList(val fromTab: MainTab = MainTab.HOME) : NavigationAction()
+    data class NavigateToTypSeite(
+        val definitionId: String,
+        val fromTab: MainTab = MainTab.SETTINGS
+    ) : NavigationAction()
 
     // Onboarding Navigation Actions
     data class NavigateToBatteryExemption(val fromTab: MainTab = MainTab.HOME) : NavigationAction()

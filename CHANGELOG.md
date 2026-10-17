@@ -27,7 +27,30 @@ Schreibkonventionen (der Generator verlässt sich darauf):
 - `### 🐛 Behoben` — Rubrik, mit Emoji wie bisher.
 - `- **Kurzfassung:** Erklärung` — ein Eintrag.
 
-## 🆕 Version 1.56.2 (Aktuell – interne Alpha)
+## 🆕 Version 1.57.0 (Aktuell – interne Alpha)
+
+**Stand:** Oktober 2026
+
+_Schichttypen haben jetzt Kategorien, Kürzel aus dem Kalender lassen sich einordnen, und Tage ganz ohne Kalendereintrag können wie ein Schichttyp wecken._
+
+### ✨ Neu
+
+- **Schichttypen nach Kategorien geordnet:** In den Einstellungen sind deine Schichttypen jetzt in Gruppen sortiert – Dienst, Rufbereitschaft, Frei, Urlaub, Fortbildung, Krank und Ignorieren. Jede Zeile zeigt ein farbiges Kürzel, den Namen und eine Kurzfassung der Einstellungen; Rufbereitschaft und Krank sind als „Sonderfall“ markiert. Die Reihenfolge, in der die App deine Typen beim Erkennen durchgeht, ändert sich dadurch nicht.
+- **Kategorie und „Wecker an diesem Tag“ im Schicht-Editor:** Im Schicht-Editor wählst du jetzt eine Kategorie statt einzelner Schalter. Neu ist „Wecker an diesem Tag“: ein Schichttyp kann erkannt werden, ohne zu wecken. „Stille Schicht“ heißt jetzt „Stummer Wecker“.
+- **Kürzel aus dem Kalender einordnen:** Kürzel, die noch keinem Typ gehören, stehen unter Einstellungen → Schichttypen ganz oben im Kasten „Im Kalender gefunden, noch nicht eingeordnet“. Mit „Einordnen …“ wählst du, ob das Kürzel zu einem bestehenden Typ gehört oder ein neuer Typ in einer Kategorie wird (angelegt erst, wenn du „Erstellen“ tippst); „Ignorieren“ übergeht das Kürzel.
+- **Tage ohne Kalendereintrag wie ein Schichttyp:** Tippe in den Schichttypen auf die feste Zeile „Ohne Kalendereintrag“ und wähle „Wie Frühschicht“ (oder einen anderen Typ). An jedem leeren Tag klingelt dann der Wecker dieses Typs und verschwindet von selbst, sobald dort ein Termin steht oder du die Wahl zurücknimmst. Im Bereich „Wecker“ steht an so einem Tag nur der Wecker – Dimmen und „Nicht stören“ des Typs gelten dort nicht. Steht in der ganzen Kalender-Vorausschau kein einziger Termin, stellt die App vorsichtshalber keinen Wecker. Löschst du den gewählten Typ, fällt die Zeile auf „Eigene Einstellungen“ zurück.
+
+### 🎨 Feinschliff
+
+- **Einsatz am Rufbereitschaftstag:** Wird an einem Rufbereitschaftstag ein Dienst eingetragen (ein Einsatz), weckt dich an diesem Tag nur noch der Wecker des Dienstes – der Wecker der Rufbereitschaft entfällt. Die stündliche Kalender-Abfrage der Rufbereitschaft bleibt aktiv. Wird der Einsatz wieder gestrichen, kommt der Rufbereitschafts-Wecker zurück.
+- **Auswahllisten nur mit Typen, die wirken:** Ausgeschaltete und ignorierte Schichttypen werden bei Dimmer-Regeln, „Nicht stören“-Ausnahmen, Hue-Regeln und beim manuellen Wecker nicht mehr zur Wahl angeboten.
+- **Zurücksetzen sagt, was verloren geht:** Die Rückfrage bei „Auf Standardwerte zurücksetzen“ nennt jetzt auch Kategorien, „Wecker an diesem Tag“, „Stummer Wecker“ und die Wahl bei „Ohne Kalendereintrag“.
+
+### 🐛 Behoben
+
+- **Kein erfundener Schichtbeginn:** Der manuelle Wecker und ein Wecker an einem Tag ohne Kalendereintrag zeigen keinen Schichtbeginn mehr. Bisher stand dort die Weckzeit als „Deine Schicht beginnt um …“.
+
+## Version 1.56.2
 
 **Stand:** Oktober 2026
 

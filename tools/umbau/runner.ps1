@@ -34,7 +34,8 @@ $Emu = 'emulator-5554'
 $Avd = 'Medium_Phone'
 $Sdk = Join-Path $env:LOCALAPPDATA 'Android\Sdk'
 $Adb = Join-Path $Sdk 'platform-tools\adb.exe'
-$Caps = @{ 'groesse-S' = 40; 'groesse-M' = 60 }
+# M von 60 auf 75 (17.10.2026): drei von fuenf UI-Paketen in Etappe 1 brauchten bei 60 einen zweiten Lauf.
+$Caps = @{ 'groesse-S' = 40; 'groesse-M' = 75 }
 $SkillEtappen = @(3, 9)   # brauchen vorher Label skills-bereit-N am Epic (ABLAUF Abschnitt 3)
 
 New-Item -ItemType Directory -Force $Logs | Out-Null
@@ -279,7 +280,12 @@ Fertig, wenn alle Pakete angelegt sind, ihre Dateilisten und Blockiert-von stimm
     }
     return @"
 /goal Du bist der Betreuer des Umbaus "Schichttyp als Zentrale". Schliesse Etappe $n (Issue #$($etIssue.number)) nach entwurf/umbau-schichttyp/ABLAUF.md Abschnitt 7 ab. Arbeite im Worktree $WtBase\integration bzw. $WtBase\main.
-Use a workflow fuer die Gegenpruefung (Schritt 2): Dimensionen nach Risiko, Fable, 3er-Widerlegung, bestaetigte Befunde beheben.
+Use a workflow fuer die Gegenpruefung (Schritt 2): hoechstens 3 Dimensionen nach Risiko mit Opus, Widerlegung je Befund durch 3 Sonnet-Agenten, bestaetigte Befunde beheben (Test zuerst rot).
+KONTINGENT: Ein Workflow mit Fable-Agenten hat am 17.10.2026 zweimal ein ganzes 5-h-Fenster verbraucht und brach am Limit ab. Deshalb:
+- Schreibe die Rohbefunde SOFORT nach dem Workflow nach $Proj\etappe-$n-gegenpruefung.md, danach die Urteile.
+- Liegt diese Datei schon vor (Teilarbeit eines frueheren Anlaufs): NICHT neu suchen. Nur fortsetzen (fehlende Urteile, Fixes) und nur die Commits seit dem dort genannten Stand pruefen.
+- Halte jede bestandene Pruefung aus Schritt 3 mit Zeit und Commit in $Proj\etappe-$n-abschluss.md fest; bei einer Fortsetzung nur wiederholen, was die Commits seitdem betreffen koennen.
+- Fruehere Anlaeufe: $Logs\etappe-$n-abschluss-*.log (lesbares Live-Log).
 Fertig erst, wenn jede Pruefung aus Schritt 3 mit Beleg im Transcript steht, main gemergt, Bump (Minor; Etappe 0 nur Patch, sie enthaelt nur Fehlerbehebungen) und Changelog gepusht sind (Schleuse gruen), #$($etIssue.number) geschlossen und ein Bericht im Epic steht.
 Ist eine Pruefung rot und nicht behebbar: nichts nach main, Bericht in #$($etIssue.number), Label blockiert. Konsultiere den Advisor vor dem Merge nach main. Keine Rueckfragen. Stoppe nach 80 Turns.
 "@

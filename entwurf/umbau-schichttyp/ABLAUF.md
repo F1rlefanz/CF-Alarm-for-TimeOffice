@@ -181,9 +181,13 @@ Ein Bump auf `main` liefert an die Tester aus. Weil die Auslieferung ohne Abnahm
 läuft, sind die Wachen hier strenger als bisher. Der Betreuer-Lauf macht der Reihe nach:
 
 1. `git fetch`, `origin/main` in den Integrations-Branch mergen (parallele Sitzungen!).
-2. **Gegenprüfung** per Workflow über den Etappen-Diff: Dimensionen nach Risiko (mindestens
-   Wecker-Invarianten, Persistenz/Migration, UI 320 dp), Fable, 3er-Widerlegung, bestätigte Befunde
-   beheben. Zahlen nach `project_prueflauf_historie`.
+2. **Gegenprüfung** per Workflow über den Etappen-Diff: höchstens drei Dimensionen nach Risiko
+   (mindestens Wecker-Invarianten, Persistenz/Migration, UI 320 dp) mit **Opus**, je Befund drei
+   **Sonnet**-Widerleger, bestätigte Befunde beheben. Zahlen nach `project_prueflauf_historie`.
+   Rohbefunde und Urteile landen **sofort** in `..Projektdateien/umbau/etappe-N-gegenpruefung.md`,
+   bestandene Prüfungen aus Schritt 3 in `etappe-N-abschluss.md`; ein Fortsetzungs-Anlauf sucht
+   nicht neu, sondern macht dort weiter. Hergang (17.10.2026): Ein Workflow mit Fable-Agenten
+   verbrauchte zweimal ein ganzes 5-h-Fenster, brach am Limit ab und begann beim Neustart von vorn.
 3. **Volle Prüfung am Emulator**, jede mit Beleg im Log:
    voller Testlauf + Lint · Release-Build (R8) Kaltstart ohne Absturz · alle Tabs einmal
    durchklicken · Wecker per Zeitsprung auslösen (Vollbild, Schlummern, Aus) · Direct Boot mit PIN ·

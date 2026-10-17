@@ -1,11 +1,29 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.receiver
 
 import com.github.f1rlefanz.cf_alarmfortimeoffice.Kerntest
+import com.github.f1rlefanz.cf_alarmfortimeoffice.data.CalendarSelectionRepository
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmInfo
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.CalendarEvent
+import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.AlarmUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.CalendarFetchOutcome
+import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.ICalendarUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IShiftUseCase
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.experimental.categories.Category
+import org.mockito.kotlin.any
+import org.mockito.kotlin.doReturn
+import org.mockito.kotlin.mock
+import org.mockito.kotlin.never
+import org.mockito.kotlin.verifyBlocking
+import java.time.LocalDate
+import java.time.LocalDateTime
+import kotlin.coroutines.Continuation
+import kotlin.coroutines.intrinsics.suspendCoroutineUninterceptedOrReturn
 
 /**
  * Boot-Recovery darf nicht auf einem veralteten Alarm-Snapshot loeschen.
@@ -319,5 +337,146 @@ class BootAlarmHorizontTest {
                 abrufHorizontEnde = horizont
             )
         )
+    }
+}
+
+/**
+ * #182: Ein Neustart behaelt die Wecker an Tagen ohne Kalendereintrag.
+ *
+ * SZENARIO: "Ohne Kalendereintrag" wie <Typ> stellt an einem leeren Tag einen Wecker mit der
+ * Kennung `ohne-eintrag:<Datum>` (#175). So eine Kennung steht nie in der Kalenderlesung, und ihr
+ * Weckpunkt auch nicht - es gibt keinen Termin. Die Boot-Validierung urteilte deshalb bei jedem
+ * Neustart mit vollstaendigem Abruf "Termin weg" und loeschte den Wecker. Zurueck kam er nur, wenn
+ * der parallele Wartungs-Anker NACH dem Loeschen synchronisierte; sonst fehlte er bis zur naechsten
+ * 6-h-Wartung, im schlimmsten Fall der Wecker des naechsten Morgens.
+ *
+ * Ob der Tag noch leer ist, entscheidet allein `syncAlarms()` (`tageOhneEintrag`); die
+ * Boot-Validierung urteilt ueber diese Wecker nicht, sondern stellt sie wieder her.
+ */
+class BootAlarmOhneEintragTest {
+
+    private val jetzt = System.currentTimeMillis()
+
+    /** Der Wecker, den "Ohne Kalendereintrag" wie Frei an einem leeren Tag gestellt hat. */
+    private val ohneEintrag = AlarmUseCase.ohneEintragKennung(LocalDate.now().plusDays(2)).let { kennung ->
+        AlarmInfo(
+            id = kennung.hashCode(),
+            shiftId = "frei",
+            shiftName = "Frei",
+            triggerTime = jetzt + 2 * TAG_MS,
+            formattedTime = "08:00",
+            eventId = kennung,
+            eventChecksum = ""
+        )
+    }
+
+    /** Ein echter Schicht-Wecker, dessen Termin aus dem Kalender gestrichen ist. */
+    private val gestrichen = AlarmInfo(
+        id = 4711,
+        shiftId = "frueh",
+        shiftName = "Fruehdienst",
+        triggerTime = jetzt + TAG_MS,
+        formattedTime = "05:00",
+        eventId = "evtgestrichen",
+        eventChecksum = "chk-alt",
+        shiftStartTime = jetzt + TAG_MS + STUNDE_MS
+    )
+
+    /**
+     * Vollstaendige, nicht leere Lesung - die Validierung ist also aktiv. Sie enthaelt einen
+     * anderen Termin, keinen der beiden Wecker oben, und keinen bekannten Horizont (sonst koennte
+     * der gestrichene Wecker als "nicht gelesen" durchrutschen).
+     */
+    private val lesung = LocalDateTime.now().plusDays(3).let { beginn ->
+        CalendarFetchOutcome(
+            events = listOf(
+                CalendarEvent(
+                    id = "evtanderer",
+                    title = "S",
+                    startTime = beginn,
+                    endTime = beginn.plusHours(8),
+                    calendarId = "dienstplan"
+                )
+            ),
+            requestedCalendars = 1,
+            horizontEnde = null
+        )
+    }
+
+    /**
+     * @param bestandBeimNachlesen was die Frisch-Nachlese pro Wecker sieht - der parallele
+     *   Wartungs-Anker kann den Bestand zwischen Snapshot und Entscheidung geaendert haben.
+     */
+    private fun receiver(
+        bestand: List<AlarmInfo>,
+        bestandBeimNachlesen: List<AlarmInfo> = bestand
+    ): BootReceiver {
+        val r = BootReceiver()
+        r.alarmUseCase = mock<IAlarmUseCase> {
+            onBlocking { getAllAlarms() }.doReturn(
+                Result.success(bestand),
+                Result.success(bestandBeimNachlesen)
+            )
+            onBlocking { scheduleSystemAlarm(any()) } doReturn Result.success(Unit)
+            onBlocking { deleteAlarm(any()) } doReturn Result.success(Unit)
+        }
+        r.calendarSelectionRepository = mock<CalendarSelectionRepository> {
+            onBlocking { getCurrentSelectedCalendarIds() } doReturn Result.success(setOf("dienstplan"))
+        }
+        r.calendarUseCase = mock<ICalendarUseCase> {
+            onBlocking { getCalendarEventsWithStatus(any(), any()) } doReturn Result.success(lesung)
+        }
+        r.shiftUseCase = mock<IShiftUseCase> {
+            // Erkennung gelingt, findet aber keine der beiden Schichten: Weckpunkte sind eine
+            // LEERE Menge, nicht null - nur dann wird wegen fehlender Kennung ueberhaupt geloescht.
+            onBlocking { recognizeShiftsInEvents(any()) } doReturn Result.success(emptyList())
+            // Schritt 4 (Nachlegen aus dem Kalender) bleibt aus - er ist hier nicht Gegenstand.
+            onBlocking { getCurrentShiftConfig() } doReturn Result.failure(IllegalStateException("nicht Gegenstand"))
+        }
+        return r
+    }
+
+    @Test
+    fun `Neustart mit vollstaendiger Lesung behaelt den Wecker eines Tages ohne Kalendereintrag`() {
+        val r = receiver(bestand = listOf(ohneEintrag, gestrichen))
+
+        runBlocking { r.performAlarmRecoveryPerReflexion() }
+
+        verifyBlocking(r.alarmUseCase) { scheduleSystemAlarm(ohneEintrag) }
+        verifyBlocking(r.alarmUseCase, never()) { deleteAlarm(ohneEintrag.id) }
+        // Die Ausnahme ist eng: ein echter Wecker, dessen Termin fehlt, wird weiter geloescht.
+        verifyBlocking(r.alarmUseCase) { deleteAlarm(gestrichen.id) }
+        verifyBlocking(r.alarmUseCase, never()) { scheduleSystemAlarm(gestrichen) }
+    }
+
+    @Test
+    fun `ein parallel abgeraeumter Ohne-Eintrag-Wecker wird nicht wieder scharf gestellt`() {
+        // Anders als ein manueller Wecker gehoert dieser dem Sync: der parallele Wartungs-Anker
+        // raeumt ihn ab, sobald der Tag einen Termin hat. Wuerde die Recovery ihn trotzdem aus
+        // ihrem alten Snapshot armieren, stuende ein System-Alarm, den das Repository nicht kennt.
+        val r = receiver(
+            bestand = listOf(ohneEintrag, gestrichen),
+            bestandBeimNachlesen = listOf(gestrichen)
+        )
+
+        runBlocking { r.performAlarmRecoveryPerReflexion() }
+
+        verifyBlocking(r.alarmUseCase, never()) { scheduleSystemAlarm(ohneEintrag) }
+        verifyBlocking(r.alarmUseCase, never()) { deleteAlarm(ohneEintrag.id) }
+    }
+
+    /** Wie in `BootReceiverKalenderNachlageTest`: die Recovery bleibt `private`. */
+    private suspend fun BootReceiver.performAlarmRecoveryPerReflexion(): String {
+        val methode = BootReceiver::class.java
+            .getDeclaredMethod("performAlarmRecovery", Continuation::class.java)
+            .apply { isAccessible = true }
+        return suspendCoroutineUninterceptedOrReturn<Any?> { fortsetzung ->
+            methode.invoke(this, fortsetzung)
+        } as String
+    }
+
+    private companion object {
+        const val STUNDE_MS = 3_600_000L
+        const val TAG_MS = 24 * STUNDE_MS
     }
 }

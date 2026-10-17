@@ -289,6 +289,7 @@ KONTINGENT: Ein Workflow mit Fable-Agenten hat am 17.10.2026 zweimal ein ganzes 
 - Liegt diese Datei schon vor (Teilarbeit eines frueheren Anlaufs): NICHT neu suchen. Nur fortsetzen (fehlende Urteile, Fixes) und nur die Commits seit dem dort genannten Stand pruefen.
 - Halte jede bestandene Pruefung aus Schritt 3 mit Zeit und Commit in $Proj\etappe-$n-abschluss.md fest; bei einer Fortsetzung nur wiederholen, was die Commits seitdem betreffen koennen.
 - Fruehere Anlaeufe: $Logs\etappe-$n-abschluss-*.log (lesbares Live-Log).
+- Nach dem Push auf main: auf veroeffentlichen.yml warten (gh run watch --exit-status). Scheitert nur der Upload an einem voruebergehenden Google-Fehler (z. B. 'service is currently unavailable'), einmal gh run rerun --failed. Erst ein gruener Upload ist ausgeliefert; sonst Bericht im Epic (17.10.2026: 1.57.0 scheiterte zuerst daran).
 Fertig erst, wenn jede Pruefung aus Schritt 3 mit Beleg im Transcript steht, main gemergt, Bump (Minor; Etappe 0 nur Patch, sie enthaelt nur Fehlerbehebungen) und Changelog gepusht sind (Schleuse gruen), #$($etIssue.number) geschlossen und ein Bericht im Epic steht.
 Ist eine Pruefung rot und nicht behebbar: nichts nach main, Bericht in #$($etIssue.number), Label blockiert. Konsultiere den Advisor vor dem Merge nach main. Keine Rueckfragen. Stoppe nach 80 Turns.
 "@

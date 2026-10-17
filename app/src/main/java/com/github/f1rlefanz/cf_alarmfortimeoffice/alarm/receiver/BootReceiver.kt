@@ -9,6 +9,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.data.CalendarSelectionReposito
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IAuthDataStoreRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmManagerService
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmMaintenanceService
+import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.AlarmUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.ICalendarUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IShiftUseCase
@@ -569,6 +570,7 @@ class BootReceiver : BroadcastReceiver() {
      * ✅ Löscht: Alarme, deren Termin wirklich weg ist - NICHT solche, deren Kalender-Kennung nur
      *    gewechselt hat (siehe [BootAlarmValidation.beurteile])
      * ✅ Löscht: Alarme für geänderte Events (der nächste Sync legt sie neu an)
+     * ✅ Behält: Wecker an Tagen ohne Kalendereintrag (#182) - über sie urteilt nur syncAlarms()
      */
     private suspend fun performAlarmRecovery(): String {
         return try {
@@ -594,6 +596,8 @@ class BootReceiver : BroadcastReceiver() {
             var neueKennungCount = 0
             // Wecker hinter dem Abruf-Horizont (#51) - behalten, nicht geprueft.
             var jenseitsCount = 0
+            // Wecker an Tagen ohne Kalendereintrag (#182) - behalten, nicht beurteilt.
+            var ohneEintragCount = 0
             var nichtArmiertCount = 0
 
             // Get current calendar events for validation
@@ -699,17 +703,45 @@ class BootReceiver : BroadcastReceiver() {
                         // KENNUNG WEG HEISST NICHT TERMIN WEG. Details und Beleg in
                         // [BootAlarmValidation.beurteile]; fuehrende Stelle der Regel ist
                         // AlarmUseCase.paareBestehendeAlarme().
-                        val urteil = BootAlarmValidation.beurteile(
-                            alarmTriggerTime = alarm.triggerTime,
-                            alarmShiftId = alarm.shiftId,
-                            alarmChecksum = alarm.eventChecksum,
-                            terminChecksum = currentEvent?.let { calculateEventChecksum(it) },
-                            weckpunkte = weckpunkte,
-                            alarmSchichtBeginn = alarm.shiftStartTime.takeIf { it > 0 } ?: alarm.triggerTime,
-                            abrufHorizontEnde = fetchOutcome?.horizontEnde
-                        )
+                        //
+                        // EIN WECKER OHNE KALENDEREINTRAG WIRD NICHT BEURTEILT (#182), `null`.
+                        // Seine Kennung (`ohne-eintrag:<Datum>`) steht nie in der Lesung und sein
+                        // Weckpunkt auch nicht - es gibt keinen Termin. `beurteile` saehe also bei
+                        // jedem vollstaendigen Abruf "Termin weg" und raeumte ihn ab. Ob der Tag
+                        // noch leer ist, entscheidet allein syncAlarms() (`tageOhneEintrag`) beim
+                        // Wartungs-Anker oder beim naechsten Sync; eine zweite Regel hier waere
+                        // eine zweite Wahrheit. Er faellt deshalb unten in scheduleSystemAlarm
+                        // (dort wirken Freigabe-, Skip- und Pausen-Backstop wie bei jedem Wecker).
+                        //
+                        // Die Frisch-Nachlese OBEN gilt fuer ihn bewusst weiter: anders als ein
+                        // manueller Wecker gehoert er dem Sync, und der parallele Wartungs-Anker
+                        // raeumt ihn ab, sobald der Tag einen Termin hat. Ohne die Nachlese
+                        // armierte die Recovery ihn danach aus dem alten Snapshot - ein
+                        // System-Alarm, den das Repository nicht kennt. Sein `eventChecksum` ist
+                        // immer leer, die Nachlese fragt also faktisch "steht er noch im Bestand?".
+                        val urteil = if (AlarmUseCase.istOhneEintragWecker(alarm)) {
+                            null
+                        } else {
+                            BootAlarmValidation.beurteile(
+                                alarmTriggerTime = alarm.triggerTime,
+                                alarmShiftId = alarm.shiftId,
+                                alarmChecksum = alarm.eventChecksum,
+                                terminChecksum = currentEvent?.let { calculateEventChecksum(it) },
+                                weckpunkte = weckpunkte,
+                                alarmSchichtBeginn = alarm.shiftStartTime.takeIf { it > 0 } ?: alarm.triggerTime,
+                                abrufHorizontEnde = fetchOutcome?.horizontEnde
+                            )
+                        }
 
                         when (urteil) {
+                            null -> {
+                                Logger.d(
+                                    LogTags.MAINTENANCE_L4,
+                                    "📭 LEVEL 4: Tag ohne Kalendereintrag - Wecker bleibt, der Sync entscheidet: ${alarm.shiftName}"
+                                )
+                                ohneEintragCount++
+                            }
+
                             BootAlarmValidation.AlarmUrteil.LOESCHEN_TERMIN_WEG -> {
                                 Logger.business(
                                     LogTags.MAINTENANCE_L4,
@@ -800,6 +832,7 @@ class BootReceiver : BroadcastReceiver() {
                 "📊 LEVEL 4: Alarm recovery stats - Restored: $restoredCount, Validated: $validatedCount, " +
                     "Deleted: $deletedCount, neue Kennung: $neueKennungCount, " +
                     "hinter Abruf-Horizont: $jenseitsCount, " +
+                    "ohne Kalendereintrag: $ohneEintragCount, " +
                     "NICHT armiert: $nichtArmiertCount, " +
                     "parallel geaendert: $concurrentlyChangedCount"
             )

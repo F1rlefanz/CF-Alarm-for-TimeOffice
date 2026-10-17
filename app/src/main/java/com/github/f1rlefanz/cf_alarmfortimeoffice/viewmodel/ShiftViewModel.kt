@@ -13,7 +13,10 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueSchedule
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.repository.interfaces.IHueConfigRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.HueRuleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.CalendarEvent
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.OhneEintragWahl
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.SchichttypEinordnen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftInfo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IShiftUseCase
@@ -399,6 +402,130 @@ class ShiftViewModel @Inject constructor(
                 "bei allen anderen Schichten entfernt)"
         )
         updateShiftConfig(updated)
+    }
+
+    /**
+     * „Ignorieren“ im Fund „Im Kalender gefunden“ (Umbau #176, SPEC E4/3.1): der Code gehoert danach
+     * dem ersten aktiven Ignorieren-Typ, den es bei Bedarf anlegt ([SchichttypEinordnen.ignorieren]),
+     * und steht an keinem anderen Typ mehr. Ein Ignorieren-Typ ergibt nie einen Wecker (#167).
+     *
+     * Geht - wie jeder Schreibweg - ueber [updateShiftConfig].
+     */
+    fun ignoriereCode(code: String) {
+        val config = _uiState.value.currentShiftConfig
+        if (config == null) {
+            Logger.w(LogTags.SHIFT_CONFIG, "⚠️ CODE-IGNORIEREN: keine Konfiguration geladen - abgebrochen")
+            return
+        }
+        val updated = SchichttypEinordnen.ignorieren(config, code)
+        if (updated == null) {
+            Logger.d(
+                LogTags.SHIFT_CONFIG,
+                "CODE-IGNORIEREN: nichts zu tun fuer '$code' (leer oder steht schon allein am Ignorieren-Typ)"
+            )
+            return
+        }
+        Logger.business(LogTags.SHIFT_CONFIG, "✅ CODE-IGNORIEREN: '${code.trim()}' wird uebergangen")
+        updateShiftConfig(updated)
+    }
+
+    /**
+     * „Als neuer Typ in der Kategorie“ im Fund (Umbau #176): haengt den im Editor bestaetigten Typ
+     * [neu] an. Erst DIESER Aufruf speichert - bis dahin ist der Typ aus
+     * [SchichttypEinordnen.neuerTypAusCode] nur eine Vorlage, und eine geratene Weckzeit wird nie scharf.
+     *
+     * Traegt [neu] den [code] noch, geht es durch [ShiftConfig.withCodeAssignedTo]: der Code wird bei
+     * allen anderen Typen entfernt (Absicherung gegen einen veralteten Fund, etwa nach einem Import
+     * waehrend der Editor offen war - `findDefinitionFor` entschiede sonst nach Listenreihenfolge).
+     * `withCodeAssignedTo` schaltet das Ziel aber EIN; den Schalter „Schichtdefinition aktiviert“ im
+     * Editor entscheidet der Nutzer, deshalb behaelt [neu] seinen `isEnabled`-Wert (ein bewusst
+     * ausgeschalteter Dienst-Typ stellte sonst an jedem Tag des Codes einen Wecker). Hat der Nutzer das
+     * Muster im Editor bewusst entfernt, wird es NICHT wieder eingetragen - der Code bleibt dann im
+     * Fund, statt still einem Typ zu gehoeren, dem er ihn gerade abgenommen hat.
+     *
+     * Eine `id`, die es schon gibt (doppelter Tipp auf „Erstellen“), legt nichts ein zweites Mal an.
+     */
+    fun legeTypAusCodeAn(code: String, neu: ShiftDefinition) {
+        val config = _uiState.value.currentShiftConfig
+        if (config == null) {
+            Logger.w(LogTags.SHIFT_CONFIG, "⚠️ NEUER-TYP-AUS-CODE: keine Konfiguration geladen - abgebrochen")
+            return
+        }
+        if (config.definitions.any { it.id == neu.id }) {
+            Logger.d(LogTags.SHIFT_CONFIG, "NEUER-TYP-AUS-CODE: '${neu.name}' existiert schon - nichts zu tun")
+            return
+        }
+        val mitTyp = config.copy(definitions = config.definitions + neu)
+        val traegtCode = neu.keywords.any { it.trim().equals(code.trim(), ignoreCase = true) }
+        val updated = if (traegtCode) {
+            mitTyp.withCodeAssignedTo(code, neu.id)?.let { zugeordnet ->
+                zugeordnet.copy(
+                    definitions = zugeordnet.definitions.map {
+                        if (it.id == neu.id) it.copy(isEnabled = neu.isEnabled) else it
+                    }
+                )
+            } ?: mitTyp
+        } else {
+            mitTyp
+        }
+        Logger.business(
+            LogTags.SHIFT_CONFIG,
+            "✅ NEUER-TYP-AUS-CODE: '${neu.name}' (${neu.kategorie.schluessel}) aus '${code.trim()}' angelegt"
+        )
+        updateShiftConfig(updated)
+    }
+
+    /**
+     * Die Wahl „Tage ohne Eintrag verhalten sich“ (Umbau #177, SPEC E5): [typId] = der Typ, wie den sich
+     * ein Tag ganz ohne Kalendereintrag verhalten soll, `null` = „Eigene Einstellungen“. Die Entscheidung
+     * (was zur Wahl steht, was nichts aendert) liegt in [OhneEintragWahl.waehle].
+     *
+     * Geht - wie jeder Schreibweg - ueber [updateShiftConfig]; der Alarm-Sync dahinter stellt den Wecker
+     * an den leeren Tagen bzw. raeumt ihn ab (`AlarmUseCase`, #175).
+     */
+    fun waehleOhneEintrag(typId: String?) {
+        val config = _uiState.value.currentShiftConfig
+        if (config == null) {
+            Logger.w(LogTags.SHIFT_CONFIG, "⚠️ OHNE-EINTRAG-WAHL: keine Konfiguration geladen - abgebrochen")
+            return
+        }
+        val updated = OhneEintragWahl.waehle(config, typId)
+        if (updated == null) {
+            Logger.d(
+                LogTags.SHIFT_CONFIG,
+                "OHNE-EINTRAG-WAHL: nichts zu tun fuer '$typId' (steht schon so, unbekannt oder Ignorieren)"
+            )
+            return
+        }
+        Logger.business(
+            LogTags.SHIFT_CONFIG,
+            "✅ OHNE-EINTRAG-WAHL: Tage ohne Eintrag verhalten sich jetzt " +
+                (OhneEintragWahl.gewaehlterTyp(updated)?.let { "wie '${it.name}'" } ?: "nach eigenen Einstellungen")
+        )
+        updateShiftConfig(updated)
+    }
+
+    /**
+     * Loescht den Schichttyp [definition]. Verwies „Ohne Kalendereintrag“ auf ihn, faellt die Zeile im
+     * SELBEN Schreibvorgang auf „Eigene Einstellungen“ zurueck ([OhneEintragWahl.ohneTyp]) - nicht in einem
+     * zweiten, den ein Sync dazwischen sehen koennte (Umbau #177).
+     *
+     * Geht - wie jeder Schreibweg - ueber [updateShiftConfig]; der Sync dahinter raeumt den Wecker des
+     * Typs ab (Cancel vor Delete, `AlarmUseCase`).
+     */
+    fun loescheSchichttyp(definition: ShiftDefinition) {
+        val config = _uiState.value.currentShiftConfig
+        if (config == null) {
+            Logger.w(LogTags.SHIFT_CONFIG, "⚠️ TYP-LOESCHEN: keine Konfiguration geladen - abgebrochen")
+            return
+        }
+        val verwiesDarauf = config.ohneKalendereintragWie == definition.id
+        Logger.business(
+            LogTags.SHIFT_CONFIG,
+            "🗑️ TYP-LOESCHEN: '${definition.name}'" +
+                if (verwiesDarauf) " (Ohne Kalendereintrag fiel dabei auf eigene Einstellungen zurueck)" else ""
+        )
+        updateShiftConfig(OhneEintragWahl.ohneTyp(config, definition))
     }
 
     fun updateShiftConfig(config: ShiftConfig) {

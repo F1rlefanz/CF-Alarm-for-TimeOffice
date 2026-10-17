@@ -1,6 +1,7 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.model
 
 import androidx.compose.runtime.Immutable
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import java.time.LocalTime
 import java.util.Locale
@@ -28,8 +29,38 @@ data class ShiftDefinition(
     // kein Formatbump. Eine AELTERE App liest das Feld nicht (ignoreUnknownKeys) und haelt den Typ fuer
     // eine normale Schicht - bewusst akzeptiert, dokumentiert im Kalender-Skill.
     // alarmTime bleibt formal Pflicht (Serialisierung), hat bei isSickDay aber keine Bedeutung.
-    val isSickDay: Boolean = false
+    val isSickDay: Boolean = false,
+    // Umbau E1: der gespeicherte [ShiftKategorie.schluessel]. PRIVAT, damit niemand ihn liest:
+    // `copy(isSickDay = ...)` aus dem heutigen Editor laesst ihn stehen, wirksam ist allein
+    // [kategorie]. `null` = Bestand vor dem Umbau, die Kategorie wird aus den Flags abgeleitet
+    // (beim Lesen, kein Schreibschritt). Text statt Enum: siehe [ShiftKategorie].
+    @SerialName("kategorie")
+    private val kategorieGespeichert: String? = null,
+    // Umbau E2 „Wecker an/aus“ (Vorgabe an). NICHT [isEnabled] - das heisst weiter „Typ wird
+    // erkannt“. Wirkt erst mit dem Paket „Wecker aus am Typ“; eine aeltere App liest das Feld nicht.
+    val weckerAn: Boolean = true
 ) {
+    /**
+     * Die wirksame Kategorie (Umbau E1) - immer deckungsgleich mit den Flags, weil sie aus ihnen
+     * gelesen wird: [isSickDay] == (KRANK), [isOnCall] == (RUFBEREITSCHAFT). Einzige Ausnahme ist
+     * der Altbestand mit BEIDEN Flags: er gilt als KRANK, sein `isOnCall` bleibt unangetastet
+     * stehen und wirkt nirgends (siehe [ShiftKategorie.ableiten]). Aendern nur ueber [mitKategorie].
+     */
+    val kategorie: ShiftKategorie
+        get() = ShiftKategorie.ableiten(isSickDay, isOnCall, ShiftKategorie.vonSchluessel(kategorieGespeichert))
+
+    /**
+     * Derselbe Typ in [neu]: setzt die Kategorie UND beide Flags, damit alter Code und heutige
+     * Leser dasselbe sehen. Alles andere bleibt (E2: ein Wechsel der Kategorie behaelt die
+     * Einstellungen). Erzeugt nie einen Typ mit beiden Flags.
+     */
+    fun mitKategorie(neu: ShiftKategorie): ShiftDefinition = copy(
+        kategorieGespeichert = neu.schluessel,
+        isSickDay = neu == ShiftKategorie.KRANK,
+        isOnCall = neu == ShiftKategorie.RUFBEREITSCHAFT
+    )
+
+
     /**
      * Get alarm time as formatted string for display
      */

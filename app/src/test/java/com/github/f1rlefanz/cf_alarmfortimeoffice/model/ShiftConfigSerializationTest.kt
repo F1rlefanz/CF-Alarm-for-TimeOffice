@@ -185,6 +185,44 @@ class ShiftConfigSerializationTest {
         assertTrue(decoded.isSickDay)
     }
 
+    // ---- Umbau Etappe 1 (#166): Kategorie, Wecker an/aus, Ohne Kalendereintrag ----
+
+    @Test
+    fun `Standardwerte der Umbau-Felder - Dienst, Wecker an, kein Ohne-Eintrag-Verweis`() {
+        val config = ShiftConfig.getDefaultConfig()
+
+        assertTrue(config.definitions.all { it.kategorie == ShiftKategorie.DIENST })
+        assertTrue(config.definitions.all { it.weckerAn })
+        assertNull(config.ohneKalendereintragWie)
+        assertNull(config.ohneKalendereintragWieTyp())
+        assertNull(ShiftConfig().ohneKalendereintragWie)
+    }
+
+    @Test
+    fun `Round-Trip mit Kategorie, Wecker aus und Ohne-Eintrag-Verweis`() {
+        val frei = ShiftDefinition(
+            id = "frei",
+            name = "Frei",
+            keywords = listOf("+"),
+            alarmTime = LocalTime.of(9, 0)
+        ).mitKategorie(ShiftKategorie.FREI).copy(weckerAn = false)
+        val original = ShiftConfig(
+            definitions = ShiftConfig.getDefaultConfig().definitions + frei,
+            ohneKalendereintragWie = "frei"
+        )
+
+        val encoded = json.encodeToString(ShiftConfig.serializer(), original)
+        val decoded = json.decodeFromString(ShiftConfig.serializer(), encoded)
+
+        assertEquals(original, decoded)
+        assertEquals(ShiftKategorie.FREI, decoded.definitions.last().kategorie)
+        assertFalse(decoded.definitions.last().weckerAn)
+        assertEquals(frei, decoded.ohneKalendereintragWieTyp())
+        // Die feste Zeile ist KEIN Eintrag in definitions (SPEC 4).
+        assertEquals(original.definitions.size, decoded.definitions.size)
+        assertTrue("Speicherschluessel bleibt 'kategorie'", encoded.contains("\"kategorie\":\"frei\""))
+    }
+
     @Test
     fun `getDefaultConfig liefert die erwarteten vier Schicht-Definitionen mit korrekten Weckzeiten`() {
         val config = ShiftConfig.getDefaultConfig()

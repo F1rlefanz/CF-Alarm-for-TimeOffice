@@ -527,7 +527,7 @@ class AlarmManagerService(
         return Intent(application, AlarmReceiver::class.java).apply {
             putExtra(AlarmReceiver.EXTRA_ALARM_ID, alarmId)
             putExtra(AlarmReceiver.EXTRA_SHIFT_NAME, shiftMatch.shiftDefinition.name)
-            putExtra(AlarmReceiver.EXTRA_SHIFT_START_TIME, formatAlarmTime(shiftMatch.calendarEvent.startTime))
+            putExtra(AlarmReceiver.EXTRA_SHIFT_START_TIME, schichtbeginnText(shiftMatch))
             // Geplante Weckzeit fuer die Hue-Tageslicht-Bedingung - im kalten Prozess kennt der
             // Receiver sie sonst nicht (AlarmReceiver.geplanteWeckzeit).
             putExtra(AlarmReceiver.EXTRA_TRIGGER_TIME, triggerTime)
@@ -644,14 +644,35 @@ class AlarmManagerService(
     fun cancelAllSnoozes() = cancelAllSnoozes(application)
 
 
-
-    private fun formatAlarmTime(alarmTime: java.time.LocalDateTime): String {
-        val formatter = DateTimeFormatter.ofPattern(DateTimeFormats.STANDARD_DATETIME)
-        return alarmTime.format(formatter)
-    }
-
-
     companion object {
+
+        /**
+         * Markiert im Ersatz-Termin aus `AlarmUseCase.scheduleSystemAlarm` einen UNBEKANNTEN
+         * Schichtbeginn (`AlarmInfo.shiftStartTime <= 0`: manueller Wecker, Wecker an einem Tag
+         * ohne Kalendereintrag). Steht in `calendarId`, weil dessen `startTime` in diesem Fall auf
+         * die Weckzeit zurueckfaellt und sich davon nicht unterscheiden laesst. Ein Vergleich
+         * `startTime == calculatedAlarmTime` waere keine Abhilfe: er verschluckte den echten
+         * Schichtbeginn, sobald jemand die Weckzeit genau auf ihn legt.
+         */
+        internal const val KALENDER_ID_OHNE_SCHICHTBEGINN = "cfalarm:ohne-schichtbeginn"
+
+        /**
+         * Der Text fuer [AlarmReceiver.EXTRA_SHIFT_START_TIME] (#183). Leer heisst unbekannt -
+         * Vollbild, Weckton-Notification und Notausgang lassen den Satz "Deine Schicht beginnt
+         * um ..." dann weg, genau wie beim Direct-Boot-Spiegel (`AlarmRepository.
+         * formatShiftStartTime`). Die Weckzeit darf dort NIE als Schichtbeginn erscheinen.
+         */
+        internal fun schichtbeginnText(shiftMatch: ShiftMatch): String =
+            if (shiftMatch.calendarEvent.calendarId == KALENDER_ID_OHNE_SCHICHTBEGINN) {
+                ""
+            } else {
+                formatAlarmTime(shiftMatch.calendarEvent.startTime)
+            }
+
+        private fun formatAlarmTime(alarmTime: java.time.LocalDateTime): String {
+            val formatter = DateTimeFormatter.ofPattern(DateTimeFormats.STANDARD_DATETIME)
+            return alarmTime.format(formatter)
+        }
 
         /**
          * Der EINE Weg, einen Wecker in den AlarmManager zu legen: exakt per `setAlarmClock()`,

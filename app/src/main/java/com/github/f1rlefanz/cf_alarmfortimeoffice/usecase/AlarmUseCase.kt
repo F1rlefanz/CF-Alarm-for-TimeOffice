@@ -23,6 +23,9 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftMatch
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftRecognitionEngine
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpan
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpanStore
+import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.TagOhneEintrag
+import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.tageOhneEintrag
+import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.uebernommeneRufTermine
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmSkipUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
@@ -153,6 +156,44 @@ class AlarmUseCase @Inject constructor(
          */
         internal fun schichtBeginnVon(alarm: AlarmInfo): Long =
             alarm.shiftStartTime.takeIf { it > 0 } ?: alarm.triggerTime
+
+        /**
+         * Umbau E5 (#175): Kennungs-Praefix der Wecker, die „Ohne Kalendereintrag“ wie <Typ> an einem
+         * leeren Tag stellt. Kein Termin traegt diese Kennung (Google-Kennungen bestehen aus
+         * Kleinbuchstaben und Ziffern, ohne Doppelpunkt), und sie ist NICHT leer - leer heisst
+         * „manueller Wecker“. Dadurch gelten Freigabe-Gate, Skip-Anker, `keepManualAlarms` und die
+         * Leerlisten-Raeumung fuer diese Wecker genau wie fuer Kalender-Wecker.
+         */
+        internal const val OHNE_EINTRAG_PRAEFIX = "ohne-eintrag:"
+
+        /** Die stabile Kennung des Ohne-Eintrag-Weckers an [datum] - ueber Syncs hinweg dieselbe. */
+        internal fun ohneEintragKennung(datum: LocalDate): String = OHNE_EINTRAG_PRAEFIX + datum
+
+        /** Stellt [alarm] einen leeren Tag „wie <Typ>“ (#175)? Solche Wecker sind keine Schicht. */
+        internal fun istOhneEintragWecker(alarm: AlarmInfo): Boolean =
+            alarm.eventId.startsWith(OHNE_EINTRAG_PRAEFIX)
+
+        /**
+         * #175: Hat HEUTE ein schon BEENDETER Dienst stattgefunden? Der Abruf beginnt bei jetzt
+         * (`timeMin = now`), ein heute beendeter Termin fehlt in der Liste - nach dem Nachtdienst
+         * bis 07:00 saehe heute leer aus, und eine spaetere Weckzeit des Verweistyps klingelte
+         * nach dem Dienst. Die Spannen erinnern sich daran (`ShiftSpanStore.mische` behaelt
+         * beendete). Nur beendete zaehlen: alles Laufende und Kommende steht in der Liste selbst,
+         * eine dort gestrichene Spanne darf heute nicht weiter belegen. Ein Ende genau um 00:00
+         * deckt seinen Endtag nicht ab (wie `rohKrankTage` und `tageOhneEintrag`).
+         */
+        internal fun heuteDurchBeendeteSpanneBelegt(
+            spans: List<ShiftSpan>,
+            heute: LocalDate,
+            jetzt: Long,
+            zone: ZoneId
+        ): Boolean = spans.any { spanne ->
+            if (spanne.endTime > jetzt) return@any false
+            val erster = tagVon(spanne.startTime, zone)
+            val ende = Instant.ofEpochMilli(spanne.endTime).atZone(zone)
+            val letzter = if (ende.toLocalTime() == LocalTime.MIDNIGHT) ende.toLocalDate().minusDays(1) else ende.toLocalDate()
+            heute >= erster && heute <= maxOf(letzter, erster)
+        }
 
         /**
          * Ist [alarm] der Wecker, den der Nutzer ueberspringen wollte?
@@ -346,8 +387,10 @@ class AlarmUseCase @Inject constructor(
         ): KrankMeldungInhalt? {
             val neu = hinzu.filter { it >= heute && it !in hand }.toSet()
             if (neu.isEmpty()) return null
+            // #175: ein Ohne-Eintrag-Wecker zaehlt nicht - sein Tag war vorher leer, also ohnehin frei.
             val entfallend = bestand.filter {
-                it.eventId.isNotEmpty() && it.triggerTime > jetzt && tagVon(it.triggerTime, zone) in neu
+                it.eventId.isNotEmpty() && !istOhneEintragWecker(it) &&
+                    it.triggerTime > jetzt && tagVon(it.triggerTime, zone) in neu
             }
             val betroffeneTreffer = schichtTreffer.filter { it.calculatedAlarmTime.toLocalDate() in neu }
             if (entfallend.isEmpty() && betroffeneTreffer.isEmpty()) return null
@@ -602,7 +645,16 @@ class AlarmUseCase @Inject constructor(
                     gelesen
                 }
 
-                if (shiftMatches.isEmpty()) {
+                // Umbau E5 (#175): leere Tage, an denen „Ohne Kalendereintrag“ wie <Typ> weckt. VOR
+                // dem Zweig ohne Schichttreffer - ein Kalender mit nur ignorierten oder noch nicht
+                // eingeordneten Terminen hat trotzdem leere Tage. Die leere Liste kommt hier nicht
+                // an (Zweig oben), und vollstaendig ist die Liste, weil jeder Aufrufer das fuer die
+                // Loeschregel ohnehin pruefen muss (`CalendarFetchOutcome.isComplete`).
+                val ohneEintragTage = bestimmeOhneEintragTage(
+                    events, erkennung.ignorierteTermine, shiftConfig, freigaben.alle, jetztKrank, horizontEnde, zone
+                )
+
+                if (shiftMatches.isEmpty() && ohneEintragTage.isEmpty()) {
                     Logger.business(LogTags.ALARM, "✅ SYNC: No matching shifts found - clearing calendar alarms")
                     persistShiftSpans(emptyList())
                     // Auch dieser datengetriebene Raeumzweig schont, was hinter dem Abruf liegt:
@@ -641,6 +693,9 @@ class AlarmUseCase @Inject constructor(
                 // den er gerade antritt.
                 val kandidaten = mutableListOf<SyncKandidat>()
                 val now = LocalDateTime.now()
+                // Umbau E3 (#172): Ruf-Termine, an deren Tag ein Dienst steht (der nachgetragene
+                // Einsatz). EINMAL ueber alle Treffer gerechnet - die Frage betrifft zwei Termine.
+                val rufUebernommen = uebernommeneRufTermine(shiftMatches)
 
                 for (shiftMatch in shiftMatches) {
                     try {
@@ -650,13 +705,50 @@ class AlarmUseCase @Inject constructor(
                             .toInstant()
                             .toEpochMilli()
 
+                        // Umbau E2 „Wecker aus“ am Typ (#168): erkannt (die Spanne oben ist
+                        // geschrieben), aber kein Wecker. Gefuehrt wie ein abgelaufener Kandidat:
+                        // ueber die Paarung raeumt Schritt 1 einen schon gestellten Wecker ab, erst
+                        // Cancel, dann Delete, und meldet KEINE entfernte Schicht - der Termin steht
+                        // ja noch im Kalender. Vor der Vergangenheits-Pruefung, damit das Log den
+                        // Grund nennt. Manuelle Wecker nehmen an der Paarung nie teil, sie bleiben.
+                        if (!shiftMatch.shiftDefinition.weckerAn) {
+                            Logger.d(LogTags.ALARM, "🔕 SYNC: Wecker am Typ aus, kein Wecker fuer ${shiftMatch.shiftDefinition.name}")
+                            kandidaten += SyncKandidat(
+                                eventId = eventId,
+                                triggerTime = triggerTime,
+                                shiftId = shiftMatch.shiftDefinition.id,
+                                neuerAlarm = null,
+                                ohneWecker = OhneWecker.WECKER_AUS
+                            )
+                            continue
+                        }
+
+                        // Umbau E3 (#172): ein Dienst am selben Tag uebernimmt die Rufbereitschaft.
+                        // Derselbe Weg wie „Wecker aus“: Kandidat ohne Alarm, ein gestellter
+                        // Ruf-Wecker geht ueber die Paarung (Cancel vor Delete) OHNE „Schicht
+                        // entfernt“. Die Spanne oben bleibt - Ruf-Abfrage und DND-Ende lesen sie.
+                        // Faellt der Einsatz weg, fehlt der Termin in der Menge, und der naechste
+                        // Lauf stellt den Ruf-Wecker wieder.
+                        if (eventId in rufUebernommen) {
+                            Logger.d(LogTags.ALARM, "📟 SYNC: Dienst am selben Tag uebernimmt, kein Wecker fuer ${shiftMatch.shiftDefinition.name}")
+                            kandidaten += SyncKandidat(
+                                eventId = eventId,
+                                triggerTime = triggerTime,
+                                shiftId = shiftMatch.shiftDefinition.id,
+                                neuerAlarm = null,
+                                ohneWecker = OhneWecker.RUF_UEBERNOMMEN
+                            )
+                            continue
+                        }
+
                         if (shiftMatch.calculatedAlarmTime.isBefore(now)) {
                             Logger.w(LogTags.ALARM, "⏰ SYNC: Skipping alarm in the past: ${shiftMatch.shiftDefinition.name}")
                             kandidaten += SyncKandidat(
                                 eventId = eventId,
                                 triggerTime = triggerTime,
                                 shiftId = shiftMatch.shiftDefinition.id,
-                                neuerAlarm = null
+                                neuerAlarm = null,
+                                ohneWecker = OhneWecker.VERSTRICHEN
                             )
                             continue
                         }
@@ -671,6 +763,31 @@ class AlarmUseCase @Inject constructor(
                     } catch (e: Exception) {
                         Logger.e(LogTags.ALARM, "❌ SYNC: Error processing shift: ${shiftMatch.shiftDefinition.name}", e)
                     }
+                }
+
+                // Umbau E5 (#175): je leerem Tag ein Kandidat mit der stabilen Kennung des Datums.
+                // Alles daran ist aus Datum und Verweistyp bestimmt - sonst wuerde aus „unveraendert,
+                // re-armen“ bei jedem Lauf ein Abbrechen und Neustellen. Kein Schichtbeginn (0):
+                // es gibt keinen Termin, also auch keinen Dienst, der beginnt. Der Name ist der des
+                // Verweistyps, damit die Stille-Pruefung im AlarmReceiver ihn findet.
+                for (tag in ohneEintragTage) {
+                    val kennung = ohneEintragKennung(tag.datum)
+                    val triggerTime = tag.weckzeit.atZone(zone).toInstant().toEpochMilli()
+                    kandidaten += SyncKandidat(
+                        eventId = kennung,
+                        triggerTime = triggerTime,
+                        shiftId = tag.typ.id,
+                        neuerAlarm = AlarmInfo(
+                            id = kennung.hashCode(),
+                            shiftId = tag.typ.id,
+                            shiftName = tag.typ.name,
+                            triggerTime = triggerTime,
+                            formattedTime = formatAlarmTime(triggerTime),
+                            eventId = kennung,
+                            eventChecksum = "",
+                            isSilent = tag.typ.isSilent
+                        )
+                    )
                 }
 
                 // Zwei Treffer auf dieselbe Event-ID lassen sich nicht getrennt behandeln - wie
@@ -725,21 +842,37 @@ class AlarmUseCase @Inject constructor(
                         continue
                     }
 
-                    // ZWEI verschiedene Gruende, hier zu landen - und nur EINER davon ist eine
+                    // DREI verschiedene Gruende, hier zu landen - und nur EINER davon ist eine
                     // entfernte Schicht:
                     //  1. Der Termin ist wirklich aus dem Kalender verschwunden (keine Paarung).
                     //  2. Der Termin laeuft weiter, nur die WECKZEIT ist verstrichen (der Wecker
                     //     hat heute frueh geklingelt) - erkennbar daran, dass die Paarung einen
-                    //     Kandidaten OHNE neuen Alarm gefunden hat. Der Alarm wird trotzdem
-                    //     geraeumt - ein abgelaufener Alarm gehoert nicht in den Bestand - aber es
-                    //     ist KEINE Aenderung des Dienstplans, also gibt es dafuer auch keine
-                    //     Meldung. Die Schichtspanne bleibt davon unberuehrt erhalten, damit
-                    //     Dimmer und "Nicht stoeren" die laufende Schicht weiter kennen.
-                    val onlyExpired = kandidat != null
-                    if (onlyExpired) {
-                        Logger.business(LogTags.ALARM, "⌛ SYNC: Weckzeit verstrichen, Termin laeuft weiter: ${existingAlarm.shiftName} (eventId: ${existingAlarm.eventId})")
-                    } else {
-                        Logger.business(LogTags.ALARM, "🗑️ SYNC: Deleting alarm for deleted event: ${existingAlarm.shiftName} (eventId: ${existingAlarm.eventId})")
+                    //     Kandidaten OHNE neuen Alarm gefunden hat.
+                    //  3. Der Termin steht weiter im Kalender, aber sein Typ hat den Wecker aus
+                    //     (#168) - ebenfalls ein Kandidat ohne neuen Alarm.
+                    //  4. Eine Rufbereitschaft, an deren Tag ein Dienst steht (#172) - auch das ein
+                    //     Kandidat ohne neuen Alarm; den Tag weckt der Dienst.
+                    // In 2. bis 4. wird der Alarm trotzdem geraeumt - er gehoert nicht (mehr) in
+                    // den Bestand -, aber der Termin ist nicht verschwunden, also gibt es dafuer
+                    // keine „Schicht entfernt“-Meldung. Die Schichtspanne bleibt davon unberuehrt
+                    // erhalten, damit Dimmer und "Nicht stoeren" die Schicht weiter kennen.
+                    val terminBesteht = kandidat != null
+                    // #175: ein Ohne-Eintrag-Wecker ohne Kandidat - der Tag hat jetzt einen Eintrag,
+                    // ist freigegeben, oder der Verweis ist weg. Keine Schicht, also keine Meldung.
+                    val ohneEintrag = istOhneEintragWecker(existingAlarm)
+                    if (ohneEintrag) {
+                        Logger.business(LogTags.ALARM, "📭 SYNC: Tag ist nicht mehr ohne Kalendereintrag, Wecker geht: ${existingAlarm.shiftName} (eventId: ${existingAlarm.eventId})")
+                    } else when (kandidat?.ohneWecker) {
+                        OhneWecker.WECKER_AUS ->
+                            Logger.business(LogTags.ALARM, "🔕 SYNC: Wecker am Typ ausgeschaltet, Termin bleibt: ${existingAlarm.shiftName} (eventId: ${existingAlarm.eventId})")
+                        OhneWecker.RUF_UEBERNOMMEN ->
+                            Logger.business(LogTags.ALARM, "📟 SYNC: Dienst am selben Tag uebernimmt die Rufbereitschaft, Ruf-Wecker geht: ${existingAlarm.shiftName} (eventId: ${existingAlarm.eventId})")
+                        OhneWecker.VERSTRICHEN, null ->
+                            if (terminBesteht) {
+                                Logger.business(LogTags.ALARM, "⌛ SYNC: Weckzeit verstrichen, Termin laeuft weiter: ${existingAlarm.shiftName} (eventId: ${existingAlarm.eventId})")
+                            } else {
+                                Logger.business(LogTags.ALARM, "🗑️ SYNC: Deleting alarm for deleted event: ${existingAlarm.shiftName} (eventId: ${existingAlarm.eventId})")
+                            }
                     }
                     // ERST cancellen, DANN loeschen - sonst bleibt ein unabbrechbarer Waise
                     // (Skill cfalarm-wecker-und-boot, reference/wecker-boot-und-wartung.md).
@@ -764,11 +897,11 @@ class AlarmUseCase @Inject constructor(
                     // KrankmeldungNotifier), keine entfernte Schicht. Gefragt wird die KALENDER-Menge,
                     // nicht die Vereinigung: eine Hand-Freigabe aendert den Dienstplan nicht, ein dann
                     // verschwundener Termin ist weiterhin eine echte Aenderung.
-                    val krankTag = !onlyExpired && istKalenderKrankTag(existingAlarm, freigaben.kalender, zone)
+                    val krankTag = !terminBesteht && istKalenderKrankTag(existingAlarm, freigaben.kalender, zone)
                     if (krankTag) {
                         Logger.business(LogTags.ALARM, "🤒 SYNC: Wecker an Krank-Tag entfernt - keine Meldung 'Schicht entfernt'")
                     }
-                    if (!onlyExpired && !krankTag) {
+                    if (!terminBesteht && !krankTag && !ohneEintrag) {
                         try {
                             shiftChangeNotifier.notifyDeleted(existingAlarm)
                         } catch (e: Exception) {
@@ -992,10 +1125,14 @@ class AlarmUseCase @Inject constructor(
                             // die eigentlich kritische Alarm-Aktualisierung nie beeintraechtigen.
                             // Die Schwelle (>=10min Delta ODER Namensaenderung) entscheidet
                             // ShiftChangeNotifier.notifyUpdated selbst (siehe exceedsThreshold).
-                            try {
-                                shiftChangeNotifier.notifyUpdated(existingAlarm, newAlarm)
-                            } catch (e: Exception) {
-                                Logger.w(LogTags.ALARM, "Schicht-Aenderungs-Notification (Update) fehlgeschlagen", e)
+                            // #175: ein Ohne-Eintrag-Wecker ist keine Schicht - eine geaenderte
+                            // Weckzeit des Verweistyps meldet sich nicht als „Schicht geaendert“.
+                            if (!istOhneEintragWecker(newAlarm)) {
+                                try {
+                                    shiftChangeNotifier.notifyUpdated(existingAlarm, newAlarm)
+                                } catch (e: Exception) {
+                                    Logger.w(LogTags.ALARM, "Schicht-Aenderungs-Notification (Update) fehlgeschlagen", e)
+                                }
                             }
                         } else {
                             // Wirklich unveraendert - System-Alarm idempotent re-armen, damit der
@@ -1011,7 +1148,7 @@ class AlarmUseCase @Inject constructor(
                         scheduleSystemAlarm(newAlarm).getOrThrow()
                         resultAlarms.add(newAlarm)
                         createdCount++
-                        // ZWEI Gruende, einen neu erstellten Alarm NICHT zu melden:
+                        // DREI Gruende, einen neu erstellten Alarm NICHT zu melden:
                         //  1. isFirstSync - erster Sync ueberhaupt (existingAlarms war leer), sonst
                         //     flutet jede Neuinstallation.
                         //  2. Horizont-Eintritt - der Termin ist lediglich neu in das taeglich
@@ -1026,7 +1163,9 @@ class AlarmUseCase @Inject constructor(
                         // Verglichen wird der SCHICHTBEGINN, denn danach filtert die Kalender-
                         // Abfrage (timeMin/timeMax), nicht nach der Weckzeit. shiftStartTime <= 0
                         // heisst "unbekannt" (wie in scheduleSystemAlarm) - dann die Weckzeit.
-                        if (!isFirstSync) {
+                        //  3. #175: ein Ohne-Eintrag-Wecker - keine Schicht, und das Setzen des
+                        //     Verweises darf nicht 14 Meldungen auf einmal ausloesen.
+                        if (!isFirstSync && !istOhneEintragWecker(newAlarm)) {
                             val schichtBeginn = newAlarm.shiftStartTime.takeIf { it > 0 } ?: newAlarm.triggerTime
                             // syncStartedAt statt "jetzt": innerhalb EINES Laufs muss dieselbe
                             // Frage fuer alle Events denselben Bezugszeitpunkt haben - sonst
@@ -1111,7 +1250,7 @@ class AlarmUseCase @Inject constructor(
                         "⚠️ SYNC: Intelligent synchronization UNVOLLSTAENDIG ($skippedCount Event(s) uebersprungen) - "
                     }) +
                     "Created: $createdCount, Updated: $updatedCount, Deleted: $deletedCount, " +
-                    "Freigegeben: $freigegebenCount, " +
+                    "Freigegeben: $freigegebenCount, Ohne-Eintrag-Tage: ${ohneEintragTage.size}, " +
                     "Krank-Tage(Kalender): +${krankNachlauf?.aenderung?.hinzu?.size ?: 0}/" +
                     "-${krankNachlauf?.aenderung?.weg?.size ?: 0}, " +
                     "Neue-Kennung: $neueKennungCount, Hinter-Abruf-Horizont: ${jenseitsDesAbrufs.size}, " +
@@ -1372,9 +1511,12 @@ class AlarmUseCase @Inject constructor(
             // die synthetische CalendarEvent.startTime - sonst zeigt "Deine Schicht beginnt um"
             // nach JEDEM Re-Arming (Sync/Boot/Maintenance - der eigentliche, staendig genutzte
             // Weg ueber diese Funktion, nicht die einmalige Erstplanung) wieder die Weckzeit
-            // statt des Schichtbeginns. 0 = unbekannt (z.B. manueller Alarm ohne echte Schicht) -
-            // dann bewusst wie bisher auf die Weckzeit zurueckfallen.
-            val shiftStartMillis = alarmInfo.shiftStartTime.takeIf { it > 0 } ?: alarmInfo.triggerTime
+            // statt des Schichtbeginns. 0 = unbekannt (manueller Wecker, Tag ohne Kalendereintrag):
+            // startTime faellt dann auf die Weckzeit zurueck, und calendarId traegt die Markierung
+            // KALENDER_ID_OHNE_SCHICHTBEGINN - der Weckbildschirm laesst den Satz damit weg, statt
+            // die Weckzeit als Schichtbeginn zu behaupten (#183, siehe schichtbeginnText).
+            val schichtbeginnBekannt = alarmInfo.shiftStartTime > 0
+            val shiftStartMillis = if (schichtbeginnBekannt) alarmInfo.shiftStartTime else alarmInfo.triggerTime
             val shiftEndMillis = alarmInfo.shiftEndTime.takeIf { it > 0 }
                 ?: (alarmInfo.triggerTime + CalendarConstants.DEFAULT_EVENT_DURATION_MS)
 
@@ -1389,9 +1531,9 @@ class AlarmUseCase @Inject constructor(
                     java.time.Instant.ofEpochMilli(shiftEndMillis),
                     ZoneId.systemDefault()
                 ),
-                calendarId = ""
+                calendarId = if (schichtbeginnBekannt) "" else AlarmManagerService.KALENDER_ID_OHNE_SCHICHTBEGINN
             )
-            
+
             val shiftMatch = ShiftMatch(
                 shiftDefinition = shiftDefinition,
                 calendarEvent = calendarEvent,
@@ -1452,6 +1594,41 @@ class AlarmUseCase @Inject constructor(
     override suspend fun getAllAlarms(): Result<List<AlarmInfo>> = 
         alarmRepository.getAllAlarms()
     
+    /**
+     * #175: die leeren Tage dieses Laufs ([tageOhneEintrag]), ohne HEUTE, wenn heute schon ein Dienst
+     * zu Ende gegangen ist ([heuteDurchBeendeteSpanneBelegt]). Gelesen wird der Spannen-Stand VOR dem
+     * Schreiben dieses Laufs - er traegt die beendeten Spannen noch. Ist er nicht lesbar, faellt
+     * HEUTE weg (WARN), die uebrigen Tage bleiben: hier ist „im Zweifel wecken“ die falsche
+     * Richtung, der Schaden waere ein Wecker nach dem Nachtdienst. Die Kehrseite - ein leerer Tag
+     * heute ohne Wecker - holt der naechste lesbare Lauf nach, solange die Weckzeit nicht vorbei ist.
+     */
+    private suspend fun bestimmeOhneEintragTage(
+        events: List<CalendarEvent>,
+        ignorierteTermine: List<CalendarEvent>,
+        config: ShiftConfig,
+        freieTage: Set<LocalDate>,
+        jetzt: LocalDateTime,
+        horizontEnde: Long,
+        zone: ZoneId
+    ): List<TagOhneEintrag> {
+        val tage = tageOhneEintrag(
+            events, ignorierteTermine, config, freieTage, jetzt,
+            Instant.ofEpochMilli(horizontEnde).atZone(zone).toLocalDateTime()
+        )
+        val heute = jetzt.toLocalDate()
+        if (tage.none { it.datum == heute }) return tage
+        val heuteBelegt = shiftSpanStore.spansNow().fold(
+            onSuccess = { heuteDurchBeendeteSpanneBelegt(it, heute, jetzt.atZone(zone).toInstant().toEpochMilli(), zone) },
+            onFailure = { e ->
+                Logger.w(LogTags.ALARM, "📭 SYNC: Schichtspannen nicht lesbar - heute kein Wecker ohne Kalendereintrag", e)
+                true
+            }
+        )
+        if (!heuteBelegt) return tage
+        Logger.business(LogTags.ALARM, "📭 SYNC: Heute ist schon ein Dienst zu Ende gegangen - heute kein Wecker ohne Kalendereintrag")
+        return tage.filterNot { it.datum == heute }
+    }
+
     /**
      * Schreibt den Schichtspannen-Bestand ([ShiftSpanStore]) - die Quelle, aus der Dimmer und
      * "Nicht stoeren" ihre Dienstzeit-Fenster beziehen, seit klar ist, dass der Alarm-Bestand die
@@ -1612,17 +1789,33 @@ class AlarmUseCase @Inject constructor(
     /**
      * Ein Termin der AKTUELLEN Kalenderlesung, so wie ihn der Delta-Sync braucht.
      *
-     * [neuerAlarm] ist `null`, wenn die Weckzeit dieses Termins bereits verstrichen ist. Solche
+     * [neuerAlarm] ist `null`, wenn der Termin besteht, aber keinen Wecker bekommt: seine Weckzeit
+     * ist bereits verstrichen, sein Typ hat den Wecker aus (#168), oder ein Dienst am selben Tag
+     * uebernimmt die Rufbereitschaft (#172) - der Grund steht in [ohneWecker]. Solche
      * Kandidaten werden trotzdem gefuehrt, weil die Paarung sie braucht: sonst gilt ein Termin,
-     * dessen Wecker heute frueh geklingelt hat, als "aus dem Kalender entfernt", sobald der Feed
-     * ihm eine neue Kennung gegeben hat.
+     * dessen Wecker heute frueh geklingelt hat oder ausgeschaltet wurde, als "aus dem Kalender
+     * entfernt" - mit der Meldung "Schicht entfernt" fuer eine Schicht, die noch im Kalender steht.
      */
     private data class SyncKandidat(
         val eventId: String,
         val triggerTime: Long,
         val shiftId: String,
-        val neuerAlarm: AlarmInfo?
+        val neuerAlarm: AlarmInfo?,
+        /** Nur fuer das Log: WARUM `neuerAlarm == null` ist. `null` bei einem Kandidaten mit Alarm. */
+        val ohneWecker: OhneWecker? = null
     )
+
+    /** Warum ein bestehender Termin keinen Wecker bekommt - siehe [SyncKandidat.ohneWecker]. */
+    private enum class OhneWecker {
+        /** Die Weckzeit ist verstrichen, der Termin laeuft weiter. */
+        VERSTRICHEN,
+
+        /** Der Typ hat den Wecker aus (#168). */
+        WECKER_AUS,
+
+        /** Ein Dienst am selben Tag uebernimmt die Rufbereitschaft (#172). */
+        RUF_UEBERNOMMEN
+    }
 
     /**
      * Ordnet jedem Kandidaten der aktuellen Lesung hoechstens EINEN bestehenden Alarm zu.
@@ -1676,12 +1869,18 @@ class AlarmUseCase @Inject constructor(
         // einzigen passenden Alarm an den abgelaufenen zu geben (der ihn nur abraeumen wuerde),
         // waehrend der lebende ihn neu anlegen muesste. `sortedBy` ist stabil, die uebrige
         // Reihenfolge bleibt also die der Schichterkennung.
+        //
+        // Ohne-Eintrag-Wecker (#175) nehmen an Runde (b) auf KEINER Seite teil: ihre Kennung ist
+        // das Datum und wechselt nie, Runde (a) findet sie immer. Bekommt ein leerer Tag einen
+        // Termin desselben Typs, haetten beide dieselbe Weckzeit und Schicht - die Paarung machte
+        // daraus eine stille Uebernahme, und die neue Schicht meldete sich nie.
         val nochOffeneKandidaten = kandidaten
-            .filter { it.eventId !in ergebnis }
+            .filter { it.eventId !in ergebnis && !it.eventId.startsWith(OHNE_EINTRAG_PRAEFIX) }
             .sortedBy { if (it.neuerAlarm != null) 0 else 1 }
         for (kandidat in nochOffeneKandidaten) {
             val treffer = offen.firstOrNull {
-                it.triggerTime == kandidat.triggerTime && it.shiftId == kandidat.shiftId
+                !istOhneEintragWecker(it) &&
+                    it.triggerTime == kandidat.triggerTime && it.shiftId == kandidat.shiftId
             } ?: continue
             offen.remove(treffer)
             ergebnis[kandidat.eventId] = treffer

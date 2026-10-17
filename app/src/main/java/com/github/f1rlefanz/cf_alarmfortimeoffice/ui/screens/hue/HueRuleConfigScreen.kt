@@ -35,6 +35,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.github.f1rlefanz.cf_alarmfortimeoffice.R
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueRuleModus
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueScheduleRule
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.waehlbareSchichtNamen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.ErrorMessage
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.LoadingScreen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.hue.rememberLocalNetworkPermissionGate
@@ -163,8 +164,8 @@ fun HueRuleConfigScreen(
     val autoAusZeile = form.autoAusUrteil(naechsteWeckzeit, tageslichtStand)?.let { autoAusUrteilText(it) }
 
     val availableShiftPatterns = remember(shiftState.currentShiftConfig) {
-        // #142: Krankmeldungs-Typen wecken nie - eine Lichtregel auf sie liefe ins Leere.
-        shiftState.currentShiftConfig?.definitions?.filter { it.isEnabled && !it.isSickDay }?.map { it.name } ?: emptyList()
+        // #142/#171: Krankmeldungs- und Ignorieren-Typen wecken nie - eine Lichtregel auf sie liefe ins Leere.
+        shiftState.currentShiftConfig?.definitions?.waehlbareSchichtNamen() ?: emptyList()
     }
 
     fun baueRegel(id: String): HueScheduleRule = form.toRule(

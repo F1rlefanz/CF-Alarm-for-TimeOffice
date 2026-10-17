@@ -16,6 +16,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.repository.interfaces.IHue
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.HueRuleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftKategorie
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpanStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.HellAb
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
@@ -33,6 +34,7 @@ import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -384,6 +386,81 @@ class SchichtFolgenTest {
         }
         // Der Punkt rutscht nie an den Zeilenanfang: davor steht immer ein geschuetztes Leerzeichen.
         assertFalse(text.contains(" ·"))
+    }
+
+    // --- Kurzform der Zeile in der Schichttypen-Liste (Umbau Etappe 1, SPEC 3.1) ---------------
+
+    private fun kurz(definition: ShiftDefinition, f: SchichtFolgen? = folgen(definition = definition)): String? =
+        kurzform(definition, f)?.replace(NBSP, ' ')
+
+    private val volleFolgen = "Dimmen: keine · Licht: keine · Nicht stören: aus"
+
+    @Test
+    fun `Kurzform - ein normaler Typ zeigt die heutige Statuszeile unveraendert`() {
+        assertEquals(volleFolgen, kurz(def()))
+    }
+
+    @Test
+    fun `Kurzform - Wecker aus heisst kein Wecker vor der Statuszeile`() {
+        // Ohne den Licht-Abschnitt: ohne Alarm laeuft keine Hue-Regel (siehe der Test darunter).
+        assertEquals(
+            "kein Wecker · Dimmen: keine · Nicht stören: aus",
+            kurz(def().copy(weckerAn = false))
+        )
+    }
+
+    @Test
+    fun `Kurzform - Wecker aus nennt kein Licht, auch wenn eine Hue-Regel passt`() {
+        // Hue laeuft nur zu einem ALARM (AlarmReceiver -> executeRulesForAlarm); ein Typ mit
+        // weckerAn = false stellt keinen. "Licht: 1 Regel + allgemeine" neben "kein Wecker" waere ein
+        // Ablauf, den es nicht gibt (Pruefer-Befund zu #170, SPEC E8).
+        val regeln = Result.success(listOf(hueRegel("h1", "AD1"), hueRegel("h2", "ALL")))
+        val ohneWecker = def().copy(weckerAn = false)
+        val f = folgen(definition = ohneWecker, hueRegeln = regeln)
+        assertEquals("Testvoraussetzung: die Statuszeile kennt die Regeln", "Licht: 1 Regel + allgemeine", licht(f))
+
+        val text = kurz(ohneWecker, f)!!
+        assertFalse("Ohne Alarm laeuft keine Hue-Regel: $text", text.contains("Licht"))
+        assertEquals("kein Wecker · Dimmen: keine · Nicht stören: aus", text)
+        // Mit Wecker bleibt die Regel Teil der Zeile.
+        assertTrue(kurz(def(), folgen(hueRegeln = regeln))!!.contains("Licht: 1 Regel + allgemeine"))
+    }
+
+    @Test
+    fun `Kurzform - Wecker aus ohne gelesene Folgen sagt trotzdem kein Wecker`() {
+        assertEquals("kein Wecker", kurz(def().copy(weckerAn = false), null))
+    }
+
+    @Test
+    fun `Kurzform - ohne gelesene Folgen gibt es keine Kurzform, nie eine erfundene`() {
+        assertNull(kurz(def(), null))
+    }
+
+    @Test
+    fun `Kurzform - Ignorieren heisst wird uebergangen, ohne Dimmen Licht oder Wecker`() {
+        val ignoriert = def("TB").mitKategorie(ShiftKategorie.IGNORIEREN)
+        // Auch mit Folgen (Ignorieren-Typen passieren den Filter im ViewModel): sie wirken nicht.
+        assertEquals("wird übergangen", kurz(ignoriert, folgen(definition = ignoriert)))
+        assertEquals("wird übergangen", kurz(ignoriert, null))
+    }
+
+    @Test
+    fun `Kurzform - ein ausgeschalteter Ignorieren-Typ uebergeht nichts und sagt es auch nicht`() {
+        val aus = def("TB", enabled = false).mitKategorie(ShiftKategorie.IGNORIEREN)
+        assertNull(kurz(aus, null))
+    }
+
+    @Test
+    fun `Kurzform - ausgeschaltet und Krank haben keine, ihre Statuszeile sagt es`() {
+        assertNull(kurz(def(enabled = false), null))
+        assertNull(kurz(def().mitKategorie(ShiftKategorie.KRANK), null))
+    }
+
+    @Test
+    fun `Kurzform - nach dem Trenner darf umbrochen werden, kein Wort und kein Name zerfaellt`() {
+        val text = kurzform(def().copy(weckerAn = false), folgen())!!
+        assertTrue("kein${NBSP}Wecker" in text)
+        assertTrue("${NBSP}· Dimmen:" in text)
     }
 
     // --- ViewModel: deaktivierte Schicht, Lesen erst beim Abo --------------------------------

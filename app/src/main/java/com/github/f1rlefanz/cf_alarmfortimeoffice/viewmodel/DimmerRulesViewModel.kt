@@ -13,6 +13,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimWindowResolver
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.HellZeitpunkt
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.TageslichtEnde
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.ZeitkettenArmierer
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.waehlbareSchichtNamen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpanStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.HellAb
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.ITageslichtRepository
@@ -96,9 +97,9 @@ class DimmerRulesViewModel @Inject constructor(
      * sofort sichtbar werden. */
     val shiftNames: StateFlow<List<String>> =
         shiftUseCase.shiftConfig
-            // #142: ein Krankmeldungs-Typ hat keine Dienstzeit - als Regelmuster/Ausnahme
-            // waehlbar, wuerde er nie greifen.
-            .map { config -> config.definitions.filterNot { it.isSickDay }.map { it.name } }
+            // #142/#171: ein Krankmeldungs-, Ignorieren- oder ausgeschalteter Typ hat keine
+            // Dienstzeit - als Regelmuster waehlbar, wuerde er nie greifen.
+            .map { config -> config.definitions.waehlbareSchichtNamen() }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /**

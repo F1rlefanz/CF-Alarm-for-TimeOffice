@@ -10,6 +10,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.model.reinerSchichtname
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmManagerService
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpan
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.AlarmSkipUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.AlarmUseCase
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalTime
@@ -306,7 +307,13 @@ internal fun baueWeckerTage(
         val eintraege = eintraegeJeTag[datum].orEmpty().sortedBy { it.triggerTime }
         val freigabe = if (datum in freiAbHeute) artVon(datum, freigaben) else null
         val freigegeben = freigabe != null
-        val schichten = schichtenDesTages(eintraege, spannenJeTag[datum].orEmpty())
+        // Ein Wecker „wie <Typ>“ an einem Tag ohne Kalendereintrag ist kein Dienst: er hat keine
+        // Spanne (#175), Dimmen, „Nicht stören“ und die Rufbereitschafts-Abfrage des Typs treten
+        // nicht ein. Nur sein Licht haengt am Wecker und bleibt ([lichtOhneEintrag]).
+        val (ohneEintrag, mitDienst) = eintraege.partition {
+            it is WeckerEintrag.Wecker && AlarmUseCase.istOhneEintragWecker(it.alarm)
+        }
+        val schichten = schichtenDesTages(mitDienst, spannenJeTag[datum].orEmpty())
         WeckerTag(
             datum = datum,
             freigabe = freigabe,
@@ -317,7 +324,9 @@ internal fun baueWeckerTage(
             kaertchen = if (freigegeben) emptyList() else kaertchenFuerSchichten(
                 schichten.map { reinerSchichtname(it.name) }.distinct(),
                 wirkungen
-            ).let { alle -> if (lichtMoeglich(eintraege)) alle else alle - Kaertchen.LICHT }
+            ).let { alle ->
+                if (lichtOhneEintrag(ohneEintrag, wirkungen)) Kaertchen.entries.filter { it in alle || it == Kaertchen.LICHT } else alle
+            }.let { alle -> if (lichtMoeglich(eintraege)) alle else alle - Kaertchen.LICHT }
         )
     }
 }
@@ -370,6 +379,13 @@ internal fun kaertchenFuer(wirkung: SchichtWirkung): Set<Kaertchen> = buildSet {
  */
 private fun lichtMoeglich(eintraege: List<WeckerEintrag>): Boolean =
     eintraege.any { it is WeckerEintrag.Wecker && !it.still }
+
+/** Hat der Typ eines klingelnden Weckers an einem Tag ohne Eintrag Licht? (siehe [lichtMoeglich]) */
+private fun lichtOhneEintrag(ohneEintrag: List<WeckerEintrag>, wirkungen: Map<String, SchichtWirkung>): Boolean =
+    ohneEintrag.filterIsInstance<WeckerEintrag.Wecker>()
+        .filter { !it.still }
+        .mapNotNull { wirkungen[reinerSchichtname(it.alarm.shiftName)] }
+        .any { Kaertchen.LICHT in kaertchenFuer(it) }
 
 /** Vereinigung ueber alle bekannten Schichten des Tages, in fester Reihenfolge der Enum. */
 internal fun kaertchenFuerSchichten(

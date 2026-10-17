@@ -19,11 +19,12 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedIconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -288,12 +289,15 @@ private fun MusterBereich(
                 keyboardActions = KeyboardActions(onDone = { hinzufuegen() })
             )
             // Mit dem Feld buendig: es ist 56 dp hoch, der Knopf 48 dp (ein Fehlertext darunter schiebt nur das Feld).
-            FilledIconButton(
+            // Neutral wie der Prototyp (`.btn` ohne `pri`): „Speichern“ bleibt der einzige Hauptknopf der Seite.
+            OutlinedIconButton(
                 onClick = hinzufuegen,
                 modifier = Modifier
                     .padding(top = SpacingConstants.SPACING_EXTRA_SMALL)
                     .size(48.dp),
-                shape = RoundedCornerShape(12.dp)
+                shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                colors = IconButtonDefaults.outlinedIconButtonColors(contentColor = MaterialTheme.colorScheme.onSurface)
             ) {
                 Icon(Icons.Default.Add, contentDescription = TypAbschnittTexte.MUSTER_DAZU)
             }
@@ -315,11 +319,8 @@ private fun MusterBereich(
 /** Ein Muster als Chip (Prototyp `.muster`): Text und × zum Entfernen. */
 @Composable
 private fun MusterChip(text: String, onEntfernen: () -> Unit) {
-    Surface(
-        shape = RoundedCornerShape(20.dp),
-        color = MaterialTheme.colorScheme.surfaceContainer,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
-    ) {
+    // Wie `.muster`: Seitenhintergrund auf der weissen Karte, ohne Rand, das × in Grau (`.musterweg`).
+    Surface(shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.background) {
         Row(
             modifier = Modifier
                 .heightIn(min = 40.dp)
@@ -332,7 +333,8 @@ private fun MusterChip(text: String, onEntfernen: () -> Unit) {
                 Icon(
                     Icons.Default.Close,
                     contentDescription = TypAbschnittTexte.musterEntfernen(text),
-                    modifier = Modifier.size(18.dp)
+                    modifier = Modifier.size(18.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }

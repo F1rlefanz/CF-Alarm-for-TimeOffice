@@ -601,7 +601,7 @@ internal fun KategorieZeile(
                 verticalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_EXTRA_SMALL),
                 itemVerticalAlignment = Alignment.CenterVertically
             ) {
-                Text(text = option.titel(), style = MaterialTheme.typography.bodyLarge)
+                Text(text = option.titel(), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 // Dieselbe Regel wie `schichttypBloecke` und EinordnenDialog (SPEC E3): Rufbereitschaft und Krank.
                 if (option == ShiftKategorie.RUFBEREITSCHAFT || option == ShiftKategorie.KRANK) {
                     SonderfallMarke()

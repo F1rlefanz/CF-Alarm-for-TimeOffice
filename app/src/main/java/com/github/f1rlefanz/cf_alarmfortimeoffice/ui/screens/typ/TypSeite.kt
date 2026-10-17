@@ -32,8 +32,8 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.CompactButton
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.KnopfZeile
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.SimpleBackTopAppBar
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.ShiftDefinitionTexte
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.TypEntwurf
-import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.typWeckerFelder
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.hilfe.HilfeThema
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
@@ -128,8 +128,10 @@ private val EntwurfSaver: Saver<TypEntwurf, Any> = Saver(
 
 /**
  * Die Typ-Seite (Umbau, SPEC 3.3): ein Schichttyp als eigener Bildschirm statt des Dialogs.
- * Oben die Karte „Typ“ ([TypAbschnitt]: Name, Muster, Kategorie), darunter noch die heutigen
- * Wecker-Felder; Tagesleiste, Dimmen, DND und Licht kommen mit eigenen Paketen.
+ * Oben die Karte „Typ“ ([TypAbschnitt]: Name, Muster, Kategorie), darunter der Sonderfall-Kasten
+ * ([SonderfallKasten], nur Rufbereitschaft, Krank, Ignorieren) und die Karte „Wecker“
+ * ([WeckerAbschnitt], nicht bei Krank und Ignorieren); Tagesleiste, Dimmen, DND und Licht kommen mit
+ * eigenen Paketen.
  *
  * ENTWURF STATT SOFORT-SCHREIBEN (bewusste Abweichung vom Prototyp, der keinen Speichern-Knopf
  * hat): `updateShiftConfig()` speichert und stoesst den Alarm-Sync an - je Tastendruck im Namen
@@ -247,8 +249,19 @@ private fun TypSeiteFormular(
                         aendere = aendere
                     )
                 }
-                // Bis ein eigenes Paket den Wecker-Abschnitt baut (SPEC 3.3 Punkt 5): die heutigen Felder.
-                typWeckerFelder(entwurf = entwurf, aendere = aendere)
+                // Sonderfall-Kasten (SPEC 3.3 Punkt 4) VOR der Karte „Wecker“, wie im Prototyp. Bei Krank und
+                // Ignorieren ersetzt er die Karte: er traegt dort den Hinweis, was der Typ stattdessen tut.
+                val sonderfall = ShiftDefinitionTexte.sonderfall(
+                    kategorie = entwurf.kategorie,
+                    code = TypAbschnittLogik.sichtbareMuster(entwurf).firstOrNull(),
+                    erkannt = entwurf.isEnabled
+                )
+                if (sonderfall != null) {
+                    item(key = "sonderfall") { SonderfallKasten(entwurf.kategorie, sonderfall) }
+                }
+                if (WeckerAbschnittLogik.zeigtWeckerKarte(entwurf.kategorie)) {
+                    item(key = "wecker") { WeckerAbschnitt(entwurf = entwurf, aendere = aendere) }
+                }
             }
 
             Spacer(modifier = Modifier.height(SpacingConstants.SPACING_SMALL))

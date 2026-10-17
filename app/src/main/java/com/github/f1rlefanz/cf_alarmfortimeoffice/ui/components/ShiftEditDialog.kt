@@ -169,8 +169,8 @@ private val ZEIT_ANZEIGE: DateTimeFormatter = DateTimeFormatter.ofPattern(DateTi
  * aus „Im Kalender gefunden“, `SchichttypEinordnen.neuerTypAusCode`): der Editor zeigt seine
  * Werte, meldet sich aber als Neuanlage - `onSave` bekommt ihn mit seiner eigenen `id`, und der
  * Aufrufer haengt ihn an. Das Formular selbst ist [typFormularFelder]; die Typ-Seite teilt davon nur
- * [typWeckerFelder] und [AktiviertSchalter] - Name, Muster und Kategorie zeigt sie als Karte „Typ“
- * (`TypAbschnitt`, Umbau #188).
+ * [AktiviertSchalter] - Name, Muster und Kategorie zeigt sie als Karte „Typ“ (`TypAbschnitt`, Umbau
+ * #188), Wecker und Sonderfall als eigene Abschnitte (Umbau #189).
  */
 @Composable
 fun ShiftEditDialog(
@@ -258,8 +258,8 @@ fun ShiftEditDialog(
 
 /**
  * Die Felder des Neuanlage-Dialogs, in dieser Reihenfolge: [typKopfFelder], [typWeckerFelder],
- * [AktiviertSchalter]. Die Typ-Seite (Bearbeiten, Umbau #187/#188) setzt sie anders zusammen: Karte
- * „Typ“, dann nur noch [typWeckerFelder]. Der Aufrufer besitzt den Zustand: [entwurf] wird
+ * [AktiviertSchalter]. Die Typ-Seite (Bearbeiten, Umbau #187-#189) setzt sie anders zusammen: Karte
+ * „Typ“, Sonderfall-Kasten, Karte „Wecker“. Der Aufrufer besitzt den Zustand: [entwurf] wird
  * angezeigt, jede Eingabe laeuft als Umformung durch [aendere]. Eine Umformung statt eines
  * fertigen Werts, damit zwei Eingaben im selben Frame sich nicht gegenseitig mit einem
  * veralteten Stand ueberschreiben. [bestehenderName] ist der gespeicherte Name des bearbeiteten
@@ -436,8 +436,8 @@ internal fun LazyListScope.typKopfFelder(
 
 /**
  * Wecker, Weckzeit und stummer Wecker - oder bei Krank und Ignorieren der Hinweis, was der Typ
- * stattdessen tut. Dieselben Felder im Neuanlage-Dialog und auf der Typ-Seite (bis ein eigenes
- * Paket den Wecker-Abschnitt der Seite baut, SPEC 3.3 Punkt 5).
+ * stattdessen tut. Nur noch fuer den Neuanlage-Dialog: die Typ-Seite zeigt dasselbe seit #189 als Karte
+ * „Wecker“ (`WeckerAbschnitt`) und als Sonderfall-Kasten (`SonderfallKasten`). Fliegt mit dem Dialog (#190).
  */
 internal fun LazyListScope.typWeckerFelder(
     entwurf: TypEntwurf,
@@ -722,6 +722,11 @@ object ShiftDefinitionTexte {
     const val WECKER_AUS_HINWEIS = "Aus – an diesen Tagen stellt dieser Typ keinen Wecker."
     const val WECKZEIT_TITEL = "Weckzeit"
 
+    // Typ-Seite (#189): die Zeile „Weckzeit“ hat ein schmales Feld rechts; was der Dialog als Beschriftung
+    // und Format-Hinweis neben das Feld stellt, steht hier unter dem Titel bzw. als Fehlertext.
+    const val WECKZEIT_HINWEIS = "Als Uhrzeit eingeben, z. B. 06:30."
+    const val WECKZEIT_FEHLER = "Das ist keine Uhrzeit – bitte als HH:mm eingeben, z. B. 06:30."
+
     // „Stummer Wecker“ (B3). Der Prototyp verspricht hier auch „Licht … richtet sich trotzdem nach
     // der Weckzeit – ein Lichtwecker“. Heute stimmt das NICHT: der AlarmReceiver und der
     // HueSmartScheduler ueberspringen bei einer stillen Schicht jede Hue-Regel. Der Satz kommt mit
@@ -735,6 +740,69 @@ object ShiftDefinitionTexte {
     const val IGNORIEREN_STATT_WECKER =
         "Dieser Eintrag wird übergangen. Er stellt keinen Wecker; steht im selben Termin ein " +
             "Dienst-Code, gilt der Dienst."
+
+    // Umbau #189: die Sonderfall-Kaesten der Typ-Seite (SPEC E3; Prototyp `besonders` und `banner` in
+    // `zeigeTyp`). TEXTWAHRHEIT statt Prototyp-Wortlaut, gegen den Code geprueft:
+    // - Rufbereitschaft: uebernimmt ein nachgetragener Dienst den Tag, entfaellt nur der WECKER des Rufs
+    //   (`uebernommeneRufTermine`, #172). Seine Spanne bleibt, und aus ihr lesen die stuendliche
+    //   Ruf-Abfrage und das Ende von „Nicht stoeren“. Der Prototyp sagt „dessen Wecker und Einstellungen -
+    //   nicht die von hier“; Dimmer und „Nicht stoeren“ des Ruf-Typs wirken heute weiter.
+    // - Krank: „der Dienst-Wecker entfaellt“ stimmt; „es gilt das hier Eingestellte“ nicht, Krank hat
+    //   bis Etappe 6 keinen Wecker-Block.
+    // - Ignorieren: ein ignorierter Termin zaehlt an einem sonst leeren Tag nicht als Eintrag
+    //   (`tageOhneEintrag`, #173), und die App schlaegt seinen Code nicht vor (#167).
+    const val SONDERFALL_RUF_TITEL = "Sonderfall Rufbereitschaft"
+    const val SONDERFALL_RUF_PRUEFUNG =
+        "Die App prüft an diesen Tagen stündlich den Kalender, weil Google Kalender und TimeOffice " +
+            "einen nachgetragenen Dienst nicht von selbst melden."
+    const val SONDERFALL_RUF_EINSATZ =
+        "Wird ein Einsatz als Dienst nachgetragen, gilt für den Tag die Wecker-Einstellung dieses " +
+            "Dienstes – nicht die von hier. Die stündliche Prüfung und das Ende von „Nicht stören“ bleiben."
+    const val SONDERFALL_RUF_ALLEIN =
+        "Steht nur die Rufbereitschaft im Kalender, gilt die Wecker-Einstellung von hier."
+
+    const val SONDERFALL_KRANK_TITEL = "Sonderfall Krank"
+    const val SONDERFALL_KRANK =
+        "Steht am selben Tag auch ein Dienst im Kalender, gewinnt Krank: der Dienst-Wecker entfällt."
+
+    const val IGNORIEREN_OHNE_EINTRAG = "Steht an dem Tag sonst nichts im Kalender, gilt „Ohne Kalendereintrag“."
+    fun ignorierenVorschlag(code: String): String = "Die App schlägt $code nicht mehr vor."
+
+    /** Ein Sonderfall-Kasten: [titel] fett (`null` = ohne Titel), darunter die [absaetze]. */
+    data class SonderfallText(val titel: String?, val absaetze: List<String>)
+
+    /**
+     * Der Kasten zu [kategorie] - oder `null`, wenn es keinen Sonderfall gibt. [code] ist das erste Muster
+     * des Typs (`null` = keins). [erkannt] ist der Schalter „Schichtdefinition aktiviert“: ein
+     * ausgeschalteter Typ wird nicht erkannt, dann gilt keiner dieser Saetze, und der Schalter darueber
+     * sagt es schon („Aus heißt: wird nicht mehr übergangen“). Ohne `else`: eine achte Kategorie muss
+     * bewusst entscheiden, ob sie einen Sonderfall hat.
+     */
+    fun sonderfall(kategorie: ShiftKategorie, code: String?, erkannt: Boolean): SonderfallText? {
+        if (!erkannt) return null
+        return when (kategorie) {
+            ShiftKategorie.RUFBEREITSCHAFT -> SonderfallText(
+                SONDERFALL_RUF_TITEL,
+                listOf(SONDERFALL_RUF_PRUEFUNG, SONDERFALL_RUF_EINSATZ, SONDERFALL_RUF_ALLEIN)
+            )
+            ShiftKategorie.KRANK -> SonderfallText(
+                SONDERFALL_KRANK_TITEL,
+                listOf(SONDERFALL_KRANK, KRANKMELDUNG_HINWEIS)
+            )
+            // Ein Absatz wie im Prototyp (`banner`): drei Saetze, die zusammengehoeren.
+            ShiftKategorie.IGNORIEREN -> SonderfallText(
+                titel = null,
+                absaetze = listOf(
+                    listOfNotNull(
+                        IGNORIEREN_STATT_WECKER,
+                        IGNORIEREN_OHNE_EINTRAG,
+                        code?.takeIf { it.isNotBlank() }?.let(::ignorierenVorschlag)
+                    ).joinToString(" ")
+                )
+            )
+            ShiftKategorie.DIENST, ShiftKategorie.FREI, ShiftKategorie.URLAUB, ShiftKategorie.FORTBILDUNG -> null
+        }
+    }
 
     /** Wie `SchichttypTexte.IGNORIEREN_AUSGESCHALTET` der Typ-Liste: aus heisst „wird nicht mehr uebergangen“. */
     const val IGNORIEREN_AKTIVIERT_HINWEIS =

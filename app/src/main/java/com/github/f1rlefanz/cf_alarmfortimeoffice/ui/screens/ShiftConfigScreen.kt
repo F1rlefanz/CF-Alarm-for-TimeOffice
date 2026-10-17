@@ -74,8 +74,8 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.EinordnenTexte
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.KnopfZeile
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.OhneEintragDialog
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.OhneEintragTexte
-import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.ShiftDefinitionTexte
-import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.ShiftEditDialog
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.typ.ShiftDefinitionTexte
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.typ.ShiftEditFormular
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.hilfe.HilfeKnopf
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.hilfe.HilfeThema
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.CodeMarke
@@ -181,6 +181,11 @@ fun ShiftConfigScreen(
     onNavigateBack: () -> Unit,
     /** Ein Tipp auf einen bestehenden Typ: oeffnet seine Typ-Seite (Umbau #187), `id` ist die stabile Kennung. */
     onTypOeffnen: (String) -> Unit,
+    /**
+     * „+“ und „Oder als neuer Typ“ im Einordnen-Dialog (Umbau #190): oeffnen die Typ-Seite mit einem noch
+     * NICHT gespeicherten Typ. [fundCode] ist der Kalender-Code aus „Im Kalender gefunden“ (`null` beim „+“).
+     */
+    onNeuerTyp: (vorlage: ShiftDefinition, fundCode: String?) -> Unit,
     /** Scroll-Stand der Liste; MainScreen haelt ihn, damit er die Typ-Seite ueberdauert. */
     listenZustand: LazyListState = rememberLazyListState()
 ) {
@@ -191,7 +196,6 @@ fun ShiftConfigScreen(
     // Statuszeile je Schicht (#70). Das Abo HIER startet das Lesen der Dimmer-/Hue-/DND-Stores
     // (WhileSubscribed) - nicht schon der App-Start, an dem das ViewModel entsteht.
     val schichtFolgen by shiftViewModel.schichtFolgen.collectAsStateWithLifecycle()
-    var showAddDialog by remember { mutableStateOf(false) }
 
     // Beide destruktiven Aktionen dieses Screens laufen ueber eine Rueckfrage. Ohne sie war ein
     // Fehlgriff nicht wiederherstellbar: `updateShiftConfig()` persistiert sofort UND ruft
@@ -211,12 +215,6 @@ fun ShiftConfigScreen(
      */
     var ohneEintragOffen by rememberSaveable { mutableStateOf(false) }
 
-    /**
-     * „Als neuer Typ“: der Editor ist mit dieser Vorlage offen. NICHTS davon ist gespeichert - erst
-     * „Erstellen“ im Editor legt den Typ an ([ShiftViewModel.legeTypAusCodeAn]), Abbrechen verwirft ihn.
-     */
-    var neuerTypAusFund by remember { mutableStateOf<NeuerTypAusFund?>(null) }
-
     Scaffold(
         topBar = {
             TopAppBar(
@@ -235,7 +233,7 @@ fun ShiftConfigScreen(
                 },
                 actions = {
                     HilfeKnopf(HilfeThema.ANLEITUNG_SCHICHTEN)
-                    IconButton(onClick = { showAddDialog = true }) {
+                    IconButton(onClick = { onNeuerTyp(ShiftEditFormular.leererTyp(), null) }) {
                         Icon(
                             Icons.Default.Add,
                             contentDescription = "Schicht hinzufügen"
@@ -417,33 +415,6 @@ fun ShiftConfigScreen(
         }
     }
 
-    // Neuanlage-Dialog („+“) - auch der Editor fuer „Als neuer Typ“ aus dem Fund (Vorlage). Einen
-    // BESTEHENDEN Typ bearbeitet die Typ-Seite (onTypOeffnen), nicht mehr dieser Dialog.
-    if (showAddDialog || neuerTypAusFund != null) {
-        ShiftEditDialog(
-            vorlage = neuerTypAusFund?.vorlage,
-            onSave = { newDefinition ->
-                val ausFund = neuerTypAusFund
-                if (ausFund != null) {
-                    // Eigener Weg: er raeumt den Code auch bei anderen Typen ab (siehe legeTypAusCodeAn).
-                    shiftViewModel.legeTypAusCodeAn(ausFund.code, newDefinition)
-                } else {
-                    shiftState.currentShiftConfig?.let { config ->
-                        shiftViewModel.updateShiftConfig(
-                            config.copy(definitions = config.definitions + newDefinition)
-                        )
-                    }
-                }
-                showAddDialog = false
-                neuerTypAusFund = null
-            },
-            onDismiss = {
-                showAddDialog = false
-                neuerTypAusFund = null
-            }
-        )
-    }
-
     // Rueckfrage vor dem Loeschen einer Schicht: der Muelleimer sitzt am rechten Rand einer
     // Karte, deren restliche Flaeche "Bearbeiten" ist - ein Fehlgriff ist strukturell
     // wahrscheinlich, und er nimmt Muster, Weckzeit UND den bereits gesetzten Alarm mit.
@@ -524,7 +495,7 @@ fun ShiftConfigScreen(
     // Einordnen eines Fund-Codes (SPEC 3.2). Bewusst eine Wahl des Menschen und keine Automatik: welche
     // Schicht „AD1“ ist, weiss nur er - und eine falsche Zuordnung stellt einen Wecker auf die falsche
     // Uhrzeit. „Gehoert zu“ traegt den Code als Muster ein (und schaltet das Ziel ein), „neuer Typ“
-    // oeffnet den Editor mit der Vorlage der Kategorie.
+    // oeffnet die Typ-Seite mit der Vorlage der Kategorie - gespeichert wird erst mit „Erstellen“.
     // Die Wahl „Tage ohne Eintrag verhalten sich“ (SPEC 3.3 Punkt 2): wirkt sofort, der Dialog bleibt offen.
     if (ohneEintragOffen) {
         shiftState.currentShiftConfig?.let { config ->
@@ -552,7 +523,7 @@ fun ShiftConfigScreen(
             },
             onNeuerTyp = { kategorie ->
                 SchichttypEinordnen.neuerTypAusCode(code, kategorie)?.let { vorlage ->
-                    neuerTypAusFund = NeuerTypAusFund(code, vorlage)
+                    onNeuerTyp(vorlage, code)
                 }
                 einordnenCode = null
             },
@@ -560,9 +531,6 @@ fun ShiftConfigScreen(
         )
     }
 }
-
-/** Ein Fund-Code und der daraus vorbelegte, noch NICHT gespeicherte Typ (siehe [SchichttypEinordnen.neuerTypAusCode]). */
-private data class NeuerTypAusFund(val code: String, val vorlage: ShiftDefinition)
 
 /**
  * Der Erkennungs-Hinweis, aufklappbar.

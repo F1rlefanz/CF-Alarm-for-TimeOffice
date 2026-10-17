@@ -3,8 +3,6 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.typ
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftKategorie
-import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.ShiftDefinitionTexte
-import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.TypEntwurf
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull

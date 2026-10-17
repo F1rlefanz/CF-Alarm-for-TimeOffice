@@ -17,7 +17,6 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftKategorie
-import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.ShiftDefinitionTexte
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.StatusTon
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.kategorieFarben
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.tonPaar
@@ -69,4 +68,4 @@ internal fun SonderfallKasten(kategorie: ShiftKategorie, text: ShiftDefinitionTe
 private val SCHRIFT_BESONDERS_HELL = Color(0xFF3B1F52)
 
 /** Schrift auf der hellen Flaeche von Ignorieren (Prototyp `.banner`). */
-private val SCHRIFT_BANNER_HELL = Color(0xFF4D2E00)
+internal val SCHRIFT_BANNER_HELL = Color(0xFF4D2E00)

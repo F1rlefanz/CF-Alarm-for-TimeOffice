@@ -1,5 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
 import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.GateEinstieg
 import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.GateLage
 import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.GateSchritt
@@ -12,6 +13,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.time.LocalTime
 
 /**
  * NavigationViewModel hat keine injizierten Dependencies (kein Context/DataStore) - reine,
@@ -463,6 +465,33 @@ class NavigationViewModelTest {
         vm.navigateBackFrom(gerendert)
         vm.navigateBackFrom(gerendert)
         assertEquals(NavigationState.ShiftConfig(MainTab.STATUS), vm.navigationState.value)
+    }
+
+    // ---- Neuanlage ueber die Typ-Seite (Umbau #190) -------------------------------------------
+
+    private val vorlage = ShiftDefinition(id = "neu-1", name = "AD1", keywords = listOf("AD1"), alarmTime = LocalTime.of(6, 0))
+
+    @Test
+    fun `NavigateToNeuerTyp traegt Vorlage, Fund-Code und Herkunftstab - id ist die der Vorlage`() {
+        // Die Vorlage reist im NavigationState und nirgends sonst (Festlegung des Betreuers).
+        val vm = newViewModel()
+        vm.navigateToNeuerTyp(vorlage, "AD1", MainTab.WECKER)
+        assertEquals(NavigationState.TypSeite("neu-1", MainTab.WECKER, vorlage, "AD1"), vm.navigationState.value)
+
+        // Das „+“ der Liste hat keinen Fund-Code.
+        vm.navigateToNeuerTyp(vorlage, fromTab = MainTab.WECKER)
+        assertEquals(null, (vm.navigationState.value as NavigationState.TypSeite).fundCode)
+    }
+
+    @Test
+    fun `Zurueck aus einer Neuanlage fuehrt zur Typ-Liste - nicht auf HOME und nicht in einen Typ`() {
+        val vm = newViewModel()
+        vm.navigateToShiftConfig(MainTab.WECKER)
+        vm.navigateToNeuerTyp(vorlage, "AD1", MainTab.WECKER)
+
+        vm.navigateBackFrom(vm.navigationState.value)
+
+        assertEquals(NavigationState.ShiftConfig(MainTab.WECKER), vm.navigationState.value)
     }
 
     @Test

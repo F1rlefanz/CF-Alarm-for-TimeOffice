@@ -427,6 +427,9 @@ fun MainScreen(
                     // Den Herkunfts-Tab der Liste weiterreichen: Zurueck aus der Typ-Seite fuehrt zur
                     // Liste, von dort aus wie bisher in den Tab, aus dem sie geoeffnet wurde.
                     onTypOeffnen = { id -> navigationViewModel.navigateToTypSeite(id, state.returnToTab) },
+                    onNeuerTyp = { vorlage, fundCode ->
+                        navigationViewModel.navigateToNeuerTyp(vorlage, fundCode, state.returnToTab)
+                    },
                     listenZustand = typListeZustand
                 )
             }
@@ -438,7 +441,9 @@ fun MainScreen(
                 com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.typ.TypSeite(
                     definitionId = state.definitionId,
                     shiftViewModel = shiftViewModel,
-                    onZurueck = { navigationViewModel.navigateBackFrom(state) }
+                    onZurueck = { navigationViewModel.navigateBackFrom(state) },
+                    vorlage = state.vorlage,
+                    fundCode = state.fundCode
                 )
             }
 

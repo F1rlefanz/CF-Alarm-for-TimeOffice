@@ -22,10 +22,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftKategorie
-import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.ShiftDefinitionTexte
-import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.ShiftEditFormular
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.SwitchRow
-import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.TypEntwurf
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
 
 /**
@@ -39,8 +36,8 @@ internal object WeckerAbschnittLogik {
 
     /**
      * Zeigt die Seite die Karte „Wecker“? Nein bei Krank (gibt den Tag frei, #142) und Ignorieren
-     * (ergibt keine Schicht, #167): dort zeigte jedes Feld einen Ablauf, den es nicht gibt. Dieselbe
-     * Frage wie im Neuanlage-Dialog - sie hat EINE Antwort ([ShiftEditFormular.zeigtWeckerBlock]).
+     * (ergibt keine Schicht, #167): dort zeigte jedes Feld einen Ablauf, den es nicht gibt. Die Frage hat
+     * EINE Antwort ([ShiftEditFormular.zeigtWeckerBlock]).
      */
     fun zeigtWeckerKarte(kategorie: ShiftKategorie): Boolean = ShiftEditFormular.zeigtWeckerBlock(kategorie)
 
@@ -68,7 +65,7 @@ internal object WeckerAbschnittLogik {
  *
  * Bei „Wecker aus“ bleiben Weckzeit und „Stummer Wecker“ sichtbar, aber ausgegraut und gesperrt (Prototyp
  * `.row.aus`); ihre Werte bleiben im Entwurf und im gespeicherten Typ stehen (SPEC E2) - ein spaeteres
- * Einschalten bringt sie zurueck. Die Weckzeit ist ein Textfeld wie im Dialog davor, keine Zeitwahl: der
+ * Einschalten bringt sie zurueck. Die Weckzeit ist ein Textfeld wie im frueheren Dialog, keine Zeitwahl: der
  * Entwurf haelt den eingetippten TEXT (`TypEntwurf.weckzeitText`), weil „06:“ ein gueltiger Zwischenstand
  * ist, und `Saver`, `speicherbar` und `zeitZumSpeichern` rechnen darauf.
  *
@@ -188,7 +185,7 @@ private fun WeckzeitZeile(
     }
 }
 
-/** Deckkraft einer ausgegrauten Zeile: unter Material-Standard (0,38), damit Text lesbar bleibt (wie im Dialog). */
+/** Deckkraft einer ausgegrauten Zeile: unter Material-Standard (0,38), damit Text lesbar bleibt. */
 private const val AUSGEGRAUT_ALPHA = 0.6f
 
 /** Breit genug fuer „06:30“ in Schrift 1,3 samt Innenabstand, schmal genug, dass der Text links 320 dp uebersteht. */

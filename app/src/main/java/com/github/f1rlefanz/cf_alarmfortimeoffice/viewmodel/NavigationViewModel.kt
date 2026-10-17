@@ -7,6 +7,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.NavigationAction
 import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.NavigationState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.asMainContent
 import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.isMainContent
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.BatteryOptimizationHelper
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
@@ -57,6 +58,11 @@ class NavigationViewModel @Inject constructor() : ViewModel() {
             is NavigationAction.NavigateToTypSeite -> {
                 Logger.d(LogTags.NAVIGATION, "Shift Config -> Typ-Seite (from ${action.fromTab}, id: ${action.definitionId})")
                 NavigationState.TypSeite(action.definitionId, action.fromTab)
+            }
+
+            is NavigationAction.NavigateToNeuerTyp -> {
+                Logger.d(LogTags.NAVIGATION, "Shift Config -> Typ-Seite, neuer Typ (from ${action.fromTab}, aus Fund: ${action.fundCode != null})")
+                NavigationState.TypSeite(action.vorlage.id, action.fromTab, action.vorlage, action.fundCode)
             }
 
             // Battery and OEM navigation
@@ -149,6 +155,9 @@ class NavigationViewModel @Inject constructor() : ViewModel() {
     
     fun navigateToTypSeite(definitionId: String, fromTab: MainTab = MainTab.SETTINGS) =
         handleNavigationAction(NavigationAction.NavigateToTypSeite(definitionId, fromTab))
+
+    fun navigateToNeuerTyp(vorlage: ShiftDefinition, fundCode: String? = null, fromTab: MainTab = MainTab.SETTINGS) =
+        handleNavigationAction(NavigationAction.NavigateToNeuerTyp(vorlage, fundCode, fromTab))
 
     // Battery and OEM navigation convenience methods
     fun navigateToBatteryExemption(fromTab: MainTab = MainTab.HOME) = 

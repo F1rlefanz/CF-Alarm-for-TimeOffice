@@ -10,7 +10,12 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.model.SchichttypEinordnen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftKategorie
+import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.MainTab
+import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.NavigationState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.typ.SpeicherErgebnis
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.typ.TypSeiteSpeicherung
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.typ.TypEntwurf
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IShiftUseCase
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -235,5 +240,85 @@ class EinordnenAblaufTest {
         assertFalse("im Editor ausgeschaltet, also ausgeschaltet gespeichert", neu.isEnabled)
         assertEquals(listOf("FBE"), neu.keywords)
         assertEquals("ein ausgeschalteter Typ zaehlt als Zuordnung", emptyList<String>(), a.codesImFund())
+    }
+
+    // ---- Neuanlage ueber die Typ-Seite (Umbau #190) ------------------------------------------------
+    // „Einordnen → als neuer Typ“ oeffnet die Typ-Seite mit einer Vorlage; gespeichert wird erst mit
+    // „Erstellen“. Die Seite selbst ist Compose - hier laeuft ihr Weg: NavigationState, Entwurf und der
+    // Schreibweg `TypSeiteSpeicherung.erstelle` gegen das echte ShiftViewModel.
+
+    @Test
+    fun `Einordnen als neuer Typ, Seite, Zurueck ohne Erstellen - Konfiguration unveraendert, der Code bleibt im Fund`() =
+        runTest(dispatcher) {
+            val a = aufbauen(ShiftConfig(definitions = listOf(typ("f", "Frühdienst", "F"))), listOf(termin("e1", "FBE")))
+            advanceUntilIdle()
+            val nav = NavigationViewModel()
+            nav.navigateToShiftConfig(MainTab.WECKER)
+
+            val vorlage = SchichttypEinordnen.neuerTypAusCode("FBE", ShiftKategorie.FORTBILDUNG) { "neu" }!!
+            nav.navigateToNeuerTyp(vorlage, "FBE", MainTab.WECKER)
+            val seite = nav.navigationState.value as NavigationState.TypSeite
+            assertEquals(vorlage, seite.vorlage)
+            assertEquals("FBE", seite.fundCode)
+
+            // Auf der Seite wird getippt - Zurueck (Pfeil, Taste, „Verwerfen“) rechnet nur navigateBackFrom aus.
+            TypEntwurf.aus(seite.vorlage).copy(name = "Fortbildung intern")
+            nav.navigateBackFrom(seite)
+            advanceUntilIdle()
+
+            assertEquals(NavigationState.ShiftConfig(MainTab.WECKER), nav.navigationState.value)
+            verifyBlocking(a.shiftUseCase, never()) { saveShiftConfig(any()) }
+            assertEquals(listOf("f"), a.vm.uiState.value.currentShiftConfig!!.definitions.map { it.id })
+            assertEquals("FBE bleibt im Fund", listOf("FBE"), a.codesImFund())
+        }
+
+    @Test
+    fun `Erstellen legt den Typ an und nimmt den Code aus dem Fund`() = runTest(dispatcher) {
+        val a = aufbauen(ShiftConfig(definitions = listOf(typ("f", "Frühdienst", "F"))), listOf(termin("e1", "FBE")))
+        advanceUntilIdle()
+        val vorlage = SchichttypEinordnen.neuerTypAusCode("FBE", ShiftKategorie.FORTBILDUNG) { "neu" }!!
+        val speicherung = TypSeiteSpeicherung { a.vm.updateShiftConfig(it) }
+
+        val ergebnis = speicherung.erstelle(
+            config = a.vm.uiState.value.currentShiftConfig,
+            vorlage = vorlage,
+            fundCode = "FBE",
+            entwurf = TypEntwurf.aus(vorlage).copy(name = "Fortbildung intern", muster = listOf("FBE")),
+            legeAusCodeAn = a.vm::legeTypAusCodeAn
+        )
+        advanceUntilIdle()
+
+        assertEquals(SpeicherErgebnis.GESCHRIEBEN, ergebnis)
+        val gespeichert = a.gespeicherteKonfiguration().definitions
+        assertEquals(listOf("f", "neu"), gespeichert.map { it.id })
+        val neu = gespeichert.last()
+        assertEquals("Fortbildung intern", neu.name)
+        assertEquals(ShiftKategorie.FORTBILDUNG, neu.kategorie)
+        assertEquals("Code aus dem Fund", listOf("FBE"), neu.keywords)
+        assertEquals(emptyList<String>(), a.codesImFund())
+    }
+
+    @Test
+    fun `ein auf der Seite ausgeschalteter neuer Typ bleibt aus`() = runTest(dispatcher) {
+        val a = aufbauen(ShiftConfig(definitions = listOf(typ("f", "Frühdienst", "F"))), listOf(termin("e1", "FBE")))
+        advanceUntilIdle()
+        val vorlage = SchichttypEinordnen.neuerTypAusCode("FBE", ShiftKategorie.DIENST) { "neu" }!!
+        val speicherung = TypSeiteSpeicherung { a.vm.updateShiftConfig(it) }
+
+        // Der Schalter „Schichtdefinition aktiviert“ steht in der Karte „Typ“ und ist auch bei einer
+        // Neuanlage frei. Ein Dienst-Typ, den der Nutzer ausschaltet, darf nie eingeschaltet landen.
+        speicherung.erstelle(
+            config = a.vm.uiState.value.currentShiftConfig,
+            vorlage = vorlage,
+            fundCode = "FBE",
+            entwurf = TypEntwurf.aus(vorlage).copy(isEnabled = false),
+            legeAusCodeAn = a.vm::legeTypAusCodeAn
+        )
+        advanceUntilIdle()
+
+        val neu = a.gespeicherteKonfiguration().definitions.last()
+        assertEquals("neu", neu.id)
+        assertFalse("auf der Seite ausgeschaltet, also ausgeschaltet angelegt", neu.isEnabled)
+        assertEquals(listOf("FBE"), neu.keywords)
     }
 }

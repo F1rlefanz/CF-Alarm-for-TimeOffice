@@ -13,7 +13,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -25,20 +27,31 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftKategorie
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.CompactButton
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.KnopfZeile
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.SimpleBackTopAppBar
-import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.ShiftDefinitionTexte
-import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.TypEntwurf
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.EinordnenTexte
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.hilfe.HilfeThema
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.StatusTon
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.tonPaar
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.ShiftViewModel
+import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.titel
 
 /** Nutzertexte der Typ-Seite, als Konstanten (ein Test haelt sie fest). */
 internal object TypSeiteTexte {
@@ -52,6 +65,35 @@ internal object TypSeiteTexte {
             "verloren. Der gespeicherte Typ und seine Wecker bleiben, wie sie sind."
     const val VERWERFEN = "Verwerfen"
     const val WEITER_BEARBEITEN = "Weiter bearbeiten"
+
+    // NEUANLAGE (#190): der Typ ist erst mit „Erstellen“ gespeichert. Alle Texte sagen das - ein „angelegt“
+    // vor dem Tipp waere eine Aussage ueber einen Zustand, den es nicht gibt (der Prototyp legt sofort an).
+    const val ERSTELLEN = "Erstellen"
+    const val NEUER_TYP_TITEL = "Neuer Typ"
+    const val NEUER_TYP_VERWERFEN_TITEL = "Neuen Typ verwerfen?"
+
+    /** Was Zurueck ohne „Erstellen“ bedeutet; bei einem Fund-Code sagt der Satz, wo der Code bleibt. */
+    fun neuerTypVerwerfenText(fundCode: String?): String =
+        "Dieser Typ ist noch nicht angelegt. Gehst du zurück, wird er nicht angelegt." +
+            if (fundCode != null) {
+                " „$fundCode“ bleibt unter „${EinordnenTexte.FUND_TITEL}“."
+            } else {
+                ""
+            }
+
+    // Banner nach dem Einordnen (SPEC 3.3 Punkt 1, Prototyp `typ.neuBanner`). Der zweite Satz ist der des
+    // Betreuers: darunter ist in Etappe 2 nur der Wecker einstellbar, der Text verspricht kein Dimmen und
+    // kein Licht. Der erste Satz sagt „Neuer Typ“ statt „Neu angelegt“, der dritte nennt den Knopf.
+    const val BANNER_ANFANG = "Neuer Typ aus dem Kalender-Code "
+    const val BANNER_VORSTELLUNG = "Alles darunter ist eine Voreinstellung – stell es ein, wie du an diesen Tagen leben willst."
+    const val BANNER_ERSTELLEN = "Angelegt ist der Typ erst mit „$ERSTELLEN“."
+
+    /** Der Banner-Text; der Code steht fett (wie im Prototyp). [kategorie] ist die GERADE gewaehlte. */
+    fun banner(code: String, kategorie: ShiftKategorie): AnnotatedString = buildAnnotatedString {
+        append(BANNER_ANFANG)
+        withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(code) }
+        append(" als „${kategorie.titel()}“. $BANNER_VORSTELLUNG $BANNER_ERSTELLEN")
+    }
 }
 
 /** Wie ein Speichern-Versuch der Typ-Seite ausging ([TypSeiteSpeicherung.speichere]). */
@@ -118,6 +160,33 @@ internal class TypSeiteSpeicherung(private val schreibe: (ShiftConfig) -> Unit) 
         schreibe(neueConfig)
         return SpeicherErgebnis.GESCHRIEBEN
     }
+
+    /**
+     * „Erstellen“ bei der NEUANLAGE (#190): schreibt den Typ aus [vorlage] mit den Werten des Entwurfs,
+     * hoechstens einmal fuer BEIDE Wege. Mit [fundCode] geht er ueber [legeAusCodeAn]
+     * (`ShiftViewModel.legeTypAusCodeAn`: nimmt den Code bei allen anderen Typen heraus und stellt
+     * `isEnabled` auf den Wert der Seite zurueck, #176) - sonst haengt er an und schreibt ueber `schreibe`.
+     * Steht die `id` schon in der Konfiguration (Doppeltipp ueber zwei Frames), wird nichts geschrieben.
+     */
+    fun erstelle(
+        config: ShiftConfig?,
+        vorlage: ShiftDefinition,
+        fundCode: String?,
+        entwurf: TypEntwurf,
+        legeAusCodeAn: (String, ShiftDefinition) -> Unit
+    ): SpeicherErgebnis {
+        if (geschrieben) return SpeicherErgebnis.SCHON_GESCHRIEBEN
+        if (config == null) return SpeicherErgebnis.KEINE_KONFIGURATION
+        if (config.definitions.any { it.id == vorlage.id }) return SpeicherErgebnis.SCHON_GESCHRIEBEN
+        val neuerTyp = entwurf.alsDefinition(vorlage) ?: return SpeicherErgebnis.NICHT_SPEICHERBAR
+        geschrieben = true
+        if (fundCode != null) {
+            legeAusCodeAn(fundCode, neuerTyp)
+        } else {
+            schreibe(config.copy(definitions = config.definitions + neuerTyp))
+        }
+        return SpeicherErgebnis.GESCHRIEBEN
+    }
 }
 
 /** Der Entwurf ueber Drehen, Dunkelmodus und Schriftgroesse (siehe [TypEntwurf.alsSpeicherListe]). */
@@ -144,22 +213,32 @@ private val EntwurfSaver: Saver<TypEntwurf, Any> = Saver(
  * ohne Aenderungen ist er aus, und der `BackHandler` in `MainScreen` greift unveraendert. Er
  * entscheidet nie ueber das Ziel.
  *
+ * NEUANLAGE (#190): mit [vorlage] zeigt die Seite einen noch NICHT gespeicherten Typ - aus „+“ in der
+ * Liste ([fundCode] `null`) oder aus „Oder als neuer Typ“ im Einordnen-Dialog ([fundCode] = der Fund-Code,
+ * dazu der Banner). Titel „Neuer Typ“, Knopf „Erstellen“; gespeichert wird erst damit
+ * ([TypSeiteSpeicherung.erstelle]), Zurueck ohne „Erstellen“ legt nichts an und fragt wie sonst.
+ * Der Typ ist nicht in der Konfiguration, also gibt es hier kein „verschwunden“.
+ *
  * @param onZurueck verlaesst die Seite zur Typ-Liste (`navigateBackFrom(state)`).
  */
 @Composable
 fun TypSeite(
     definitionId: String,
     shiftViewModel: ShiftViewModel,
-    onZurueck: () -> Unit
+    onZurueck: () -> Unit,
+    vorlage: ShiftDefinition? = null,
+    fundCode: String? = null
 ) {
     val shiftState by shiftViewModel.uiState.collectAsStateWithLifecycle()
     val config = shiftState.currentShiftConfig
-    val definition = config?.definitions?.firstOrNull { it.id == definitionId }
+    val neu = vorlage != null
+    val definition = vorlage ?: config?.definitions?.firstOrNull { it.id == definitionId }
 
     // Der Typ verschwindet, waehrend die Seite offen ist (Zuruecksetzen, Import, Loeschen auf
     // einem anderen Weg): zurueck zur Liste, statt ihn beim Speichern neu anzulegen. Nur wenn die
     // Konfiguration GELESEN ist - ohne sie (laedt noch, nicht lesbar) ist "kein Typ" keine Aussage.
-    val verschwunden = config != null && definition == null
+    // Eine Neuanlage hat ihre Vorlage und steht nie in der Konfiguration: dort gilt das nicht.
+    val verschwunden = !neu && config != null && definition == null
     val zurueckAktuell by rememberUpdatedState(onZurueck)
     LaunchedEffect(verschwunden) {
         if (verschwunden) {
@@ -168,7 +247,7 @@ fun TypSeite(
         }
     }
 
-    if (config == null || definition == null) {
+    if (definition == null || (!neu && config == null)) {
         // Nichts zu bearbeiten: der Pfeil bleibt, damit niemand auf einer leeren Seite festsitzt.
         Scaffold(topBar = { SimpleBackTopAppBar(title = "", onNavigateBack = onZurueck) }) { paddingValues ->
             Box(modifier = Modifier.fillMaxSize().padding(paddingValues))
@@ -179,7 +258,10 @@ fun TypSeite(
     TypSeiteFormular(
         definition = definition,
         config = config,
+        neu = neu,
+        fundCode = fundCode,
         schreibe = shiftViewModel::updateShiftConfig,
+        legeAusCodeAn = shiftViewModel::legeTypAusCodeAn,
         onZurueck = onZurueck
     )
 }
@@ -188,8 +270,11 @@ fun TypSeite(
 @Composable
 private fun TypSeiteFormular(
     definition: ShiftDefinition,
-    config: ShiftConfig,
+    config: ShiftConfig?,
+    neu: Boolean,
+    fundCode: String?,
     schreibe: (ShiftConfig) -> Unit,
+    legeAusCodeAn: (String, ShiftDefinition) -> Unit,
     onZurueck: () -> Unit
 ) {
     // Der Ausgangsstand wird beim Oeffnen eingefroren und reist mit: jede Config-Emission (auch
@@ -220,7 +305,7 @@ private fun TypSeiteFormular(
     Scaffold(
         topBar = {
             SimpleBackTopAppBar(
-                title = definition.name,
+                title = if (neu) TypSeiteTexte.NEUER_TYP_TITEL else definition.name,
                 onNavigateBack = zurueck,
                 hilfe = HilfeThema.ANLEITUNG_SCHICHTEN
             )
@@ -239,10 +324,14 @@ private fun TypSeiteFormular(
                 contentPadding = PaddingValues(vertical = SpacingConstants.SPACING_LARGE),
                 verticalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_LARGE)
             ) {
+                if (neu && fundCode != null) {
+                    item(key = "banner") { NeuAnlageBanner(fundCode, entwurf.kategorie) }
+                }
                 item(key = "typ") {
                     TypAbschnitt(
                         entwurf = entwurf,
-                        bestehenderName = definition.name,
+                        // Eine Neuanlage hat keinen alten Namen, den ein Nachzug umstellen muesste.
+                        bestehenderName = if (neu) null else definition.name,
                         neuesMuster = neuesMuster,
                         onNeuesMuster = { neuesMuster = it },
                         onKategorieAendern = { kategorieWahlOffen = true },
@@ -274,11 +363,16 @@ private fun TypSeiteFormular(
                 abstand = SpacingConstants.SPACING_SMALL
             ) {
                 CompactButton(
-                    text = TypSeiteTexte.SPEICHERN,
+                    text = if (neu) TypSeiteTexte.ERSTELLEN else TypSeiteTexte.SPEICHERN,
                     onClick = {
-                        when (val ergebnis = speicherung.speichere(config, definition.id, kandidat)) {
+                        val ergebnis = if (neu) {
+                            speicherung.erstelle(config, definition, fundCode, kandidat, legeAusCodeAn)
+                        } else {
+                            speicherung.speichere(config, definition.id, kandidat)
+                        }
+                        when (ergebnis) {
                             SpeicherErgebnis.GESCHRIEBEN -> {
-                                Logger.d(LogTags.UI, "Typ-Seite: Typ ${definition.id} gespeichert -> zurueck zur Liste")
+                                Logger.d(LogTags.UI, "Typ-Seite: Typ ${definition.id} ${if (neu) "erstellt" else "gespeichert"} -> zurueck zur Liste")
                                 onZurueck()
                             }
                             // Schon geschrieben: die Seite ist unterwegs weg, nichts zu tun.
@@ -287,8 +381,9 @@ private fun TypSeiteFormular(
                         }
                     },
                     // Nichts zu speichern, solange nichts geaendert ist; das verborgene Zeitfeld
-                    // sperrt nicht grundlos (#142, steckt in `speicherbar`).
-                    enabled = geaendert && kandidat.speicherbar
+                    // sperrt nicht grundlos (#142, steckt in `speicherbar`). Eine Neuanlage braucht
+                    // keine Aenderung: die Vorlage aus dem Fund ist schon ein gueltiger Typ.
+                    enabled = (neu || geaendert) && kandidat.speicherbar
                 )
             }
         }
@@ -309,13 +404,13 @@ private fun TypSeiteFormular(
     if (rueckfrageOffen) {
         AlertDialog(
             onDismissRequest = { rueckfrageOffen = false },
-            title = { Text(TypSeiteTexte.VERWERFEN_TITEL) },
-            text = { Text(TypSeiteTexte.VERWERFEN_TEXT) },
+            title = { Text(if (neu) TypSeiteTexte.NEUER_TYP_VERWERFEN_TITEL else TypSeiteTexte.VERWERFEN_TITEL) },
+            text = { Text(if (neu) TypSeiteTexte.neuerTypVerwerfenText(fundCode) else TypSeiteTexte.VERWERFEN_TEXT) },
             confirmButton = {
                 TextButton(
                     onClick = {
                         rueckfrageOffen = false
-                        Logger.d(LogTags.UI, "Typ-Seite: Aenderungen an ${definition.id} verworfen")
+                        Logger.d(LogTags.UI, "Typ-Seite: ${if (neu) "neuer Typ" else "Aenderungen an"} ${definition.id} verworfen")
                         onZurueck()
                     }
                 ) {
@@ -327,6 +422,29 @@ private fun TypSeiteFormular(
                     Text(TypSeiteTexte.WEITER_BEARBEITEN)
                 }
             }
+        )
+    }
+}
+
+/**
+ * Der Banner nach dem Einordnen (Prototyp `.banner`, SPEC 3.3 Punkt 1): amber wie der Ignorieren-Kasten,
+ * dessen Farben er teilt. [kategorie] ist die gerade gewaehlte - wechselt der Nutzer sie auf der Seite,
+ * bleibt der Satz wahr.
+ */
+@Composable
+private fun NeuAnlageBanner(code: String, kategorie: ShiftKategorie) {
+    val dunkel = isSystemInDarkTheme()
+    val paar = tonPaar(StatusTon.WARNUNG, dunkel)
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        color = paar.flaeche
+    ) {
+        Text(
+            text = TypSeiteTexte.banner(code, kategorie),
+            style = MaterialTheme.typography.bodyMedium,
+            color = if (dunkel) paar.text else SCHRIFT_BANNER_HELL,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp)
         )
     }
 }

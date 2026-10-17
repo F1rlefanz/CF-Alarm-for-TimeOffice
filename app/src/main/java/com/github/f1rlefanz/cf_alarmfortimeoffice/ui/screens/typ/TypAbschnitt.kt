@@ -38,9 +38,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftKategorie
-import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.AktiviertSchalter
-import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.ShiftDefinitionTexte
-import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.TypEntwurf
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.SwitchRow
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.KategorieMarke
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.titel
@@ -145,7 +143,7 @@ internal object TypAbschnittLogik {
 @Composable
 internal fun TypAbschnitt(
     entwurf: TypEntwurf,
-    bestehenderName: String,
+    bestehenderName: String?,
     neuesMuster: String,
     onNeuesMuster: (String) -> Unit,
     onKategorieAendern: () -> Unit,
@@ -185,7 +183,7 @@ internal fun TypAbschnitt(
                 supportingText = if (entwurf.istUmbenennungVon(bestehenderName)) {
                     {
                         Text(
-                            text = ShiftDefinitionTexte.umbenennungHinweis(bestehenderName),
+                            text = ShiftDefinitionTexte.umbenennungHinweis(bestehenderName.orEmpty()),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -374,4 +372,29 @@ private fun KategorieWahlZeile(kategorie: ShiftKategorie, onClick: () -> Unit) {
         // dekorativ: die ganze Zeile ist der Knopf, ihr Text sagt „Kategorie <Name>“
         Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null)
     }
+}
+
+/**
+ * Der Schalter „Schichtdefinition aktiviert“ - das Ende der Karte „Typ“ (Betreuer #188: der Prototyp kennt ihn nicht, er bleibt bis Etappe 9, weil
+ * „aus“ sonst eine Funktion ohne Oberflaeche waere).
+ */
+@Composable
+private fun AktiviertSchalter(
+    entwurf: TypEntwurf,
+    aendere: ((TypEntwurf) -> TypEntwurf) -> Unit
+) {
+    // Der Schalter daneben hat eine Erklaerung, dieser hatte keine - und
+    // genau daran ist am 19.08.2026 eine Rufbereitschaft gescheitert: sie
+    // wurde AUSGESCHALTET angelegt, damit sie nicht klingelt, sollte aber
+    // weiterhin "Nicht stoeren" steuern. Ausschalten beendet jedoch die
+    // ERKENNUNG, und ohne erkannte Schicht gibt es keine Schichtspanne -
+    // also auch kein DND- und kein Dimmer-Fenster. Wer "kein Wecker, aber
+    // Zeitfenster" will, schaltet „Wecker an diesem Tag“ aus (#168).
+    SwitchRow(
+        title = "Schichtdefinition aktiviert",
+        description = ShiftDefinitionTexte.aktiviertHinweis(entwurf.kategorie),
+        checked = entwurf.isEnabled,
+        onCheckedChange = { neu -> aendere { it.copy(isEnabled = neu) } },
+        titleFontWeight = FontWeight.Normal
+    )
 }

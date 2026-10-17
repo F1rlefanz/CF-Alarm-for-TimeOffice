@@ -1,5 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.navigation
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.BatteryOptimizationHelper
 
 /**
@@ -18,12 +19,18 @@ sealed class NavigationState {
      * Die Typ-Seite (Umbau, SPEC 3.3): ein Schichttyp als eigener Bildschirm, erreichbar nur aus
      * [ShiftConfig]. Zurueck fuehrt dorthin (NavigationViewModel.rueckwegZiel), mit demselben
      * [returnToTab] - nicht auf die Uebersicht. [definitionId] ist die stabile id des Typs, nie sein
-     * Name (der ist frei aenderbar). Der Entwurf liegt im Bildschirm, nicht hier: dieser Zustand
-     * bleibt eine reine Adresse.
+     * Name (der ist frei aenderbar). Der Entwurf liegt im Bildschirm, nicht hier.
+     *
+     * NEUANLAGE (#190): [vorlage] ist ein noch NICHT gespeicherter Typ, [definitionId] ist dann
+     * `vorlage.id`. Die Vorlage reist hier und in keinem zweiten Speicher; gespeichert wird erst mit
+     * „Erstellen“ auf der Seite. [fundCode] ist der Kalender-Code aus „Im Kalender gefunden“, aus dem
+     * die Vorlage entstand (`null` beim „+“ der Liste): er bestimmt Banner und Schreibweg.
      */
     data class TypSeite(
         val definitionId: String,
-        val returnToTab: MainTab = MainTab.SETTINGS
+        val returnToTab: MainTab = MainTab.SETTINGS,
+        val vorlage: ShiftDefinition? = null,
+        val fundCode: String? = null
     ) : NavigationState()
 
     // Onboarding-Screens
@@ -120,6 +127,12 @@ sealed class NavigationAction {
     data class NavigateToEventList(val fromTab: MainTab = MainTab.HOME) : NavigationAction()
     data class NavigateToTypSeite(
         val definitionId: String,
+        val fromTab: MainTab = MainTab.SETTINGS
+    ) : NavigationAction()
+    /** Die Typ-Seite fuer einen noch nicht gespeicherten Typ (#190); [fundCode] siehe [NavigationState.TypSeite]. */
+    data class NavigateToNeuerTyp(
+        val vorlage: ShiftDefinition,
+        val fundCode: String? = null,
         val fromTab: MainTab = MainTab.SETTINGS
     ) : NavigationAction()
 

@@ -1,4 +1,4 @@
-package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components
+package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.typ
 
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.SchichttypEinordnen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
@@ -277,7 +277,7 @@ class ShiftDefinitionTexteTest {
 
 /**
  * Umbau Etappe 1, #174: was der Schicht-Editor beim Speichern aus dem Formular baut. Eigene Klasse
- * in derselben Datei wie die Editor-Texte, weil beides zu `ShiftEditDialog.kt` gehoert.
+ * in derselben Datei wie die Editor-Texte (seit #190 `TypTexte.kt` und `TypFormular.kt`).
  *
  * Gemeinsame Absicht: ein Test faengt, dass der Editor wieder ein NEUES `ShiftDefinition(...)`
  * baut (dann fielen Kategorie und Wecker-Schalter still auf ihren Default) oder die Flags nicht

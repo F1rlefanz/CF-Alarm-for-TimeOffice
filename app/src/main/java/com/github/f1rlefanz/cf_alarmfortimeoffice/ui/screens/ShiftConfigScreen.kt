@@ -18,7 +18,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -176,7 +178,11 @@ internal fun resetToDefaultsPreservingAutoAlarm(current: ShiftConfig?): ShiftCon
 @Composable
 fun ShiftConfigScreen(
     shiftViewModel: ShiftViewModel,
-    onNavigateBack: () -> Unit
+    onNavigateBack: () -> Unit,
+    /** Ein Tipp auf einen bestehenden Typ: oeffnet seine Typ-Seite (Umbau #187), `id` ist die stabile Kennung. */
+    onTypOeffnen: (String) -> Unit,
+    /** Scroll-Stand der Liste; MainScreen haelt ihn, damit er die Typ-Seite ueberdauert. */
+    listenZustand: LazyListState = rememberLazyListState()
 ) {
     // collectAsStateWithLifecycle statt collectAsState: reiner Anzeige-Zustand. Sammeln pausiert
     // unterhalb von STARTED, es haengt also kein Seiteneffekt daran - der Zustand ist ein heisser
@@ -186,7 +192,6 @@ fun ShiftConfigScreen(
     // (WhileSubscribed) - nicht schon der App-Start, an dem das ViewModel entsteht.
     val schichtFolgen by shiftViewModel.schichtFolgen.collectAsStateWithLifecycle()
     var showAddDialog by remember { mutableStateOf(false) }
-    var editingDefinition by remember { mutableStateOf<ShiftDefinition?>(null) }
 
     // Beide destruktiven Aktionen dieses Screens laufen ueber eine Rueckfrage. Ohne sie war ein
     // Fehlgriff nicht wiederherstellbar: `updateShiftConfig()` persistiert sofort UND ruft
@@ -337,6 +342,7 @@ fun ShiftConfigScreen(
                 definitionen?.let { schichttypBloecke(it) }.orEmpty()
             }
             LazyColumn(
+                state = listenZustand,
                 // weight(1f) ist Pflicht, sonst schiebt die Liste den Reset-Knopf aus dem
                 // Bildschirm (ui-texte-und-layout.md).
                 modifier = Modifier.weight(1f),
@@ -380,7 +386,7 @@ fun ShiftConfigScreen(
                         is SchichttypBlock.Gruppe -> SchichttypGruppeKarte(
                             gruppe = block,
                             folgen = schichtFolgen,
-                            onEdit = { editingDefinition = it },
+                            onEdit = { onTypOeffnen(it.id) },
                             onDelete = { pendingDelete = it }
                         )
                         SchichttypBlock.FesteZeile -> FesteZeileKarte(
@@ -411,10 +417,10 @@ fun ShiftConfigScreen(
         }
     }
 
-    // Add/Edit Dialog - auch der Editor fuer „Als neuer Typ“ aus dem Fund (Vorlage statt bestehendem Typ).
-    if (showAddDialog || editingDefinition != null || neuerTypAusFund != null) {
+    // Neuanlage-Dialog („+“) - auch der Editor fuer „Als neuer Typ“ aus dem Fund (Vorlage). Einen
+    // BESTEHENDEN Typ bearbeitet die Typ-Seite (onTypOeffnen), nicht mehr dieser Dialog.
+    if (showAddDialog || neuerTypAusFund != null) {
         ShiftEditDialog(
-            shift = editingDefinition,
             vorlage = neuerTypAusFund?.vorlage,
             onSave = { newDefinition ->
                 val ausFund = neuerTypAusFund
@@ -423,25 +429,16 @@ fun ShiftConfigScreen(
                     shiftViewModel.legeTypAusCodeAn(ausFund.code, newDefinition)
                 } else {
                     shiftState.currentShiftConfig?.let { config ->
-                        val updatedDefinitions = if (editingDefinition != null) {
-                            config.definitions.map {
-                                if (it.id == editingDefinition?.id) newDefinition else it
-                            }
-                        } else {
-                            config.definitions + newDefinition
-                        }
                         shiftViewModel.updateShiftConfig(
-                            config.copy(definitions = updatedDefinitions)
+                            config.copy(definitions = config.definitions + newDefinition)
                         )
                     }
                 }
                 showAddDialog = false
-                editingDefinition = null
                 neuerTypAusFund = null
             },
             onDismiss = {
                 showAddDialog = false
-                editingDefinition = null
                 neuerTypAusFund = null
             }
         )
@@ -534,9 +531,11 @@ fun ShiftConfigScreen(
             OhneEintragDialog(
                 config = config,
                 onWaehle = { shiftViewModel.waehleOhneEintrag(it) },
+                // Der Link zum Typ („Wie <Typ> öffnen“) fuehrt auf dieselbe Typ-Seite wie ein Tipp
+                // in der Liste - sonst haette ein Typ je nach Einstieg zwei verschiedene Editoren.
                 onTypOeffnen = { typ ->
                     ohneEintragOffen = false
-                    editingDefinition = typ
+                    onTypOeffnen(typ.id)
                 },
                 onDismiss = { ohneEintragOffen = false }
             )
@@ -825,8 +824,8 @@ private fun GruppenKopf(titel: String, sonderfall: Boolean) {
 
 /**
  * Eine Zeile eines Typs: Code, Name, Statuszeile (Weckzeit bzw. warum es keine gibt) und Kurzform.
- * Antippen bearbeitet, das Papierkorb-Symbol loescht (mit Rueckfrage) - beides bleibt, bis die
- * Typ-Seite des Umbaus es uebernimmt.
+ * Antippen oeffnet die Typ-Seite (Umbau #187), das Papierkorb-Symbol loescht (mit Rueckfrage) - das
+ * bleibt hier, bis die Typ-Seite es uebernimmt.
  */
 @Composable
 private fun SchichttypZeile(

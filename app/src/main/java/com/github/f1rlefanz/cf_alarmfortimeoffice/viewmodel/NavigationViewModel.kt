@@ -54,6 +54,11 @@ class NavigationViewModel @Inject constructor() : ViewModel() {
                 NavigationState.EventList(action.fromTab)
             }
             
+            is NavigationAction.NavigateToTypSeite -> {
+                Logger.d(LogTags.NAVIGATION, "Shift Config -> Typ-Seite (from ${action.fromTab}, id: ${action.definitionId})")
+                NavigationState.TypSeite(action.definitionId, action.fromTab)
+            }
+
             // Battery and OEM navigation
             is NavigationAction.NavigateToBatteryExemption -> {
                 Logger.d(LogTags.NAVIGATION, "Main -> Battery Exemption (from ${action.fromTab})")
@@ -142,6 +147,9 @@ class NavigationViewModel @Inject constructor() : ViewModel() {
     fun navigateToEventList(fromTab: MainTab = MainTab.HOME) = 
         handleNavigationAction(NavigationAction.NavigateToEventList(fromTab))
     
+    fun navigateToTypSeite(definitionId: String, fromTab: MainTab = MainTab.SETTINGS) =
+        handleNavigationAction(NavigationAction.NavigateToTypSeite(definitionId, fromTab))
+
     // Battery and OEM navigation convenience methods
     fun navigateToBatteryExemption(fromTab: MainTab = MainTab.HOME) = 
         handleNavigationAction(NavigationAction.NavigateToBatteryExemption(fromTab))
@@ -212,6 +220,13 @@ class NavigationViewModel @Inject constructor() : ViewModel() {
         if (state is NavigationState.OrtFuerTageslicht) {
             Logger.d(LogTags.NAVIGATION, "-> zurueck aus Ort fuer Tageslicht (${state.zurueckZu::class.simpleName})")
             return state.zurueckZu
+        }
+        // Typ-Seite: zurueck zur Typ-Liste (mit ihrem Tab), nicht auf die Uebersicht. Ohne diesen
+        // Zweig fiele sie in den else-Zweig unten und Zurueck landete still auf HOME - der Compiler
+        // meldet das nicht (das when hat ein else), nur der Test in NavigationViewModelTest.
+        if (state is NavigationState.TypSeite) {
+            Logger.d(LogTags.NAVIGATION, "-> Shift Config (${state.returnToTab} tab, aus der Typ-Seite)")
+            return NavigationState.ShiftConfig(state.returnToTab)
         }
         // HueRuleConfig/DimmerRuleConfig haben zwei Einstiegspfade (siehe cameFromSettingsList) -
         // ein Zurueck darf hier NICHT blind zu MainContent aufloesen, sonst ueberspringt der

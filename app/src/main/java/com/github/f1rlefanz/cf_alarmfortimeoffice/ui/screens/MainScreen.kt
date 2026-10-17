@@ -5,6 +5,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
@@ -393,6 +394,19 @@ fun MainScreen(
     // Tab, neuer Editor), wird der Eintrag geraeumt - sonst sammelte die Ablage jedes je
     // geoeffnete Formular bis zum Prozessende.
     val editorFormulare = rememberSaveableStateHolder()
+
+    // SCROLL-STAND DER TYP-LISTE: die Liste verlaesst die Komposition, sobald eine Typ-Seite offen
+    // ist - ohne diesen Halter stuende sie danach wieder ganz oben, und wer den fuenften Typ
+    // bearbeitet hat, suchte ihn neu (der Dialog davor liess die Liste stehen). Er lebt hier, weil
+    // MainScreen die beiden Zustaende ueberdauert, und wird zurueckgesetzt, sobald der Nutzer den
+    // Typ-Bereich ganz verlaesst (Liste -> Tab): ein spaeteres Oeffnen beginnt oben.
+    val typListeZustand = rememberLazyListState()
+    val imTypBereich = navigationState is NavigationState.ShiftConfig ||
+        navigationState is NavigationState.TypSeite
+    LaunchedEffect(imTypBereich) {
+        if (!imTypBereich) typListeZustand.scrollToItem(0)
+    }
+
     var vorherigerZustand by remember { mutableStateOf<NavigationState?>(null) }
     LaunchedEffect(navigationState) {
         verworfenesEditorFormular(vorherigerZustand, navigationState)?.let { schluessel ->
@@ -409,7 +423,22 @@ fun MainScreen(
             is NavigationState.ShiftConfig -> {
                 ShiftConfigScreen(
                     shiftViewModel = shiftViewModel,
-                    onNavigateBack = { navigationViewModel.navigateBackToMain() }
+                    onNavigateBack = { navigationViewModel.navigateBackToMain() },
+                    // Den Herkunfts-Tab der Liste weiterreichen: Zurueck aus der Typ-Seite fuehrt zur
+                    // Liste, von dort aus wie bisher in den Tab, aus dem sie geoeffnet wurde.
+                    onTypOeffnen = { id -> navigationViewModel.navigateToTypSeite(id, state.returnToTab) },
+                    listenZustand = typListeZustand
+                )
+            }
+
+            is NavigationState.TypSeite -> {
+                // Zurueck (Pfeil, System-Taste ueber den BackHandler oben, "Verwerfen", Speichern)
+                // loest allein navigateBackFrom() auf; der Entwurf-Schutz in der Seite fragt nur
+                // vorher und entscheidet nie ueber das Ziel.
+                com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.typ.TypSeite(
+                    definitionId = state.definitionId,
+                    shiftViewModel = shiftViewModel,
+                    onZurueck = { navigationViewModel.navigateBackFrom(state) }
                 )
             }
 

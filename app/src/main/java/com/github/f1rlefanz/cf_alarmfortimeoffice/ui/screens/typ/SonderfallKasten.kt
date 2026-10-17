@@ -11,6 +11,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -31,10 +32,12 @@ internal fun SonderfallKasten(kategorie: ShiftKategorie, text: ShiftDefinitionTe
     val dunkel = isSystemInDarkTheme()
     // Violett wie die Marke „Sonderfall“ (= Farbe der Rufbereitschaft, auch bei Krank - so zeichnet es der
     // Prototyp); amber wie `.banner` = der Warnton der App, dessen Kontrast `ThemeKontrastTest` haelt.
+    // Hell steht die Schrift des Prototyps (`.besonders` #3B1F52, `.banner` #4D2E00): ein Fliesstext braucht
+    // mehr Kontrast als die Marke, deren Paar die Flaeche liefert. Dunkel gilt das Paar selbst.
     val (flaeche, schrift) = if (kategorie == ShiftKategorie.IGNORIEREN) {
-        tonPaar(StatusTon.WARNUNG, dunkel).let { it.flaeche to it.text }
+        tonPaar(StatusTon.WARNUNG, dunkel).let { it.flaeche to if (dunkel) it.text else SCHRIFT_BANNER_HELL }
     } else {
-        kategorieFarben(ShiftKategorie.RUFBEREITSCHAFT, dunkel).let { it.flaeche to it.text }
+        kategorieFarben(ShiftKategorie.RUFBEREITSCHAFT, dunkel).let { it.flaeche to if (dunkel) it.text else SCHRIFT_BESONDERS_HELL }
     }
 
     Surface(
@@ -61,3 +64,9 @@ internal fun SonderfallKasten(kategorie: ShiftKategorie, text: ShiftDefinitionTe
         }
     }
 }
+
+/** Schrift auf der hellen Flaeche von Rufbereitschaft und Krank (Prototyp `.besonders`). */
+private val SCHRIFT_BESONDERS_HELL = Color(0xFF3B1F52)
+
+/** Schrift auf der hellen Flaeche von Ignorieren (Prototyp `.banner`). */
+private val SCHRIFT_BANNER_HELL = Color(0xFF4D2E00)

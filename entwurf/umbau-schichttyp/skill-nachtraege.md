@@ -33,6 +33,25 @@ Format: Skill · Paket · die normative Zeile · Hergang in einem Satz.
   Bekannt und hingenommen wie bei #168: wird der Einsatz gestrichen, meldet der Sync den F-Wecker zu
   Recht als entfernt und den zurückkehrenden Ruf-Wecker über `notifyCreated` als „Neue Schicht erkannt".
 
+- **#175** · Kurzregel (neben der #168/#172-Zeile): **Ein Wecker an einem Tag ohne Kalendereintrag
+  („wie <Typ>“) ist ein `SyncKandidat` mit der Kennung `ohne-eintrag:<Datum>`
+  (`AlarmUseCase.OHNE_EINTRAG_PRAEFIX`, Test `istOhneEintragWecker()`), `shiftStartTime = 0`, Name,
+  `shiftId` und `isSilent` vom Verweistyp, alles deterministisch. Er läuft durch den normalen
+  Delta-Pfad (Cancel vor Delete, Freigabe-Gate, Skip-Anker, Leerlisten-Räumung, denn die Kennung ist
+  NICHT leer), meldet aber NIE `notifyCreated`/`notifyUpdated`/`notifyDeleted` und zählt nicht in
+  der Krankmeldung. Er nimmt an Paarungsrunde (b) auf KEINER Seite teil. Keine Schichtspanne. Der
+  Zweig `shiftMatches.isEmpty()` greift nur, wenn auch keine leeren Tage anstehen.** Hergang: Mit
+  Runde (b) übernähme ein echter Termin desselben Typs auf einem bisher leeren Tag (gleiche Weckzeit,
+  gleiche Schicht) den synthetischen Wecker still, und die neue Schicht meldete sich nie. **Heute**
+  fällt weg, wenn eine schon BEENDETE Spanne aus dem `ShiftSpanStore` (Stand VOR dem Schreiben dieses
+  Laufs) heute berührt (`heuteDurchBeendeteSpanneBelegt`), oder wenn die Spannen unlesbar sind.
+  Hier ist „im Zweifel wecken“ die falsche Richtung: der Abruf beginnt bei jetzt, nach dem
+  Nachtdienst bis 07:00 sähe heute leer aus, und der Verweistyp klingelte nach dem Dienst. Bekannte
+  Restlücke: ein heute beendeter, noch nicht eingeordneter Code hat keine Spanne. Ausgelagert:
+  Boot-Validierung löscht diese Wecker (#182), und der Weckbildschirm nennt bei `shiftStartTime = 0`
+  die Weckzeit als Schichtbeginn, heute schon beim manuellen Wecker (#183). Test:
+  `OhneEintragSyncTest`.
+
 ## cfalarm-dimmer-und-dnd
 
 - **#151** · Kurzregel: **`DimWindow.startNurAmWecktag` (Default `false`) lässt einen CLOCK-Start auf

@@ -124,6 +124,38 @@ class ShiftDefinitionTexteTest {
         assertTrue(ShiftDefinitionTexte.AKTIVIERT_HINWEIS.contains("„Wecker an diesem Tag“"))
     }
 
+    /**
+     * Pruefer #174: unter einem einbuchstabigen Muster stand bei Ignorieren und bei „Wecker aus“
+     * "weckt dich dann an freien Tagen" - beide stellen nie einen Wecker.
+     */
+    @Test
+    fun `Die Ein-Buchstaben-Warnung verspricht keinen Wecker, wo keiner gestellt wird`() {
+        listOf(
+            ShiftKategorie.IGNORIEREN to true,
+            ShiftKategorie.URLAUB to false,
+            ShiftKategorie.DIENST to false
+        ).forEach { (kategorie, weckerAn) ->
+            val text = ShiftDefinitionTexte.einBuchstabeWarnung("U", kategorie, weckerAn)!!
+            assertFalse("$kategorie, Wecker an=$weckerAn: $text", text.contains("weckt dich"))
+            assertTrue(text.contains("fremde Termine"))
+        }
+        assertTrue(
+            ShiftDefinitionTexte.einBuchstabeWarnung("F", ShiftKategorie.DIENST, true)!!
+                .contains("weckt dich dann an freien Tagen")
+        )
+        assertTrue(
+            ShiftDefinitionTexte.einBuchstabeWarnung("K", ShiftKategorie.KRANK, true)!!.contains("Diensttag frei")
+        )
+        assertNull("'+' trifft nur den ganzen Titel", ShiftDefinitionTexte.einBuchstabeWarnung("+", ShiftKategorie.FREI, true))
+    }
+
+    @Test
+    fun `Der Aktiviert-Hinweis bei Ignorieren verweist auf keinen ausgeblendeten Schalter`() {
+        val text = ShiftDefinitionTexte.IGNORIEREN_AKTIVIERT_HINWEIS
+        assertTrue(text.contains("übergangen"))
+        assertFalse(text, text.contains("Wecker an diesem Tag"))
+    }
+
     @Test
     fun `Der Ignorieren-Hinweis beginnt wie im Prototyp und nennt den Vorrang des Dienstes`() {
         val text = ShiftDefinitionTexte.IGNORIEREN_STATT_WECKER

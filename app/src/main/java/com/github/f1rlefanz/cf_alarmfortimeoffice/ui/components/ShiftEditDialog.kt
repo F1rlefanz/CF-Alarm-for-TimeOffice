@@ -210,7 +210,7 @@ fun ShiftEditDialog(
                                     // fremde Termine - schichterkennung.md. #142: bei einer
                                     // Krankmeldung ist die Folge die UMGEKEHRTE (ein fehlender
                                     // Wecker), der Text folgt dem Schalter.
-                                    supportingText = ShiftDefinitionTexte.einBuchstabeWarnung(keyword, isSickDay)?.let { warnung ->
+                                    supportingText = ShiftDefinitionTexte.einBuchstabeWarnung(keyword, kategorie, weckerAn)?.let { warnung ->
                                         {
                                             Text(
                                                 text = warnung,
@@ -395,10 +395,13 @@ fun ShiftEditDialog(
                             title = "Schichtdefinition aktiviert",
                             // #142: der Wecker-aus-Verweis passt nicht auf eine Krankmeldung -
                             // dort kostet "aus" die Tagesfreigabe, nicht ein Zeitfenster.
-                            description = if (isSickDay) {
-                                ShiftDefinitionTexte.KRANKMELDUNG_AKTIVIERT_HINWEIS
-                            } else {
-                                ShiftDefinitionTexte.AKTIVIERT_HINWEIS
+                            description = when {
+                                isSickDay -> ShiftDefinitionTexte.KRANKMELDUNG_AKTIVIERT_HINWEIS
+                                // Ignorieren ergibt nie einen Wecker, und der Schalter „Wecker an diesem
+                                // Tag“ ist dort ausgeblendet - der allgemeine Hinweis verwiese ins Leere.
+                                kategorie == ShiftKategorie.IGNORIEREN ->
+                                    ShiftDefinitionTexte.IGNORIEREN_AKTIVIERT_HINWEIS
+                                else -> ShiftDefinitionTexte.AKTIVIERT_HINWEIS
                             },
                             checked = isEnabled,
                             onCheckedChange = { isEnabled = it },
@@ -536,6 +539,26 @@ object ShiftDefinitionTexte {
         return if (isSickDay) EIN_BUCHSTABE_KRANK else EIN_BUCHSTABE_SCHICHT
     }
 
+    /**
+     * Dieselbe Warnung, wo KEIN Wecker gestellt wird (Ignorieren, Wecker aus): "weckt dich an freien
+     * Tagen" waere dort falsch (Pruefer #174). Gesagt wird nur, was bleibt: fremde Termine landen
+     * beim Typ.
+     */
+    const val EIN_BUCHSTABE_OHNE_WECKER =
+        "Ein einzelner Buchstabe trifft auch fremde Termine (z. B. \"Kino mit F\") und ordnet " +
+            "sie diesem Typ zu."
+
+    /**
+     * Wie [einBuchstabeWarnung], aber nach Kategorie und Wecker-Schalter: Krank behaelt seinen Text,
+     * Ignorieren und "Wecker aus" bekommen [EIN_BUCHSTABE_OHNE_WECKER], nur ein Typ, der wirklich
+     * einen Wecker stellt, die Schicht-Warnung.
+     */
+    fun einBuchstabeWarnung(muster: String, kategorie: ShiftKategorie, weckerAn: Boolean): String? {
+        val warnung = einBuchstabeWarnung(muster, kategorie == ShiftKategorie.KRANK) ?: return null
+        val stelltWecker = ShiftEditFormular.weckzeitPflicht(kategorie, weckerAn)
+        return if (kategorie == ShiftKategorie.KRANK || stelltWecker) warnung else EIN_BUCHSTABE_OHNE_WECKER
+    }
+
     /** #142: Loesch-Rueckfrage fuer einen Krankmeldungs-Typ - er hat keine Weckzeit, die entfiele,
      * wohl aber Tage, die er freigegeben hat und die ihre Wecker zurueckbekommen. */
     fun krankmeldungLoeschenText(name: String): String =
@@ -591,6 +614,10 @@ object ShiftDefinitionTexte {
     const val IGNORIEREN_STATT_WECKER =
         "Dieser Eintrag wird übergangen. Er stellt keinen Wecker; steht im selben Termin ein " +
             "Dienst-Code, gilt der Dienst."
+
+    /** Wie `SchichttypTexte.IGNORIEREN_AUSGESCHALTET` der Typ-Liste: aus heisst „wird nicht mehr uebergangen“. */
+    const val IGNORIEREN_AKTIVIERT_HINWEIS =
+        "Aus heißt: wird nicht mehr übergangen – ein Termin mit diesem Muster zählt dann wie jeder andere Termin."
 
     // Der Schalter „Schichtdefinition aktiviert“ verwies auf „Stille Schicht“ - die heisst jetzt
     // „Stummer Wecker“, und fuer „kein Wecker, Zeitfenster trotzdem“ ist seit #168 „Wecker an diesem

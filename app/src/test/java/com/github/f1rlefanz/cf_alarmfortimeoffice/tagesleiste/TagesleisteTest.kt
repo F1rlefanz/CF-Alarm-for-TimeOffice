@@ -203,20 +203,48 @@ class TagesleisteTest {
 
         val leiste = tagesleiste(eingabe(kategorie = ShiftKategorie.RUFBEREITSCHAFT, name = "AD", dienstzeit = dz))
 
-        // Die Folge der echten Kette: erster Termin der Beginn, danach stuendlich, Ende zaehlt nicht mehr.
-        val folge = mutableListOf<Int>()
-        var jetzt = span.startTime - 120_000L
-        while (true) {
-            val naechste = RufbereitschaftAbfrage.naechsteAbfrage(listOf(span), setOf("AD"), jetzt) ?: break
-            folge += dz.beginnMin + ((naechste - span.startTime) / 60_000L).toInt()
-            jetzt = naechste
-        }
+        val folge = folgeDerKette(span, dz)
         assertEquals(folge, leiste.rufAbfragen)
         // Und gegen Literale: 21:30, 22:30 ... 06:30 am Folgetag.
         assertEquals(10, leiste.rufAbfragen.size)
         assertEquals(1650, leiste.rufAbfragen.first())
         assertEquals(2190, leiste.rufAbfragen.last())
         assertEquals(listOf(1650 to 2220), leiste.balkenVon(Spur.RUF_ABFRAGE))
+    }
+
+    @Test
+    fun `das Ende selbst gehoert nicht mehr zum Raster`() {
+        // 22:00 bis 06:00: das Ende liegt genau auf einem Rasterpunkt. Die Kette fragt dort nicht
+        // mehr ab (`kandidat < endTime`), die Leiste zeigt ihn deshalb auch nicht.
+        val von = LocalDateTime.of(2026, 8, 12, 22, 0)
+        val span = ShiftSpan(
+            "AD",
+            von.atZone(berlin).toInstant().toEpochMilli(),
+            von.plusHours(8).atZone(berlin).toInstant().toEpochMilli(),
+            alarmTriggerTime = 0L
+        )
+        val dz = dienstzeitAus(listOf(span), "AD", span.startTime - 3_600_000L, berlin)!!
+
+        val leiste = tagesleiste(eingabe(kategorie = ShiftKategorie.RUFBEREITSCHAFT, name = "AD", dienstzeit = dz))
+
+        assertEquals(folgeDerKette(span, dz), leiste.rufAbfragen)
+        // 22:00 ... 05:00 = acht Punkte; 06:00 (Minute 2160) ist das Ende und faellt weg.
+        assertEquals(listOf(1680, 1740, 1800, 1860, 1920, 1980, 2040, 2100), leiste.rufAbfragen)
+    }
+
+    /**
+     * Die Folge der echten Kette ueber [span]: erster Termin der Beginn, danach stuendlich, ab dem
+     * Ende keiner mehr - jeweils als Minute der Leiste.
+     */
+    private fun folgeDerKette(span: ShiftSpan, dz: Dienstzeit): List<Int> {
+        val folge = mutableListOf<Int>()
+        var jetzt = span.startTime - 120_000L
+        while (true) {
+            val naechste = RufbereitschaftAbfrage.naechsteAbfrage(listOf(span), setOf(span.shiftName), jetzt) ?: break
+            folge += dz.beginnMin + ((naechste - span.startTime) / 60_000L).toInt()
+            jetzt = naechste
+        }
+        return folge
     }
 
     @Test

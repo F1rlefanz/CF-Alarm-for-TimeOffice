@@ -203,6 +203,22 @@ class TagesleisteDimmenDndTest {
     }
 
     @Test
+    fun `Nach dem Dienst haengt am Ende der Dienstzeit, ohne Dienstzeit gibt es das Fenster nicht`() {
+        val nachDienst = DimWindow(
+            startAnchor = DimAnchor.SHIFT_END, startOffsetMinutes = 60, endAnchor = DimAnchor.CLOCK, endClockMinutes = 20 * 60
+        )
+        val s = einstellungen(regel("F", nachDienst))
+
+        // Dienstende 14:15, eine Stunde danach bis 20:00.
+        assertEquals(
+            listOf(DimBereich(tag(15, 15), tag(20), 55, endetBeimWecker = false)),
+            rechne(eingabe(blockposition = Blockposition.EINZELNER), s).dimmen
+        )
+        // Kein Termin im Kalender: das Ende ist unbekannt (0), und eine Dienstzeit wird nicht erfunden.
+        assertEquals(emptyList<DimBereich>(), rechne(eingabe(dienstzeit = null, blockposition = Blockposition.EINZELNER), s).dimmen)
+    }
+
+    @Test
     fun `der Nachlauf verlaengert das Dimmen, nicht aber Nicht stoeren, und Hell ab kuerzt ihn nur mit Standort`() {
         val folgt = DndPrefs.Toggles(followDimmerEnabled = true, duringShiftEnabled = false)
         val mitNachlauf = nachtBisWecker.copy(weckzeitNachlaufMinuten = 30, nachlaufBisHell = HellAb.DAEMMERUNG)

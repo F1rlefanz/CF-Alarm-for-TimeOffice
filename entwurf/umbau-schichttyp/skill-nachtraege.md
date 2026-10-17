@@ -65,6 +65,32 @@ Format: Skill · Paket · die normative Zeile · Hergang in einem Satz.
   keine Oberfläche dafür, weil der Umbau dort „Nacht davor / Abend danach / Nach dem Dienst" wählen
   lässt. Test: `NachtdienstVorlageVorschlafFensterTest`, `DimWindowResolverTest`.
 - **#193** · Kurzregel (neben der Cutoff-Regel „Rufbereitschaft-Cutoff klippt, statt eine eigene Fensterlogik …"): **Die Tagesleiste kappt „Nicht stören“ am Ruf-Cutoff ÜBER `DndOnCallCutoffResolver.cutoffInstants` und `clip` (Mustertag in UTC, dort fallen Wanduhr und Instant zusammen) und vereint DANACH – wie `DndScheduleUseCase.computeWindows`, wo jedes Fenster für sich geklippt wird.** Hergang: Erst vereinen, dann kappen lässt einen Bereich, der um 06:00 beginnt, mit dem davor an 05:00 gekappten verschmelzen und den Cutoff verschlucken; `TagesleisteTest` hat genau diesen Fall (Mutationsprobe: Reihenfolge getauscht → rot). Der Ereignistext „endet spätestens jetzt“ steht nur, wenn der Cutoff einen Bereich WIRKLICH beendet: schließt unmittelbar ein zweiter an (Cutoff 06:00, Folgebereich ab 06:00), läuft „Nicht stören“ weiter und der Text wäre falsch. Das weicht vom Prototyp ab, der ihn immer zeigt. Der Cutoff selbst ist Eingabe (`rufCutoffMinuten`, Vorgabe `DndPrefs.DEFAULT_ONCALL_CUTOFF_MIN`), die Etappe-3-Seite „Endet spätestens um“ speist ihn.
+- **#194** · Kurzregel (neben der #193-Zeile): **Die Tagesleiste rechnet Dimmen und „Nicht stören“ nicht neu, sondern
+  lässt `DimWindowResolver.buildRuleSpans` auf einem erfundenen Mustertag in UTC laufen (`tagesleiste/
+  TagesleisteDimmenDnd.kt`, `dimmenUndNichtStoeren`): der Typ plus je Blockposition ein Nachbar-Slot mit derselben
+  Weckzeit (ERSTER: Folgetag, MITTLERER: beide, LETZTER: Vortag), Regelwahl über `findRuleForShift`/
+  `findRuleForFreeDay`. Gezeigt werden NUR die Fenster des Kalendertags der Weckzeit, herausgelöst als Differenz
+  zweier Läufe (`horizonDays = 1` minus `horizonDays = 0`) – das hängt nicht an der Zahl der Rückblick-Tage
+  (`LOOKBACK_DAYS` ist `private`).** Ein erkannter Typ ist ein Schichttag, auch Frei/Urlaub/Fortbildung und auch mit
+  Wecker aus (#181); die FREI-Regel greift heute nur an einem Tag OHNE Eintrag und bei Krank (keine Spanne), und
+  Ignorieren hat keinen Tag. „Nicht stören, solange gedimmt wird“ ist `mergeToTimeline` OHNE Nachlauf und OHNE „Hell
+  ab“ (wie `DndScheduleUseCase.computeWindows`), „während des Eintrags“ ist `DndShiftSpanResolver.buildShiftSpans`
+  (Krank hat keinen). **Der Adapter kappt NICHT am Ruf-Cutoff** – `Tagesleiste.rechne()` tut es (#193) und braucht das
+  ungekappte Ende, um „endet spätestens jetzt“ zu sagen. `endetBeimWecker` heißt: Wecker an UND das Ende liegt auf
+  einer Weckzeit des Mustertags oder seiner Nachbarn – nie bei Nachlauf, nie bei Wecker aus. Ohne gültige Weckzeit
+  gibt es keinen Anker und damit weder Dimmen noch „folgt dem Dimmer“. Hergang: Der erste Plan nahm alles, was die
+  Leiste berührt (auch die Fenster des freien Vortags); damit hätte „leere Fensterliste an F“ trotzdem die UNIVERSAL-
+  Nacht davor gezeigt, beschriftet mit „(F)“ – gegen die Abnahmezeile „leere Fensterliste → kein Dimmen“ und gegen das
+  Zielmodell (Etappe 3: Fenster hängen am Typ). Falle: `weckzeitpunkt()` legt den Wecker eines Dienstes kurz nach
+  Mitternacht auf den VORTAG, und `buildRuleSpans` datiert den Slot nach der Weckzeit – „der Tag des Typs“ ist dann der
+  Vortag des Mustertags (Test „Dienst kurz nach Mitternacht“). Zwei Mustertage (Adapter und `Tagesleiste.kt`, dort
+  `private`): der Test hält das Ende „beim Wecker“ gegen `weckpunktMin()`. Tests: `TagesleisteDimmenDndTest` (15
+  Mutationen gemessen am 17.10.2026, alle rot: dim_enabled ignoriert, Nachbar-Slot Vortag/Folgetag fehlt oder
+  vertauscht, Nachbarn nicht in der Weckzeit-Zeitleiste, DND mit Nachlauf, Hell ab ignoriert, Krank als Schichttag,
+  Schichttag nimmt die FREI-Regel, Wecker aus ohne Anker, `endetBeimWecker` ohne `weckerAn`, auch Nachbartage,
+  Ausnahmen ignoriert, Krank mit Eintrag-DND, Dienstende unbekannt). Falle der Probe: `./gradlew` unter `cmd.exe`
+  (Python `shell=True`) scheitert still, und das alte Ergebnis-XML liest sich wie „alles grün“ – `gradlew.bat` mit
+  vollem Pfad, das XML vorher löschen, sonst sind 15 grüne Mutationen Täuschung (so passiert, bevor die Probe stimmte).
 
 ## cfalarm-kalender-und-schichten
 

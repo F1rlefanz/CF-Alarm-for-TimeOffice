@@ -24,6 +24,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Info
@@ -49,6 +50,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -77,6 +79,8 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.CompactOutlinedB
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.EinordnenDialog
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.EinordnenTexte
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.KnopfZeile
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.OhneEintragDialog
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.OhneEintragTexte
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.ShiftDefinitionTexte
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.ShiftEditDialog
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.hilfe.HilfeKnopf
@@ -185,6 +189,13 @@ fun ShiftConfigScreen(
 
     /** Der Fund-Code, fuer den gerade die Kategorie-Wahl offen ist (null = geschlossen). */
     var einordnenCode by remember { mutableStateOf<String?>(null) }
+
+    /**
+     * Die Wahl „Tage ohne Eintrag verhalten sich“ an der festen Zeile ist offen. Ueberlebt eine
+     * Konfigurationsaenderung (Dunkelmodus, Schriftgroesse): sie schreibt sofort, der Nutzer soll
+     * nicht mitten in der Wahl vor der Liste stehen.
+     */
+    var ohneEintragOffen by rememberSaveable { mutableStateOf(false) }
 
     /**
      * „Als neuer Typ“: der Editor ist mit dieser Vorlage offen. NICHTS davon ist gespeichert - erst
@@ -363,7 +374,12 @@ fun ShiftConfigScreen(
                             onEdit = { editingDefinition = it },
                             onDelete = { pendingDelete = it }
                         )
-                        SchichttypBlock.FesteZeile -> FesteZeileKarte()
+                        SchichttypBlock.FesteZeile -> FesteZeileKarte(
+                            kurzform = shiftState.currentShiftConfig
+                                ?.let { OhneEintragTexte.kurzform(it) }
+                                ?: SchichttypBlock.FesteZeile.kurzform,
+                            onClick = { ohneEintragOffen = true }
+                        )
                     }
                 }
             }
@@ -433,23 +449,27 @@ fun ShiftConfigScreen(
                 Text(
                     // #142: ein Krankmeldungs-Typ hat keine Weckzeit, die entfiele - wohl aber
                     // freigegebene Tage, die ihre Wecker zurueckbekommen.
-                    if (definition.isSickDay) {
+                    (if (definition.isSickDay) {
                         ShiftDefinitionTexte.krankmeldungLoeschenText(definition.name)
                     } else {
                         "\"${definition.name}\" wird mit allen Mustern und der Weckzeit " +
                             "${definition.getAlarmTimeFormatted()} gelöscht. Der zugehörige Wecker " +
                             "entfällt damit sofort. Das lässt sich nicht rückgängig machen."
-                    }
+                    }) +
+                        // Umbau #177: die feste Zeile verwies auf diesen Typ - sie faellt im selben
+                        // Schreibvorgang zurueck, und der Nutzer soll das VORHER wissen.
+                        if (shiftState.currentShiftConfig?.ohneKalendereintragWie == definition.id) {
+                            "\n\n" + OhneEintragTexte.LOESCHEN_FOLGE
+                        } else {
+                            ""
+                        }
                 )
             },
             confirmButton = {
                 TextButton(
                     onClick = {
-                        shiftState.currentShiftConfig?.let { config ->
-                            shiftViewModel.updateShiftConfig(
-                                config.copy(definitions = config.definitions - definition)
-                            )
-                        }
+                        // Loeschen UND das Zuruecksetzen der festen Zeile in EINEM Schreibvorgang.
+                        shiftViewModel.loescheSchichttyp(definition)
                         pendingDelete = null
                     }
                 ) {
@@ -506,6 +526,21 @@ fun ShiftConfigScreen(
     // Schicht „AD1“ ist, weiss nur er - und eine falsche Zuordnung stellt einen Wecker auf die falsche
     // Uhrzeit. „Gehoert zu“ traegt den Code als Muster ein (und schaltet das Ziel ein), „neuer Typ“
     // oeffnet den Editor mit der Vorlage der Kategorie.
+    // Die Wahl „Tage ohne Eintrag verhalten sich“ (SPEC 3.3 Punkt 2): wirkt sofort, der Dialog bleibt offen.
+    if (ohneEintragOffen) {
+        shiftState.currentShiftConfig?.let { config ->
+            OhneEintragDialog(
+                config = config,
+                onWaehle = { shiftViewModel.waehleOhneEintrag(it) },
+                onTypOeffnen = { typ ->
+                    ohneEintragOffen = false
+                    editingDefinition = typ
+                },
+                onDismiss = { ohneEintragOffen = false }
+            )
+        }
+    }
+
     einordnenCode?.let { code ->
         EinordnenDialog(
             code = code,
@@ -702,11 +737,12 @@ private fun SchichttypGruppeKarte(
 
 /**
  * "Ohne Kalendereintrag" (E5): eine feste Zeile fuer Tage, an denen im Kalender gar nichts steht.
- * Weder antippbar noch loeschbar - die Wahl "Wie <Typ>" ist ein eigenes Paket, bis dahin verspricht
- * die Zeile nichts, was es nicht gibt (Skill cfalarm-ui-und-navigation).
+ * Antippen oeffnet die Wahl "Tage ohne Eintrag verhalten sich" (Umbau #177); loeschbar ist die Zeile
+ * nicht. Die Kurzform nennt, was an einem leeren Tag geschieht ([OhneEintragTexte.kurzform]) - nie
+ * mehr, als der Sync tatsaechlich tut (Skill cfalarm-ui-und-navigation).
  */
 @Composable
-private fun FesteZeileKarte() {
+private fun FesteZeileKarte(kurzform: String, onClick: () -> Unit) {
     ListenKarte {
         GruppenKopf(titel = SchichttypBlock.FesteZeile.titel, sonderfall = false)
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
@@ -714,6 +750,7 @@ private fun FesteZeileKarte() {
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = ZEILE_MINDESTHOEHE)
+                .clickable(onClick = onClick)
                 .padding(horizontal = ZEILE_RAND, vertical = SpacingConstants.SPACING_MEDIUM),
             horizontalArrangement = Arrangement.spacedBy(ZEILE_ABSTAND),
             verticalAlignment = Alignment.CenterVertically
@@ -726,11 +763,17 @@ private fun FesteZeileKarte() {
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    SchichttypBlock.FesteZeile.kurzform,
+                    kurzform,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
+            // Wie die Zeilen des Prototyps (`.chev`): die Zeile fuehrt irgendwohin.
+            Icon(
+                Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }

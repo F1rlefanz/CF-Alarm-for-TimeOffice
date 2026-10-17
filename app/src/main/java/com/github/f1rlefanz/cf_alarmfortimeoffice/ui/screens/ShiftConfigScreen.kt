@@ -18,7 +18,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -178,7 +180,9 @@ fun ShiftConfigScreen(
     shiftViewModel: ShiftViewModel,
     onNavigateBack: () -> Unit,
     /** Ein Tipp auf einen bestehenden Typ: oeffnet seine Typ-Seite (Umbau #187), `id` ist die stabile Kennung. */
-    onTypOeffnen: (String) -> Unit
+    onTypOeffnen: (String) -> Unit,
+    /** Scroll-Stand der Liste; MainScreen haelt ihn, damit er die Typ-Seite ueberdauert. */
+    listenZustand: LazyListState = rememberLazyListState()
 ) {
     // collectAsStateWithLifecycle statt collectAsState: reiner Anzeige-Zustand. Sammeln pausiert
     // unterhalb von STARTED, es haengt also kein Seiteneffekt daran - der Zustand ist ein heisser
@@ -338,6 +342,7 @@ fun ShiftConfigScreen(
                 definitionen?.let { schichttypBloecke(it) }.orEmpty()
             }
             LazyColumn(
+                state = listenZustand,
                 // weight(1f) ist Pflicht, sonst schiebt die Liste den Reset-Knopf aus dem
                 // Bildschirm (ui-texte-und-layout.md).
                 modifier = Modifier.weight(1f),
@@ -819,8 +824,8 @@ private fun GruppenKopf(titel: String, sonderfall: Boolean) {
 
 /**
  * Eine Zeile eines Typs: Code, Name, Statuszeile (Weckzeit bzw. warum es keine gibt) und Kurzform.
- * Antippen bearbeitet, das Papierkorb-Symbol loescht (mit Rueckfrage) - beides bleibt, bis die
- * Typ-Seite des Umbaus es uebernimmt.
+ * Antippen oeffnet die Typ-Seite (Umbau #187), das Papierkorb-Symbol loescht (mit Rueckfrage) - das
+ * bleibt hier, bis die Typ-Seite es uebernimmt.
  */
 @Composable
 private fun SchichttypZeile(

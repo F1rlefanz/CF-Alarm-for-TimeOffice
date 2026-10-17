@@ -37,7 +37,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.model.OhneEintragWahl
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftKategorie
-import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.kategorieFarben
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.kategorieFarben
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.LayoutFractions
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.SchichttypBlock

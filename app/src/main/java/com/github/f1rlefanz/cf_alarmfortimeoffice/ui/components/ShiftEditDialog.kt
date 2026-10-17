@@ -3,6 +3,7 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.istZeichenmuster
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -11,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
@@ -38,11 +40,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftKategorie
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.KategorieMarke
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.SonderfallMarke
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.AlarmConstants
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.DateTimeFormats
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.LayoutFractions
@@ -163,7 +168,9 @@ private val ZEIT_ANZEIGE: DateTimeFormatter = DateTimeFormatter.ofPattern(DateTi
  * Typ bearbeitet die Typ-Seite. [vorlage] ist ein noch NICHT gespeicherter, vorbelegter Typ (Umbau:
  * aus „Im Kalender gefunden“, `SchichttypEinordnen.neuerTypAusCode`): der Editor zeigt seine
  * Werte, meldet sich aber als Neuanlage - `onSave` bekommt ihn mit seiner eigenen `id`, und der
- * Aufrufer haengt ihn an. Das Formular selbst ist [typFormularFelder], dasselbe wie auf der Seite.
+ * Aufrufer haengt ihn an. Das Formular selbst ist [typFormularFelder]; die Typ-Seite teilt davon nur
+ * [typWeckerFelder] und [AktiviertSchalter] - Name, Muster und Kategorie zeigt sie als Karte „Typ“
+ * (`TypAbschnitt`, Umbau #188).
  */
 @Composable
 fun ShiftEditDialog(
@@ -250,8 +257,9 @@ fun ShiftEditDialog(
 }
 
 /**
- * Die Felder des Typ-Editors, in dieser Reihenfolge - EINE Quelle fuer den Dialog (Neuanlage) und
- * die Typ-Seite (Bearbeiten, Umbau #187). Der Aufrufer besitzt den Zustand: [entwurf] wird
+ * Die Felder des Neuanlage-Dialogs, in dieser Reihenfolge: [typKopfFelder], [typWeckerFelder],
+ * [AktiviertSchalter]. Die Typ-Seite (Bearbeiten, Umbau #187/#188) setzt sie anders zusammen: Karte
+ * „Typ“, dann nur noch [typWeckerFelder]. Der Aufrufer besitzt den Zustand: [entwurf] wird
  * angezeigt, jede Eingabe laeuft als Umformung durch [aendere]. Eine Umformung statt eines
  * fertigen Werts, damit zwei Eingaben im selben Frame sich nicht gegenseitig mit einem
  * veralteten Stand ueberschreiben. [bestehenderName] ist der gespeicherte Name des bearbeiteten
@@ -262,9 +270,22 @@ internal fun LazyListScope.typFormularFelder(
     bestehenderName: String?,
     aendere: ((TypEntwurf) -> TypEntwurf) -> Unit
 ) {
+    typKopfFelder(entwurf, bestehenderName, aendere)
+    typWeckerFelder(entwurf, aendere)
+    item { AktiviertSchalter(entwurf, aendere) }
+}
+
+/**
+ * Name, Erkennungsmuster und Kategorie als Textfelder und Radio-Zeilen - nur fuer den Neuanlage-Dialog.
+ * Die Typ-Seite zeigt dasselbe als Karte „Typ“ (`TypAbschnitt`), mit Chips statt Textfeldern.
+ */
+internal fun LazyListScope.typKopfFelder(
+    entwurf: TypEntwurf,
+    bestehenderName: String?,
+    aendere: ((TypEntwurf) -> TypEntwurf) -> Unit
+) {
     val kategorie = entwurf.kategorie
     val weckerAn = entwurf.weckerAn
-    val isSickDay = entwurf.isSickDay
 
     item {
         OutlinedTextField(
@@ -279,12 +300,7 @@ internal fun LazyListScope.typFormularFelder(
             supportingText = if (entwurf.istUmbenennungVon(bestehenderName)) {
                 {
                     Text(
-                        text = "Dimmer- und Hue-Regeln, die auf \"$bestehenderName\" " +
-                            "zeigen, werden beim Speichern nach Möglichkeit auf " +
-                            "den neuen Namen umgestellt. Klappt das nicht – etwa " +
-                            "weil der neue Name schon vergeben ist –, sagt die " +
-                            "App es dir; dann wählst du die Schicht in der " +
-                            "betroffenen Regel neu aus.",
+                        text = ShiftDefinitionTexte.umbenennungHinweis(bestehenderName.orEmpty()),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -302,10 +318,7 @@ internal fun LazyListScope.typFormularFelder(
             fontWeight = FontWeight.Bold
         )
         Text(
-            text = "Ein Muster trifft, wenn es im Titel des Kalendertermins als " +
-                "eigenes Wort vorkommt (\"FD\" trifft \"FD Station 3\", nicht " +
-                "\"FD2\"). Der Schichtname oben zählt ab zwei Zeichen " +
-                "ebenfalls als Muster.",
+            text = ShiftDefinitionTexte.musterHinweis(namensfeld = "Schichtname"),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -419,6 +432,20 @@ internal fun LazyListScope.typFormularFelder(
             }
         }
     }
+}
+
+/**
+ * Wecker, Weckzeit und stummer Wecker - oder bei Krank und Ignorieren der Hinweis, was der Typ
+ * stattdessen tut. Dieselben Felder im Neuanlage-Dialog und auf der Typ-Seite (bis ein eigenes
+ * Paket den Wecker-Abschnitt der Seite baut, SPEC 3.3 Punkt 5).
+ */
+internal fun LazyListScope.typWeckerFelder(
+    entwurf: TypEntwurf,
+    aendere: ((TypEntwurf) -> TypEntwurf) -> Unit
+) {
+    val kategorie = entwurf.kategorie
+    val weckerAn = entwurf.weckerAn
+    val isSickDay = entwurf.isSickDay
 
     if (ShiftEditFormular.zeigtWeckerBlock(kategorie)) {
         item {
@@ -509,62 +536,80 @@ internal fun LazyListScope.typFormularFelder(
         }
     }
 
-    item {
-        // Der Schalter daneben hat eine Erklaerung, dieser hatte keine - und
-        // genau daran ist am 19.08.2026 eine Rufbereitschaft gescheitert: sie
-        // wurde AUSGESCHALTET angelegt, damit sie nicht klingelt, sollte aber
-        // weiterhin "Nicht stoeren" steuern. Ausschalten beendet jedoch die
-        // ERKENNUNG, und ohne erkannte Schicht gibt es keine Schichtspanne -
-        // also auch kein DND- und kein Dimmer-Fenster. Wer "kein Wecker, aber
-        // Zeitfenster" will, schaltet „Wecker an diesem Tag“ aus (#168).
-        SwitchRow(
-            title = "Schichtdefinition aktiviert",
-            // #142: der Wecker-aus-Verweis passt nicht auf eine Krankmeldung -
-            // dort kostet "aus" die Tagesfreigabe, nicht ein Zeitfenster.
-            description = when {
-                isSickDay -> ShiftDefinitionTexte.KRANKMELDUNG_AKTIVIERT_HINWEIS
-                // Ignorieren ergibt nie einen Wecker, und der Schalter „Wecker an diesem
-                // Tag“ ist dort ausgeblendet - der allgemeine Hinweis verwiese ins Leere.
-                kategorie == ShiftKategorie.IGNORIEREN ->
-                    ShiftDefinitionTexte.IGNORIEREN_AKTIVIERT_HINWEIS
-                else -> ShiftDefinitionTexte.AKTIVIERT_HINWEIS
-            },
-            checked = entwurf.isEnabled,
-            onCheckedChange = { neu -> aendere { it.copy(isEnabled = neu) } },
-            titleFontWeight = FontWeight.Normal
-        )
-    }
 }
 
-/** Einzug der Zeilentexte unter dem Radio-Knopf: 24 dp Knopf + 8 dp Abstand, wie in [KategorieZeile]. */
-private val KATEGORIE_TEXT_EINZUG = 32.dp
+/**
+ * Der Schalter „Schichtdefinition aktiviert“ - im Neuanlage-Dialog die letzte Zeile, auf der Typ-Seite
+ * das Ende der Karte „Typ“ (Betreuer #188: der Prototyp kennt ihn nicht, er bleibt bis Etappe 9, weil
+ * „aus“ sonst eine Funktion ohne Oberflaeche waere).
+ */
+@Composable
+internal fun AktiviertSchalter(
+    entwurf: TypEntwurf,
+    aendere: ((TypEntwurf) -> TypEntwurf) -> Unit
+) {
+    // Der Schalter daneben hat eine Erklaerung, dieser hatte keine - und
+    // genau daran ist am 19.08.2026 eine Rufbereitschaft gescheitert: sie
+    // wurde AUSGESCHALTET angelegt, damit sie nicht klingelt, sollte aber
+    // weiterhin "Nicht stoeren" steuern. Ausschalten beendet jedoch die
+    // ERKENNUNG, und ohne erkannte Schicht gibt es keine Schichtspanne -
+    // also auch kein DND- und kein Dimmer-Fenster. Wer "kein Wecker, aber
+    // Zeitfenster" will, schaltet „Wecker an diesem Tag“ aus (#168).
+    SwitchRow(
+        title = "Schichtdefinition aktiviert",
+        description = ShiftDefinitionTexte.aktiviertHinweis(entwurf.kategorie),
+        checked = entwurf.isEnabled,
+        onCheckedChange = { neu -> aendere { it.copy(isEnabled = neu) } },
+        titleFontWeight = FontWeight.Normal
+    )
+}
 
 /** Deckkraft einer ausgegrauten Zeile: unter Material-Standard (0,38), damit Text lesbar bleibt. */
 private const val AUSGEGRAUT_ALPHA = 0.6f
 
+/** Einzug der Zeilentexte unter dem Radio-Knopf: 24 dp Knopf + 8 dp + 16 dp Farbmarke + 8 dp, wie in [KategorieZeile]. */
+private val KATEGORIE_TEXT_EINZUG = 56.dp
+
 /**
- * Eine Zeile der Kategorie-Wahl: Radio-Knopf, Name ([titel]) und Kurzbeschreibung. Mindestens
+ * Eine Zeile der Kategorie-Wahl (Prototyp `katWahl`): Radio-Knopf, Farbmarke der Kategorie, Name
+ * ([titel]) - bei Rufbereitschaft und Krank mit der Marke „Sonderfall“ - und Kurzbeschreibung. Mindestens
  * 48 dp hoch (`RadioButton` mit `onClick = null` bringt das Touchziel nicht selbst mit).
+ * Geteilt vom Neuanlage-Dialog und der Kategorie-Wahl der Typ-Seite. [innenabstand] liegt INNERHALB
+ * der antippbaren Flaeche, damit die ganze Zeilenbreite trifft.
  */
 @Composable
-private fun KategorieZeile(
+internal fun KategorieZeile(
     option: ShiftKategorie,
     gewaehlt: Boolean,
-    onWahl: () -> Unit
+    onWahl: () -> Unit,
+    innenabstand: Dp = 0.dp
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = 48.dp)
             .selectable(selected = gewaehlt, onClick = onWahl, role = Role.RadioButton)
-            .padding(vertical = SpacingConstants.SPACING_SMALL),
+            .padding(horizontal = innenabstand, vertical = SpacingConstants.SPACING_SMALL),
         verticalAlignment = Alignment.CenterVertically
     ) {
         RadioButton(selected = gewaehlt, onClick = null)
         Spacer(modifier = Modifier.width(SpacingConstants.SPACING_SMALL))
+        KategorieMarke(option, modifier = Modifier.size(16.dp))
+        Spacer(modifier = Modifier.width(SpacingConstants.SPACING_SMALL))
         // weight(1f): sonst laeuft die Beschreibung bei 320 dp + Schrift 1,3 unter den Knopf
         Column(modifier = Modifier.weight(1f)) {
-            Text(text = option.titel(), style = MaterialTheme.typography.bodyLarge)
+            // FlowRow: die Marke „Sonderfall“ bricht bei 320 dp unter den Namen, statt ihn zu quetschen.
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_SMALL),
+                verticalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_EXTRA_SMALL),
+                itemVerticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(text = option.titel(), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                // Dieselbe Regel wie `schichttypBloecke` und EinordnenDialog (SPEC E3): Rufbereitschaft und Krank.
+                if (option == ShiftKategorie.RUFBEREITSCHAFT || option == ShiftKategorie.KRANK) {
+                    SonderfallMarke()
+                }
+            }
             Text(
                 text = ShiftDefinitionTexte.kategorieBeschreibung(option),
                 style = MaterialTheme.typography.bodySmall,
@@ -701,6 +746,38 @@ object ShiftDefinitionTexte {
     const val AKTIVIERT_HINWEIS =
         "Aus heißt: wird gar nicht erkannt — kein Wecker, aber auch kein Dimmer- und kein " +
             "DND-Fenster. Für „kein Wecker, Zeitfenster trotzdem“ schaltest du „$WECKER_AN_TITEL“ aus."
+
+    /**
+     * Der Hinweis unter „Schichtdefinition aktiviert“, je nach Kategorie (Dialog und Typ-Seite).
+     * #142: der Wecker-aus-Verweis passt nicht auf eine Krankmeldung - dort kostet „aus“ die
+     * Tagesfreigabe, nicht ein Zeitfenster. Ignorieren ergibt nie einen Wecker, und der Schalter
+     * „Wecker an diesem Tag“ ist dort ausgeblendet: der allgemeine Hinweis verwiese ins Leere.
+     */
+    fun aktiviertHinweis(kategorie: ShiftKategorie): String = when (kategorie) {
+        ShiftKategorie.KRANK -> KRANKMELDUNG_AKTIVIERT_HINWEIS
+        ShiftKategorie.IGNORIEREN -> IGNORIEREN_AKTIVIERT_HINWEIS
+        else -> AKTIVIERT_HINWEIS
+    }
+
+    /**
+     * Wie ein Muster im Kalender trifft (Dialog und Typ-Seite). [namensfeld] ist die Beschriftung
+     * des Namensfelds an der jeweiligen Stelle: „Schichtname“ im Dialog, „Name“ in der Karte der
+     * Typ-Seite - ein Hinweis nennt die Beschriftung wortgleich.
+     */
+    fun musterHinweis(namensfeld: String): String =
+        "Ein Muster trifft, wenn es im Titel des Kalendertermins als eigenes Wort vorkommt " +
+            "(\"FD\" trifft \"FD Station 3\", nicht \"FD2\"). Der $namensfeld oben zählt ab zwei " +
+            "Zeichen ebenfalls als Muster."
+
+    /**
+     * Beim Umbenennen eines BESTEHENDEN Typs. Keine unbedingte Zusage: `planeSchichtUmbenennungen()`
+     * kann den Nachzug blockieren, das Ergebnis meldet `regelNachzugHinweis`.
+     */
+    fun umbenennungHinweis(alterName: String): String =
+        "Dimmer- und Hue-Regeln, die auf \"$alterName\" zeigen, werden beim Speichern nach " +
+            "Möglichkeit auf den neuen Namen umgestellt. Klappt das nicht – etwa weil der neue " +
+            "Name schon vergeben ist –, sagt die App es dir; dann wählst du die Schicht in der " +
+            "betroffenen Regel neu aus."
 }
 
 /**

@@ -33,7 +33,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.CompactButton
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.KnopfZeile
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.SimpleBackTopAppBar
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.TypEntwurf
-import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.typFormularFelder
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.typWeckerFelder
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.hilfe.HilfeThema
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
@@ -128,8 +128,8 @@ private val EntwurfSaver: Saver<TypEntwurf, Any> = Saver(
 
 /**
  * Die Typ-Seite (Umbau, SPEC 3.3): ein Schichttyp als eigener Bildschirm statt des Dialogs.
- * Zunaechst nur das Geruest - die heutigen Editor-Felder; Tagesleiste, Dimmen, DND und Licht
- * kommen mit eigenen Paketen.
+ * Oben die Karte „Typ“ ([TypAbschnitt]: Name, Muster, Kategorie), darunter noch die heutigen
+ * Wecker-Felder; Tagesleiste, Dimmen, DND und Licht kommen mit eigenen Paketen.
  *
  * ENTWURF STATT SOFORT-SCHREIBEN (bewusste Abweichung vom Prototyp, der keinen Speichern-Knopf
  * hat): `updateShiftConfig()` speichert und stoesst den Alarm-Sync an - je Tastendruck im Namen
@@ -196,9 +196,18 @@ private fun TypSeiteFormular(
     val ausgang = rememberSaveable(saver = EntwurfSaver) { TypEntwurf.aus(definition) }
     var entwurf by rememberSaveable(stateSaver = EntwurfSaver) { mutableStateOf(ausgang) }
     var rueckfrageOffen by rememberSaveable { mutableStateOf(false) }
+    // Das „+“-Feld der Karte „Typ“ und die offene Kategorie-Wahl gehoeren der Seite, nicht der Karte:
+    // sie ueberstehen so Drehen, Dunkelmodus und das Scrollen der Liste (die Karte ist ein Listenelement).
+    var neuesMuster by rememberSaveable { mutableStateOf("") }
+    var kategorieWahlOffen by rememberSaveable { mutableStateOf(false) }
     val speicherung = remember { TypSeiteSpeicherung(schreibe) }
+    val aendere: ((TypEntwurf) -> TypEntwurf) -> Unit = { aenderung -> entwurf = aenderung(entwurf) }
 
-    val geaendert = TypSeiteEntwurf.hatAenderungen(ausgang, entwurf)
+    // Gespeichert wird der Entwurf MIT dem Muster, das im „+“-Feld steht und noch nicht hinzugefuegt ist:
+    // getippter Text ginge sonst beim Speichern stumm verloren. Ein Duplikat oder ein leeres Feld
+    // aendert nichts (TypAbschnittLogik.musterHinzufuegen).
+    val kandidat = TypAbschnittLogik.mitEingabe(entwurf, neuesMuster)
+    val geaendert = TypSeiteEntwurf.hatAenderungen(ausgang, kandidat)
     val zurueck: () -> Unit = {
         if (geaendert) rueckfrageOffen = true else onZurueck()
     }
@@ -228,11 +237,18 @@ private fun TypSeiteFormular(
                 contentPadding = PaddingValues(vertical = SpacingConstants.SPACING_LARGE),
                 verticalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_LARGE)
             ) {
-                typFormularFelder(
-                    entwurf = entwurf,
-                    bestehenderName = definition.name,
-                    aendere = { aenderung -> entwurf = aenderung(entwurf) }
-                )
+                item(key = "typ") {
+                    TypAbschnitt(
+                        entwurf = entwurf,
+                        bestehenderName = definition.name,
+                        neuesMuster = neuesMuster,
+                        onNeuesMuster = { neuesMuster = it },
+                        onKategorieAendern = { kategorieWahlOffen = true },
+                        aendere = aendere
+                    )
+                }
+                // Bis ein eigenes Paket den Wecker-Abschnitt baut (SPEC 3.3 Punkt 5): die heutigen Felder.
+                typWeckerFelder(entwurf = entwurf, aendere = aendere)
             }
 
             Spacer(modifier = Modifier.height(SpacingConstants.SPACING_SMALL))
@@ -247,7 +263,7 @@ private fun TypSeiteFormular(
                 CompactButton(
                     text = TypSeiteTexte.SPEICHERN,
                     onClick = {
-                        when (val ergebnis = speicherung.speichere(config, definition.id, entwurf)) {
+                        when (val ergebnis = speicherung.speichere(config, definition.id, kandidat)) {
                             SpeicherErgebnis.GESCHRIEBEN -> {
                                 Logger.d(LogTags.UI, "Typ-Seite: Typ ${definition.id} gespeichert -> zurueck zur Liste")
                                 onZurueck()
@@ -259,10 +275,22 @@ private fun TypSeiteFormular(
                     },
                     // Nichts zu speichern, solange nichts geaendert ist; das verborgene Zeitfeld
                     // sperrt nicht grundlos (#142, steckt in `speicherbar`).
-                    enabled = geaendert && entwurf.speicherbar
+                    enabled = geaendert && kandidat.speicherbar
                 )
             }
         }
+    }
+
+    if (kategorieWahlOffen) {
+        KategorieWahlDialog(
+            name = definition.name,
+            aktuell = entwurf.kategorie,
+            onWahl = { neu ->
+                aendere { TypAbschnittLogik.kategorieWechseln(it, neu) }
+                kategorieWahlOffen = false
+            },
+            onDismiss = { kategorieWahlOffen = false }
+        )
     }
 
     if (rueckfrageOffen) {

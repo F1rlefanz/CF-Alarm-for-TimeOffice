@@ -50,6 +50,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -189,8 +190,12 @@ fun ShiftConfigScreen(
     /** Der Fund-Code, fuer den gerade die Kategorie-Wahl offen ist (null = geschlossen). */
     var einordnenCode by remember { mutableStateOf<String?>(null) }
 
-    /** Die Wahl „Tage ohne Eintrag verhalten sich“ an der festen Zeile ist offen. */
-    var ohneEintragOffen by remember { mutableStateOf(false) }
+    /**
+     * Die Wahl „Tage ohne Eintrag verhalten sich“ an der festen Zeile ist offen. Ueberlebt eine
+     * Konfigurationsaenderung (Dunkelmodus, Schriftgroesse): sie schreibt sofort, der Nutzer soll
+     * nicht mitten in der Wahl vor der Liste stehen.
+     */
+    var ohneEintragOffen by rememberSaveable { mutableStateOf(false) }
 
     /**
      * „Als neuer Typ“: der Editor ist mit dieser Vorlage offen. NICHTS davon ist gespeichert - erst

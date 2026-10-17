@@ -33,6 +33,14 @@ sealed class NavigationState {
         val fundCode: String? = null
     ) : NavigationState()
 
+    /**
+     * Die Typ-Seite der festen Zeile „Ohne Kalendereintrag“ (#191, SPEC E5/3.3 Punkt 2), erreichbar nur
+     * aus [ShiftConfig]. Ein eigener Zustand statt einer [TypSeite] mit Kennung: die feste Zeile ist kein
+     * Eintrag in `definitions`, hat also keine `id`, keinen Entwurf und kein „Speichern“ - ihre Wahl
+     * schreibt beim Tippen. Zurueck fuehrt in die Typ-Liste (NavigationViewModel.rueckwegZiel).
+     */
+    data class OhneEintragSeite(val returnToTab: MainTab = MainTab.SETTINGS) : NavigationState()
+
     // Onboarding-Screens
     data class BatteryExemption(val returnToTab: MainTab = MainTab.HOME) : NavigationState()
     data class UnusedAppRestrictions(val returnToTab: MainTab = MainTab.HOME) : NavigationState()
@@ -135,6 +143,9 @@ sealed class NavigationAction {
         val fundCode: String? = null,
         val fromTab: MainTab = MainTab.SETTINGS
     ) : NavigationAction()
+
+    /** Die Seite der festen Zeile „Ohne Kalendereintrag“ (#191). */
+    data class NavigateToOhneEintragSeite(val fromTab: MainTab = MainTab.SETTINGS) : NavigationAction()
 
     // Onboarding Navigation Actions
     data class NavigateToBatteryExemption(val fromTab: MainTab = MainTab.HOME) : NavigationAction()

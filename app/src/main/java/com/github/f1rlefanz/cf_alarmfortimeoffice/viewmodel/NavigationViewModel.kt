@@ -65,6 +65,11 @@ class NavigationViewModel @Inject constructor() : ViewModel() {
                 NavigationState.TypSeite(action.vorlage.id, action.fromTab, action.vorlage, action.fundCode)
             }
 
+            is NavigationAction.NavigateToOhneEintragSeite -> {
+                Logger.d(LogTags.NAVIGATION, "Shift Config -> Ohne-Kalendereintrag-Seite (from ${action.fromTab})")
+                NavigationState.OhneEintragSeite(action.fromTab)
+            }
+
             // Battery and OEM navigation
             is NavigationAction.NavigateToBatteryExemption -> {
                 Logger.d(LogTags.NAVIGATION, "Main -> Battery Exemption (from ${action.fromTab})")
@@ -159,6 +164,9 @@ class NavigationViewModel @Inject constructor() : ViewModel() {
     fun navigateToNeuerTyp(vorlage: ShiftDefinition, fundCode: String? = null, fromTab: MainTab = MainTab.SETTINGS) =
         handleNavigationAction(NavigationAction.NavigateToNeuerTyp(vorlage, fundCode, fromTab))
 
+    fun navigateToOhneEintragSeite(fromTab: MainTab = MainTab.SETTINGS) =
+        handleNavigationAction(NavigationAction.NavigateToOhneEintragSeite(fromTab))
+
     // Battery and OEM navigation convenience methods
     fun navigateToBatteryExemption(fromTab: MainTab = MainTab.HOME) = 
         handleNavigationAction(NavigationAction.NavigateToBatteryExemption(fromTab))
@@ -235,6 +243,13 @@ class NavigationViewModel @Inject constructor() : ViewModel() {
         // meldet das nicht (das when hat ein else), nur der Test in NavigationViewModelTest.
         if (state is NavigationState.TypSeite) {
             Logger.d(LogTags.NAVIGATION, "-> Shift Config (${state.returnToTab} tab, aus der Typ-Seite)")
+            return NavigationState.ShiftConfig(state.returnToTab)
+        }
+        // Die feste Zeile „Ohne Kalendereintrag“ (#191): ebenfalls zur Typ-Liste. Auch die Typ-Seite, die
+        // man von dort mit „<Name> oeffnen“ erreicht, fuehrt zur Liste (sie ist eine gewoehnliche TypSeite) -
+        // so wie der Dialog davor, der sich beim Oeffnen schloss.
+        if (state is NavigationState.OhneEintragSeite) {
+            Logger.d(LogTags.NAVIGATION, "-> Shift Config (${state.returnToTab} tab, aus der Ohne-Kalendereintrag-Seite)")
             return NavigationState.ShiftConfig(state.returnToTab)
         }
         // HueRuleConfig/DimmerRuleConfig haben zwei Einstiegspfade (siehe cameFromSettingsList) -

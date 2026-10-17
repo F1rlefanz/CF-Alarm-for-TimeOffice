@@ -494,6 +494,54 @@ class NavigationViewModelTest {
         assertEquals(NavigationState.ShiftConfig(MainTab.WECKER), vm.navigationState.value)
     }
 
+    // ---- Die feste Zeile „Ohne Kalendereintrag“ als Seite (Umbau #191) ---------------------------
+
+    @Test
+    fun `NavigateToOhneEintragSeite setzt die Seite der festen Zeile mit dem Herkunftstab`() {
+        val vm = newViewModel()
+        vm.handleNavigationAction(NavigationAction.NavigateToOhneEintragSeite(MainTab.WECKER))
+        assertEquals(NavigationState.OhneEintragSeite(MainTab.WECKER), vm.navigationState.value)
+    }
+
+    @Test
+    fun `Zurueck aus der festen Seite fuehrt zur Typ-Liste und von dort zum Tab - nie auf die Uebersicht`() {
+        // Ohne den Zweig in rueckwegZiel faellt der neue Zustand in den else-Zweig und landet auf HOME;
+        // der Compiler meldet das nicht. WECKER ist nicht der Default (SETTINGS), HOME ist die Falle.
+        val vm = newViewModel()
+        vm.navigateToShiftConfig(MainTab.WECKER)
+        vm.navigateToOhneEintragSeite(MainTab.WECKER)
+
+        vm.navigateBackFrom(vm.navigationState.value)
+        assertEquals(NavigationState.ShiftConfig(MainTab.WECKER), vm.navigationState.value)
+
+        vm.navigateBackFrom(vm.navigationState.value)
+        assertEquals(NavigationState.MainContent(MainTab.WECKER), vm.navigationState.value)
+    }
+
+    @Test
+    fun `Typ oeffnen von der festen Seite zeigt dessen Typ-Seite, Zurueck fuehrt zur Liste - nicht zur Uebersicht`() {
+        // „<Name> oeffnen“ ist navigateToTypSeite mit der id des gewaehlten Typs, aus dem Tab der Seite.
+        // Der Rueckweg ist der einer gewoehnlichen Typ-Seite: Liste, nicht die feste Seite, nicht HOME.
+        val vm = newViewModel()
+        vm.navigateToOhneEintragSeite(MainTab.WECKER)
+
+        vm.navigateToTypSeite("fruehschicht", MainTab.WECKER)
+        assertEquals(NavigationState.TypSeite("fruehschicht", MainTab.WECKER), vm.navigationState.value)
+
+        vm.navigateBackFrom(vm.navigationState.value)
+        assertEquals(NavigationState.ShiftConfig(MainTab.WECKER), vm.navigationState.value)
+    }
+
+    @Test
+    fun `navigateBackFrom mit dem gerenderten Zustand der festen Seite ist idempotent`() {
+        val vm = newViewModel()
+        vm.navigateToOhneEintragSeite(MainTab.STATUS)
+        val gerendert = vm.navigationState.value
+        vm.navigateBackFrom(gerendert)
+        vm.navigateBackFrom(gerendert)
+        assertEquals(NavigationState.ShiftConfig(MainTab.STATUS), vm.navigationState.value)
+    }
+
     @Test
     fun `navigationState startet als MainContent HOME`() {
         val vm = newViewModel()

@@ -1,5 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.typ.OhneEintragTexte
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.typ.ShiftDefinitionTexte
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.ShiftConfigTexte
 import org.junit.Assert.assertFalse

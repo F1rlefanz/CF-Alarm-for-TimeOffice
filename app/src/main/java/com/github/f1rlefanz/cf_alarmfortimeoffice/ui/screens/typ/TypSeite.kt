@@ -266,6 +266,63 @@ fun TypSeite(
     )
 }
 
+/**
+ * Die Typ-Seite der festen Zeile „Ohne Kalendereintrag“ (Umbau #191, SPEC E5 und 3.3 Punkt 2, Prototyp
+ * `typ.fest`): Erklaerung, die Wahl „Tage ohne Eintrag verhalten sich“ und - bei gewaehltem Typ - „<Name>
+ * öffnen“ ([ohneEintragAbschnitt]). Sie ersetzt den Dialog der Etappe 1.
+ *
+ * KEIN ENTWURF, KEIN „Speichern“ (Festlegung des Betreuers, einzige Ausnahme vom Entwurf mit Speichern):
+ * ein Tipp auf eine Wahl ist eine abgeschlossene Handlung und schreibt sofort ueber
+ * `ShiftViewModel.waehleOhneEintrag()`. Deshalb gibt es auch keinen `BackHandler` hier - Zurueck gehoert
+ * dem in `MainScreen` und fuehrt ueber `navigateBackFrom` in die Typ-Liste. In Etappe 2 hat die feste Seite
+ * weder Tagesleiste noch Wecker-Abschnitt: „Eigene Einstellungen“ heisst kein Wecker, „Wie <Typ>“ verweist
+ * auf den Typ.
+ *
+ * Ein Typ, der verschwindet, waehrend die Seite offen ist, muss hier nichts behandeln: die Wahl liest
+ * [OhneEintragWahl.gewaehlterTyp], ein Verweis ins Leere ist „Eigene Einstellungen“.
+ *
+ * @param onZurueck verlaesst die Seite zur Typ-Liste (`navigateBackFrom(state)`).
+ * @param onTypOeffnen oeffnet die Typ-Seite des gewaehlten Typs (dieselbe wie ein Tipp in der Liste).
+ */
+@Composable
+fun OhneEintragSeite(
+    shiftViewModel: ShiftViewModel,
+    onZurueck: () -> Unit,
+    onTypOeffnen: (typId: String) -> Unit
+) {
+    val shiftState by shiftViewModel.uiState.collectAsStateWithLifecycle()
+    val config = shiftState.currentShiftConfig
+
+    Scaffold(
+        topBar = {
+            SimpleBackTopAppBar(
+                title = OhneEintragTexte.TITEL,
+                onNavigateBack = onZurueck,
+                hilfe = HilfeThema.ANLEITUNG_SCHICHTEN
+            )
+        }
+    ) { paddingValues ->
+        // Die Wahl braucht die gelesene Konfiguration: ohne sie (laedt noch, nicht lesbar) steht nur der
+        // Pfeil da, damit niemand festsitzt - eine Wahl auf einem Platzhalter wuerde nichts schreiben.
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+                .padding(horizontal = SpacingConstants.PADDING_SCREEN_HORIZONTAL),
+            contentPadding = PaddingValues(vertical = SpacingConstants.SPACING_LARGE),
+            verticalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_LARGE)
+        ) {
+            if (config != null) {
+                ohneEintragAbschnitt(
+                    config = config,
+                    onWaehle = shiftViewModel::waehleOhneEintrag,
+                    onTypOeffnen = { typ -> onTypOeffnen(typ.id) }
+                )
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun TypSeiteFormular(

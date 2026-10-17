@@ -162,6 +162,38 @@ class ShiftDefinitionTexteTest {
         assertTrue(text.startsWith("Dieser Eintrag wird übergangen."))
         assertTrue(text.contains("gilt der Dienst"))
     }
+
+    /**
+     * #188: der Hinweis unter „Schichtdefinition aktiviert“ steht jetzt in einer Funktion, die Dialog und
+     * Typ-Seite teilen. Vorher entschied ein `when` im Dialog (`isSickDay`, `kategorie == IGNORIEREN`).
+     */
+    @Test
+    fun `Der Aktiviert-Hinweis folgt der Kategorie - Krank und Ignorieren haben eigene Texte`() {
+        ShiftKategorie.entries.forEach { kategorie ->
+            val erwartet = when (kategorie) {
+                ShiftKategorie.KRANK -> ShiftDefinitionTexte.KRANKMELDUNG_AKTIVIERT_HINWEIS
+                ShiftKategorie.IGNORIEREN -> ShiftDefinitionTexte.IGNORIEREN_AKTIVIERT_HINWEIS
+                else -> ShiftDefinitionTexte.AKTIVIERT_HINWEIS
+            }
+            assertEquals(kategorie.name, erwartet, ShiftDefinitionTexte.aktiviertHinweis(kategorie))
+        }
+    }
+
+    /** #188: Dialog und Typ-Seite nennen die Beschriftung des Namensfelds wortgleich - ein Hinweis nennt sie nie anders. */
+    @Test
+    fun `Der Muster-Hinweis nennt das Namensfeld so, wie es an dieser Stelle heisst`() {
+        assertTrue(ShiftDefinitionTexte.musterHinweis("Schichtname").contains("Der Schichtname oben zählt ab zwei Zeichen"))
+        assertTrue(ShiftDefinitionTexte.musterHinweis("Name").contains("Der Name oben zählt ab zwei Zeichen"))
+        assertTrue(ShiftDefinitionTexte.musterHinweis("Name").contains("\"FD\" trifft \"FD Station 3\", nicht \"FD2\""))
+    }
+
+    @Test
+    fun `Der Umbenennungs-Hinweis nennt den alten Namen und sagt, dass der Nachzug scheitern kann`() {
+        val text = ShiftDefinitionTexte.umbenennungHinweis("Frühschicht")
+        assertTrue(text.contains("\"Frühschicht\""))
+        assertTrue("Keine unbedingte Zusage", text.contains("nach Möglichkeit"))
+        assertTrue(text.contains("Klappt das nicht"))
+    }
 }
 
 /**

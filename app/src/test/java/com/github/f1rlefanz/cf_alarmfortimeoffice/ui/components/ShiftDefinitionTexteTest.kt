@@ -187,6 +187,85 @@ class ShiftDefinitionTexteTest {
         assertTrue(ShiftDefinitionTexte.musterHinweis("Name").contains("\"FD\" trifft \"FD Station 3\", nicht \"FD2\""))
     }
 
+    // --- #189: die Sonderfall-Kaesten der Typ-Seite. Textwahrheit statt Prototyp-Wortlaut. ---
+
+    private fun kastenText(kategorie: ShiftKategorie, code: String? = "AD"): String {
+        val kasten = ShiftDefinitionTexte.sonderfall(kategorie, code, erkannt = true)!!
+        return (listOfNotNull(kasten.titel) + kasten.absaetze).joinToString("\n")
+    }
+
+    @Test
+    fun `Einen Sonderfall-Kasten gibt es genau fuer Rufbereitschaft, Krank und Ignorieren`() {
+        val mitKasten = ShiftKategorie.entries.filter {
+            ShiftDefinitionTexte.sonderfall(it, "X", erkannt = true) != null
+        }
+        assertEquals(
+            setOf(ShiftKategorie.RUFBEREITSCHAFT, ShiftKategorie.KRANK, ShiftKategorie.IGNORIEREN),
+            mitKasten.toSet()
+        )
+        assertEquals("Sonderfall Rufbereitschaft", ShiftDefinitionTexte.sonderfall(ShiftKategorie.RUFBEREITSCHAFT, null, true)!!.titel)
+        assertEquals("Sonderfall Krank", ShiftDefinitionTexte.sonderfall(ShiftKategorie.KRANK, null, true)!!.titel)
+        assertNull("Ignorieren hat im Prototyp keinen Titel", ShiftDefinitionTexte.sonderfall(ShiftKategorie.IGNORIEREN, "TB", true)!!.titel)
+    }
+
+    /** Heute ueberspringen AlarmReceiver und HueSmartScheduler bei stillen Schichten die Hue-Regeln; und Licht am Typ gibt es erst in Etappe 4. */
+    @Test
+    fun `Kein Sonderfall-Text verspricht Licht`() {
+        listOf(ShiftKategorie.RUFBEREITSCHAFT, ShiftKategorie.KRANK, ShiftKategorie.IGNORIEREN).forEach { kategorie ->
+            val text = kastenText(kategorie)
+            assertFalse("$kategorie: $text", text.contains("Licht"))
+        }
+    }
+
+    /**
+     * #172: ein nachgetragener Dienst nimmt dem Ruf-Typ nur den WECKER ab - Spanne, stuendliche Abfrage und
+     * das Ende von „Nicht stoeren“ bleiben. Der Prototyp sagt „dessen Wecker und Einstellungen“.
+     */
+    @Test
+    fun `Der Rufbereitschafts-Kasten begruendet die stuendliche Pruefung und uebertreibt die Uebernahme nicht`() {
+        val text = kastenText(ShiftKategorie.RUFBEREITSCHAFT)
+        assertTrue(text.contains("stündlich"))
+        assertTrue("Ohne die Begruendung wirkt die Abfrage wie Akkuverschwendung", text.contains("nicht von selbst melden"))
+        assertTrue(text.contains("Wecker-Einstellung dieses Dienstes"))
+        assertTrue("Was bleibt, steht da", text.contains("Die stündliche Prüfung und das Ende von „Nicht stören“ bleiben"))
+        assertTrue(text.contains("Steht nur die Rufbereitschaft im Kalender"))
+        assertFalse("Dimmer und DND des Ruf-Typs wirken weiter", text.contains("Einstellungen"))
+        assertFalse("„Endet spätestens um“ gehört in den Abschnitt „Nicht stören“ (Etappe 3)", text.contains("spätestens"))
+    }
+
+    @Test
+    fun `Der Krank-Kasten sagt, dass der Dienst-Wecker entfaellt, und verspricht kein Eingestelltes`() {
+        val text = kastenText(ShiftKategorie.KRANK)
+        assertTrue(text.contains("der Dienst-Wecker entfällt"))
+        assertTrue("Eigene Wecker bleiben - der Satz aus #142", text.contains("Eigene Wecker bleiben"))
+        assertFalse("Krank hat bis Etappe 6 keinen Wecker-Block: es gilt nichts Eingestelltes", text.contains("Eingestellte"))
+    }
+
+    @Test
+    fun `Der Ignorieren-Kasten ist ein Absatz mit dem Code - ohne Code faellt nur dieser Satz weg`() {
+        val mit = ShiftDefinitionTexte.sonderfall(ShiftKategorie.IGNORIEREN, "TB", true)!!
+        assertEquals("Ein Absatz wie im Prototyp", 1, mit.absaetze.size)
+        val text = mit.absaetze.single()
+        assertTrue(text.startsWith("Dieser Eintrag wird übergangen."))
+        assertTrue("#167: ein Dienst im selben Termin gewinnt", text.contains("gilt der Dienst"))
+        assertTrue("#173: ein ignorierter Termin zählt an einem sonst leeren Tag nicht als Eintrag", text.contains("gilt „Ohne Kalendereintrag“"))
+        assertTrue(text.endsWith("Die App schlägt TB nicht mehr vor."))
+
+        listOf(null, "", "  ").forEach { code ->
+            val ohne = ShiftDefinitionTexte.sonderfall(ShiftKategorie.IGNORIEREN, code, true)!!.absaetze.single()
+            assertFalse("Code=$code: $ohne", ohne.contains("schlägt"))
+            assertTrue(ohne.contains("gilt „Ohne Kalendereintrag“"))
+        }
+    }
+
+    /** Aus heisst „wird nicht erkannt“: dann gilt keiner dieser Saetze (der Schalter darueber sagt es). */
+    @Test
+    fun `Ein ausgeschalteter Typ hat keinen Sonderfall-Kasten`() {
+        ShiftKategorie.entries.forEach { kategorie ->
+            assertNull(kategorie.name, ShiftDefinitionTexte.sonderfall(kategorie, "X", erkannt = false))
+        }
+    }
+
     @Test
     fun `Der Umbenennungs-Hinweis nennt den alten Namen und sagt, dass der Nachzug scheitern kann`() {
         val text = ShiftDefinitionTexte.umbenennungHinweis("Frühschicht")

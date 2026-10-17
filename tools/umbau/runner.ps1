@@ -36,6 +36,8 @@ $Sdk = Join-Path $env:LOCALAPPDATA 'Android\Sdk'
 $Adb = Join-Path $Sdk 'platform-tools\adb.exe'
 # M von 60 auf 75 (17.10.2026): drei von fuenf UI-Paketen in Etappe 1 brauchten bei 60 einen zweiten Lauf.
 $Caps = @{ 'groesse-S' = 40; 'groesse-M' = 75 }
+$WochenReserve = 0.9   # ab diesem Wochenverbrauch pausiert der Runner (Rest bleibt dem Eigentuemer)
+$script:Woche = $null
 $SkillEtappen = @(3, 9)   # brauchen vorher Label skills-bereit-N am Epic (ABLAUF Abschnitt 3)
 
 New-Item -ItemType Directory -Force $Logs | Out-Null
@@ -236,6 +238,7 @@ function StarteClaude([string]$goal, [string]$model, [int]$cap, [string]$cwd, [s
                     $e = $z | ConvertFrom-Json
                     if ($e.type -eq 'result') { $ergebnis = $z }
                     if ($e.type -eq 'rate_limit_event' -and $e.rate_limit_info.status -eq 'rejected') { $reset = $e.rate_limit_info.resetsAt }
+                    if ($e.type -eq 'rate_limit_event' -and $e.rate_limit_info.unifiedWindows.seven_day) { $script:Woche = $e.rate_limit_info.unifiedWindows.seven_day }
                 } catch {}
             }
             $rest.Add($z); if ($rest.Count -gt 40) { $rest.RemoveAt(0) }
@@ -302,6 +305,15 @@ try {
     Log "Runner gestartet$(if ($DryRun) { ' (DryRun)' })"
     while ($true) {
         if (Test-Path $StopFile) { Log 'STOP-Datei gefunden - Ende'; break }
+        # Reserve fuer den Eigentuemer: ab 90 % Wochenverbrauch Pause bis zum Wochen-Reset (17.10.2026).
+        if ($script:Woche -and $script:Woche.utilization -ge $WochenReserve) {
+            $ziel = [DateTimeOffset]::FromUnixTimeSeconds([long]$script:Woche.resetsAt).LocalDateTime.AddMinutes(2)
+            Log "Wochenkontingent bei $([math]::Round($script:Woche.utilization * 100)) % - Pause bis $(Get-Date $ziel -Format 'ddd dd.MM. HH:mm')"
+            if ($DryRun) { break }
+            Start-Sleep -Seconds ([math]::Max(60, ($ziel - (Get-Date)).TotalSeconds))
+            $script:Woche = $null
+            continue
+        }
         $alle = Issues
         $epic = $alle | Where-Object { $_.L -contains 'epic' } | Select-Object -First 1
         if (-not $epic) { Log 'Kein offenes Epic (Label epic) - Ende'; break }

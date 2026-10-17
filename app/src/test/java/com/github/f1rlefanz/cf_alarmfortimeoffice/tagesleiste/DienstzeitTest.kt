@@ -67,6 +67,20 @@ class DienstzeitTest {
     }
 
     @Test
+    fun `eine Spanne von einem Tag oder laenger ist hoechstens 24 Stunden lang - auch bei verschiedenen Uhrzeiten`() {
+        // 25 h und ein Wochenende mit unterschiedlichen Enden: nicht "modulo einem Tag" (60 min, 16 h),
+        // sondern der volle Tag ab dem Beginn.
+        val fuenfUndZwanzig = span("AD", zeit(8, 12, 8), zeit(8, 13, 9))
+        val wochenende = span("AD", zeit(8, 14, 16), zeit(8, 17, 8))
+
+        assertEquals(1440, dienstzeitAus(listOf(fuenfUndZwanzig), "AD", 0L, berlin)!!.dauerMin)
+        assertEquals(1440, dienstzeitAus(listOf(wochenende), "AD", 0L, berlin)!!.dauerMin)
+        // Knapp unter einem Tag bleibt, wie es ist.
+        val dreiundzwanzig = span("AD", zeit(8, 12, 8), zeit(8, 13, 7, 59))
+        assertEquals(1439, dienstzeitAus(listOf(dreiundzwanzig), "AD", 0L, berlin)!!.dauerMin)
+    }
+
+    @Test
     fun `Ende am selben Tag und Ende nach Mitternacht`() {
         val spaet = span("S", zeit(8, 10, 13, 45), zeit(8, 10, 22))
         val nacht = span("N", zeit(8, 10, 22), zeit(8, 11, 6))
@@ -136,6 +150,19 @@ class DienstzeitTest {
         val kaputt = ShiftSpan("N", 1_000_000L, 1_030_000L, 0L)
 
         assertNull(dienstzeitAus(listOf(kaputt), "N", 0L, berlin))
+    }
+
+    @Test
+    fun `eine Spanne in der doppelten Stunde der Rueckstellung hat keine Wanduhr-Dauer - keine Dienstzeit, kein Absturz`() {
+        // 25.10.2026: 02:30 Sommerzeit (00:30 UTC) bis 02:30 Winterzeit (01:30 UTC) - verstrichen 1 h, auf der Uhr 0.
+        val rueckstellung = ShiftSpan(
+            "N",
+            java.time.Instant.parse("2026-10-25T00:30:00Z").toEpochMilli(),
+            java.time.Instant.parse("2026-10-25T01:30:00Z").toEpochMilli(),
+            alarmTriggerTime = 0L
+        )
+
+        assertNull(dienstzeitAus(listOf(rueckstellung), "N", 0L, berlin))
     }
 
     @Test

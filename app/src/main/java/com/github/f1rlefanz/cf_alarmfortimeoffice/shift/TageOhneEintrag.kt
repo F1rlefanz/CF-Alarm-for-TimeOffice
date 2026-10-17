@@ -26,7 +26,8 @@ data class TagOhneEintrag(
  * - **Leer** heisst: KEIN Termin ueberdeckt den Kalendertag, auch nicht teilweise. Ein Termin deckt
  *   jeden Tag von seinem Beginn bis zu seinem Ende ab - der Nachtdienst bis 07:00 also auch den
  *   Folgetag, ein mehrtaegiger oder ganztaegiger Termin jeden seiner Tage. Endet ein Termin genau um
- *   00:00, ist sein Endtag NICHT abgedeckt (dieselbe Regel wie `AlarmUseCase.rohKrankTage`).
+ *   00:00, ist sein Endtag NICHT abgedeckt (wie in `AlarmUseCase.rohKrankTage`; ganztaegige Termine
+ *   enden laut Repository ohnehin um 23:59 ihres letzten Tages).
  *   Nicht mit zaehlen nur [ignorierteTermine] (`Erkennung.ignorierteTermine`: allein von
  *   Ignorieren-Typen getroffen). Ein noch nicht eingeordneter Code und ein Krank-Termin sind
  *   Eintraege.
@@ -34,7 +35,9 @@ data class TagOhneEintrag(
  *   Deshalb nur Tage von heute ([jetzt]) bis VOR den Tag, der [horizontEnde] enthaelt (exklusiv,
  *   wie `horizontTag` in `syncAlarms()` und `SyncHorizonStore.istJenseitsDesAbrufs`). Eine LEERE
  *   [events]-Liste ergibt keinen Tag: die Kalender-Abwahl ruft `syncAlarms()` absichtlich mit einer
- *   leeren Liste auf, und sie hiesse sonst „jeder Tag ist leer“.
+ *   leeren Liste auf, und sie hiesse sonst „jeder Tag ist leer“. Der Horizont deckt nur das
+ *   Abruf-FENSTER ab: dass kein ausgewaehlter Kalender fehlt (`CalendarFetchOutcome.isComplete`),
+ *   muss der Aufrufer pruefen - ein fehlender Kalender liesse jeden seiner Tage leer aussehen.
  * - **Freigegebene Tage** ([freieTage], die Vereinigung aus Hand und Krank laut Kalender) bekommen
  *   keinen Wecker; Gate und Backstop in `syncAlarms()`/`AlarmReceiver` bleiben davon unberuehrt.
  *   Ein Tag mit Krank-Termin ist ohnehin nicht leer - doppelt gehalten, kein Widerspruch.

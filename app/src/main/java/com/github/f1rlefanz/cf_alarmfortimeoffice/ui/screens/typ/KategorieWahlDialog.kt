@@ -58,7 +58,10 @@ internal object KategorieWahlTexte {
     const val TITEL = "Kategorie"
 
     /** „Deine Einstellungen bleiben“ stimmt: ein Wechsel behaelt alles ausser der Kategorie (SPEC E2). */
-    fun einleitung(name: String) = "Kategorie für „$name“ ändern. Deine Einstellungen bleiben, wie sie sind."
+    fun einleitung(name: String) =
+        // Ein Typ ohne Namen gibt es seit der Neuanlage ueber das „+“ (#190): kein leeres Anfuehrungszeichenpaar.
+        (if (name.isBlank()) "Kategorie für diesen Typ ändern." else "Kategorie für „$name“ ändern.") +
+            " Deine Einstellungen bleiben, wie sie sind."
 }
 
 /**

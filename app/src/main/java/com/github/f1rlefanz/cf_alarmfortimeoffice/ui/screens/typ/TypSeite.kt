@@ -391,7 +391,8 @@ private fun TypSeiteFormular(
 
     if (kategorieWahlOffen) {
         KategorieWahlDialog(
-            name = definition.name,
+            // Bei einer Neuanlage ist `definition` die Vorlage (beim „+“ ohne Namen): es zaehlt, was getippt ist.
+            name = if (neu) entwurf.name.trim() else definition.name,
             aktuell = entwurf.kategorie,
             onWahl = { neu ->
                 aendere { TypAbschnittLogik.kategorieWechseln(it, neu) }

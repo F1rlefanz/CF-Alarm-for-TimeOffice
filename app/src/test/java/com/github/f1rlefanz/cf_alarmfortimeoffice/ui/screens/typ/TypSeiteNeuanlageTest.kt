@@ -117,6 +117,20 @@ class TypSeiteNeuanlageTest {
     }
 
     @Test
+    fun `die Kategorie-Wahl eines Typs ohne Namen sagt keinen leeren Namen in Anfuehrungszeichen`() {
+        // Das „+“ der Liste oeffnet einen Typ OHNE Namen; „Kategorie“ ist dort sofort erreichbar.
+        val ohneName = KategorieWahlTexte.einleitung("")
+        assertFalse(ohneName, ohneName.contains("„“"))
+        assertTrue(ohneName, ohneName.startsWith("Kategorie für diesen Typ ändern."))
+        assertTrue(ohneName, ohneName.endsWith("Deine Einstellungen bleiben, wie sie sind."))
+        assertEquals(
+            "Mit Namen bleibt der Satz, wie er war",
+            "Kategorie für „Frühschicht“ ändern. Deine Einstellungen bleiben, wie sie sind.",
+            KategorieWahlTexte.einleitung("Frühschicht")
+        )
+    }
+
+    @Test
     fun `die Rueckfrage der Neuanlage sagt, dass nichts angelegt wird, und nennt bei einem Fund, wo der Code bleibt`() {
         val ausFund = TypSeiteTexte.neuerTypVerwerfenText("AD1")
         val ohneFund = TypSeiteTexte.neuerTypVerwerfenText(null)

@@ -1511,9 +1511,12 @@ class AlarmUseCase @Inject constructor(
             // die synthetische CalendarEvent.startTime - sonst zeigt "Deine Schicht beginnt um"
             // nach JEDEM Re-Arming (Sync/Boot/Maintenance - der eigentliche, staendig genutzte
             // Weg ueber diese Funktion, nicht die einmalige Erstplanung) wieder die Weckzeit
-            // statt des Schichtbeginns. 0 = unbekannt (z.B. manueller Alarm ohne echte Schicht) -
-            // dann bewusst wie bisher auf die Weckzeit zurueckfallen.
-            val shiftStartMillis = alarmInfo.shiftStartTime.takeIf { it > 0 } ?: alarmInfo.triggerTime
+            // statt des Schichtbeginns. 0 = unbekannt (manueller Wecker, Tag ohne Kalendereintrag):
+            // startTime faellt dann auf die Weckzeit zurueck, und calendarId traegt die Markierung
+            // KALENDER_ID_OHNE_SCHICHTBEGINN - der Weckbildschirm laesst den Satz damit weg, statt
+            // die Weckzeit als Schichtbeginn zu behaupten (#183, siehe schichtbeginnText).
+            val schichtbeginnBekannt = alarmInfo.shiftStartTime > 0
+            val shiftStartMillis = if (schichtbeginnBekannt) alarmInfo.shiftStartTime else alarmInfo.triggerTime
             val shiftEndMillis = alarmInfo.shiftEndTime.takeIf { it > 0 }
                 ?: (alarmInfo.triggerTime + CalendarConstants.DEFAULT_EVENT_DURATION_MS)
 
@@ -1528,9 +1531,9 @@ class AlarmUseCase @Inject constructor(
                     java.time.Instant.ofEpochMilli(shiftEndMillis),
                     ZoneId.systemDefault()
                 ),
-                calendarId = ""
+                calendarId = if (schichtbeginnBekannt) "" else AlarmManagerService.KALENDER_ID_OHNE_SCHICHTBEGINN
             )
-            
+
             val shiftMatch = ShiftMatch(
                 shiftDefinition = shiftDefinition,
                 calendarEvent = calendarEvent,

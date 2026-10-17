@@ -142,7 +142,9 @@ Format: Skill · Paket · die normative Zeile · Hergang in einem Satz.
   Konfiguration `Broken`. `formatVersion` der Sicherung bleibt 1, sonst lehnt die Vorversion jede neue Datei
   ab. Hergang: SPEC 4 „Kopieren, nicht verschieben“ – ein zurückgenommener Stand muss lesen, was der neue
   schrieb. Zusätzlich: **`ShiftEditDialog` baut beim Speichern ein NEUES `ShiftDefinition(...)`** – jedes
-  neue Feld fällt dort still auf den Default (Hinweis in #174).
+  neue Feld fällt dort still auf den Default — **seit #174 behoben:** `ShiftEditFormular.speichern()` geht vom
+  bestehenden Typ aus (`copy`, dann `mitKategorie`), ein künftiges Feld am Typ (Etappe 3: Dimm-Fenster, DND)
+  bleibt dort ohne Zutun erhalten, solange niemand wieder einen neuen Konstruktoraufruf baut.
 - **#166** · Testvorlage: `UmbauTestvorlageTest` findet `..Projektdateien/umbau/testvorlagen/` auch aus einem
   Worktree (über `gitdir:` der `.git`-Datei zum Hauptbaum); fehlt sie, `Assume` mit Meldung.
 
@@ -172,3 +174,38 @@ Format: Skill · Paket · die normative Zeile · Hergang in einem Satz.
   aktuellen Position — vorher die Liste an den Anfang wischen, sonst meldet es „fehlt“ für Titel, die oberhalb
   liegen (bei 320 dp „NICHT BESTANDEN“, ab Anfang BESTANDEN). Mit Git Bash und Windows-Python: `--datei` als
   `$(cygpath -w …)` übergeben, `/tmp/…` löst Python nicht auf.
+
+- **#174** · Kurzregel (Abschnitt Nutzertexte, neben #170): **Der Schicht-Editor wählt die Kategorie (sieben
+  Radio-Zeilen, `ShiftDefinitionTexte.kategorieBeschreibung`) statt der Schalter „Krankmeldung“ und „Rufbereitschaft“,
+  und speichert über `ShiftEditFormular.speichern()` – vom bestehenden Typ aus (`copy` + `mitKategorie`), nie als
+  neuer `ShiftDefinition(...)`.** Bei Krank UND Ignorieren zeigt er statt Wecker/Weckzeit/Stummer Wecker nur den
+  Hinweis (`zeigtWeckerBlock`): beide ergeben nie einen Wecker (#142, #167), ein Feld dort zeigte einen Ablauf, den es
+  nicht gibt. Die Werte bleiben im Typ stehen (E2), ein Wechsel zurück zu Dienst bringt sie wieder. Bei „Wecker an diesem
+  Tag“ aus sind Weckzeit und Stummer Wecker ausgegraut, und ein kaputtes Zeitfeld sperrt das Speichern nicht
+  (`zeitZumSpeichern`: bisherige Zeit, sonst 06:00 – nie 00:00). **Festlegung des Betreuers erweitert:** „einzige
+  Ausnahme Krank“ gilt hier auch für Ignorieren – der Prototyp blendet den Tag-Block bei `kat === 'ign'` aus
+  (`zeigeTag`), derselbe Grund wie bei Krank. **Der Editor nimmt einen vorbelegten, nicht gespeicherten Typ über den
+  Parameter `vorlage`** (`shift` bleibt der bestehende): `isNewShift` = `shift == null`, also hängt
+  `ShiftConfigScreen` ihn an (sein `map` auf die `id` träfe sonst ins Leere), und der Umbenennungs-Hinweis erscheint
+  nicht. Verdrahtet wird `vorlage` im Paket „Im Kalender gefunden“ – bis dahin ruft niemand sie auf.
+  **Textwahrheit statt Prototyp-Wortlaut:** (1) „Stummer Wecker“ verspricht im Prototyp und in SPEC 3.3 „Licht … ein
+  Lichtwecker“; heute überspringen `AlarmReceiver` und `HueSmartScheduler` bei stiller Schicht jede Hue-Regel, der Text
+  sagt deshalb „Eine Hue-Lichtregel startet dann nicht“ (Test `Der Stummer-Wecker-Hinweis verspricht kein Licht …`).
+  **Etappe 4 (E8) tauscht den Satz**, wenn Hue stillen Weckern folgt. (2) Die Urlaub-Beschreibung lässt „und Dimmer“ weg:
+  der Dimmer hängt bis Etappe 3 an Regeln, „Wecker aus“ nimmt ihn nicht weg (eine ALL-Regel gilt auch für Urlaub).
+  (3) „Wecker an diesem Tag“ sagt „Stellt … einen Wecker“, nicht „Klingelt“ – ob er klingelt, regelt der Stumm-Schalter.
+  (4) Der Hinweis unter „Schichtdefinition aktiviert“ nennt für „kein Wecker, Zeitfenster trotzdem“ jetzt den Schalter
+  „Wecker an diesem Tag“ (seit #168 erkannt, Spanne bleibt), nicht mehr „Stille Schicht“. Tests: `ShiftEditFormularTest`
+  (Mutationsprobe am 17.10.2026: alter Konstruktor-Bau → 5 von 9 rot; Kategoriewechsel setzt Zeit/Muster zurück → der
+  Kategoriewechsel-Test rot), `ShiftDefinitionTexteTest`. **Website zieht nicht mit:** `docs/advanced-setup.html:90-93`,
+  `index.html:186-189`, `troubleshooting.html:96-97` nennen noch die Schalter „Krankmeldung“, „Stille Schicht“ und
+  „Rufbereitschaft“ – Etappe 9 (SPEC 5.4), Issue mit `umbau` + `spaeter` angelegt.
+- **#174** (Fortsetzung, Prüfer-Befunde) · **Die Ein-Buchstaben-Warnung im Editor richtet sich nach Kategorie UND
+  Wecker-Schalter** (`ShiftDefinitionTexte.einBuchstabeWarnung(muster, kategorie, weckerAn)`): nur ein Typ, der wirklich
+  einen Wecker stellt, bekommt „weckt dich dann an freien Tagen“, Krank behält seinen Text, Ignorieren und „Wecker aus“
+  bekommen `EIN_BUCHSTABE_OHNE_WECKER`. **Der Aktiviert-Hinweis hat bei Ignorieren einen eigenen Text**
+  (`IGNORIEREN_AKTIVIERT_HINWEIS`): der allgemeine verwies auf „Wecker an diesem Tag“, den es dort nicht gibt. Hergang: der
+  unabhängige Prüfer (Opus, nur Diff/Issue/Spec/Prototyp) fand beides; erst #174 macht diese Zustände im Editor
+  einstellbar. **Weitergereicht:** #181 (Fenster-Ende folgt bei Wecker aus weiter `alarmTriggerTime`, Etappe 3), #180
+  (Website). Wer künftig einen Text unter einem Editor-Feld baut, prüft ihn gegen ALLE Kategorien, in denen das Feld
+  sichtbar ist - nicht nur gegen Dienst.

@@ -506,7 +506,6 @@ private fun KategorieZeile(
 object ShiftDefinitionTexte {
     // #142: Krankmeldung. "Eigene Wecker bleiben" ist tragend - die Freigabe nimmt manuelle Wecker
     // aus; ein Text ohne diesen Satz liesse fuerchten, dass auch sie entfallen.
-    const val KRANKMELDUNG_TITEL = "Krankmeldung"
     const val KRANKMELDUNG_HINWEIS =
         "Ein Termin dieses Typs gibt den ganzen Tag frei: kein Wecker aus dem Dienstplan, " +
             "nachts gilt die Regel für freie Tage. Eigene Wecker bleiben."

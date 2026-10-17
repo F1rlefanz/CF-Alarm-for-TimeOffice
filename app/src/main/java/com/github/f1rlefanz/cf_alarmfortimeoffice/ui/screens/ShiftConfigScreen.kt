@@ -21,9 +21,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
@@ -34,8 +32,6 @@ import androidx.compose.material.icons.filled.PhoneInTalk
 import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Sick
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -66,14 +62,21 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.SchichttypEinordnen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftKategorie
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftCodeSuggester
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.AufklappHinweis
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.CompactButton
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.CompactOutlinedButton
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.EinordnenDialog
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.EinordnenTexte
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.KnopfZeile
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.ShiftDefinitionTexte
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.ShiftEditDialog
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.hilfe.HilfeKnopf
@@ -180,8 +183,14 @@ fun ShiftConfigScreen(
     var pendingDelete by remember { mutableStateOf<ShiftDefinition?>(null) }
     var showResetConfirmation by remember { mutableStateOf(false) }
 
-    /** Das Kuerzel, fuer das gerade die Schicht gewaehlt wird (null = kein Dialog offen). */
-    var assigningCode by remember { mutableStateOf<String?>(null) }
+    /** Der Fund-Code, fuer den gerade die Kategorie-Wahl offen ist (null = geschlossen). */
+    var einordnenCode by remember { mutableStateOf<String?>(null) }
+
+    /**
+     * „Als neuer Typ“: der Editor ist mit dieser Vorlage offen. NICHTS davon ist gespeichert - erst
+     * „Erstellen“ im Editor legt den Typ an ([ShiftViewModel.legeTypAusCodeAn]), Abbrechen verwirft ihn.
+     */
+    var neuerTypAusFund by remember { mutableStateOf<NeuerTypAusFund?>(null) }
 
     Scaffold(
         topBar = {
@@ -315,14 +324,15 @@ fun ShiftConfigScreen(
                 contentPadding = PaddingValues(bottom = SpacingConstants.SPACING_SMALL),
                 verticalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_MEDIUM)
             ) {
-                // Kuerzel-Vorschlaege aus dem ECHTEN Kalender - steht bewusst GANZ OBEN, denn
-                // wer diesen Screen oeffnet, sucht meist genau das: warum eine Schicht nicht
-                // erkannt wird.
+                // „Im Kalender gefunden, noch nicht eingeordnet“ (SPEC 3.1): Codes aus dem ECHTEN
+                // Kalender, die kein Muster trifft - steht bewusst GANZ OBEN, denn wer diesen Screen
+                // oeffnet, sucht meist genau das: warum eine Schicht nicht erkannt wird.
                 if (!shiftState.codeSuggestions.isEmpty) {
-                    item(key = "code-suggestions") {
-                        CodeSuggestionCard(
+                    item(key = "kalender-fund") {
+                        KalenderFundKarte(
                             result = shiftState.codeSuggestions,
-                            onCodeClick = { assigningCode = it }
+                            onEinordnen = { einordnenCode = it },
+                            onIgnorieren = { shiftViewModel.ignoriereCode(it) }
                         )
                     }
                 }
@@ -376,29 +386,38 @@ fun ShiftConfigScreen(
         }
     }
 
-    // Add/Edit Dialog
-    if (showAddDialog || editingDefinition != null) {
+    // Add/Edit Dialog - auch der Editor fuer „Als neuer Typ“ aus dem Fund (Vorlage statt bestehendem Typ).
+    if (showAddDialog || editingDefinition != null || neuerTypAusFund != null) {
         ShiftEditDialog(
             shift = editingDefinition,
+            vorlage = neuerTypAusFund?.vorlage,
             onSave = { newDefinition ->
-                shiftState.currentShiftConfig?.let { config ->
-                    val updatedDefinitions = if (editingDefinition != null) {
-                        config.definitions.map {
-                            if (it.id == editingDefinition?.id) newDefinition else it
+                val ausFund = neuerTypAusFund
+                if (ausFund != null) {
+                    // Eigener Weg: er raeumt den Code auch bei anderen Typen ab (siehe legeTypAusCodeAn).
+                    shiftViewModel.legeTypAusCodeAn(ausFund.code, newDefinition)
+                } else {
+                    shiftState.currentShiftConfig?.let { config ->
+                        val updatedDefinitions = if (editingDefinition != null) {
+                            config.definitions.map {
+                                if (it.id == editingDefinition?.id) newDefinition else it
+                            }
+                        } else {
+                            config.definitions + newDefinition
                         }
-                    } else {
-                        config.definitions + newDefinition
+                        shiftViewModel.updateShiftConfig(
+                            config.copy(definitions = updatedDefinitions)
+                        )
                     }
-                    shiftViewModel.updateShiftConfig(
-                        config.copy(definitions = updatedDefinitions)
-                    )
                 }
                 showAddDialog = false
                 editingDefinition = null
+                neuerTypAusFund = null
             },
             onDismiss = {
                 showAddDialog = false
                 editingDefinition = null
+                neuerTypAusFund = null
             }
         )
     }
@@ -483,75 +502,31 @@ fun ShiftConfigScreen(
         )
     }
 
-    // ZUORDNUNG eines im Kalender gefundenen Kuerzels. Bewusst ein Dialog mit Auswahl und keine
-    // Automatik: welche Schicht "AD1" ist, weiss nur der Mensch - und eine falsche Zuordnung
-    // stellt einen Wecker auf die falsche Uhrzeit.
-    assigningCode?.let { code ->
-        val definitions = shiftState.currentShiftConfig?.definitions ?: emptyList()
-        AlertDialog(
-            onDismissRequest = { assigningCode = null },
-            title = { Text("Zu welcher Schicht gehört „$code\"?") },
-            text = {
-                // Scrollbar, sonst ist bei vielen Schichttypen der letzte Knopf unerreichbar - und
-                // er ist der einzige Weg fuer dieses Kuerzel (ui-texte-und-layout.md).
-                Column(
-                    modifier = Modifier.verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_SMALL)
-                ) {
-                    Text(
-                        "„$code\" steht in deinem Kalender, wird aber von keinem Erkennungsmuster " +
-                            "getroffen. Wähle die Schicht, zu der es gehört — das Kürzel wird dann " +
-                            "als Erkennungsmuster ergänzt, die Schicht aktiviert (falls sie " +
-                            "ausgeschaltet war) und das Kürzel bei allen anderen Schichten " +
-                            "entfernt, damit es nur einen Besitzer hat.",
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                    if (definitions.isEmpty()) {
-                        Text(
-                            "Es gibt noch keine Schichttypen. Lege zuerst einen an.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.error
-                        )
-                    }
-                    definitions.forEach { definition ->
-                        OutlinedButton(
-                            onClick = {
-                                shiftViewModel.assignCodeToDefinition(code, definition.id)
-                                assigningCode = null
-                            },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Column(modifier = Modifier.fillMaxWidth()) {
-                                Text(definition.name, fontWeight = FontWeight.Medium)
-                                Text(
-                                    // #142: eine Krankmeldung weckt nie - "weckt um 00:00" waere gelogen.
-                                    (if (definition.isSickDay) {
-                                        ShiftDefinitionTexte.KRANKMELDUNG_TITEL
-                                    } else {
-                                        "weckt um ${definition.getAlarmTimeFormatted()}"
-                                    }) +
-                                        if (definition.keywords.isEmpty()) {
-                                            ""
-                                        } else {
-                                            " · bisher: ${definition.keywords.joinToString(", ")}"
-                                        },
-                                    style = MaterialTheme.typography.bodySmall,
-                                    maxLines = 2,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                        }
-                    }
-                }
+    // Einordnen eines Fund-Codes (SPEC 3.2). Bewusst eine Wahl des Menschen und keine Automatik: welche
+    // Schicht „AD1“ ist, weiss nur er - und eine falsche Zuordnung stellt einen Wecker auf die falsche
+    // Uhrzeit. „Gehoert zu“ traegt den Code als Muster ein (und schaltet das Ziel ein), „neuer Typ“
+    // oeffnet den Editor mit der Vorlage der Kategorie.
+    einordnenCode?.let { code ->
+        EinordnenDialog(
+            code = code,
+            definitionen = shiftState.currentShiftConfig?.definitions.orEmpty(),
+            onGehoertZu = { ziel ->
+                shiftViewModel.assignCodeToDefinition(code, ziel.id)
+                einordnenCode = null
             },
-            confirmButton = {
-                TextButton(onClick = { assigningCode = null }) {
-                    Text("Abbrechen")
+            onNeuerTyp = { kategorie ->
+                SchichttypEinordnen.neuerTypAusCode(code, kategorie)?.let { vorlage ->
+                    neuerTypAusFund = NeuerTypAusFund(code, vorlage)
                 }
-            }
+                einordnenCode = null
+            },
+            onDismiss = { einordnenCode = null }
         )
     }
 }
+
+/** Ein Fund-Code und der daraus vorbelegte, noch NICHT gespeicherte Typ (siehe [SchichttypEinordnen.neuerTypAusCode]). */
+private data class NeuerTypAusFund(val code: String, val vorlage: ShiftDefinition)
 
 /**
  * Der Erkennungs-Hinweis, aufklappbar.
@@ -575,91 +550,76 @@ private fun SchichterkennungsHinweis() {
 }
 
 /**
- * Zeigt die Kürzel, die im Kalender des Nutzers stehen, aber von keinem Erkennungsmuster getroffen
- * werden — nach Häufigkeit sortiert, zum Antippen.
+ * „Im Kalender gefunden, noch nicht eingeordnet“ (SPEC 3.1, Prototyp `zeigeListe`): die Codes, die im
+ * Kalender des Nutzers stehen, aber von keinem Erkennungsmuster getroffen werden - haeufigste zuerst.
+ * Je Code „Einordnen …“ (oeffnet die Kategorie-Wahl) und „Ignorieren“.
  *
- * WARUM DIESE KARTE EXISTIERT: Die Standardkonfiguration kann die Kürzel einer fremden Station nur
- * raten, und Raten skaliert nicht — am echten Dienstplan ist genau das schiefgegangen. Was im
- * Kalender steht, weiß die App dagegen genau; sie muss es nur zeigen. Für jemanden auf einer
- * anderen Station ist das der Unterschied zwischen „läuft nach zwei Minuten" und „läuft nie, und er
- * merkt es erst nach dem Verschlafen".
+ * WARUM DIESE KARTE EXISTIERT: Die Standardkonfiguration kann die Kuerzel einer fremden Station nur
+ * raten, und Raten skaliert nicht - am echten Dienstplan ist genau das schiefgegangen. Was im
+ * Kalender steht, weiss die App dagegen genau; sie muss es nur zeigen. Fuer jemanden auf einer
+ * anderen Station ist das der Unterschied zwischen „laeuft nach zwei Minuten“ und „laeuft nie, und er
+ * merkt es erst nach dem Verschlafen“.
  *
- * Die Deckelung wird BENANNT statt verschwiegen ([ShiftCodeSuggester.SuggestionResult.droppedCount]) —
- * eine stillschweigend gekürzte Liste liest sich wie Vollständigkeit.
+ * Die Deckelung wird BENANNT statt verschwiegen ([ShiftCodeSuggester.SuggestionResult.droppedCount]) -
+ * eine stillschweigend gekuerzte Liste liest sich wie Vollstaendigkeit. Die Zeile nennt nur, was die
+ * App weiss: wie oft und wann zuerst - nicht, in welchem Zeitraum gesucht wurde (der haengt an der
+ * geladenen Liste).
  */
 @Composable
-private fun CodeSuggestionCard(
+private fun KalenderFundKarte(
     result: ShiftCodeSuggester.SuggestionResult,
-    onCodeClick: (String) -> Unit
+    onEinordnen: (String) -> Unit,
+    onIgnorieren: (String) -> Unit
 ) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.secondaryContainer
-        )
+    // Prototyp `.fund`: weisse Karte mit gestricheltem Bernsteinrand.
+    val rand = if (isSystemInDarkTheme()) Color(0xFFE0A24A) else Color(0xFFB26A00)
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(MaterialTheme.colorScheme.surface)
+            .gestrichelterRand(rand, 16.dp)
+            .padding(horizontal = ZEILE_RAND, vertical = SpacingConstants.SPACING_LARGE),
+        verticalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_MEDIUM)
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(SpacingConstants.PADDING_CARD),
-            verticalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_SMALL)
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    Icons.Default.Info,
-                    // dekorativ: die Kartenueberschrift daneben sagt es bereits
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSecondaryContainer,
-                    modifier = Modifier.size(20.dp)
-                )
-                Spacer(modifier = Modifier.width(SpacingConstants.SPACING_SMALL))
-                Text(
-                    "Diese Kürzel stehen in deinem Kalender",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onSecondaryContainer
-                )
-            }
-            Text(
-                "Für sie gibt es noch kein Erkennungsmuster — also auch keinen Wecker. Tippe ein " +
-                    "Kürzel an, um es einer Schicht zuzuordnen.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSecondaryContainer
-            )
-            // FlowRow statt Row mit chunked(): bricht selbst um und ist seit Compose 1.11.4 stabil.
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_SMALL),
-                verticalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_SMALL)
-            ) {
-                result.suggestions.forEach { suggestion ->
-                    AssistChip(
-                        onClick = { onCodeClick(suggestion.code) },
-                        label = {
-                            Text(
-                                if (suggestion.occurrences > 1) {
-                                    "${suggestion.code} · ${suggestion.occurrences}×"
-                                } else {
-                                    suggestion.code
-                                }
-                            )
-                        },
-                        colors = AssistChipDefaults.assistChipColors(
-                            labelColor = MaterialTheme.colorScheme.onSecondaryContainer
-                        )
+        Text(
+            EinordnenTexte.FUND_TITEL,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.semantics { heading() }
+        )
+        result.suggestions.forEach { suggestion ->
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            Column(verticalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_MEDIUM)) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(ZEILE_ABSTAND),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    CodeMarke(code = suggestion.code, kategorie = ShiftKategorie.IGNORIEREN)
+                    Text(
+                        EinordnenTexte.fundZeile(suggestion),
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+                // KnopfZeile statt Row + weight(1f): bei 320 dp + grosser Schrift kuerzte die
+                // Gewichtung die Beschriftung mit Auslassung (Skill ui-und-navigation).
+                KnopfZeile(modifier = Modifier.fillMaxWidth(), abstand = SpacingConstants.SPACING_SMALL) {
+                    CompactButton(onClick = { onEinordnen(suggestion.code) }, text = EinordnenTexte.EINORDNEN)
+                    CompactOutlinedButton(onClick = { onIgnorieren(suggestion.code) }, text = EinordnenTexte.IGNORIEREN)
+                }
             }
-            if (result.droppedCount > 0) {
-                Text(
-                    "… und ${result.droppedCount} weitere, hier nicht gezeigt.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSecondaryContainer
-                )
-            }
+        }
+        if (result.droppedCount > 0) {
+            Text(
+                "… und ${result.droppedCount} weitere, hier nicht gezeigt.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }
-
 
 /** Die Karte fuer eine Konfiguration ohne einen einzigen Typ (nicht: nicht lesbar). */
 @Composable
@@ -814,20 +774,42 @@ private fun GruppenKopf(titel: String, sonderfall: Boolean) {
             letterSpacing = 0.5.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        if (sonderfall) {
-            // Dieselben Farben wie die Marke "Rufbereitschaft" im Prototyp (.badge = violett).
-            val farben = kategorieFarben(ShiftKategorie.RUFBEREITSCHAFT, isSystemInDarkTheme())
-            Surface(shape = RoundedCornerShape(8.dp), color = farben.flaeche) {
-                Text(
-                    SchichttypTexte.SONDERFALL,
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = farben.text,
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
-                )
-            }
-        }
+        if (sonderfall) SonderfallMarke()
     }
+}
+
+/** Die Marke „Sonderfall“ (Prototyp `.badge` = violett, wie die Marke „Rufbereitschaft“). */
+@Composable
+internal fun SonderfallMarke() {
+    val farben = kategorieFarben(ShiftKategorie.RUFBEREITSCHAFT, isSystemInDarkTheme())
+    Surface(shape = RoundedCornerShape(8.dp), color = farben.flaeche) {
+        Text(
+            SchichttypTexte.SONDERFALL,
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.ExtraBold,
+            color = farben.text,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+        )
+    }
+}
+
+/** Das kleine Farbquadrat einer Kategorie (Prototyp `.code` mit 16 x 16 dp und Radius 4). */
+@Composable
+internal fun KategorieMarke(kategorie: ShiftKategorie, modifier: Modifier = Modifier) {
+    val farben = kategorieFarben(kategorie, isSystemInDarkTheme())
+    Box(modifier = modifier.clip(RoundedCornerShape(4.dp)).background(farben.flaeche))
+}
+
+/** Gestrichelter Rand um eine abgerundete Flaeche (Prototyp `.fund`; die feste Zeile nutzt dasselbe). */
+private fun Modifier.gestrichelterRand(farbe: Color, radius: Dp, breite: Dp = 1.5.dp): Modifier = drawBehind {
+    drawRoundRect(
+        color = farbe,
+        cornerRadius = CornerRadius(radius.toPx()),
+        style = Stroke(
+            width = breite.toPx(),
+            pathEffect = PathEffect.dashPathEffect(floatArrayOf(5.dp.toPx(), 3.dp.toPx()))
+        )
+    )
 }
 
 /**
@@ -980,7 +962,7 @@ private fun StatusZeile(definition: ShiftDefinition) {
  * Muster die Zeile nicht sprengt.
  */
 @Composable
-private fun CodeMarke(code: String, kategorie: ShiftKategorie?) {
+internal fun CodeMarke(code: String, kategorie: ShiftKategorie?) {
     val farben = kategorie?.let { kategorieFarben(it, isSystemInDarkTheme()) }
     val rand = MaterialTheme.colorScheme.onSurfaceVariant
     val form = RoundedCornerShape(9.dp)
@@ -990,20 +972,7 @@ private fun CodeMarke(code: String, kategorie: ShiftKategorie?) {
             .height(32.dp)
             .clip(form)
             .then(
-                if (farben != null) {
-                    Modifier.background(farben.flaeche)
-                } else {
-                    Modifier.drawBehind {
-                        drawRoundRect(
-                            color = rand,
-                            cornerRadius = CornerRadius(9.dp.toPx()),
-                            style = Stroke(
-                                width = 1.5.dp.toPx(),
-                                pathEffect = PathEffect.dashPathEffect(floatArrayOf(5.dp.toPx(), 3.dp.toPx()))
-                            )
-                        )
-                    }
-                }
+                if (farben != null) Modifier.background(farben.flaeche) else Modifier.gestrichelterRand(rand, 9.dp)
             )
             .padding(horizontal = 10.dp),
         contentAlignment = Alignment.Center
@@ -1027,8 +996,9 @@ internal data class KategorieFarben(val flaeche: Color, val text: Color)
  * und die helle Flaeche des Prototyps als Schrift. Jedes Paar erreicht mindestens 4,5:1 - das haelt
  * `ShiftConfigScreenTextTest` fest. Ohne `else`: eine achte Kategorie braucht bewusst eine Farbe.
  *
- * Bewusst HIER und nicht in `ui/theme/Color.kt`: ein einziger Verwender. Zieht eine zweite Stelle
- * (Typ-Seite, Einordnen-Dialog) die Farben mit, gehoeren sie ins Theme.
+ * Noch HIER und nicht in `ui/theme/Color.kt`, obwohl der Einordnen-Dialog (#176) sie schon als zweiter
+ * Verwender nutzt: das Theme liegt ausserhalb dieses Pakets. Mit der Typ-Seite (Etappe 2) gehoeren sie
+ * dorthin.
  */
 internal fun kategorieFarben(kategorie: ShiftKategorie, dunkel: Boolean): KategorieFarben = when (kategorie) {
     ShiftKategorie.DIENST ->

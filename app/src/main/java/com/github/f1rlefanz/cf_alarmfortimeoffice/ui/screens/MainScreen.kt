@@ -402,7 +402,8 @@ fun MainScreen(
     // Typ-Bereich ganz verlaesst (Liste -> Tab): ein spaeteres Oeffnen beginnt oben.
     val typListeZustand = rememberLazyListState()
     val imTypBereich = navigationState is NavigationState.ShiftConfig ||
-        navigationState is NavigationState.TypSeite
+        navigationState is NavigationState.TypSeite ||
+        navigationState is NavigationState.OhneEintragSeite
     LaunchedEffect(imTypBereich) {
         if (!imTypBereich) typListeZustand.scrollToItem(0)
     }
@@ -430,7 +431,19 @@ fun MainScreen(
                     onNeuerTyp = { vorlage, fundCode ->
                         navigationViewModel.navigateToNeuerTyp(vorlage, fundCode, state.returnToTab)
                     },
+                    onOhneEintragOeffnen = { navigationViewModel.navigateToOhneEintragSeite(state.returnToTab) },
                     listenZustand = typListeZustand
+                )
+            }
+
+            is NavigationState.OhneEintragSeite -> {
+                // Zurueck (Pfeil und System-Taste ueber den BackHandler oben) loest allein
+                // navigateBackFrom() auf: zur Typ-Liste. „<Name> oeffnen“ ist eine gewoehnliche Typ-Seite
+                // desselben Herkunfts-Tabs, ihr Zurueck fuehrt ebenfalls zur Liste.
+                com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.typ.OhneEintragSeite(
+                    shiftViewModel = shiftViewModel,
+                    onZurueck = { navigationViewModel.navigateBackFrom(state) },
+                    onTypOeffnen = { id -> navigationViewModel.navigateToTypSeite(id, state.returnToTab) }
                 )
             }
 

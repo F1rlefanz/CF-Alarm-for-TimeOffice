@@ -49,7 +49,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -72,8 +71,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.CompactOutlinedB
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.EinordnenDialog
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.EinordnenTexte
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.KnopfZeile
-import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.OhneEintragDialog
-import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.OhneEintragTexte
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.typ.OhneEintragTexte
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.typ.ShiftDefinitionTexte
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.typ.ShiftEditFormular
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.hilfe.HilfeKnopf
@@ -186,6 +184,8 @@ fun ShiftConfigScreen(
      * NICHT gespeicherten Typ. [fundCode] ist der Kalender-Code aus „Im Kalender gefunden“ (`null` beim „+“).
      */
     onNeuerTyp: (vorlage: ShiftDefinition, fundCode: String?) -> Unit,
+    /** Ein Tipp auf die feste Zeile „Ohne Kalendereintrag“: oeffnet ihre Seite (Umbau #191), der Dialog davor entfaellt. */
+    onOhneEintragOeffnen: () -> Unit,
     /** Scroll-Stand der Liste; MainScreen haelt ihn, damit er die Typ-Seite ueberdauert. */
     listenZustand: LazyListState = rememberLazyListState()
 ) {
@@ -207,13 +207,6 @@ fun ShiftConfigScreen(
 
     /** Der Fund-Code, fuer den gerade die Kategorie-Wahl offen ist (null = geschlossen). */
     var einordnenCode by remember { mutableStateOf<String?>(null) }
-
-    /**
-     * Die Wahl „Tage ohne Eintrag verhalten sich“ an der festen Zeile ist offen. Ueberlebt eine
-     * Konfigurationsaenderung (Dunkelmodus, Schriftgroesse): sie schreibt sofort, der Nutzer soll
-     * nicht mitten in der Wahl vor der Liste stehen.
-     */
-    var ohneEintragOffen by rememberSaveable { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -391,7 +384,7 @@ fun ShiftConfigScreen(
                             kurzform = shiftState.currentShiftConfig
                                 ?.let { OhneEintragTexte.kurzform(it) }
                                 ?: SchichttypBlock.FesteZeile.kurzform,
-                            onClick = { ohneEintragOffen = true }
+                            onClick = onOhneEintragOeffnen
                         )
                     }
                 }
@@ -496,23 +489,6 @@ fun ShiftConfigScreen(
     // Schicht „AD1“ ist, weiss nur er - und eine falsche Zuordnung stellt einen Wecker auf die falsche
     // Uhrzeit. „Gehoert zu“ traegt den Code als Muster ein (und schaltet das Ziel ein), „neuer Typ“
     // oeffnet die Typ-Seite mit der Vorlage der Kategorie - gespeichert wird erst mit „Erstellen“.
-    // Die Wahl „Tage ohne Eintrag verhalten sich“ (SPEC 3.3 Punkt 2): wirkt sofort, der Dialog bleibt offen.
-    if (ohneEintragOffen) {
-        shiftState.currentShiftConfig?.let { config ->
-            OhneEintragDialog(
-                config = config,
-                onWaehle = { shiftViewModel.waehleOhneEintrag(it) },
-                // Der Link zum Typ („Wie <Typ> öffnen“) fuehrt auf dieselbe Typ-Seite wie ein Tipp
-                // in der Liste - sonst haette ein Typ je nach Einstieg zwei verschiedene Editoren.
-                onTypOeffnen = { typ ->
-                    ohneEintragOffen = false
-                    onTypOeffnen(typ.id)
-                },
-                onDismiss = { ohneEintragOffen = false }
-            )
-        }
-    }
-
     einordnenCode?.let { code ->
         EinordnenDialog(
             code = code,

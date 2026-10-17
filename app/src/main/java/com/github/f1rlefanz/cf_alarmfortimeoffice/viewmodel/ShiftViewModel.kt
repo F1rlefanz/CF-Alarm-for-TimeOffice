@@ -13,7 +13,9 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueSchedule
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.repository.interfaces.IHueConfigRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.HueRuleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.CalendarEvent
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.SchichttypEinordnen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftInfo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IShiftUseCase
@@ -397,6 +399,64 @@ class ShiftViewModel @Inject constructor(
             LogTags.SHIFT_CONFIG,
             "✅ KUERZEL-ZUORDNUNG: '${code.trim()}' gehoert jetzt zu '${target.name}' (aktiviert, " +
                 "bei allen anderen Schichten entfernt)"
+        )
+        updateShiftConfig(updated)
+    }
+
+    /**
+     * „Ignorieren“ im Fund „Im Kalender gefunden“ (Umbau #176, SPEC E4/3.1): der Code gehoert danach
+     * dem ersten aktiven Ignorieren-Typ, den es bei Bedarf anlegt ([SchichttypEinordnen.ignorieren]),
+     * und steht an keinem anderen Typ mehr. Ein Ignorieren-Typ ergibt nie einen Wecker (#167).
+     *
+     * Geht - wie jeder Schreibweg - ueber [updateShiftConfig].
+     */
+    fun ignoriereCode(code: String) {
+        val config = _uiState.value.currentShiftConfig
+        if (config == null) {
+            Logger.w(LogTags.SHIFT_CONFIG, "⚠️ CODE-IGNORIEREN: keine Konfiguration geladen - abgebrochen")
+            return
+        }
+        val updated = SchichttypEinordnen.ignorieren(config, code)
+        if (updated == null) {
+            Logger.d(
+                LogTags.SHIFT_CONFIG,
+                "CODE-IGNORIEREN: nichts zu tun fuer '$code' (leer oder steht schon allein am Ignorieren-Typ)"
+            )
+            return
+        }
+        Logger.business(LogTags.SHIFT_CONFIG, "✅ CODE-IGNORIEREN: '${code.trim()}' wird uebergangen")
+        updateShiftConfig(updated)
+    }
+
+    /**
+     * „Als neuer Typ in der Kategorie“ im Fund (Umbau #176): haengt den im Editor bestaetigten Typ
+     * [neu] an. Erst DIESER Aufruf speichert - bis dahin ist der Typ aus
+     * [SchichttypEinordnen.neuerTypAusCode] nur eine Vorlage, und eine geratene Weckzeit wird nie scharf.
+     *
+     * Traegt [neu] den [code] noch, geht es durch [ShiftConfig.withCodeAssignedTo]: der Code wird bei
+     * allen anderen Typen entfernt. Sonst behielte ein AUSGESCHALTETER Typ, der ihn noch traegt, ein
+     * zweites Exemplar, und `findDefinitionFor` entschiede nach Listenreihenfolge. Hat der Nutzer das
+     * Muster im Editor bewusst entfernt, wird es NICHT wieder eingetragen - der Code bleibt dann im
+     * Fund, statt still einem Typ zu gehoeren, dem er ihn gerade abgenommen hat.
+     *
+     * Eine `id`, die es schon gibt (doppelter Tipp auf „Erstellen“), legt nichts ein zweites Mal an.
+     */
+    fun legeTypAusCodeAn(code: String, neu: ShiftDefinition) {
+        val config = _uiState.value.currentShiftConfig
+        if (config == null) {
+            Logger.w(LogTags.SHIFT_CONFIG, "⚠️ NEUER-TYP-AUS-CODE: keine Konfiguration geladen - abgebrochen")
+            return
+        }
+        if (config.definitions.any { it.id == neu.id }) {
+            Logger.d(LogTags.SHIFT_CONFIG, "NEUER-TYP-AUS-CODE: '${neu.name}' existiert schon - nichts zu tun")
+            return
+        }
+        val mitTyp = config.copy(definitions = config.definitions + neu)
+        val traegtCode = neu.keywords.any { it.trim().equals(code.trim(), ignoreCase = true) }
+        val updated = if (traegtCode) mitTyp.withCodeAssignedTo(code, neu.id) ?: mitTyp else mitTyp
+        Logger.business(
+            LogTags.SHIFT_CONFIG,
+            "✅ NEUER-TYP-AUS-CODE: '${neu.name}' (${neu.kategorie.schluessel}) aus '${code.trim()}' angelegt"
         )
         updateShiftConfig(updated)
     }

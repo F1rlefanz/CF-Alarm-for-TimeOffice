@@ -176,7 +176,7 @@ class TagesleisteTest {
     }
 
     @Test
-    fun `kein Wecker bei Wecker aus, ungueltiger Weckzeit und ausserhalb des Fensters`() {
+    fun `kein Wecker bei Wecker aus, ungueltiger Weckzeit, Krank und Ignorieren`() {
         assertTrue(tagesleiste(eingabe(weckerAn = false)).weckpunkte.isEmpty())
         assertTrue(tagesleiste(eingabe(weckzeit = null)).weckpunkte.isEmpty())
         // Der Eintrag bleibt, auch wenn der Wecker fehlt.

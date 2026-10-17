@@ -118,6 +118,21 @@ Format: Skill · Paket · die normative Zeile · Hergang in einem Satz.
   `findDefinitionFor` entscheidet nach Listenreihenfolge. Voreinstellung: Wecker an nur bei Dienst und
   Fortbildung (Festlegung des Betreuers, weicht vom Prototyp ab, der nur Dienst „dienstartig“ nennt).
 
+- **#173** · Kurzregel (Abschnitt Kalender-Datenfluss, neben „Eine unvollständige Eventliste ist KEINE
+  Löschgrundlage“): **Für „Ohne Kalendereintrag“ wirkt die Unvollständigkeit UMGEKEHRT – eine lückenhafte
+  Liste lässt Tage leer aussehen und stellt Wecker. Die Frage beantwortet EINE reine Funktion,
+  `shift/TageOhneEintrag.kt` (`tageOhneEintrag`): leere Liste = kein Tag (Kalender-Abwahl), nur Tage von heute
+  bis VOR den Tag, der das Abruf-Ende enthält, nur Ignoriertes zählt nicht als Eintrag, ein Ende genau 00:00
+  deckt seinen Endtag nicht ab, `freieTage` fallen weg, Verweistyp muss `istWaehlbareSchicht()` UND `weckerAn`
+  sein (also auch Krank = kein Tag).** Hergang: Festlegung des Betreuers in #173; Krank steht nicht in dessen
+  Liste, folgt aber aus „wie <Typ>“ (ein Krank-Eintrag stellt nie einen Wecker) und aus #171 (die
+  Verweis-Auswahl bietet nur wählbare Typen an). **Offene Falle für den Einbau (#175):** der Abruf beginnt bei
+  JETZT (`timeMin = now`) – ein heute schon beendeter Termin (Nachtdienst bis 07:00, Sync um 08:00) fehlt, heute
+  sieht leer aus, und eine spätere Weckzeit des Verweistyps klingelte nach dem Nachtdienst. Die reine Funktion
+  hat kein Gedächtnis; Vorbilder sind `AlarmUseCase.zeitgebundeneEnden` und `ShiftSpanStore.mische`. Test:
+  `TageOhneEintragTest` (je Festlegung ein Block; Mutationsprobe am 17.10.2026: zwölf Mutationen, jede von
+  ihrem Test rot).
+
 ## cfalarm-persistenz-und-auth
 
 - **#166** · Kurzregel (Abschnitt Persistenz): **Ein neues Feld an `ShiftDefinition`/`ShiftConfig` hat einen

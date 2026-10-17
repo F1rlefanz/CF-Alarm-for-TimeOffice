@@ -73,10 +73,14 @@ Format: Skill · Paket · die normative Zeile · Hergang in einem Satz.
   zweier Läufe (`horizonDays = 1` minus `horizonDays = 0`) – das hängt nicht an der Zahl der Rückblick-Tage
   (`LOOKBACK_DAYS` ist `private`).** Ein erkannter Typ ist ein Schichttag, auch Frei/Urlaub/Fortbildung und auch mit
   Wecker aus (#181); die FREI-Regel greift heute nur an einem Tag OHNE Eintrag und bei Krank (keine Spanne), und
-  Ignorieren hat keinen Tag. „Nicht stören, solange gedimmt wird“ ist `mergeToTimeline` OHNE Nachlauf und OHNE „Hell
+   „Nicht stören, solange gedimmt wird“ ist `mergeToTimeline` OHNE Nachlauf und OHNE „Hell
   ab“ (wie `DndScheduleUseCase.computeWindows`), „während des Eintrags“ ist `DndShiftSpanResolver.buildShiftSpans`
-  (Krank hat keinen). **Der Adapter kappt NICHT am Ruf-Cutoff** – `Tagesleiste.rechne()` tut es (#193) und braucht das
-  ungekappte Ende, um „endet spätestens jetzt“ zu sagen. `endetBeimWecker` heißt: Wecker an UND das Ende liegt auf
+  (Krank hat keinen); Ignorieren geht denselben Weg wie Krank (freier Tag), die Leiste zeigt es trotzdem nicht. **Der Adapter kappt NICHT am EIGENEN Ruf-Cutoff** – `Tagesleiste.rechne()` tut es (#193) und braucht das
+  ungekappte Ende, um „endet spätestens jetzt“ zu sagen. **Die Cutoffs der NACHBARTAGE im Block kappt er selbst**
+  (`kappenAmNachbarCutoff`): der Betrieb bildet die Cutoffs über ALLE Ruf-Spannen, und die Leiste kennt nur den
+  eigenen Slot – ohne den Schritt endete „Nicht stören“ in der Mitte eines Ruf-Blocks (Vorgabe der Rufbereitschaft!)
+  eine Stunde zu spät (Befund des unabhängigen Prüfers, mit eigenem Test belegt: 06:00 statt 05:00). Offen: der
+  Ereignistext „endet spätestens jetzt“ fehlt dort (#204). `endetBeimWecker` heißt: Wecker an UND das Ende liegt auf
   einer Weckzeit des Mustertags oder seiner Nachbarn – nie bei Nachlauf, nie bei Wecker aus. Ohne gültige Weckzeit
   gibt es keinen Anker und damit weder Dimmen noch „folgt dem Dimmer“. Hergang: Der erste Plan nahm alles, was die
   Leiste berührt (auch die Fenster des freien Vortags); damit hätte „leere Fensterliste an F“ trotzdem die UNIVERSAL-
@@ -84,11 +88,12 @@ Format: Skill · Paket · die normative Zeile · Hergang in einem Satz.
   Zielmodell (Etappe 3: Fenster hängen am Typ). Falle: `weckzeitpunkt()` legt den Wecker eines Dienstes kurz nach
   Mitternacht auf den VORTAG, und `buildRuleSpans` datiert den Slot nach der Weckzeit – „der Tag des Typs“ ist dann der
   Vortag des Mustertags (Test „Dienst kurz nach Mitternacht“). Zwei Mustertage (Adapter und `Tagesleiste.kt`, dort
-  `private`): der Test hält das Ende „beim Wecker“ gegen `weckpunktMin()`. Tests: `TagesleisteDimmenDndTest` (15
+  `private`): der Test hält das Ende „beim Wecker“ gegen `weckpunktMin()`. Tests: `TagesleisteDimmenDndTest` (18
   Mutationen gemessen am 17.10.2026, alle rot: dim_enabled ignoriert, Nachbar-Slot Vortag/Folgetag fehlt oder
   vertauscht, Nachbarn nicht in der Weckzeit-Zeitleiste, DND mit Nachlauf, Hell ab ignoriert, Krank als Schichttag,
   Schichttag nimmt die FREI-Regel, Wecker aus ohne Anker, `endetBeimWecker` ohne `weckerAn`, auch Nachbartage,
-  Ausnahmen ignoriert, Krank mit Eintrag-DND, Dienstende unbekannt). Falle der Probe: `./gradlew` unter `cmd.exe`
+  Ausnahmen ignoriert, Krank mit Eintrag-DND, Dienstende unbekannt, Ignorieren als Schichttag, Nachbar-Cutoff
+  entfällt, Folgetag-Cutoff fehlt). Falle der Probe: `./gradlew` unter `cmd.exe`
   (Python `shell=True`) scheitert still, und das alte Ergebnis-XML liest sich wie „alles grün“ – `gradlew.bat` mit
   vollem Pfad, das XML vorher löschen, sonst sind 15 grüne Mutationen Täuschung (so passiert, bevor die Probe stimmte).
 

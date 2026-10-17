@@ -133,7 +133,7 @@ class TagesleisteDimmenDndTest {
     }
 
     @Test
-    fun `Krank und Ignorieren laufen wie ein freier Tag, ein erkannter Typ ist ein Schichttag`() {
+    fun `Krank und Ignorieren laufen wie ein freier Tag, ein erkannter Typ ist ein Schichttag, die Leiste zeigt Ignorieren nicht`() {
         val universal = regel("u", nachtBisWecker, staerke = 20).copy(shiftPattern = DimRule.SHIFT_UNIVERSAL)
         val frei = regel("f", nachtBisWecker, staerke = 30).copy(shiftPattern = DimRule.SHIFT_FREE)
         val alle = arrayOf(universal, frei, regel("K", nachtDavor, staerke = 70), regel("Fr", nachtDavor, staerke = 60))
@@ -145,8 +145,12 @@ class TagesleisteDimmenDndTest {
         )
         assertEquals(listOf(DimBereich(tag(22), folgetag(7), 30, endetBeimWecker = false)), krank.dimmen)
 
-        // Ignorieren hat keinen Tag.
-        assertEquals(DimUndNichtStoeren.LEER, rechne(eingabe(ShiftKategorie.IGNORIEREN, "TB", dienstzeit = null), einstellungen(*alle)))
+        // Ignorieren ohne weiteren Eintrag: derselbe freie Tag (auch hier nicht die Regel auf "TB").
+        val ignorieren = eingabe(ShiftKategorie.IGNORIEREN, "TB", weckerAn = false, dienstzeit = null)
+        val ignoriert = rechne(ignorieren, einstellungen(*alle, regel("TB", nachtDavor, staerke = 80)))
+        assertEquals(krank.dimmen, ignoriert.dimmen)
+        // Gezeigt wird davon nichts: die Leiste eines Ignorieren-Typs bleibt leer.
+        assertEquals(Tagesleiste.LEER, tagesleiste(ignorieren.copy(dimmen = ignoriert.dimmen)))
 
         // Frei-Typ MIT eigener Regel: die Regel auf seinen Namen; Wecker aus, also kein "der Wecker klingelt".
         val freiMitRegel = rechne(
@@ -307,6 +311,37 @@ class TagesleisteDimmenDndTest {
             ),
             leiste.ereignisseVon(Spur.NICHT_STOEREN)
         )
+    }
+
+    @Test
+    fun `der Ruf-Cutoff des Nachbartags im Block kappt Nicht stoeren auch, wenn die Leiste nur den eigenen kennt`() {
+        val folgt = DndPrefs.Toggles(followDimmerEnabled = true, duringShiftEnabled = false)
+
+        // Beginn 07:00: der Ruf des VORTAGS hat seinen Cutoff um 05:00 am Mustertag. "Nacht davor" reicht
+        // bis zum Wecker um 06:00 - heute endet Nicht stoeren dort um 05:00, nicht erst um 06:00.
+        fun mitte(position: Blockposition): List<Balken> {
+            val e = eingabe(
+                ShiftKategorie.RUFBEREITSCHAFT, "AD", weckerAn = false, weckzeit = LocalTime.of(6, 0), dienstzeit = ruf,
+                blockposition = position
+            )
+            val r = rechne(e, einstellungen(regel("AD", nachtDavor), dnd = folgt))
+            return tagesleiste(e.copy(dimmen = r.dimmen, nichtStoeren = r.nichtStoeren)).balken.filter { it.spur == Spur.NICHT_STOEREN }
+        }
+        assertEquals(listOf(Balken(Spur.NICHT_STOEREN, vortag(22), tag(5))), mitte(Blockposition.MITTLERER))
+        assertEquals(listOf(Balken(Spur.NICHT_STOEREN, vortag(22), tag(5))), mitte(Blockposition.LETZTER))
+        // Ohne Vortag im Block gibt es dort keinen Cutoff.
+        assertEquals(listOf(Balken(Spur.NICHT_STOEREN, vortag(22), tag(6))), mitte(Blockposition.EINZELNER))
+        assertEquals(listOf(Balken(Spur.NICHT_STOEREN, vortag(22), tag(6))), mitte(Blockposition.ERSTER))
+
+        // Beginn 03:00: der eigene Cutoff liegt um 05:00 am Mustertag, der des FOLGETAGS um 05:00 danach.
+        val frueherBeginn = Dienstzeit(LocalTime.of(3, 0), 1440, ganztaegig = false)
+        val nachtEinstellung = einstellungen(regel("AD", nachtBisWecker), dnd = folgt)
+        val erster = eingabe(
+            ShiftKategorie.RUFBEREITSCHAFT, "AD", weckzeit = LocalTime.of(6, 0), dienstzeit = frueherBeginn,
+            blockposition = Blockposition.ERSTER
+        )
+        val r = rechne(erster, nachtEinstellung)
+        assertEquals(listOf(DndBereich(tag(22), folgetag(5), DndQuelle.DIMM_FENSTER)), r.nichtStoeren)
     }
 
     // ── Gegen buildRuleSpans ─────────────────────────────────────────────────────────────────

@@ -6,6 +6,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimRuleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimWindowResolver
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.HellZeitpunkt
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.OHNE_TAGESLICHT
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndOnCallCutoffResolver
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndShiftSpanResolver
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftKategorie
@@ -74,7 +75,8 @@ data class DimUndNichtStoeren(val dimmen: List<DimBereich>, val nichtStoeren: Li
  * WELCHE REGEL GILT. Ein erkannter Typ ist ein SCHICHTTAG mit seiner Weckzeit, auch mit Wecker aus
  * (#181): `findRuleForShift` (Name, sonst UNIVERSAL). Das gilt auch fuer Frei, Urlaub und Fortbildung -
  * die FREI-Regel greift heute nur an einem Tag OHNE jeden Eintrag. Krank (Tag freigegeben) und
- * Ignorieren ohne weiteren Eintrag haben keine Schichtspanne und laufen wie ein freier Tag:
+ * Ignorieren ohne weiteren Eintrag haben keine Schichtspanne und laufen wie ein freier Tag (die Leiste
+ * selbst bleibt fuer Ignorieren leer, `tagesleiste()`):
  * `findRuleForFreeDay` (FREI, sonst UNIVERSAL). Ohne gueltige Weckzeit hat ein Schichttag keinen
  * Anker - dann gibt es weder Dimmen noch "folgt dem Dimmer", nur den Kalendereintrag.
  *
@@ -91,9 +93,10 @@ data class DimUndNichtStoeren(val dimmen: List<DimBereich>, val nichtStoeren: Li
  * dann; offen als #181), aber `endetBeimWecker` ist dann falsch - der Ereignistext soll keinen Wecker
  * behaupten, der nicht klingelt.
  *
- * NICHT HIER: der Ruf-Cutoff. Die Leiste kappt "Nicht stoeren" selbst (`kappenAmRufCutoff`, #193) und
- * braucht dafuer das UNGEKAPPTE Ende - kappte der Adapter vor, fände sie nichts mehr zu kuerzen, und
- * "endet spaetestens jetzt" stuende nie im Ereignistext.
+ * RUF-CUTOFF. Der EIGENE Cutoff gehoert der Leiste (`kappenAmRufCutoff`, #193): sie braucht das UNGEKAPPTE
+ * Ende - kappte der Adapter vor, fände sie nichts mehr zu kuerzen, und "endet spaetestens jetzt" stuende
+ * nie im Ereignistext. Die Cutoffs der NACHBARTAGE im Block kennt sie nicht; die kappt
+ * [kappenAmNachbarCutoff], wie der Betrieb es ueber alle Spannen tut.
  *
  * @param regelwahl nur wegen `findRuleForShift`/`findRuleForFreeDay`: die Auswahl geht durch die
  *   echte Funktion statt durch eine Kopie. Es wird kein Repository gelesen.
@@ -103,7 +106,6 @@ fun dimmenUndNichtStoeren(
     einstellungen: DimDndEinstellungen,
     regelwahl: DimRuleUseCase
 ): DimUndNichtStoeren {
-    if (eingabe.kategorie == ShiftKategorie.IGNORIEREN) return DimUndNichtStoeren.LEER
     val wirksam = wirksameDienstzeit(eingabe.kategorie, eingabe.dienstzeit)
 
     val nichtStoeren = mutableListOf<DndBereich>()
@@ -119,7 +121,7 @@ fun dimmenUndNichtStoeren(
 
     val tag = erfindeTag(eingabe, wirksam)
     if (!einstellungen.dimEnabled || tag == null) {
-        return DimUndNichtStoeren(emptyList(), nichtStoeren.sortedBy { it.vonMin })
+        return DimUndNichtStoeren(emptyList(), kappenAmNachbarCutoff(nichtStoeren, eingabe, wirksam).sortedBy { it.vonMin })
     }
 
     val dimmen = rechne(tag, einstellungen, regelwahl, mitWeckzeitNachlauf = true, hellZeitpunkt = hellZeitpunktAus(einstellungen.hellUm))
@@ -141,7 +143,37 @@ fun dimmenUndNichtStoeren(
             .map { DndBereich(it.range.first.alsMinute(), it.range.last.alsMinute(), DndQuelle.DIMM_FENSTER) }
             .beruehrtLeiste { it.vonMin to it.bisMin }
     }
-    return DimUndNichtStoeren(dimmen.sortedBy { it.vonMin }, nichtStoeren.sortedBy { it.vonMin })
+    return DimUndNichtStoeren(
+        dimmen.sortedBy { it.vonMin },
+        kappenAmNachbarCutoff(nichtStoeren, eingabe, wirksam).sortedBy { it.vonMin }
+    )
+}
+
+/**
+ * Der Ruf-Cutoff der NACHBARTAGE im Block. `DndScheduleUseCase.computeWindows` bildet die Cutoffs ueber
+ * ALLE Rufbereitschafts-Spannen und kappt jedes Fenster am fruehesten, das es enthaelt - also auch am
+ * Cutoff des Vortags (Beginn 07:00 am Vortag: Cutoff 05:00 am Mustertag). Die Leiste kennt nur den
+ * eigenen Slot (`kappenAmRufCutoff`, #193); ohne diesen Schritt endete "Nicht stoeren" in der Mitte
+ * eines Ruf-Blocks (die Vorgabe der Rufbereitschaft) eine Stunde zu spaet.
+ *
+ * Der EIGENE Cutoff bleibt der Leiste: sie braucht das Ende, um "endet spaetestens jetzt" zu sagen.
+ * Bei einem Nachbar-Cutoff steht dafuer "Nicht stoeren aus" (offen: #204).
+ */
+private fun kappenAmNachbarCutoff(
+    bereiche: List<DndBereich>,
+    eingabe: TagesleisteEingabe,
+    wirksam: Dienstzeit?
+): List<DndBereich> {
+    if (eingabe.kategorie != ShiftKategorie.RUFBEREITSCHAFT || wirksam == null) return bereiche
+    val beginn = MUSTERTAG.atTime(wirksam.beginn).toInstant(MUSTER_ZONE).toEpochMilli()
+    val cutoffs = DndOnCallCutoffResolver.cutoffInstants(
+        alarms = nachbarVersatz(eingabe.blockposition).map { DndOnCallCutoffResolver.AlarmSlot(eingabe.name, beginn + it) },
+        onCallShifts = setOf(eingabe.name),
+        cutoffMinutes = eingabe.rufCutoffMinuten.coerceIn(0, MINUTEN_PRO_TAG - 1),
+        zone = MUSTER_ZONE
+    ).map { it.alsMinute().toLong() }
+    val gekuerzt = DndOnCallCutoffResolver.clip(bereiche.map { it.vonMin.toLong()..it.bisMin.toLong() }, cutoffs)
+    return bereiche.mapIndexed { i, b -> b.copy(bisMin = gekuerzt[i].last.toInt()) }
 }
 
 /**
@@ -155,9 +187,17 @@ fun dimmenUndNichtStoeren(
  */
 private class Mustertag(val datum: LocalDate, val slots: List<DimWindowResolver.AlarmSlot>, val weckzeiten: Set<Long>)
 
+/** Um wie viel der Vortag bzw. Folgetag desselben Typs im Block gegen den Mustertag verschoben liegt. */
+private fun nachbarVersatz(position: Blockposition): List<Long> = buildList {
+    if (position == Blockposition.MITTLERER || position == Blockposition.LETZTER) add(-TAG_MS)
+    if (position == Blockposition.ERSTER || position == Blockposition.MITTLERER) add(TAG_MS)
+}
+
 /** `null`, wo es keinen Anker gibt: ein Schichttag ohne gueltige Weckzeit. */
 private fun erfindeTag(eingabe: TagesleisteEingabe, wirksam: Dienstzeit?): Mustertag? {
-    if (eingabe.kategorie == ShiftKategorie.KRANK) return Mustertag(MUSTERTAG, emptyList(), emptySet())
+    if (eingabe.kategorie == ShiftKategorie.KRANK || eingabe.kategorie == ShiftKategorie.IGNORIEREN) {
+        return Mustertag(MUSTERTAG, emptyList(), emptySet())
+    }
     val weckzeit = eingabe.weckzeit ?: return null
     // Dieselbe Regel wie `weckpunktMin()`, aber ohne dessen "Wecker aus gibt null": die Spanne fuehrt
     // die Weckzeit auch bei Wecker aus.
@@ -166,11 +206,7 @@ private fun erfindeTag(eingabe: TagesleisteEingabe, wirksam: Dienstzeit?): Muste
     val weckerMs = wecker.toInstant(MUSTER_ZONE).toEpochMilli()
     val endeMs = wirksam?.let { beginn.toInstant(MUSTER_ZONE).toEpochMilli() + it.dauerMin * MINUTE_MS } ?: 0L
 
-    val versatz = buildList {
-        add(0L)
-        if (eingabe.blockposition == Blockposition.MITTLERER || eingabe.blockposition == Blockposition.LETZTER) add(-TAG_MS)
-        if (eingabe.blockposition == Blockposition.ERSTER || eingabe.blockposition == Blockposition.MITTLERER) add(TAG_MS)
-    }
+    val versatz = listOf(0L) + nachbarVersatz(eingabe.blockposition)
     val slots = versatz.map {
         DimWindowResolver.AlarmSlot(weckerMs + it, eingabe.name, if (endeMs == 0L) 0L else endeMs + it)
     }

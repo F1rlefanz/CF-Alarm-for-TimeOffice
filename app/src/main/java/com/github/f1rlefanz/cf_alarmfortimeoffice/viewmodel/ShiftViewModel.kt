@@ -434,8 +434,11 @@ class ShiftViewModel @Inject constructor(
      * [SchichttypEinordnen.neuerTypAusCode] nur eine Vorlage, und eine geratene Weckzeit wird nie scharf.
      *
      * Traegt [neu] den [code] noch, geht es durch [ShiftConfig.withCodeAssignedTo]: der Code wird bei
-     * allen anderen Typen entfernt. Sonst behielte ein AUSGESCHALTETER Typ, der ihn noch traegt, ein
-     * zweites Exemplar, und `findDefinitionFor` entschiede nach Listenreihenfolge. Hat der Nutzer das
+     * allen anderen Typen entfernt (Absicherung gegen einen veralteten Fund, etwa nach einem Import
+     * waehrend der Editor offen war - `findDefinitionFor` entschiede sonst nach Listenreihenfolge).
+     * `withCodeAssignedTo` schaltet das Ziel aber EIN; den Schalter „Schichtdefinition aktiviert“ im
+     * Editor entscheidet der Nutzer, deshalb behaelt [neu] seinen `isEnabled`-Wert (ein bewusst
+     * ausgeschalteter Dienst-Typ stellte sonst an jedem Tag des Codes einen Wecker). Hat der Nutzer das
      * Muster im Editor bewusst entfernt, wird es NICHT wieder eingetragen - der Code bleibt dann im
      * Fund, statt still einem Typ zu gehoeren, dem er ihn gerade abgenommen hat.
      *
@@ -453,7 +456,17 @@ class ShiftViewModel @Inject constructor(
         }
         val mitTyp = config.copy(definitions = config.definitions + neu)
         val traegtCode = neu.keywords.any { it.trim().equals(code.trim(), ignoreCase = true) }
-        val updated = if (traegtCode) mitTyp.withCodeAssignedTo(code, neu.id) ?: mitTyp else mitTyp
+        val updated = if (traegtCode) {
+            mitTyp.withCodeAssignedTo(code, neu.id)?.let { zugeordnet ->
+                zugeordnet.copy(
+                    definitions = zugeordnet.definitions.map {
+                        if (it.id == neu.id) it.copy(isEnabled = neu.isEnabled) else it
+                    }
+                )
+            } ?: mitTyp
+        } else {
+            mitTyp
+        }
         Logger.business(
             LogTags.SHIFT_CONFIG,
             "✅ NEUER-TYP-AUS-CODE: '${neu.name}' (${neu.kategorie.schluessel}) aus '${code.trim()}' angelegt"

@@ -218,4 +218,22 @@ class EinordnenAblaufTest {
         verifyBlocking(a.shiftUseCase, times(1)) { saveShiftConfig(any()) }
         assertEquals(listOf("f", "neu"), a.vm.uiState.value.currentShiftConfig!!.definitions.map { it.id })
     }
+
+    @Test
+    fun `ein im Editor ausgeschalteter neuer Typ wird ausgeschaltet gespeichert`() = runTest(dispatcher) {
+        val a = aufbauen(ShiftConfig(definitions = listOf(typ("f", "Frühdienst", "F"))), listOf(termin("e1", "FBE")))
+        advanceUntilIdle()
+        val vorlage = SchichttypEinordnen.neuerTypAusCode("FBE", ShiftKategorie.DIENST) { "neu" }!!
+
+        // Der Schalter „Schichtdefinition aktiviert“ im Editor ist auch bei einer Vorlage frei. Ein Dienst-Typ,
+        // den der Nutzer bewusst ausschaltet, darf NICHT als eingeschalteter Typ landen (sonst Wecker an jedem FBE-Tag).
+        a.vm.legeTypAusCodeAn("FBE", vorlage.copy(isEnabled = false))
+        advanceUntilIdle()
+
+        val neu = a.gespeicherteKonfiguration().definitions.last()
+        assertEquals("neu", neu.id)
+        assertFalse("im Editor ausgeschaltet, also ausgeschaltet gespeichert", neu.isEnabled)
+        assertEquals(listOf("FBE"), neu.keywords)
+        assertEquals("ein ausgeschalteter Typ zaehlt als Zuordnung", emptyList<String>(), a.codesImFund())
+    }
 }

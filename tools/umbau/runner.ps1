@@ -151,20 +151,30 @@ function FremdesGeraet() {
 }
 
 function EmulatorBereit() {
+    # Liefert $true, wenn emulator-5554 bereit ist. Sonst $false mit Grund in STATUS.txt - nie endlos
+    # warten (05.11.2026: das AVD war geloescht, wait-for-device hing 30 min ohne jede Meldung).
     $da = (& $Adb devices) -match "^$Emu\s+device"
-    if ($da) { return }
-    if ($DryRun) { Log 'DRYRUN: Emulator wuerde gestartet'; return }
-    Log 'Emulator laeuft nicht - starte ihn'
-    Start-Process -FilePath (Join-Path $Sdk 'emulator\emulator.exe') -ArgumentList @('-avd', $Avd, '-timezone', 'Europe/Berlin', '-no-snapshot-save') -WindowStyle Minimized
-    & $Adb -s $Emu wait-for-device
-    for ($i = 0; $i -lt 60; $i++) {
-        if ((& $Adb -s $Emu shell getprop sys.boot_completed).Trim() -eq '1') { break }
-        Start-Sleep -Seconds 5
+    if ($da) { return $true }
+    if ($DryRun) { Log 'DRYRUN: Emulator wuerde gestartet'; return $true }
+    $emuExe = Join-Path $Sdk 'emulator\emulator.exe'
+    $avds = @(& $emuExe -list-avds 2>$null | ForEach-Object { "$_".Trim() })
+    if ($avds -notcontains $Avd) {
+        Log "Emulator-Geraet $Avd gibt es nicht (vorhanden: $($avds -join ', ')) - braucht den Eigentuemer"
+        return $false
     }
+    Log 'Emulator laeuft nicht - starte ihn'
+    Start-Process -FilePath $emuExe -ArgumentList @('-avd', $Avd, '-timezone', 'Europe/Berlin', '-no-snapshot-save') -WindowStyle Minimized
+    $bereit = $false
+    for ($i = 0; $i -lt 60; $i++) {   # hoechstens 5 min
+        Start-Sleep -Seconds 5
+        if (((& $Adb -s $Emu shell getprop sys.boot_completed 2>$null) | Out-String).Trim() -eq '1') { $bereit = $true; break }
+    }
+    if (-not $bereit) { Log "Emulator $Avd ist nach 5 min nicht hochgefahren - braucht den Eigentuemer"; return $false }
     # Test-PIN 1234 (Emulator braucht eine Sperre fuer Direct-Boot-Tests, Memory env_emulator_needs_pin_for_directboot)
     & $Adb -s $Emu shell input keyevent 82 | Out-Null
     & $Adb -s $Emu shell input text 1234 | Out-Null
     & $Adb -s $Emu shell input keyevent 66 | Out-Null
+    return $true
 }
 
 function Worktree([string]$name, [string]$branch, [string]$basis) {
@@ -250,6 +260,48 @@ function StarteClaude([string]$goal, [string]$model, [int]$cap, [string]$cwd, [s
     return $text
 }
 
+function LabelsVon([int]$nr) {
+    $t = GhAufruf @('issue', 'view', "$nr", '--repo', 'F1rlefanz/CF-Alarm-for-TimeOffice', '--json', 'labels', '--jq', '.labels[].name')
+    return @($t -split "`r?`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+}
+
+function BetreuerZiel($issue) {
+    $nr = $issue.number
+    return @"
+/goal Du bist der Betreuer des Umbaus "Schichttyp als Zentrale". Der Umsetzer von Paket #$nr ($($issue.title)) braucht eine Entscheidung. Lies das Issue samt Kommentaren (gh issue view $nr --comments) und darin die letzte offene Frage, dazu entwurf/umbau-schichttyp/SPEC.md, ABLAUF.md, CLAUDE.md und den betroffenen Code (nur lesen).
+Entscheide nach Spec, Projektregeln und Aufwand gegen Nutzen. Konsultiere den Advisor vor der Entscheidung.
+Schreibe die Entscheidung als Kommentar, der mit "**Betreuer-Entscheidung:**" beginnt: die Wahl, der Grund in zwei bis vier Saetzen, was der Umsetzer jetzt tut.
+Braucht es dafuer ein eigenes Paket: lege es nach ABLAUF.md Abschnitt 4 an (Labels umbau, paket, die Etappe, bereit, Groesse, bei Wecker/Persistenz/Migration/Erkennung risiko-hoch) und trage es in #$nr unter "Blockiert von" ein.
+Ist es eine Produktentscheidung, die nur der Eigentuemer treffen kann (Verhalten, das er sieht und das die Spec nicht festlegt): entscheide nicht, sondern setze das Label braucht-eigentuemer und schreibe die Frage mit Optionen und Empfehlung.
+Aendere keinen Code, committe nichts. Keine Rueckfragen, niemand ist anwesend. Stoppe nach 30 Turns.
+"@
+}
+
+function BetreuerEntscheidung($issue) {
+    # Hoechstens zwei Betreuer-Runden je Paket; eine dritte Frage entscheidet der Eigentuemer.
+    $nr = $issue.number
+    $runde = if ($issue.L -contains 'betreuer-2') { 3 } elseif ($issue.L -contains 'betreuer-1') { 2 } else { 1 }
+    if ($runde -gt 2) {
+        Label $nr @('blockiert', 'braucht-eigentuemer') @('braucht-betreuer', 'bereit')
+        Kommentar $nr 'Runner: dritte Betreuer-Frage zu diesem Paket - das entscheidet jetzt der Eigentuemer.'
+        Log "#${nr}: dritte Betreuer-Frage - braucht den Eigentuemer"
+        return
+    }
+    Log "#${nr}: Betreuer entscheidet (Runde $runde)"
+    $wt = Worktree 'integration' $Integration 'origin/main'
+    git -C $wt pull -q --ff-only 2>$null
+    $out = StarteClaude (BetreuerZiel $issue) 'claude-opus-5-5' 30 $wt "betreuer-$nr-$runde"
+    if (LimitWarten $out) { return }
+    if ((LabelsVon $nr) -contains 'braucht-eigentuemer') {
+        Label $nr @('blockiert', "betreuer-$runde") @('braucht-betreuer', 'bereit')
+        Kommentar $epic.number "Runner: #$nr braucht eine Entscheidung des Eigentuemers (Frage im Issue)."
+        Log "#${nr}: Betreuer gibt die Frage an den Eigentuemer"
+        return
+    }
+    Label $nr @("betreuer-$runde") @('braucht-betreuer')
+    Log "#${nr}: Betreuer-Entscheidung liegt vor"
+}
+
 function PaketZiel($issue, [int]$lauf, [int]$cap, [string]$branch) {
     # Teilarbeit gibt es nicht nur im zweiten Lauf: auch nach einem Limit oder Absturz liegt der Branch
     # schon auf origin (16.10.2026: #166 lief nach dem Limit mit "Setze das Paket um" weiter).
@@ -268,6 +320,7 @@ Unbelegte Fehlerhypothesen nie in ein Issue, sondern nach ..Projektdateien/umbau
 Lehren fuer Skills nach entwurf/umbau-schichttyp/skill-nachtraege.md (.claude/** ist schreibgeschuetzt).
 Konsultiere den Advisor genau an drei Stellen: vor dem Plan, beim zweiten gleichen Fehler, vor der Fertigmeldung.
 Niemand ist anwesend: keine Rueckfragen, begruendete Entscheidungen im Issue dokumentieren.
+Braucht eine Frage eine Betreuer-Entscheidung (sie liegt ausserhalb deines Umfangs, etwa Dateien ausserhalb des Felds Dateien, oder eine Abnahmezeile ist so nicht erfuellbar): schreibe sie als Kommentar ins Issue (Frage, zwei bis drei Optionen, deine Empfehlung mit Grund), setze das Label braucht-betreuer (gh issue edit $($issue.number) --add-label braucht-betreuer) und beende den Lauf. Arbeite nicht an ihr vorbei. Steht im Issue schon eine "Betreuer-Entscheidung", folge ihr.
 Verboten: Force-Push, History umschreiben, main anfassen, versionCode aendern, CFALARM_SCHLEUSE, Kerntests ohne benannte Verhaltensaenderung aendern, ein anderes Geraet als emulator-5554.
 Stoppe nach $cap Turns und schreibe den Stand als Kommentar ins Issue.
 "@
@@ -289,6 +342,7 @@ KONTINGENT: Ein Workflow mit Fable-Agenten hat am 17.10.2026 zweimal ein ganzes 
 - Liegt diese Datei schon vor (Teilarbeit eines frueheren Anlaufs): NICHT neu suchen. Nur fortsetzen (fehlende Urteile, Fixes) und nur die Commits seit dem dort genannten Stand pruefen.
 - Halte jede bestandene Pruefung aus Schritt 3 mit Zeit und Commit in $Proj\etappe-$n-abschluss.md fest; bei einer Fortsetzung nur wiederholen, was die Commits seitdem betreffen koennen.
 - Fruehere Anlaeufe: $Logs\etappe-$n-abschluss-*.log (lesbares Live-Log).
+- Nach dem Push auf main: auf veroeffentlichen.yml warten (gh run watch --exit-status). Scheitert nur der Upload an einem voruebergehenden Google-Fehler (z. B. 'service is currently unavailable'), einmal gh run rerun --failed. Erst ein gruener Upload ist ausgeliefert; sonst Bericht im Epic (17.10.2026: 1.57.0 scheiterte zuerst daran).
 Fertig erst, wenn jede Pruefung aus Schritt 3 mit Beleg im Transcript steht, main gemergt, Bump (Minor; Etappe 0 nur Patch, sie enthaelt nur Fehlerbehebungen) und Changelog gepusht sind (Schleuse gruen), #$($etIssue.number) geschlossen und ein Bericht im Epic steht.
 Ist eine Pruefung rot und nicht behebbar: nichts nach main, Bericht in #$($etIssue.number), Label blockiert. Konsultiere den Advisor vor dem Merge nach main. Keine Rueckfragen. Stoppe nach 80 Turns.
 "@
@@ -297,7 +351,12 @@ Ist eine Pruefung rot und nicht behebbar: nichts nach main, Bericht in #$($etIss
 # ---------------------------------------------------------------- Start
 if (Test-Path $Lock) {
     $alt = Get-Content $Lock -ErrorAction SilentlyContinue
-    if ($alt -and (Get-Process -Id ([int]$alt) -ErrorAction SilentlyContinue)) { Write-Host "Runner laeuft bereits (PID $alt)."; exit 0 }
+    # Nur ein PowerShell-Prozess, der runner.ps1 ausfuehrt, zaehlt: nach einem PC-Neustart vergibt
+    # Windows die alte Nummer an beliebige Programme (05.11.2026: PID 24656 war ein python.exe).
+    $lebt = $alt -and (Get-CimInstance Win32_Process -Filter "ProcessId = $([int]$alt)" -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -match '^(powershell|pwsh)\.exe$' -and $_.CommandLine -match 'runner\.ps1' })
+    if ($lebt) { Write-Host "Runner laeuft bereits (PID $alt)."; exit 0 }
+    if ($alt) { Write-Host "Alte Sperrdatei (PID $alt gehoert keinem Runner mehr) - wird ersetzt." }
 }
 if (-not $DryRun) { Set-Content -Path $Lock -Value $PID }
 
@@ -332,6 +391,14 @@ try {
             break
         }
 
+        # Offene Betreuer-Fragen zuerst: ohne Entscheidung kaeme das Paket nicht weiter.
+        $frage = $pakete | Where-Object { $_.L -contains 'braucht-betreuer' } | Sort-Object number | Select-Object -First 1
+        if ($frage) {
+            if ($DryRun) { Log "DRYRUN: Betreuer entscheidet #$($frage.number)"; break }
+            BetreuerEntscheidung $frage
+            continue
+        }
+
         # Absturzreste zuerst, dann freie Pakete
         $kandidat = $pakete | Where-Object { $_.L -contains 'in-arbeit' } | Sort-Object number | Select-Object -First 1
         if (-not $kandidat) {
@@ -359,7 +426,7 @@ try {
             if (FremdesGeraet) { Log 'Fremdes Geraet am Kabel - Abschluss wartet 10 min'; if ($DryRun) { break }; Start-Sleep 600; continue }
             Log "Etappe ${n}: Abschluss, Versuch $versuch"
             if ($DryRun) { break }
-            EmulatorBereit
+            if (-not (EmulatorBereit)) { Kommentar $epic.number "Runner gestoppt: der Emulator ist nicht verfuegbar (siehe STATUS.txt)."; break }
             Worktree 'integration' $Integration 'origin/main' | Out-Null
             Worktree 'main' 'main' 'origin/main' | Out-Null
             Label $et.number @("abschluss-$versuch") @()
@@ -380,11 +447,12 @@ try {
         Log "#${nr} Lauf $lauf ($model, Cap $cap): $($kandidat.title)"
         if ($DryRun) { break }
 
-        EmulatorBereit
+        # Pakete mit ohne-geraet brauchen keinen Emulator (und laufen auch, wenn er fehlt).
+        if (-not ($kandidat.L -contains 'ohne-geraet') -and -not (EmulatorBereit)) { Kommentar $epic.number "Runner gestoppt: der Emulator ist nicht verfuegbar (siehe STATUS.txt)."; break }
         Worktree 'integration' $Integration 'origin/main' | Out-Null
         $wt = Worktree "$nr" $branch "origin/$Integration"
         Label $nr @('in-arbeit', "lauf-$lauf") @('bereit')
-        Push-Location $wt; try { & .\gradlew.bat testDebugUnitTest lintDebug -q *> (Join-Path $Logs "vorwaermen-$nr.log") } catch {} finally { Pop-Location }
+        Push-Location $wt; try { & .\gradlew.bat testDebugUnitTest compileDebugAndroidTestKotlin lintDebug -q *> (Join-Path $Logs "vorwaermen-$nr.log") } catch {} finally { Pop-Location }
 
         $out = StarteClaude (PaketZiel $kandidat $lauf $cap $branch) $model $cap $wt "paket-$nr-lauf$lauf"
         if (LimitWarten $out) { continue }
@@ -392,6 +460,11 @@ try {
         if (IstZu $nr) {
             Log "#${nr}: fertig"
             git -C $Root worktree remove --force $wt 2>$null
+            continue
+        }
+        if ((LabelsVon $nr) -contains 'braucht-betreuer') {
+            Label $nr @('bereit') @('in-arbeit', "lauf-$lauf")
+            Log "#${nr}: Lauf $lauf wartet auf eine Betreuer-Entscheidung (zaehlt nicht als Lauf)"
             continue
         }
         $commits = (git -C $wt log --oneline -5 2>$null | Out-String)

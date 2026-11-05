@@ -138,7 +138,7 @@ Prompt-Werkstatt. Er arbeitet in einer Schleife:
    Bericht im Epic**. Keine Etappe offen → **Ende**.
 3. **Lauf:** Labels `in-arbeit` und `lauf-1` (bzw. `lauf-2`) setzen, Worktree unter
    `..\CFAlarm-umbau-wt\<nr>` anlegen, `keystore.properties`, `local.properties` und die Keystore-Datei hineinkopieren
-   (belegt 16.10.2026: so baut er), Gradle vorwärmen (`testDebugUnitTest lintDebug`), dann
+   (belegt 16.10.2026: so baut er), Gradle online vorwärmen (`testDebugUnitTest compileDebugAndroidTestKotlin lintDebug`; die Schleuse baut danach offline und scheitert sonst an neuen Abhängigkeiten), dann
    `claude -p "/goal …" --model <claude-sonnet-5-5 | claude-opus-5-5 nach Risiko> --effort xhigh
    --max-turns <Cap+5>`. Der Prozess bekommt `ANDROID_SERIAL=emulator-5554` (adb und Gradle-Install
    treffen dann nur den Emulator, auch wenn das Fairphone währenddessen angesteckt wird),
@@ -159,6 +159,14 @@ Prompt-Werkstatt. Er arbeitet in einer Schleife:
    schlafen, dann **dasselbe Paket** fortsetzen; das zählt nicht als Lauf. Kein blindes
    Wiederholen vorher.
 6. Nach jedem Schritt eine Zeile in `STATUS.txt` (Zeit, Etappe, Paket, Ergebnis).
+7. **Betreuer-Fragen** (seit 05.11.2026): Braucht der Umsetzer eine Entscheidung außerhalb seines
+   Umfangs, schreibt er Frage, Optionen und Empfehlung ins Issue, setzt `braucht-betreuer` und
+   beendet den Lauf. Das zählt nicht als Lauf. Der Runner schiebt dann vor allem anderen einen
+   Betreuer-Lauf ein (Opus, Advisor, nur lesen, höchstens 30 Turns). Der schreibt eine
+   „Betreuer-Entscheidung“ ins Issue, legt bei Bedarf ein eigenes Paket an oder gibt eine
+   Produktfrage mit `braucht-eigentuemer` an den Eigentümer weiter (dann `blockiert` und Meldung im
+   Epic). Hergang: In #196 lag eine solche Frage nur als Kommentar vor; ohne mitlesende Sitzung
+   hätte niemand entschieden.
 
 **Wo gemergt wird:** Der Runner hat zwei feste Worktrees, `..\CFAlarm-umbau-wt\integration`
 (`feature/umbau-schichttyp`) und `..\CFAlarm-umbau-wt\main` (`main`). Nur dort wird gemergt und
@@ -215,6 +223,7 @@ unverändert vor.
 | neue Issues je Etappe | 15 | Runner stoppt |
 | Fund außerhalb des Umfangs | – | Issue mit Label `spaeter`, wird in diesem Umbau **nicht** abgearbeitet (sonst endet die Schleife nie) |
 | Etappen-Abschluss gescheitert | 2 Versuche | Runner stoppt, Bericht im Epic |
+| Betreuer-Runden je Paket | 2 (`betreuer-1`, `betreuer-2`) | dritte Frage: `blockiert` + `braucht-eigentuemer` |
 | Etappe hat offene oder blockierte Pakete, aber kein wählbares | – | Runner stoppt, Bericht im Epic – **kein** Abschluss mit Lücke |
 | verboten | Force-Push, History umschreiben, Push auf `main` außer im Etappen-Abschluss, Bump außerhalb des Etappen-Abschlusses, Fairphone ansprechen, Kerntests ändern ohne benannte Verhaltensänderung, `.claude/**` schreiben, `CFALARM_SCHLEUSE=aus` | Wo möglich mechanisch erzwungen, nicht nur im Ziel-Text: `ANDROID_SERIAL`, gesperrte Werkzeuge, Schleuse fail-closed, Notausgang nicht vererbt (Abschnitt 9) |
 

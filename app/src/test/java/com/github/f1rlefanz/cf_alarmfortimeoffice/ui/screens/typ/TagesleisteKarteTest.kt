@@ -239,10 +239,25 @@ class TagesleisteKarteTest {
         assertEquals(listOf(Balken(Spur.EINTRAG, 720, 1215)), umbenannt.spur(Spur.EINTRAG))
         assertNull(umbenannt.hinweis)
 
-        // Neuanlage: der Typ ist nicht gespeichert, also gibt es keine Spanne - und das sagt die Leiste.
+        // Neuanlage: der Typ ist nicht gespeichert, also gibt es keine Spanne (die Karte formuliert den Hinweis um: siehe unten).
         val neu = rechne(entwurf(name = "F"), gespeichert = null).leiste
         assertEquals(emptyList<Balken>(), neu.spur(Spur.EINTRAG))
         assertEquals(Hinweis.KEIN_TERMIN_IM_KALENDER, neu.hinweis)
+    }
+
+    @Test
+    fun `ein noch nicht angelegter Typ behauptet nichts ueber den Kalender - ein angelegter ohne Spanne schon`() {
+        // Der Banner nennt den Code „aus dem Kalender“: „Im Kalender steht noch kein Termin“ widerspraeche ihm.
+        val neu = rechne(entwurf(name = "F"), gespeichert = null)
+        assertEquals(true, neu.typNochNichtAngelegt)
+        assertEquals(TagesleisteTexte.NEUER_TYP_OHNE_EINTRAG, TagesleisteTexte.leistenHinweis(neu.leiste.hinweis, neu.typNochNichtAngelegt))
+        assertEquals(false, TagesleisteTexte.NEUER_TYP_OHNE_EINTRAG.contains("Kalender"))
+
+        // Ein gespeicherter Typ ohne Spanne im Bestand: dort stimmt der Satz ueber den Kalender.
+        val angelegt = rechne(entwurf(name = "ZZ"), gespeichert = "ZZ")
+        assertEquals(false, angelegt.typNochNichtAngelegt)
+        assertEquals(Hinweis.KEIN_TERMIN_IM_KALENDER.text, TagesleisteTexte.leistenHinweis(angelegt.leiste.hinweis, angelegt.typNochNichtAngelegt))
+        assertEquals(null, TagesleisteTexte.leistenHinweis(null, true))
     }
 
     @Test

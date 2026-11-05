@@ -21,6 +21,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -45,6 +46,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.Blockposition
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftKategorie
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.DimDndEinstellungen
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.Hinweis
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.LichtEinstellungen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.Quelle
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.Spur
@@ -76,7 +78,20 @@ internal object TagesleisteTexte {
     const val LINK = "Im Bereich „Wecker“ über die ganze Woche ansehen"
     const val BESCHREIBUNG = "Tagesleiste mit den Spuren dieses Tages. Die Ereignisse stehen darunter in der Liste."
 
+    /**
+     * Bei der Neuanlage steht der Typ nicht in der Konfiguration, also gibt es auch keine Spanne - das liegt am
+     * fehlenden Typ, nicht am Kalender (der Banner nennt den Code ja gerade aus dem Kalender). Darum kein
+     * „Im Kalender steht noch kein Termin“, und kein Versprechen, was nach „Erstellen“ erscheint.
+     */
+    const val NEUER_TYP_OHNE_EINTRAG = "Der Typ ist noch nicht angelegt, darum zeigt die Leiste noch keinen Eintrag."
+
     fun titel(name: String): String = "So läuft ein Tag „$name“"
+
+    fun leistenHinweis(hinweis: Hinweis?, typNochNichtAngelegt: Boolean): String? = when {
+        hinweis == null -> null
+        hinweis == Hinweis.KEIN_TERMIN_IM_KALENDER && typNochNichtAngelegt -> NEUER_TYP_OHNE_EINTRAG
+        else -> hinweis.text
+    }
 
     fun hinweis(kategorie: ShiftKategorie): String =
         if (WeckerAbschnittLogik.zeigtWeckerKarte(kategorie)) "$ZEITRAUM $RECHNET_MIT" else ZEITRAUM
@@ -110,7 +125,9 @@ internal object TagesleisteTexte {
 internal data class TagesleisteAnzeige(
     val gelesen: Boolean,
     val leiste: Tagesleiste,
-    val unbekannt: List<Spur>
+    val unbekannt: List<Spur>,
+    /** Der Typ steht noch nicht in der Konfiguration (Neuanlage): es gibt weder Spanne noch Regeln. */
+    val typNochNichtAngelegt: Boolean = false
 ) {
     companion object {
         val WIRD_GELESEN = TagesleisteAnzeige(gelesen = false, leiste = Tagesleiste.LEER, unbekannt = emptyList())
@@ -181,7 +198,7 @@ internal object TagesleisteKarteLogik {
         // ist etwas anderes als „der Typ hat keinen Termin“: dann waere die Leiste auf einem erfundenen
         // Normaltag gerechnet.
         val spannen = quellen.spannen.wertOderNull()
-            ?: return TagesleisteAnzeige(gelesen = true, leiste = Tagesleiste.LEER, unbekannt = unbekannt)
+            ?: return TagesleisteAnzeige(gelesen = true, leiste = Tagesleiste.LEER, unbekannt = unbekannt, typNochNichtAngelegt = gespeicherterName == null)
 
         val dimmer = quellen.dimmer.wertOderNull()
         val nichtStoeren = quellen.nichtStoeren.wertOderNull()
@@ -222,7 +239,7 @@ internal object TagesleisteKarteLogik {
                 licht = licht(eingabe, LichtEinstellungen(lichtQuelle.konfiguriert, lichtQuelle.regeln), lichtQuelle.vorlaufMinuten)
             )
         }
-        return TagesleisteAnzeige(gelesen = true, leiste = tagesleiste(eingabe), unbekannt = unbekannt)
+        return TagesleisteAnzeige(gelesen = true, leiste = tagesleiste(eingabe), unbekannt = unbekannt, typNochNichtAngelegt = gespeicherterName == null)
     }
 }
 
@@ -336,7 +353,14 @@ internal fun TagesleisteKarte(
                         FilterChip(
                             selected = position == blockposition,
                             onClick = { onBlockposition(position) },
-                            label = { Text(TagesleisteTexte.block(position)) }
+                            label = { Text(TagesleisteTexte.block(position)) },
+                            // Prototyp `.wchip`: Schrift in Textfarbe, der gewaehlte Chip mit rotem Rand.
+                            colors = FilterChipDefaults.filterChipColors(labelColor = MaterialTheme.colorScheme.onSurface),
+                            border = FilterChipDefaults.filterChipBorder(
+                                enabled = true,
+                                selected = position == blockposition,
+                                selectedBorderColor = BrandRedLightMode
+                            )
                         )
                     }
                 }
@@ -366,9 +390,9 @@ internal fun TagesleisteKarte(
                     modifier = rand.padding(bottom = SpacingConstants.SPACING_MEDIUM)
                 )
             }
-            anzeige.leiste.hinweis?.let { hinweis ->
+            TagesleisteTexte.leistenHinweis(anzeige.leiste.hinweis, anzeige.typNochNichtAngelegt)?.let { hinweisText ->
                 Text(
-                    hinweis.text,
+                    hinweisText,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = rand.padding(bottom = SpacingConstants.SPACING_MEDIUM)
@@ -499,7 +523,7 @@ private fun Achse() {
     ) { messbar, constraints ->
         val breite = constraints.maxWidth
         val platten = messbar.map { it.measure(Constraints()) }
-        val luecke = 4.dp.roundToPx()
+        val luecke = 2.dp.roundToPx()
         val links = ACHSE.mapIndexed { i, (anteil, _) -> (breite * anteil).roundToInt() - platten[i].width / 2 }
         val passt = platten.indices.all { i ->
             links[i] >= 0 && links[i] + platten[i].width <= breite &&

@@ -151,20 +151,30 @@ function FremdesGeraet() {
 }
 
 function EmulatorBereit() {
+    # Liefert $true, wenn emulator-5554 bereit ist. Sonst $false mit Grund in STATUS.txt - nie endlos
+    # warten (05.11.2026: das AVD war geloescht, wait-for-device hing 30 min ohne jede Meldung).
     $da = (& $Adb devices) -match "^$Emu\s+device"
-    if ($da) { return }
-    if ($DryRun) { Log 'DRYRUN: Emulator wuerde gestartet'; return }
-    Log 'Emulator laeuft nicht - starte ihn'
-    Start-Process -FilePath (Join-Path $Sdk 'emulator\emulator.exe') -ArgumentList @('-avd', $Avd, '-timezone', 'Europe/Berlin', '-no-snapshot-save') -WindowStyle Minimized
-    & $Adb -s $Emu wait-for-device
-    for ($i = 0; $i -lt 60; $i++) {
-        if ((& $Adb -s $Emu shell getprop sys.boot_completed).Trim() -eq '1') { break }
-        Start-Sleep -Seconds 5
+    if ($da) { return $true }
+    if ($DryRun) { Log 'DRYRUN: Emulator wuerde gestartet'; return $true }
+    $emuExe = Join-Path $Sdk 'emulator\emulator.exe'
+    $avds = @(& $emuExe -list-avds 2>$null | ForEach-Object { "$_".Trim() })
+    if ($avds -notcontains $Avd) {
+        Log "Emulator-Geraet $Avd gibt es nicht (vorhanden: $($avds -join ', ')) - braucht den Eigentuemer"
+        return $false
     }
+    Log 'Emulator laeuft nicht - starte ihn'
+    Start-Process -FilePath $emuExe -ArgumentList @('-avd', $Avd, '-timezone', 'Europe/Berlin', '-no-snapshot-save') -WindowStyle Minimized
+    $bereit = $false
+    for ($i = 0; $i -lt 60; $i++) {   # hoechstens 5 min
+        Start-Sleep -Seconds 5
+        if (((& $Adb -s $Emu shell getprop sys.boot_completed 2>$null) | Out-String).Trim() -eq '1') { $bereit = $true; break }
+    }
+    if (-not $bereit) { Log "Emulator $Avd ist nach 5 min nicht hochgefahren - braucht den Eigentuemer"; return $false }
     # Test-PIN 1234 (Emulator braucht eine Sperre fuer Direct-Boot-Tests, Memory env_emulator_needs_pin_for_directboot)
     & $Adb -s $Emu shell input keyevent 82 | Out-Null
     & $Adb -s $Emu shell input text 1234 | Out-Null
     & $Adb -s $Emu shell input keyevent 66 | Out-Null
+    return $true
 }
 
 function Worktree([string]$name, [string]$branch, [string]$basis) {
@@ -365,7 +375,7 @@ try {
             if (FremdesGeraet) { Log 'Fremdes Geraet am Kabel - Abschluss wartet 10 min'; if ($DryRun) { break }; Start-Sleep 600; continue }
             Log "Etappe ${n}: Abschluss, Versuch $versuch"
             if ($DryRun) { break }
-            EmulatorBereit
+            if (-not (EmulatorBereit)) { Kommentar $epic.number "Runner gestoppt: der Emulator ist nicht verfuegbar (siehe STATUS.txt)."; break }
             Worktree 'integration' $Integration 'origin/main' | Out-Null
             Worktree 'main' 'main' 'origin/main' | Out-Null
             Label $et.number @("abschluss-$versuch") @()
@@ -386,7 +396,7 @@ try {
         Log "#${nr} Lauf $lauf ($model, Cap $cap): $($kandidat.title)"
         if ($DryRun) { break }
 
-        EmulatorBereit
+        if (-not (EmulatorBereit)) { Kommentar $epic.number "Runner gestoppt: der Emulator ist nicht verfuegbar (siehe STATUS.txt)."; break }
         Worktree 'integration' $Integration 'origin/main' | Out-Null
         $wt = Worktree "$nr" $branch "origin/$Integration"
         Label $nr @('in-arbeit', "lauf-$lauf") @('bereit')

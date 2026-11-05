@@ -260,6 +260,48 @@ function StarteClaude([string]$goal, [string]$model, [int]$cap, [string]$cwd, [s
     return $text
 }
 
+function LabelsVon([int]$nr) {
+    $t = GhAufruf @('issue', 'view', "$nr", '--repo', 'F1rlefanz/CF-Alarm-for-TimeOffice', '--json', 'labels', '--jq', '.labels[].name')
+    return @($t -split "`r?`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+}
+
+function BetreuerZiel($issue) {
+    $nr = $issue.number
+    return @"
+/goal Du bist der Betreuer des Umbaus "Schichttyp als Zentrale". Der Umsetzer von Paket #$nr ($($issue.title)) braucht eine Entscheidung. Lies das Issue samt Kommentaren (gh issue view $nr --comments) und darin die letzte offene Frage, dazu entwurf/umbau-schichttyp/SPEC.md, ABLAUF.md, CLAUDE.md und den betroffenen Code (nur lesen).
+Entscheide nach Spec, Projektregeln und Aufwand gegen Nutzen. Konsultiere den Advisor vor der Entscheidung.
+Schreibe die Entscheidung als Kommentar, der mit "**Betreuer-Entscheidung:**" beginnt: die Wahl, der Grund in zwei bis vier Saetzen, was der Umsetzer jetzt tut.
+Braucht es dafuer ein eigenes Paket: lege es nach ABLAUF.md Abschnitt 4 an (Labels umbau, paket, die Etappe, bereit, Groesse, bei Wecker/Persistenz/Migration/Erkennung risiko-hoch) und trage es in #$nr unter "Blockiert von" ein.
+Ist es eine Produktentscheidung, die nur der Eigentuemer treffen kann (Verhalten, das er sieht und das die Spec nicht festlegt): entscheide nicht, sondern setze das Label braucht-eigentuemer und schreibe die Frage mit Optionen und Empfehlung.
+Aendere keinen Code, committe nichts. Keine Rueckfragen, niemand ist anwesend. Stoppe nach 30 Turns.
+"@
+}
+
+function BetreuerEntscheidung($issue) {
+    # Hoechstens zwei Betreuer-Runden je Paket; eine dritte Frage entscheidet der Eigentuemer.
+    $nr = $issue.number
+    $runde = if ($issue.L -contains 'betreuer-2') { 3 } elseif ($issue.L -contains 'betreuer-1') { 2 } else { 1 }
+    if ($runde -gt 2) {
+        Label $nr @('blockiert', 'braucht-eigentuemer') @('braucht-betreuer', 'bereit')
+        Kommentar $nr 'Runner: dritte Betreuer-Frage zu diesem Paket - das entscheidet jetzt der Eigentuemer.'
+        Log "#${nr}: dritte Betreuer-Frage - braucht den Eigentuemer"
+        return
+    }
+    Log "#${nr}: Betreuer entscheidet (Runde $runde)"
+    $wt = Worktree 'integration' $Integration 'origin/main'
+    git -C $wt pull -q --ff-only 2>$null
+    $out = StarteClaude (BetreuerZiel $issue) 'claude-opus-5-5' 30 $wt "betreuer-$nr-$runde"
+    if (LimitWarten $out) { return }
+    if ((LabelsVon $nr) -contains 'braucht-eigentuemer') {
+        Label $nr @('blockiert', "betreuer-$runde") @('braucht-betreuer', 'bereit')
+        Kommentar $epic.number "Runner: #$nr braucht eine Entscheidung des Eigentuemers (Frage im Issue)."
+        Log "#${nr}: Betreuer gibt die Frage an den Eigentuemer"
+        return
+    }
+    Label $nr @("betreuer-$runde") @('braucht-betreuer')
+    Log "#${nr}: Betreuer-Entscheidung liegt vor"
+}
+
 function PaketZiel($issue, [int]$lauf, [int]$cap, [string]$branch) {
     # Teilarbeit gibt es nicht nur im zweiten Lauf: auch nach einem Limit oder Absturz liegt der Branch
     # schon auf origin (16.10.2026: #166 lief nach dem Limit mit "Setze das Paket um" weiter).
@@ -278,6 +320,7 @@ Unbelegte Fehlerhypothesen nie in ein Issue, sondern nach ..Projektdateien/umbau
 Lehren fuer Skills nach entwurf/umbau-schichttyp/skill-nachtraege.md (.claude/** ist schreibgeschuetzt).
 Konsultiere den Advisor genau an drei Stellen: vor dem Plan, beim zweiten gleichen Fehler, vor der Fertigmeldung.
 Niemand ist anwesend: keine Rueckfragen, begruendete Entscheidungen im Issue dokumentieren.
+Braucht eine Frage eine Betreuer-Entscheidung (sie liegt ausserhalb deines Umfangs, etwa Dateien ausserhalb des Felds Dateien, oder eine Abnahmezeile ist so nicht erfuellbar): schreibe sie als Kommentar ins Issue (Frage, zwei bis drei Optionen, deine Empfehlung mit Grund), setze das Label braucht-betreuer (gh issue edit $($issue.number) --add-label braucht-betreuer) und beende den Lauf. Arbeite nicht an ihr vorbei. Steht im Issue schon eine "Betreuer-Entscheidung", folge ihr.
 Verboten: Force-Push, History umschreiben, main anfassen, versionCode aendern, CFALARM_SCHLEUSE, Kerntests ohne benannte Verhaltensaenderung aendern, ein anderes Geraet als emulator-5554.
 Stoppe nach $cap Turns und schreibe den Stand als Kommentar ins Issue.
 "@
@@ -348,6 +391,14 @@ try {
             break
         }
 
+        # Offene Betreuer-Fragen zuerst: ohne Entscheidung kaeme das Paket nicht weiter.
+        $frage = $pakete | Where-Object { $_.L -contains 'braucht-betreuer' } | Sort-Object number | Select-Object -First 1
+        if ($frage) {
+            if ($DryRun) { Log "DRYRUN: Betreuer entscheidet #$($frage.number)"; break }
+            BetreuerEntscheidung $frage
+            continue
+        }
+
         # Absturzreste zuerst, dann freie Pakete
         $kandidat = $pakete | Where-Object { $_.L -contains 'in-arbeit' } | Sort-Object number | Select-Object -First 1
         if (-not $kandidat) {
@@ -409,6 +460,11 @@ try {
         if (IstZu $nr) {
             Log "#${nr}: fertig"
             git -C $Root worktree remove --force $wt 2>$null
+            continue
+        }
+        if ((LabelsVon $nr) -contains 'braucht-betreuer') {
+            Label $nr @('bereit') @('in-arbeit', "lauf-$lauf")
+            Log "#${nr}: Lauf $lauf wartet auf eine Betreuer-Entscheidung (zaehlt nicht als Lauf)"
             continue
         }
         $commits = (git -C $wt log --oneline -5 2>$null | Out-String)

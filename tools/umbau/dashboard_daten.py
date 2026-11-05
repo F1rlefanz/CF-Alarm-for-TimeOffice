@@ -1,8 +1,9 @@
 """Sammelt den Stand des Umbaus fuer das Fortschritts-Dashboard (claude.ai-Artifact).
 
 Quellen: GitHub-Issues (Labels umbau/etappe/paket), das Runner-Protokoll STATUS.txt und die
-Lauf-Logs (*.jsonl, fuer das Kontingent). Schreibt vier JSON-Dateien (Zeilenlisten) nach
-..Projektdateien/umbau/dashboard/ - die laedt eine Claude-Sitzung ins Dashboard hoch.
+Lauf-Logs (*.jsonl, fuer das Kontingent). Schreibt vier JSON-Dateien (Zeilenlisten) und die fertige
+Statusseite seite.html (Vorlage dashboard_vorlage.html mit eingebetteten Daten) nach
+..Projektdateien/umbau/dashboard/ - die Seite veroeffentlicht eine Claude-Sitzung als Artifact.
 
 Aufruf: python tools/umbau/dashboard_daten.py
 """
@@ -46,10 +47,11 @@ def status_zeilen():
     if not os.path.exists(pfad):
         return []
     zeilen = []
-    for z in io.open(pfad, encoding="utf-8-sig", errors="replace"):
-        m = re.match(r"^(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)\s+(.*)$", z.strip())
-        if m:
-            zeilen.append((m.group(1), m.group(2)))
+    with io.open(pfad, encoding="utf-8-sig", errors="replace") as f:
+        for z in f:
+            m = re.match(r"^(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)\s+(.*)$", z.strip())
+            if m:
+                zeilen.append((m.group(1), m.group(2)))
     return zeilen
 
 
@@ -57,9 +59,10 @@ def kontingent():
     """Letztes rate_limit_event aus den neuesten Lauf-Logs."""
     for pfad in sorted(glob.glob(os.path.join(LOGS, "*.jsonl")), key=os.path.getmtime, reverse=True)[:3]:
         letzte = None
-        for z in io.open(pfad, encoding="utf-8", errors="replace"):
-            if '"rate_limit_event"' in z:
-                letzte = z
+        with io.open(pfad, encoding="utf-8", errors="replace") as f:
+            for z in f:
+                if '"rate_limit_event"' in z:
+                    letzte = z
         if letzte:
             try:
                 w = json.loads(letzte)["rate_limit_info"]["unifiedWindows"]
@@ -178,6 +181,15 @@ def main():
                         ("verlauf", verlauf)):
         with io.open(os.path.join(ZIEL, name + ".json"), "w", encoding="utf-8") as f:
             json.dump(daten, f, ensure_ascii=False, indent=1)
+    # Die Statusseite bringt ihre Daten selbst mit (ein Artifact laedt keine fremden Dateien
+    # verlaesslich: der Dashboard-Typ meldete am 05.11.2026 fuer alle Quellen "nicht geladen").
+    with io.open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "dashboard_vorlage.html"),
+                 encoding="utf-8") as f:
+        vorlage = f.read()
+    daten = json.dumps({"kennzahlen": kenn, "etappen": etappen_zeilen, "pakete": paket_zeilen, "verlauf": verlauf},
+                       ensure_ascii=False).replace("</", "<\\/")
+    with io.open(os.path.join(ZIEL, "seite.html"), "w", encoding="utf-8") as f:
+        f.write(vorlage.replace("/*DATEN*/null", daten))
     print(json.dumps(kenn[0], ensure_ascii=False))
 
 

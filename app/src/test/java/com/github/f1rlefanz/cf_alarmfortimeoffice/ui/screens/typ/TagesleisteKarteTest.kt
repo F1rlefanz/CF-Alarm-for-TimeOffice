@@ -245,6 +245,16 @@ class TagesleisteKarteTest {
         assertEquals(Hinweis.KEIN_TERMIN_IM_KALENDER, neu.hinweis)
     }
 
+    @Test
+    fun `ein neuer Typ ohne Namen heisst Neuer Typ - der Titel hat nie leere Anfuehrungszeichen`() {
+        val leer = entwurf(name = "  ")
+        assertEquals("Neuer Typ", TagesleisteKarteLogik.anzeigeName(null, leer))
+        assertEquals("Wecker – Neuer Typ", rechne(leer, gespeichert = null).leiste.ereignisse.single { it.spur == Spur.WECKER }.text)
+        // Getippt gewinnt, gespeichert gewinnt vor getippt.
+        assertEquals("X", TagesleisteKarteLogik.anzeigeName(null, entwurf(name = " X ")))
+        assertEquals("F", TagesleisteKarteLogik.anzeigeName("F", entwurf(name = "Frueh")))
+    }
+
     // ── Blockposition ────────────────────────────────────────────────────────────────────────
 
     @Test

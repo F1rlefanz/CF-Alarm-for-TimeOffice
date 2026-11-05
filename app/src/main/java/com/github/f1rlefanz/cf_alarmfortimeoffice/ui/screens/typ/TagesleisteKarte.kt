@@ -124,6 +124,13 @@ internal data class TagesleisteAnzeige(
  */
 internal object TagesleisteKarteLogik {
 
+    /**
+     * Der Name, den die Karte nennt: der gespeicherte - bei der Neuanlage der getippte, und solange der noch
+     * fehlt „Neuer Typ“ wie der Seitentitel (sonst stuende `So läuft ein Tag „“` da).
+     */
+    fun anzeigeName(gespeicherterName: String?, entwurf: TypEntwurf): String =
+        gespeicherterName ?: entwurf.name.trim().ifBlank { TypSeiteTexte.NEUER_TYP_TITEL }
+
     /** Bei Ignorieren gibt es keine Leiste: ein solcher Eintrag wird uebergangen, es gibt keinen Tag. */
     fun zeigtKarte(kategorie: ShiftKategorie): Boolean = kategorie != ShiftKategorie.IGNORIEREN
 
@@ -181,7 +188,7 @@ internal object TagesleisteKarteLogik {
         val lichtQuelle = quellen.licht.wertOderNull()
 
         var eingabe = TagesleisteEingabe(
-            name = gespeicherterName ?: entwurf.name.trim(),
+            name = anzeigeName(gespeicherterName, entwurf),
             kategorie = entwurf.kategorie,
             weckerAn = entwurf.weckerAn,
             weckzeit = entwurf.weckzeit,

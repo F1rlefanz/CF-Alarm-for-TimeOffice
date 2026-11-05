@@ -454,7 +454,7 @@ private fun TypSeiteFormular(
                 if (TagesleisteKarteLogik.zeigtKarte(entwurf.kategorie)) {
                     item(key = "tagesleiste") {
                         TagesleisteKarte(
-                            name = gespeicherterName ?: entwurf.name.trim(),
+                            name = TagesleisteKarteLogik.anzeigeName(gespeicherterName, entwurf),
                             kategorie = entwurf.kategorie,
                             anzeige = anzeige,
                             blockposition = wirksamePosition,

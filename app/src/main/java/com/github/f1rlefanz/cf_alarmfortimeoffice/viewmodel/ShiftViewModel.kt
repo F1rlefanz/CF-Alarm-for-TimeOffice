@@ -32,6 +32,8 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.TagesleisteQuellen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.VorlaufMinuten
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.alsQuelle
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.fehlerAlsUnbekannt
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.TageslichtQuelle
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.TageslichtStand
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -164,7 +166,14 @@ class ShiftViewModel @Inject constructor(
      * liest nur den `@HueDataStore`, der Use-Case dagegen baut den Lampen- und HTTP-Graphen
      * (OkHttp) - fuer eine Anzeige, die keine Bridge braucht.
      */
-    private val hueConfigRepository: dagger.Lazy<IHueConfigRepository>
+    private val hueConfigRepository: dagger.Lazy<IHueConfigRepository>,
+    /**
+     * Nur LESEND, fuer den Tageslicht-Stand von [tagesleisteQuellen]: derselbe Weg wie zur Laufzeit
+     * (Entsperr-Gate VOR jedem Lesen, nie werfend, sonst [TageslichtStand.ohneOrt]). `dagger.Lazy` wie
+     * oben - angefasst erst beim Abo. Dagger liefert immer den vollen Konstruktor; der Default erspart
+     * nur den Tests den Parameter (wie `HueRuleUseCase`) und heisst: kein Ort, keine Einschraenkung.
+     */
+    private val tageslichtQuelle: dagger.Lazy<TageslichtQuelle> = dagger.Lazy { TageslichtQuelle.OHNE }
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ShiftUiState())
@@ -249,7 +258,7 @@ class ShiftViewModel @Inject constructor(
     /**
      * Alles, was die Tagesleiste der Typ-Seite aus dem Bestand braucht (Umbau #196, SPEC 3.3 Punkt 3):
      * Dimm-Schalter und -Regeln, die Schalter von "Nicht stoeren" mit Ausnahmen und Ruf-Cutoff,
-     * Hue-Regeln samt "Bridge eingerichtet" und die Schichtspannen.
+     * Hue-Regeln samt "Bridge eingerichtet", die Schichtspannen und der Tageslicht-Stand.
      *
      * DIESELBEN Stores und DASSELBE Abo wie [schichtFolgen]: gelesen wird erst beim Sammeln
      * (`WhileSubscribed`), nichts beim Bauen - die Quellen stecken in kalten `flow {}`.
@@ -272,9 +281,10 @@ class ShiftViewModel @Inject constructor(
         dimmerQuelle().fehlerAlsUnbekannt("Dimmer"),
         nichtStoerenQuelle().fehlerAlsUnbekannt("Nicht stoeren"),
         lichtQuelle().fehlerAlsUnbekannt("Hue-Regeln"),
-        spannenQuelle().fehlerAlsUnbekannt("Schichtspannen")
-    ) { dimmer, nichtStoeren, licht, spannen ->
-        TagesleisteQuellen(dimmer, nichtStoeren, licht, spannen)
+        spannenQuelle().fehlerAlsUnbekannt("Schichtspannen"),
+        tageslichtStand()
+    ) { dimmer, nichtStoeren, licht, spannen, tageslicht ->
+        TagesleisteQuellen(dimmer, nichtStoeren, licht, spannen, tageslicht)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     init {
@@ -1072,6 +1082,18 @@ class ShiftViewModel @Inject constructor(
     //
     // Dieselben kalten Flows wie oben (Dimmer, Hue), dazu "Nicht stoeren" mit dem Ruf-Cutoff und die
     // Spannen. Jede Quelle fuehrt ihren Lesefehler selbst als [Quelle.Unbekannt] - siehe dort.
+
+    /**
+     * Einmal je Abo, kein [Quelle]: ohne Ort heisst fail-safe "keine Einschraenkung" (Licht an, voller
+     * Nachlauf). Die Quelle wirft laut Vertrag nie; tut sie es doch, gilt dasselbe - und ein WARN.
+     */
+    private fun tageslichtStand(): Flow<TageslichtStand> = flow {
+        emit(tageslichtQuelle.get().stand())
+    }.catch { e ->
+        if (e is CancellationException) throw e
+        Logger.w(LogTags.SHIFT, "Tagesleiste: Tageslicht-Stand nicht lesbar - rechne ohne Ort", e)
+        emit(TageslichtStand.ohneOrt())
+    }
 
     private fun dimmerQuelle(): Flow<Quelle<DimmerQuelle>> =
         dimmerStand().map { Quelle.Bekannt(DimmerQuelle(it.an, it.regeln, dimRuleUseCase.get())) }

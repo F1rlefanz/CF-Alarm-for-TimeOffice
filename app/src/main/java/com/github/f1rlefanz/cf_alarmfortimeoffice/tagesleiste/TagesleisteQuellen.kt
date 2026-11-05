@@ -5,6 +5,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimRuleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueSchedule
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpan
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.TageslichtStand
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import kotlinx.coroutines.CancellationException
@@ -15,7 +16,7 @@ import kotlinx.coroutines.flow.catch
  * Die QUELLEN der Tagesleiste (Umbau #196, SPEC 3.3 Punkt 3): was `ShiftViewModel.tagesleisteQuellen`
  * den Adaptern aus #193 bis #195 in die Hand gibt - Dimm-Schalter und -Regeln, die Schalter von
  * "Nicht stoeren" mit Ausnahmen und Cutoff, Hue-Regeln samt "Bridge eingerichtet", dazu die
- * Schichtspannen.
+ * Schichtspannen und der Tageslicht-Stand.
  *
  * LESEFEHLER WERDEN SICHTBAR. Jede Quelle ist ein [Quelle]: [Quelle.Bekannt] mit dem Wert, oder
  * [Quelle.Unbekannt], wenn sie sich nicht lesen liess. Eine unlesbare Quelle wird NIE zur leeren
@@ -78,15 +79,18 @@ enum class SpurStand { BEKANNT, UNBEKANNT }
 /**
  * Alles, was die Tagesleiste aus dem Bestand braucht - je Quelle gelesen oder unbekannt.
  *
- * Ausserdem NICHT enthalten, weil es nicht aus dem Bestand dieser Schicht kommt: die Hell-Uhrzeit
- * (`DimDndEinstellungen.hellUm`) und der Tag der Sonne (`LichtEinstellungen.tageslicht`) - die liefert
- * der Aufrufer aus dem Tageslicht-Stand, und `jetzt`/Zone fuer `dienstzeitAus` ebenso.
+ * [tageslicht] ist KEINE [Quelle] und haengt an keiner Spur ([stand]): ohne Ort heisst fail-safe "keine
+ * Einschraenkung" (Licht an, voller Dimm-Nachlauf), wie zur Laufzeit - das gilt auch, wenn das Lesen scheitert.
+ *
+ * Ausserdem NICHT enthalten, weil es nicht aus dem Bestand kommt: `jetzt` und Zone fuer `dienstzeitAus` und
+ * den Tag, dessen Sonne gilt - die liefert der Aufrufer.
  */
 data class TagesleisteQuellen(
     val dimmer: Quelle<DimmerQuelle>,
     val nichtStoeren: Quelle<NichtStoerenQuelle>,
     val licht: Quelle<LichtQuelle>,
-    val spannen: Quelle<List<ShiftSpan>>
+    val spannen: Quelle<List<ShiftSpan>>,
+    val tageslicht: TageslichtStand = TageslichtStand.ohneOrt()
 ) {
     /**
      * Ob [spur] sich aus gelesenen Quellen rechnen laesst. Eine Spur ist unbekannt, sobald EINE Quelle

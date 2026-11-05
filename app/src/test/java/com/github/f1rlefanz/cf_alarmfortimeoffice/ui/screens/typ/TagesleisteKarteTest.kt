@@ -25,6 +25,10 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.Quelle
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.Spur
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.Tagesleiste
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.TagesleisteQuellen
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.HellAb
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.Ort
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.OrtQuelle
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.TageslichtStand
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.DarkColorScheme
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -32,7 +36,10 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.mockito.kotlin.mock
+import java.time.Instant
+import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.ZoneId
 import java.time.ZoneOffset
 import kotlin.math.max
 import kotlin.math.min
@@ -141,8 +148,8 @@ class TagesleisteKarteTest {
 
     // ── Der Schalter „Schichtdefinition aktiviert“ ───────────────────────────────────────────
 
-    private fun hueRegel() = HueSchedule(
-        id = "r1", name = "F", shiftPattern = "F", enabled = true,
+    private fun hueRegel(hellAb: HellAb = HellAb.IMMER) = HueSchedule(
+        id = "r1", name = "F", shiftPattern = "F", enabled = true, hellAb = hellAb,
         timeRanges = listOf(
             HueTimeRange(
                 listOf(
@@ -212,6 +219,55 @@ class TagesleisteKarteTest {
         assertFalse(rechne(ausPlus, gespeichert = null).typAusgeschaltet)
         assertFalse(rechne(ausFundCode, gespeichert = null).typAusgeschaltet)
         assertTrue(rechne(ausFundCode.copy(isEnabled = false), gespeichert = null).typAusgeschaltet)
+    }
+
+    // ── Tageslicht: dieselbe Bedingung wie zur Laufzeit, keine zweite Rechnung ────────────────
+
+    private val berlin = TageslichtStand(Ort(52.52, 13.40, OrtQuelle.PLZ, null), ZoneId.of("Europe/Berlin"))
+
+    /** Minute des Tages, zu der es in Berlin am Tag von [jetzt] (9.11.2026) hell wird: rund 07:15. */
+    private fun sonnenaufgangBerlin(): Int =
+        Instant.ofEpochMilli(berlin.hellZeitpunkt(LocalDate.of(2026, 11, 9), HellAb.SONNENAUFGANG)!!)
+            .atZone(berlin.zone).toLocalTime().let { it.hour * 60 + it.minute }
+
+    @Test
+    fun `Licht nur bei Dunkelheit - mit Ort entfaellt es bei einem Wecker im Hellen, ohne Ort bleibt es`() {
+        val sonnenaufgang = sonnenaufgangBerlin()
+        assertTrue("04:30 liegt vor dem Sonnenaufgang", 4 * 60 + 30 < sonnenaufgang)
+        assertTrue("10:00 liegt nach dem Sonnenaufgang", sonnenaufgang < 10 * 60)
+        val licht = Quelle.Bekannt(LichtQuelle(true, listOf(hueRegel(HellAb.SONNENAUFGANG))) { _, _, _, _ -> null })
+        val spaetSpan = span("F", LocalDateTime.of(2026, 11, 10, 14, 0), LocalDateTime.of(2026, 11, 10, 22, 0))
+        val frueh = quellen(licht = licht)
+        val spaet = quellen(spannen = Quelle.Bekannt(listOf(spaetSpan)), licht = licht)
+
+        assertEquals(listOf(Balken(Spur.LICHT, 630, 650)), rechne(q = frueh.copy(tageslicht = berlin)).leiste.spur(Spur.LICHT))
+        assertEquals(
+            emptyList<Balken>(),
+            rechne(entwurf(weckzeit = "10:00"), q = spaet.copy(tageslicht = berlin)).leiste.spur(Spur.LICHT)
+        )
+        // Ohne Ort wird die Bedingung nicht behauptet (fail-safe wie zur Laufzeit).
+        assertEquals(listOf(Balken(Spur.LICHT, 960, 980)), rechne(entwurf(weckzeit = "10:00"), q = spaet).leiste.spur(Spur.LICHT))
+    }
+
+    @Test
+    fun `Dimm-Nachlauf bis hell - mit Ort endet er beim Sonnenaufgang, ohne Ort laeuft er voll`() {
+        val sonnenaufgang = sonnenaufgangBerlin()
+        assertTrue("Der Sonnenaufgang liegt im Nachlauf 07:00 bis 08:00", 7 * 60 < sonnenaufgang && sonnenaufgang < 8 * 60)
+        val fenster = DimWindow(
+            startAnchor = DimAnchor.CLOCK, startClockMinutes = 22 * 60,
+            endAnchor = DimAnchor.ALARM_SONST_CLOCK, endClockMinutes = 9 * 60,
+            weckzeitNachlaufMinuten = 60, nachlaufBisHell = HellAb.SONNENAUFGANG
+        )
+        val spanne = span("F", LocalDateTime.of(2026, 11, 10, 8, 0), LocalDateTime.of(2026, 11, 10, 16, 0))
+        val q = quellen(spannen = Quelle.Bekannt(listOf(spanne)), dimmer = dimQuelle(fenster))
+
+        val ohneOrt = rechne(entwurf(weckzeit = "07:00"), q = q, position = Blockposition.MITTLERER).leiste.spur(Spur.DIMMEN)
+        val mitOrt = rechne(entwurf(weckzeit = "07:00"), q = q.copy(tageslicht = berlin), position = Blockposition.MITTLERER)
+            .leiste.spur(Spur.DIMMEN)
+
+        // Der Wecker des Folgetags (Minute 1800 = dessen 0:00): 07:00 ist 2220, der volle Nachlauf endet 2280.
+        assertEquals(2280, ohneOrt.single().bisMin)
+        assertEquals(1800 + sonnenaufgang, mitOrt.single().bisMin)
     }
 
     // ── Lesefehler sagen es, statt leer zu bleiben (#196) ────────────────────────────────────

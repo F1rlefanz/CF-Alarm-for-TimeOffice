@@ -24,6 +24,10 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.SpurStand
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.TagesleisteQuellen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.alsQuelle
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.fehlerAlsUnbekannt
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.Ort
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.OrtQuelle
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.TageslichtQuelle
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.TageslichtStand
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IShiftUseCase
 import kotlinx.coroutines.CancellationException
@@ -60,6 +64,7 @@ import org.mockito.kotlin.verifyBlocking
 import org.mockito.kotlin.whenever
 import java.io.IOException
 import java.time.LocalDateTime
+import java.time.ZoneId
 
 /**
  * Die Quellen der Tagesleiste im `ShiftViewModel` (Umbau #196, SPEC 3.3 Punkt 3).
@@ -105,6 +110,7 @@ class TagesleisteQuellenTest {
     ) {
         var angefasst = 0
         var hueGraphGebaut = 0
+        var tageslichtGeholt = 0
         val holder = CalendarStateHolder()
         val alarmUseCase = mock<IAlarmUseCase>()
         lateinit var vm: ShiftViewModel
@@ -116,7 +122,8 @@ class TagesleisteQuellenTest {
         dimRegeln: Flow<List<DimRule>> = flowOf(listOf(dimRegel)),
         dndToggles: DndPrefs.Toggles = toggles,
         hueRegeln: Result<List<HueSchedule>> = Result.success(listOf(hueRegel)),
-        spannen: Result<List<ShiftSpan>> = Result.success(listOf(spanne))
+        spannen: Result<List<ShiftSpan>> = Result.success(listOf(spanne)),
+        tageslicht: TageslichtQuelle = TageslichtQuelle.OHNE
     ): Welt {
         val w = Welt(dimRegeln, dndToggles, hueRegeln, spannen)
         val config = ShiftConfig(definitions = emptyList())
@@ -156,7 +163,8 @@ class TagesleisteQuellenTest {
             dndPrefs = dagger.Lazy { w.angefasst++; dnd },
             shiftSpanStore = dagger.Lazy { w.spanStore },
             dimOverlayPrefs = dagger.Lazy { w.angefasst++; overlay },
-            hueConfigRepository = dagger.Lazy { w.angefasst++; hue }
+            hueConfigRepository = dagger.Lazy { w.angefasst++; hue },
+            tageslichtQuelle = dagger.Lazy { w.tageslichtGeholt++; tageslicht }
         )
         return w
     }
@@ -174,6 +182,45 @@ class TagesleisteQuellenTest {
     private fun TagesleisteQuellen.staende(): Map<Spur, SpurStand> = Spur.entries.associateWith { stand(it) }
 
     private fun alleBekannt() = Spur.entries.associateWith { SpurStand.BEKANNT }
+
+    // --- Tageslicht: kein Bestand dieser Schicht, und ohne Ort heisst keine Einschraenkung ---
+
+    @Test
+    fun `der Tageslicht-Stand kommt aus der Quelle und wird erst beim Abo gelesen`() = runTest(dispatcher) {
+        val berlin = TageslichtStand(Ort(52.52, 13.40, OrtQuelle.PLZ, null), ZoneId.of("Europe/Berlin"))
+        var gelesen = 0
+        val w = welt(
+            tageslicht = object : TageslichtQuelle {
+                override suspend fun stand(): TageslichtStand {
+                    gelesen++
+                    return berlin
+                }
+            }
+        )
+
+        runCurrent()
+        assertEquals("Das Bauen des ViewModels fasst die Quelle nicht an", 0, w.tageslichtGeholt)
+        assertEquals(0, gelesen)
+
+        val q = lese(w)
+
+        assertSame(berlin, q.tageslicht)
+        assertEquals(1, gelesen)
+    }
+
+    @Test
+    fun `wirft die Tageslicht-Quelle doch, gilt kein Ort - und keine andere Spur faellt aus`() = runTest(dispatcher) {
+        val q = lese(
+            welt(
+                tageslicht = object : TageslichtQuelle {
+                    override suspend fun stand(): TageslichtStand = throw IOException("tageslicht nicht lesbar")
+                }
+            )
+        )
+
+        assertNull(q.tageslicht.ort)
+        assertEquals(alleBekannt(), q.staende())
+    }
 
     // --- Der Kern: Lesefehler wird sichtbar, nicht leer -------------------------------------
 

@@ -55,6 +55,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.TAGESLEISTE_MIN
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.Tagesleiste
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.TagesleisteEingabe
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.TagesleisteQuellen
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.TageslichtAmMustertag
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.dienstzeitAus
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.dimmenUndNichtStoeren
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.licht
@@ -62,6 +63,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.standardBlockposit
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.tagesleiste
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.BrandRedLightMode
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
+import java.time.Instant
 import java.time.ZoneId
 import kotlin.math.max
 import kotlin.math.roundToInt
@@ -225,6 +227,10 @@ internal object TagesleisteKarteLogik {
         val dimmer = quellen.dimmer.wertOderNull()
         val nichtStoeren = quellen.nichtStoeren.wertOderNull()
         val lichtQuelle = quellen.licht.wertOderNull()
+        // Die Sonne von heute: der Mustertag hat kein Datum, die Tageslicht-Bedingung braucht aber eins.
+        // Ohne Ort liefert `hellZeitpunkt` null, also keine Einschraenkung - wie zur Laufzeit.
+        val sonne = quellen.tageslicht
+        val sonnentag = Instant.ofEpochMilli(jetztMs).atZone(sonne.zone).toLocalDate()
 
         var eingabe = TagesleisteEingabe(
             name = anzeigeName(gespeicherterName, entwurf),
@@ -245,7 +251,10 @@ internal object TagesleisteKarteLogik {
                     dimEnabled = dimmer.an,
                     regeln = dimmer.regeln,
                     nichtStoeren = nichtStoeren?.toggles ?: DndPrefs.Toggles(followDimmerEnabled = false, duringShiftEnabled = false),
-                    ausgenommeneSchichten = nichtStoeren?.ausgenommeneSchichten.orEmpty()
+                    ausgenommeneSchichten = nichtStoeren?.ausgenommeneSchichten.orEmpty(),
+                    hellUm = { art ->
+                        sonne.hellZeitpunkt(sonnentag, art)?.let { Instant.ofEpochMilli(it).atZone(sonne.zone).toLocalTime() }
+                    }
                 ),
                 dimmer.regelwahl
             )
@@ -258,7 +267,11 @@ internal object TagesleisteKarteLogik {
             // Ein Lesefehler der Hue-Regeln kommt hier nie als leere Liste an: der Adapter wird nur mit
             // gelesenen Regeln gerufen (KDoc von `licht`).
             eingabe = eingabe.copy(
-                licht = licht(eingabe, LichtEinstellungen(lichtQuelle.konfiguriert, lichtQuelle.regeln), lichtQuelle.vorlaufMinuten)
+                licht = licht(
+                    eingabe,
+                    LichtEinstellungen(lichtQuelle.konfiguriert, lichtQuelle.regeln, TageslichtAmMustertag(sonnentag, sonne)),
+                    lichtQuelle.vorlaufMinuten
+                )
             )
         }
         return TagesleisteAnzeige(gelesen = true, leiste = tagesleiste(eingabe), unbekannt = unbekannt, typNochNichtAngelegt = gespeicherterName == null)

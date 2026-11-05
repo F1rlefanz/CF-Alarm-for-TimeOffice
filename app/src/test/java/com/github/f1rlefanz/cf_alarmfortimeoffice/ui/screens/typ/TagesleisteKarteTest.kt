@@ -13,6 +13,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueLightAction
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueSchedule
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueTimeRange
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.TargetType
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.SchichttypEinordnen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftKategorie
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpan
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.Balken
@@ -63,9 +64,10 @@ class TagesleisteKarteTest {
         kategorie: ShiftKategorie = ShiftKategorie.DIENST,
         weckzeit: String = "04:30",
         weckerAn: Boolean = true,
-        still: Boolean = false
+        still: Boolean = false,
+        isEnabled: Boolean = true
     ) = TypEntwurf(
-        name = name, muster = listOf(name), weckzeitText = weckzeit, isEnabled = true, isSilent = still,
+        name = name, muster = listOf(name), weckzeitText = weckzeit, isEnabled = isEnabled, isSilent = still,
         weckerAn = weckerAn, kategorie = kategorie
     )
 
@@ -135,6 +137,81 @@ class TagesleisteKarteTest {
         }
         // Und selbst wenn man sie rechnete: Ignorieren ergibt keine Leiste.
         assertEquals(Tagesleiste.LEER, rechne(entwurf(kategorie = ShiftKategorie.IGNORIEREN)).leiste)
+    }
+
+    // ── Der Schalter „Schichtdefinition aktiviert“ ───────────────────────────────────────────
+
+    private fun hueRegel() = HueSchedule(
+        id = "r1", name = "F", shiftPattern = "F", enabled = true,
+        timeRanges = listOf(
+            HueTimeRange(
+                listOf(
+                    HueLightAction(
+                        targetType = TargetType.GROUP, targetId = "1", actionType = ActionType.TURN_ON,
+                        on = true, duration = 20, isGroup = true
+                    )
+                )
+            )
+        )
+    )
+
+    /** Alles, was auf die Leiste kaeme: Spanne, Dimm-Regel und Hue-Regel mit Bridge. */
+    private fun vollBestueckt() = quellen(
+        dimmer = dimQuelle(nachtDavor),
+        licht = Quelle.Bekannt(LichtQuelle(true, listOf(hueRegel())) { _, _, _, _ -> null })
+    )
+
+    private fun assertAusgeschaltet(anzeige: TagesleisteAnzeige) {
+        assertTrue(anzeige.gelesen)
+        assertTrue(anzeige.typAusgeschaltet)
+        assertEquals(Tagesleiste.LEER, anzeige.leiste)
+        assertEquals(emptyList<Spur>(), anzeige.unbekannt)
+        // Die Laufzeit erkennt den Typ gar nicht (`ShiftRecognitionEngine`): „Im Kalender steht noch kein Termin“
+        // waere falsch, denn am Kalender liegt es nicht.
+        assertNull(TagesleisteTexte.leistenHinweis(anzeige.leiste.hinweis, anzeige.typNochNichtAngelegt))
+    }
+
+    @Test
+    fun `ein ausgeschalteter Typ zeigt keinen Ablauf - der Schalter wirkt sofort`() {
+        assertAusgeschaltet(rechne(entwurf(isEnabled = false), q = vollBestueckt()))
+
+        // Derselbe Entwurf eingeschaltet: Weckpunkt, Dimmen und Licht sind da.
+        val an = rechne(entwurf(isEnabled = true), q = vollBestueckt())
+        assertFalse(an.typAusgeschaltet)
+        assertEquals(630, an.leiste.weckpunkte.single().minute)
+        assertEquals(listOf(Balken(Spur.DIMMEN, 240, 630)), an.leiste.spur(Spur.DIMMEN))
+        assertEquals(listOf(Balken(Spur.LICHT, 630, 650)), an.leiste.spur(Spur.LICHT))
+    }
+
+    @Test
+    fun `ein ausgeschalteter Typ braucht keine Quelle - unlesbar und noch nicht gelesen sagen nichts`() {
+        assertAusgeschaltet(rechne(entwurf(isEnabled = false), q = null))
+        assertAusgeschaltet(rechne(entwurf(isEnabled = false), q = quellen(spannen = Quelle.Unbekannt)))
+        assertAusgeschaltet(
+            rechne(
+                entwurf(isEnabled = false),
+                q = TagesleisteQuellen(Quelle.Unbekannt, Quelle.Unbekannt, Quelle.Unbekannt, Quelle.Unbekannt)
+            )
+        )
+    }
+
+    @Test
+    fun `der Hinweis eines ausgeschalteten Typs verspricht kein Mitrechnen`() {
+        ShiftKategorie.entries.forEach { kategorie ->
+            val text = TagesleisteTexte.hinweis(kategorie, typAusgeschaltet = true)
+            assertEquals("$kategorie", TagesleisteTexte.AUSGESCHALTET, text)
+            assertFalse("$kategorie", text.contains("rechnet sofort mit"))
+        }
+    }
+
+    @Test
+    fun `eine Neuanlage ist nicht ausgeschaltet - ausser der Nutzer legt den Schalter im Entwurf um`() {
+        val ausPlus = TypEntwurf.aus(ShiftEditFormular.leererTyp())
+        val ausFundCode = TypEntwurf.aus(SchichttypEinordnen.neuerTypAusCode("F", ShiftKategorie.DIENST))
+
+        assertFalse(rechne(ausPlus, gespeichert = null).typAusgeschaltet)
+        assertFalse(rechne(ausFundCode, gespeichert = null).typAusgeschaltet)
+        assertTrue(rechne(ausFundCode.copy(isEnabled = false), gespeichert = null).typAusgeschaltet)
     }
 
     // ── Lesefehler sagen es, statt leer zu bleiben (#196) ────────────────────────────────────

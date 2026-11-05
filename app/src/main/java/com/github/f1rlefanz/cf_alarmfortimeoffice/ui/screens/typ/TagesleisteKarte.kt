@@ -85,6 +85,13 @@ internal object TagesleisteTexte {
      */
     const val NEUER_TYP_OHNE_EINTRAG = "Der Typ ist noch nicht angelegt, darum zeigt die Leiste noch keinen Eintrag."
 
+    /**
+     * Steht im ausgeschalteten Zustand statt [hinweis]: zur Laufzeit erkennt `ShiftRecognitionEngine` so einen
+     * Typ gar nicht, also gaebe es keinen Tag zu zeigen - und „rechnet sofort mit“ waere falsch.
+     */
+    const val AUSGESCHALTET = "Dieser Typ ist ausgeschaltet und wird nicht erkannt: kein Wecker, kein Dimmen, " +
+        "kein „Nicht stören“ und kein Licht für ihn. Schaltest du ihn oben wieder ein, zeigt die Leiste seinen Ablauf."
+
     fun titel(name: String): String = "So läuft ein Tag „$name“"
 
     fun leistenHinweis(hinweis: Hinweis?, typNochNichtAngelegt: Boolean): String? = when {
@@ -93,8 +100,11 @@ internal object TagesleisteTexte {
         else -> hinweis.text
     }
 
-    fun hinweis(kategorie: ShiftKategorie): String =
-        if (WeckerAbschnittLogik.zeigtWeckerKarte(kategorie)) "$ZEITRAUM $RECHNET_MIT" else ZEITRAUM
+    fun hinweis(kategorie: ShiftKategorie, typAusgeschaltet: Boolean = false): String = when {
+        typAusgeschaltet -> AUSGESCHALTET
+        WeckerAbschnittLogik.zeigtWeckerKarte(kategorie) -> "$ZEITRAUM $RECHNET_MIT"
+        else -> ZEITRAUM
+    }
 
     fun spur(spur: Spur): String = when (spur) {
         Spur.EINTRAG -> "Eintrag"
@@ -127,7 +137,9 @@ internal data class TagesleisteAnzeige(
     val leiste: Tagesleiste,
     val unbekannt: List<Spur>,
     /** Der Typ steht noch nicht in der Konfiguration (Neuanlage): es gibt weder Spanne noch Regeln. */
-    val typNochNichtAngelegt: Boolean = false
+    val typNochNichtAngelegt: Boolean = false,
+    /** Der Schalter „Schichtdefinition aktiviert“ steht aus: die Karte zeigt keinen Ablauf, nur den Text dazu. */
+    val typAusgeschaltet: Boolean = false
 ) {
     companion object {
         val WIRD_GELESEN = TagesleisteAnzeige(gelesen = false, leiste = Tagesleiste.LEER, unbekannt = emptyList())
@@ -182,7 +194,8 @@ internal object TagesleisteKarteLogik {
      *   Neuanlage. Dimm-Regeln, Hue-Regeln und Schichtspannen haengen alle am GESPEICHERTEN Namen: mit
      *   dem Entwurfsnamen verschwaenden Dimmen und Licht, sobald jemand ein Zeichen im Namen aendert.
      *   Ein Typ, der noch nicht angelegt ist, hat auch keine Spanne.
-     * @param quellen `null` = noch nicht gelesen ([TagesleisteAnzeige.WIRD_GELESEN]).
+     * @param quellen `null` = noch nicht gelesen ([TagesleisteAnzeige.WIRD_GELESEN]). Ein ausgeschalteter
+     *   Typ braucht keine Quelle: er wird nicht erkannt, also gibt es nichts zu rechnen.
      */
     fun rechne(
         entwurf: TypEntwurf,
@@ -192,6 +205,15 @@ internal object TagesleisteKarteLogik {
         jetztMs: Long,
         zone: ZoneId
     ): TagesleisteAnzeige {
+        if (!entwurf.isEnabled) {
+            return TagesleisteAnzeige(
+                gelesen = true,
+                leiste = Tagesleiste.LEER,
+                unbekannt = emptyList(),
+                typNochNichtAngelegt = gespeicherterName == null,
+                typAusgeschaltet = true
+            )
+        }
         if (quellen == null) return TagesleisteAnzeige.WIRD_GELESEN
         val unbekannt = unbekannteSpuren(quellen)
         // Ohne Spannen gibt es keine Dienstzeit - und die legt fest, wo der Weckpunkt liegt. „Nicht lesbar“
@@ -301,7 +323,8 @@ private val ACHSE = listOf(
 /**
  * Die Karte „So läuft ein Tag <Name>“ (SPEC 3.3 Punkt 3, Prototyp `zeigeTyp`): Hinweis, bei Dienst und
  * Rufbereitschaft die Chips der Blockposition, die Leiste mit Achse und Legende, die Ereignisse und der Link
- * in den Bereich „Wecker“. Zustandslos - der Entwurf und die Blockposition gehoeren der Seite.
+ * in den Bereich „Wecker“. Ein ausgeschalteter Typ zeigt nur Titel, [TagesleisteTexte.AUSGESCHALTET] und den
+ * Link. Zustandslos - der Entwurf und die Blockposition gehoeren der Seite.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -337,13 +360,13 @@ internal fun TagesleisteKarte(
                     .semantics { heading() }
             )
             Text(
-                TagesleisteTexte.hinweis(kategorie),
+                TagesleisteTexte.hinweis(kategorie, anzeige.typAusgeschaltet),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = rand.padding(bottom = SpacingConstants.SPACING_MEDIUM)
             )
 
-            if (TagesleisteKarteLogik.zeigtBlockwahl(kategorie)) {
+            if (TagesleisteKarteLogik.zeigtBlockwahl(kategorie) && !anzeige.typAusgeschaltet) {
                 // FlowRow: vier Chips brechen bei 320 dp um, statt abgeschnitten zu werden.
                 FlowRow(
                     modifier = rand.padding(bottom = SpacingConstants.SPACING_MEDIUM),
@@ -373,14 +396,14 @@ internal fun TagesleisteKarte(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = rand.padding(bottom = SpacingConstants.SPACING_MEDIUM)
                 )
-            } else {
+            } else if (!anzeige.typAusgeschaltet) {
                 Column(modifier = rand.padding(bottom = 4.dp)) {
                     Leiste(anzeige.leiste, dunkel)
                     Achse()
                 }
             }
 
-            Legende(dunkel)
+            if (!anzeige.typAusgeschaltet) Legende(dunkel)
 
             if (anzeige.unbekannt.isNotEmpty()) {
                 Text(

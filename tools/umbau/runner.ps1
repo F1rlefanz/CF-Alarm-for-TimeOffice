@@ -396,7 +396,8 @@ try {
         Log "#${nr} Lauf $lauf ($model, Cap $cap): $($kandidat.title)"
         if ($DryRun) { break }
 
-        if (-not (EmulatorBereit)) { Kommentar $epic.number "Runner gestoppt: der Emulator ist nicht verfuegbar (siehe STATUS.txt)."; break }
+        # Pakete mit ohne-geraet brauchen keinen Emulator (und laufen auch, wenn er fehlt).
+        if (-not ($kandidat.L -contains 'ohne-geraet') -and -not (EmulatorBereit)) { Kommentar $epic.number "Runner gestoppt: der Emulator ist nicht verfuegbar (siehe STATUS.txt)."; break }
         Worktree 'integration' $Integration 'origin/main' | Out-Null
         $wt = Worktree "$nr" $branch "origin/$Integration"
         Label $nr @('in-arbeit', "lauf-$lauf") @('bereit')

@@ -390,7 +390,7 @@ try {
         Worktree 'integration' $Integration 'origin/main' | Out-Null
         $wt = Worktree "$nr" $branch "origin/$Integration"
         Label $nr @('in-arbeit', "lauf-$lauf") @('bereit')
-        Push-Location $wt; try { & .\gradlew.bat testDebugUnitTest lintDebug -q *> (Join-Path $Logs "vorwaermen-$nr.log") } catch {} finally { Pop-Location }
+        Push-Location $wt; try { & .\gradlew.bat testDebugUnitTest compileDebugAndroidTestKotlin lintDebug -q *> (Join-Path $Logs "vorwaermen-$nr.log") } catch {} finally { Pop-Location }
 
         $out = StarteClaude (PaketZiel $kandidat $lauf $cap $branch) $model $cap $wt "paket-$nr-lauf$lauf"
         if (LimitWarten $out) { continue }

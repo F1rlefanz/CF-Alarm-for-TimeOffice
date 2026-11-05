@@ -138,7 +138,7 @@ Prompt-Werkstatt. Er arbeitet in einer Schleife:
    Bericht im Epic**. Keine Etappe offen → **Ende**.
 3. **Lauf:** Labels `in-arbeit` und `lauf-1` (bzw. `lauf-2`) setzen, Worktree unter
    `..\CFAlarm-umbau-wt\<nr>` anlegen, `keystore.properties`, `local.properties` und die Keystore-Datei hineinkopieren
-   (belegt 16.10.2026: so baut er), Gradle vorwärmen (`testDebugUnitTest lintDebug`), dann
+   (belegt 16.10.2026: so baut er), Gradle online vorwärmen (`testDebugUnitTest compileDebugAndroidTestKotlin lintDebug`; die Schleuse baut danach offline und scheitert sonst an neuen Abhängigkeiten), dann
    `claude -p "/goal …" --model <claude-sonnet-5-5 | claude-opus-5-5 nach Risiko> --effort xhigh
    --max-turns <Cap+5>`. Der Prozess bekommt `ANDROID_SERIAL=emulator-5554` (adb und Gradle-Install
    treffen dann nur den Emulator, auch wenn das Fairphone währenddessen angesteckt wird),

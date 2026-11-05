@@ -40,6 +40,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftKategorie
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.TagesleisteQuellen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.CompactButton
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.KnopfZeile
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.SimpleBackTopAppBar
@@ -52,6 +53,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.ShiftViewModel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.titel
+import java.time.ZoneId
 
 /** Nutzertexte der Typ-Seite, als Konstanten (ein Test haelt sie fest). */
 internal object TypSeiteTexte {
@@ -72,9 +74,21 @@ internal object TypSeiteTexte {
     const val NEUER_TYP_TITEL = "Neuer Typ"
     const val NEUER_TYP_VERWERFEN_TITEL = "Neuen Typ verwerfen?"
 
-    /** Was Zurueck ohne „Erstellen“ bedeutet; bei einem Fund-Code sagt der Satz, wo der Code bleibt. */
-    fun neuerTypVerwerfenText(fundCode: String?): String =
-        "Dieser Typ ist noch nicht angelegt. Gehst du zurück, wird er nicht angelegt." +
+    /**
+     * Der Link „Im Bereich „Wecker“ …“ der Tagesleiste (#197) verlaesst die Seite wie Zurueck - und fragt bei
+     * ungespeicherten Aenderungen genauso. Der Satz nennt das Ziel, nicht „zurueck“.
+     */
+    const val VERWERFEN_WOCHE_TEXT =
+        "Deine Änderungen an diesem Typ sind noch nicht gespeichert. Öffnest du den Bereich „Wecker“, gehen sie " +
+            "verloren. Der gespeicherte Typ und seine Wecker bleiben, wie sie sind."
+
+    /**
+     * Was Zurueck ohne „Erstellen“ bedeutet; bei einem Fund-Code sagt der Satz, wo der Code bleibt.
+     * [zurWoche]: der Weg geht nicht zurueck, sondern in den Bereich „Wecker“ (Link der Tagesleiste).
+     */
+    fun neuerTypVerwerfenText(fundCode: String?, zurWoche: Boolean = false): String =
+        "Dieser Typ ist noch nicht angelegt. " +
+            (if (zurWoche) "Öffnest du den Bereich „Wecker“, wird er nicht angelegt." else "Gehst du zurück, wird er nicht angelegt.") +
             if (fundCode != null) {
                 " „$fundCode“ bleibt unter „${EinordnenTexte.FUND_TITEL}“."
             } else {
@@ -199,7 +213,8 @@ private val EntwurfSaver: Saver<TypEntwurf, Any> = Saver(
  * Die Typ-Seite (Umbau, SPEC 3.3): ein Schichttyp als eigener Bildschirm statt des Dialogs.
  * Oben die Karte „Typ“ ([TypAbschnitt]: Name, Muster, Kategorie), darunter der Sonderfall-Kasten
  * ([SonderfallKasten], nur Rufbereitschaft, Krank, Ignorieren) und die Karte „Wecker“
- * ([WeckerAbschnitt], nicht bei Krank und Ignorieren); Tagesleiste, Dimmen, DND und Licht kommen mit
+ * ([WeckerAbschnitt], nicht bei Krank und Ignorieren); zwischen „Typ“ und Sonderfall-Kasten steht die
+ * Tagesleiste „So läuft ein Tag“ ([TagesleisteKarte], nicht bei Ignorieren). Dimmen, DND und Licht kommen mit
  * eigenen Paketen.
  *
  * ENTWURF STATT SOFORT-SCHREIBEN (bewusste Abweichung vom Prototyp, der keinen Speichern-Knopf
@@ -226,10 +241,13 @@ fun TypSeite(
     definitionId: String,
     shiftViewModel: ShiftViewModel,
     onZurueck: () -> Unit,
+    onZurWoche: () -> Unit,
     vorlage: ShiftDefinition? = null,
     fundCode: String? = null
 ) {
     val shiftState by shiftViewModel.uiState.collectAsStateWithLifecycle()
+    // `null` = noch nicht gelesen (kein Fehler); jede Quelle fuehrt ihren Lesefehler selbst (#196).
+    val quellen by shiftViewModel.tagesleisteQuellen.collectAsStateWithLifecycle()
     val config = shiftState.currentShiftConfig
     val neu = vorlage != null
     val definition = vorlage ?: config?.definitions?.firstOrNull { it.id == definitionId }
@@ -260,9 +278,11 @@ fun TypSeite(
         config = config,
         neu = neu,
         fundCode = fundCode,
+        quellen = quellen,
         schreibe = shiftViewModel::updateShiftConfig,
         legeAusCodeAn = shiftViewModel::legeTypAusCodeAn,
-        onZurueck = onZurueck
+        onZurueck = onZurueck,
+        onZurWoche = onZurWoche
     )
 }
 
@@ -330,9 +350,11 @@ private fun TypSeiteFormular(
     config: ShiftConfig?,
     neu: Boolean,
     fundCode: String?,
+    quellen: TagesleisteQuellen?,
     schreibe: (ShiftConfig) -> Unit,
     legeAusCodeAn: (String, ShiftDefinition) -> Unit,
-    onZurueck: () -> Unit
+    onZurueck: () -> Unit,
+    onZurWoche: () -> Unit
 ) {
     // Der Ausgangsstand wird beim Oeffnen eingefroren und reist mit: jede Config-Emission (auch
     // die eigene nach dem Speichern, auch fremde Schreiber) liefert ein neues ShiftDefinition-
@@ -340,6 +362,11 @@ private fun TypSeiteFormular(
     val ausgang = rememberSaveable(saver = EntwurfSaver) { TypEntwurf.aus(definition) }
     var entwurf by rememberSaveable(stateSaver = EntwurfSaver) { mutableStateOf(ausgang) }
     var rueckfrageOffen by rememberSaveable { mutableStateOf(false) }
+    // Wohin „Verwerfen“ fuehrt: zur Liste (Zurueck) oder in den Bereich „Wecker“ (Link der Tagesleiste).
+    var rueckfrageZurWoche by rememberSaveable { mutableStateOf(false) }
+    // Die Blockposition der Tagesleiste gehoert der Seite wie das „+“-Feld, nicht dem Typ: sie wird nie
+    // gespeichert. `null` = die Vorgabe der Kategorie.
+    var blockposition by rememberSaveable { mutableStateOf<String?>(null) }
     // Das „+“-Feld der Karte „Typ“ und die offene Kategorie-Wahl gehoeren der Seite, nicht der Karte:
     // sie ueberstehen so Drehen, Dunkelmodus und das Scrollen der Liste (die Karte ist ein Listenelement).
     var neuesMuster by rememberSaveable { mutableStateOf("") }
@@ -353,11 +380,39 @@ private fun TypSeiteFormular(
     val kandidat = TypAbschnittLogik.mitEingabe(entwurf, neuesMuster)
     val geaendert = TypSeiteEntwurf.hatAenderungen(ausgang, kandidat)
     val zurueck: () -> Unit = {
-        if (geaendert) rueckfrageOffen = true else onZurueck()
+        if (geaendert) {
+            rueckfrageZurWoche = false
+            rueckfrageOffen = true
+        } else {
+            onZurueck()
+        }
+    }
+    // Der Link der Tagesleiste verlaesst die Seite wie Zurueck: dasselbe Gate, nur das Ziel ist ein anderes.
+    val zurWoche: () -> Unit = {
+        if (geaendert) {
+            rueckfrageZurWoche = true
+            rueckfrageOffen = true
+        } else {
+            onZurWoche()
+        }
     }
 
     // Gate, kein Ziel: siehe KDoc. Ein offener AlertDialog frisst Zurueck selbst (eigenes Fenster).
-    BackHandler(enabled = geaendert) { rueckfrageOffen = true }
+    BackHandler(enabled = geaendert) {
+        rueckfrageZurWoche = false
+        rueckfrageOffen = true
+    }
+
+    // Die Leiste rechnet bei jeder Aenderung des Entwurfs neu. `jetzt` und die Zone gelten ab dem Oeffnen
+    // der Seite (sonst traefe `remember` nie); die Dienstzeit ist die naechste ANSTEHENDE Spanne.
+    val jetztMs = remember { System.currentTimeMillis() }
+    val zone = remember { ZoneId.systemDefault() }
+    val gewaehlt = blockposition?.let { name -> TagesleisteKarteLogik.BLOCKPOSITIONEN.firstOrNull { it.name == name } }
+    val wirksamePosition = TagesleisteKarteLogik.wirksameBlockposition(entwurf.kategorie, gewaehlt)
+    val gespeicherterName = if (neu) null else definition.name
+    val anzeige = remember(entwurf, quellen, wirksamePosition, gespeicherterName) {
+        TagesleisteKarteLogik.rechne(entwurf, gespeicherterName, quellen, wirksamePosition, jetztMs, zone)
+    }
 
     Scaffold(
         topBar = {
@@ -394,6 +449,19 @@ private fun TypSeiteFormular(
                         onKategorieAendern = { kategorieWahlOffen = true },
                         aendere = aendere
                     )
+                }
+                // „So läuft ein Tag“ (SPEC 3.3 Punkt 3) direkt unter der Karte „Typ“. Bei Ignorieren gibt es sie nicht.
+                if (TagesleisteKarteLogik.zeigtKarte(entwurf.kategorie)) {
+                    item(key = "tagesleiste") {
+                        TagesleisteKarte(
+                            name = gespeicherterName ?: entwurf.name.trim(),
+                            kategorie = entwurf.kategorie,
+                            anzeige = anzeige,
+                            blockposition = wirksamePosition,
+                            onBlockposition = { blockposition = it.name },
+                            onZurWoche = zurWoche
+                        )
+                    }
                 }
                 // Sonderfall-Kasten (SPEC 3.3 Punkt 4) VOR der Karte „Wecker“, wie im Prototyp. Bei Krank und
                 // Ignorieren ersetzt er die Karte: er traegt dort den Hinweis, was der Typ stattdessen tut.
@@ -463,13 +531,21 @@ private fun TypSeiteFormular(
         AlertDialog(
             onDismissRequest = { rueckfrageOffen = false },
             title = { Text(if (neu) TypSeiteTexte.NEUER_TYP_VERWERFEN_TITEL else TypSeiteTexte.VERWERFEN_TITEL) },
-            text = { Text(if (neu) TypSeiteTexte.neuerTypVerwerfenText(fundCode) else TypSeiteTexte.VERWERFEN_TEXT) },
+            text = {
+                Text(
+                    when {
+                        neu -> TypSeiteTexte.neuerTypVerwerfenText(fundCode, zurWoche = rueckfrageZurWoche)
+                        rueckfrageZurWoche -> TypSeiteTexte.VERWERFEN_WOCHE_TEXT
+                        else -> TypSeiteTexte.VERWERFEN_TEXT
+                    }
+                )
+            },
             confirmButton = {
                 TextButton(
                     onClick = {
                         rueckfrageOffen = false
                         Logger.d(LogTags.UI, "Typ-Seite: ${if (neu) "neuer Typ" else "Aenderungen an"} ${definition.id} verworfen")
-                        onZurueck()
+                        if (rueckfrageZurWoche) onZurWoche() else onZurueck()
                     }
                 ) {
                     Text(TypSeiteTexte.VERWERFEN)

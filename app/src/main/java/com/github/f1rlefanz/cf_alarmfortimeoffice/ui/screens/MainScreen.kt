@@ -455,6 +455,9 @@ fun MainScreen(
                     definitionId = state.definitionId,
                     shiftViewModel = shiftViewModel,
                     onZurueck = { navigationViewModel.navigateBackFrom(state) },
+                    // Link der Tagesleiste: in den Tab „Wecker“ (die Tagesliste); die Seite fragt vorher bei
+                    // ungespeicherten Aenderungen, wie bei Zurueck.
+                    onZurWoche = { navigationViewModel.navigateToMainWithTab(MainTab.WECKER) },
                     vorlage = state.vorlage,
                     fundCode = state.fundCode
                 )

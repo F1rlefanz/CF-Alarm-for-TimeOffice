@@ -22,7 +22,16 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCa
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IShiftUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.LetzterSchichtStand
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftCodeSuggester
+import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpan
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpanStore
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.DimmerQuelle
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.LichtQuelle
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.NichtStoerenQuelle
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.Quelle
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.TagesleisteQuellen
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.VorlaufMinuten
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.alsQuelle
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.fehlerAlsUnbekannt
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -98,9 +107,10 @@ class ShiftViewModel @Inject constructor(
     private val errorHandler: ErrorHandler,
     /**
      * Fuer den Muster-Nachzug beim Umbenennen einer Schicht ([zieheRegelmusterNach]); der
-     * Dimm-Teil zusaetzlich LESEND fuer die Statuszeile [schichtFolgen] (Regelliste und
-     * `findRuleForShift` - dieselbe Auswahl wie zur Laufzeit). [hueRuleUseCase] bleibt der
-     * Statuszeile bewusst fern, siehe [hueConfigRepository].
+     * Dimm-Teil zusaetzlich LESEND fuer die Statuszeile [schichtFolgen] und [tagesleisteQuellen]
+     * (Regelliste und `findRuleForShift` - dieselbe Auswahl wie zur Laufzeit). [hueRuleUseCase]
+     * bleibt der Statuszeile bewusst fern, siehe [hueConfigRepository]; die Tagesleiste greift nur
+     * ueber [vorlaufMinuten] darauf zu, also erst, wenn `licht()` die Vorlauf-Rechnung braucht.
      *
      * BEWUSST `dagger.Lazy`, wie in `CFAlarmApplication`: dieses ViewModel entsteht beim
      * App-Start. Direkt injiziert wuerde damit der komplette Hue-Graph (ApiClient/OkHttp mit
@@ -128,8 +138,8 @@ class ShiftViewModel @Inject constructor(
      * eingebauten Nacht-Standard ist auch seine Namensliste entfallen. Der Dimmer bindet nur
      * noch ueber `DimRule.shiftPattern`, und das zieht `dimRuleUseCase` oben nach.
      *
-     * Zusaetzlich LESEND fuer die Statuszeile [schichtFolgen]: die beiden Quellen-Schalter und
-     * die Dienstzeit-Ausnahmen.
+     * Zusaetzlich LESEND fuer die Statuszeile [schichtFolgen] (die beiden Quellen-Schalter und die
+     * Dienstzeit-Ausnahmen) und fuer [tagesleisteQuellen] (dazu der Ruf-Cutoff).
      *
      * Ebenfalls `dagger.Lazy`, aus demselben Grund wie oben: dieses ViewModel entsteht beim
      * App-Start, und die Klasse soll erst angefasst werden, wenn wirklich umbenannt wird oder
@@ -137,18 +147,19 @@ class ShiftViewModel @Inject constructor(
      */
     private val dndPrefs: dagger.Lazy<DndPrefs>,
     /**
-     * Nur LESEND, fuer [ShiftUiState.letzterSchichtStand]. `dagger.Lazy` wie oben: der Read
-     * passiert erst nach der ersten Event-Emission, nicht beim Bauen des ViewModels.
+     * Nur LESEND, fuer [ShiftUiState.letzterSchichtStand] und die Schichtspannen von
+     * [tagesleisteQuellen]. `dagger.Lazy` wie oben: der Read passiert erst nach der ersten
+     * Event-Emission bzw. beim Abo, nicht beim Bauen des ViewModels.
      */
     private val shiftSpanStore: dagger.Lazy<ShiftSpanStore>,
     /**
-     * Nur LESEND, fuer die Statuszeile [schichtFolgen]: der Dimmer-Hauptschalter (`dim_enabled`).
-     * `dagger.Lazy` wie oben - angefasst erst beim Abo.
+     * Nur LESEND, fuer die Statuszeile [schichtFolgen] und [tagesleisteQuellen]: der
+     * Dimmer-Hauptschalter (`dim_enabled`). `dagger.Lazy` wie oben - angefasst erst beim Abo.
      */
     private val dimOverlayPrefs: dagger.Lazy<DimOverlayPrefs>,
     /**
-     * Nur LESEND, fuer die Statuszeile [schichtFolgen]: Hue-Regeln und ob eine Bridge
-     * eingerichtet ist. BEWUSST das Repository und NICHT `hueRuleUseCase.get()`: das Repository
+     * Nur LESEND, fuer die Statuszeile [schichtFolgen] und [tagesleisteQuellen]: Hue-Regeln und ob
+     * eine Bridge eingerichtet ist. BEWUSST das Repository und NICHT `hueRuleUseCase.get()`: das Repository
      * liest nur den `@HueDataStore`, der Use-Case dagegen baut den Lampen- und HTTP-Graphen
      * (OkHttp) - fuer eine Anzeige, die keine Bridge braucht.
      */
@@ -215,6 +226,46 @@ class ShiftViewModel @Inject constructor(
             emit(emptyMap())
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+
+    /**
+     * `IHueRuleUseCase.getPreAlarmSunriseLeadMinutes` fuer `licht()` der Tagesleiste. Die Lambda
+     * fasst [hueRuleUseCase] erst beim AUFRUF an - nie beim Bauen und nie beim Abo von
+     * [tagesleisteQuellen]. MUSS VOR [tagesleisteQuellen] stehen (Initialisierungsreihenfolge).
+     */
+    private val vorlaufMinuten: VorlaufMinuten = { regeln, schichtname, weckzeit, stand ->
+        hueRuleUseCase.get().getPreAlarmSunriseLeadMinutes(regeln, schichtname, weckzeit, stand)
+    }
+
+    /**
+     * Alles, was die Tagesleiste der Typ-Seite aus dem Bestand braucht (Umbau #196, SPEC 3.3 Punkt 3):
+     * Dimm-Schalter und -Regeln, die Schalter von "Nicht stoeren" mit Ausnahmen und Ruf-Cutoff,
+     * Hue-Regeln samt "Bridge eingerichtet" und die Schichtspannen.
+     *
+     * DIESELBEN Stores und DASSELBE Abo wie [schichtFolgen]: gelesen wird erst beim Sammeln
+     * (`WhileSubscribed`), nichts beim Bauen - die Quellen stecken in kalten `flow {}`.
+     *
+     * `null` = noch nicht gelesen. [Quelle.Unbekannt] heisst dagegen LESEFEHLER und wird je Quelle
+     * EINZELN gefuehrt (Fang VOR dem `combine`): eine unlesbare Quelle macht nur ihre Spuren
+     * unbekannt ([TagesleisteQuellen.stand]), und sie wird NIE zur leeren Liste - "keine Dimm-Regel"
+     * hiesse "kein Dimmen". Anders als bei [schichtFolgen] steht hinter dem `combine` deshalb KEIN
+     * Fang, der alles auf "leer" setzt.
+     *
+     * Grenze: Dimm-Regeln, Dimm-Schalter und DND-Schalter degradieren in ihren Stores selbst auf
+     * "leer"/"aus" und melden den Fehler nicht weiter (`DimRuleRepository.rules`, `safeData` in
+     * `DimOverlayPrefs`/`DndPrefs`; bewusst fuer die Laufzeit, siehe Skill `cfalarm-persistenz-und-auth`).
+     * Unbekannt werden dort nur Fehler, die als Wurf bis hierher kommen; sicher erkennbar sind heute
+     * die Hue-Regeln und die Schichtspannen.
+     *
+     * MUSS VOR dem `init{}`-Block stehen (wie [schichtFolgen]).
+     */
+    val tagesleisteQuellen: StateFlow<TagesleisteQuellen?> = combine(
+        dimmerQuelle().fehlerAlsUnbekannt("Dimmer"),
+        nichtStoerenQuelle().fehlerAlsUnbekannt("Nicht stoeren"),
+        lichtQuelle().fehlerAlsUnbekannt("Hue-Regeln"),
+        spannenQuelle().fehlerAlsUnbekannt("Schichtspannen")
+    ) { dimmer, nichtStoeren, licht, spannen ->
+        TagesleisteQuellen(dimmer, nichtStoeren, licht, spannen)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     init {
         loadShiftConfig()
@@ -1000,6 +1051,40 @@ class ShiftViewModel @Inject constructor(
     private fun dndStand(): Flow<DndStand> = flow {
         val prefs = dndPrefs.get()
         emitAll(combine(prefs.toggles, prefs.shiftExcludedShifts) { t, a -> DndStand(t, a) })
+    }
+
+    // --- Quellen der Tagesleiste [tagesleisteQuellen] ---
+    //
+    // Dieselben kalten Flows wie oben (Dimmer, Hue), dazu "Nicht stoeren" mit dem Ruf-Cutoff und die
+    // Spannen. Jede Quelle fuehrt ihren Lesefehler selbst als [Quelle.Unbekannt] - siehe dort.
+
+    private fun dimmerQuelle(): Flow<Quelle<DimmerQuelle>> =
+        dimmerStand().map { Quelle.Bekannt(DimmerQuelle(it.an, it.regeln, dimRuleUseCase.get())) }
+
+    /** Eigener Flow statt [dndStand]: der Cutoff gehoert nicht in die Statuszeile (und ihre Mocks). */
+    private fun nichtStoerenQuelle(): Flow<Quelle<NichtStoerenQuelle>> = flow {
+        val prefs = dndPrefs.get()
+        emitAll(
+            combine(prefs.toggles, prefs.shiftExcludedShifts, prefs.onCallCutoffMinutes) { toggles, ausgenommen, cutoff ->
+                Quelle.Bekannt(NichtStoerenQuelle(toggles, ausgenommen, cutoff))
+            }
+        )
+    }
+
+    /** Ein Fehlschlag der Regeln ist [Quelle.Unbekannt], auch wenn die Bridge-Konfiguration lesbar war. */
+    private fun lichtQuelle(): Flow<Quelle<LichtQuelle>> = hueStand().map { hue ->
+        hue.regeln.alsQuelle("Hue-Regeln") { LichtQuelle(hue.konfiguriert, it, vorlaufMinuten) }
+    }
+
+    /**
+     * Die Spannen stehen nur als Einmal-Lesung bereit (`spansNow()`, kein Flow): sie werden bei jedem
+     * neuen Stand der Eventliste erneut gelesen - derselbe Anlass wie [aktualisiereLetztenSchichtStand],
+     * mit demselben Nachlauf: den Stand eines Syncs, der erst NACH dieser Emission schreibt, sieht die
+     * naechste.
+     */
+    private fun spannenQuelle(): Flow<Quelle<List<ShiftSpan>>> = flow {
+        val store = shiftSpanStore.get()
+        emitAll(calendarStateHolder.events.map { store.spansNow().alsQuelle("Schichtspannen") { spannen -> spannen } })
     }
 
     fun clearError() {

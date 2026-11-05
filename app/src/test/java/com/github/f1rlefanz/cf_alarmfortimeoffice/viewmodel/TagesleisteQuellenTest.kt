@@ -59,7 +59,6 @@ import org.mockito.kotlin.verifyBlocking
 import org.mockito.kotlin.whenever
 import java.io.IOException
 import java.time.LocalDateTime
-import java.time.LocalTime
 
 /**
  * Die Quellen der Tagesleiste im `ShiftViewModel` (Umbau #196, SPEC 3.3 Punkt 3).

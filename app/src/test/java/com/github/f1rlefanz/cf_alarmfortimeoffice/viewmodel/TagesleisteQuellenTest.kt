@@ -51,6 +51,7 @@ import org.junit.Assert.fail
 import org.junit.Before
 import org.junit.Test
 import org.mockito.kotlin.any
+import org.mockito.kotlin.anyOrNull
 import org.mockito.kotlin.doReturn
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.never
@@ -105,6 +106,7 @@ class TagesleisteQuellenTest {
         var angefasst = 0
         var hueGraphGebaut = 0
         val holder = CalendarStateHolder()
+        val alarmUseCase = mock<IAlarmUseCase>()
         lateinit var vm: ShiftViewModel
         lateinit var spanStore: ShiftSpanStore
         lateinit var hueUseCase: HueRuleUseCase
@@ -122,6 +124,7 @@ class TagesleisteQuellenTest {
         whenever(shiftUseCase.shiftConfig).thenReturn(flowOf(config))
         shiftUseCase.stub {
             on { getCurrentShiftConfig() } doReturn Result.success(config)
+            on { saveShiftConfig(any()) } doReturn Result.success(Unit)
             on { recognizeShiftsInEvents(any()) } doReturn Result.success(emptyList())
         }
         val dimRepo = mock<DimRuleRepository>()
@@ -144,7 +147,7 @@ class TagesleisteQuellenTest {
 
         w.vm = ShiftViewModel(
             shiftUseCase = shiftUseCase,
-            alarmUseCase = mock<IAlarmUseCase>(),
+            alarmUseCase = w.alarmUseCase,
             calendarStateHolder = w.holder,
             errorHandler = mock<ErrorHandler>(),
             dimRuleUseCase = dagger.Lazy { w.angefasst++; dimUseCase },
@@ -189,6 +192,11 @@ class TagesleisteQuellenTest {
         assertTrue(q.spannen is Quelle.Bekannt)
     }
 
+    /**
+     * Gilt auf ViewModel-Ebene: der Flow WIRFT. Die echten Stores degradieren selbst auf leer/aus und
+     * werfen nie (`DimRuleRepository.rules`, `safeData` in `DimOverlayPrefs`/`DndPrefs`) - das ist die
+     * angenommene Grenze, siehe #210 und die Betreuer-Entscheidung in #196.
+     */
     @Test
     fun `Lesefehler bei den Dimm-Regeln macht Dimmen unbekannt - und Nicht stoeren nur, solange es dem Dimmer folgt`() =
         runTest(dispatcher) {
@@ -300,6 +308,53 @@ class TagesleisteQuellenTest {
 
         assertEquals(listOf(neu), ((w.vm.tagesleisteQuellen.value)!!.spannen as Quelle.Bekannt).wert)
     }
+
+    /**
+     * #196, Befund des unabhaengigen Pruefers: Speichern eines Typs laeuft ueber `updateShiftConfig` ->
+     * `syncAlarms`, und der Sync SCHREIBT die Spannen neu - waehrend die Eventliste gleich bleibt. Ohne
+     * eigenen Ausloeser blieben die Spannen der Tagesleiste auf dem Stand von davor ("Im Kalender steht
+     * noch kein Termin dieses Typs" nach dem Umbenennen).
+     *
+     * Der Ablauf geht ueber den ECHTEN Einstieg, keinen Test-Haken: die Spannen werden NACH dem ersten
+     * Lesen umgestellt, die Eventliste bleibt dieselbe, und nur das Speichern darf sie neu lesen lassen.
+     */
+    private fun TestScope.spannenNachSpeichernNeuGelesen(syncErgebnis: Result<List<com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmInfo>>) {
+        val w = welt()
+        w.holder.updateEvents(
+            listOf(
+                CalendarEvent(
+                    id = "e1", title = "AD1",
+                    startTime = LocalDateTime.of(2026, 8, 20, 6, 0), endTime = LocalDateTime.of(2026, 8, 20, 14, 0),
+                    calendarId = "cal"
+                )
+            ),
+            complete = true
+        )
+        w.alarmUseCase.stub { onBlocking { syncAlarms(any(), any(), anyOrNull()) } doReturn syncErgebnis }
+        val vorher = lese(w)
+        assertEquals(listOf(spanne), (vorher.spannen as Quelle.Bekannt).wert)
+
+        // Der Sync schreibt die Spannen neu (hier: vor dem Speichern umgestellt - gelesen wird erst danach).
+        val neu = ShiftSpan("AD2", startTime = 5_000L, endTime = 6_000L, alarmTriggerTime = 4_500L)
+        w.spanStore.stub { onBlocking { spansNow() } doReturn Result.success(listOf(neu)) }
+
+        w.vm.updateShiftConfig(ShiftConfig(autoAlarmEnabled = true, definitions = emptyList()))
+        advanceUntilIdle()
+
+        assertEquals(
+            "Nach dem Speichern (Sync $syncErgebnis) muessen die neu geschriebenen Spannen ankommen",
+            listOf(neu),
+            ((w.vm.tagesleisteQuellen.value)!!.spannen as Quelle.Bekannt).wert
+        )
+    }
+
+    @Test
+    fun `Speichern eines Typs mit erfolgreichem Sync liest die Spannen neu - Eventliste unveraendert`() =
+        runTest(dispatcher) { spannenNachSpeichernNeuGelesen(Result.success(emptyList())) }
+
+    @Test
+    fun `Speichern eines Typs liest die Spannen auch neu, wenn der Sync scheitert - er schreibt sie vor dem Scheitern`() =
+        runTest(dispatcher) { spannenNachSpeichernNeuGelesen(Result.failure(IOException("Sync gescheitert"))) }
 
     // --- Die Abhaengigkeiten der Spuren (rein) ----------------------------------------------
 

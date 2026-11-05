@@ -51,6 +51,7 @@ import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -226,6 +227,15 @@ class ShiftViewModel @Inject constructor(
             emit(emptyMap())
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+
+    /**
+     * Zaehler, der die Schichtspannen von [tagesleisteQuellen] neu lesen laesst - hochgezaehlt am Ende jedes
+     * Alarm-Syncs nach einer Konfigurationsaenderung ([triggerAlarmCreationFromConfigUpdate]). Der Sync
+     * SCHREIBT die Spannen neu, waehrend die Eventliste dieselbe bleibt; ohne diesen Ausloeser sah die
+     * Leiste nach dem Speichern oder Umbenennen eines Typs weiter den Stand von davor. MUSS VOR
+     * [tagesleisteQuellen] stehen (Initialisierungsreihenfolge).
+     */
+    private val spannenAusloeser = MutableStateFlow(0)
 
     /**
      * `IHueRuleUseCase.getPreAlarmSunriseLeadMinutes` fuer `licht()` der Tagesleiste. Die Lambda
@@ -998,6 +1008,11 @@ class ShiftViewModel @Inject constructor(
                     Logger.w(LogTags.ALARM, "⚠️ CONFIG-UPDATE: Alarm-Sync fehlgeschlagen", error)
                 }
         } finally {
+            // Die Spannen der Tagesleiste neu lesen lassen: ein Sync (auch ein gescheiterter) hat sie
+            // womoeglich geschrieben, die Eventliste hat sich dabei nicht geaendert. VOR dem Nacharmieren,
+            // damit ein dort geworfener Fehler es nicht ueberspringt; nicht suspendierend.
+            spannenAusloeser.update { it + 1 }
+
             // AUF JEDEM AUSGANG - auch auf den drei fruehen `return` oben (Master-Pause, keine
             // Termine, unvollstaendige Liste) und auch bei einem Abbruch. Die Namenslisten sind zu
             // diesem Zeitpunkt bereits umgeschrieben; ein ausgefallenes Nacharmieren liesse den
@@ -1077,14 +1092,25 @@ class ShiftViewModel @Inject constructor(
     }
 
     /**
-     * Die Spannen stehen nur als Einmal-Lesung bereit (`spansNow()`, kein Flow): sie werden bei jedem
-     * neuen Stand der Eventliste erneut gelesen - derselbe Anlass wie [aktualisiereLetztenSchichtStand],
-     * mit demselben Nachlauf: den Stand eines Syncs, der erst NACH dieser Emission schreibt, sieht die
-     * naechste.
+     * Die Spannen stehen nur als Einmal-Lesung bereit (`spansNow()`, kein Flow) und werden deshalb bei
+     * ZWEI Anlaessen erneut gelesen:
+     *
+     * 1. Ein neuer Stand der Eventliste ([CalendarStateHolder.events]).
+     * 2. Das Ende eines Alarm-Syncs nach einer Konfigurationsaenderung ([spannenAusloeser]): der Sync
+     *    schreibt die Spannen neu, die Eventliste bleibt gleich. Beispiel: nach dem Umbenennen eines Typs
+     *    fand `dienstzeitAus` ohne Neu-Lesen nichts mehr ("Im Kalender steht noch kein Termin dieses Typs").
+     *
+     * GRENZE: Setzt der Kalender-Sync (`CalendarViewModel`) die Events VOR seinem `syncAlarms()`, liest
+     * Anlass 1 den Stand davor - diesen Sync sieht das ViewModel nicht, und kein Signal daraus kommt hier
+     * an (#211). Die naechste Eventliste oder Speicherung holt ihn nach.
      */
     private fun spannenQuelle(): Flow<Quelle<List<ShiftSpan>>> = flow {
         val store = shiftSpanStore.get()
-        emitAll(calendarStateHolder.events.map { store.spansNow().alsQuelle("Schichtspannen") { spannen -> spannen } })
+        emitAll(
+            combine(calendarStateHolder.events, spannenAusloeser) { _, _ ->
+                store.spansNow().alsQuelle("Schichtspannen") { spannen -> spannen }
+            }
+        )
     }
 
     fun clearError() {

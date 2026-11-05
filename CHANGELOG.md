@@ -27,7 +27,22 @@ Schreibkonventionen (der Generator verlässt sich darauf):
 - `### 🐛 Behoben` — Rubrik, mit Emoji wie bisher.
 - `- **Kurzfassung:** Erklärung` — ein Eintrag.
 
-## 🆕 Version 1.57.1 (Aktuell – interne Alpha)
+## 🆕 Version 1.58.0 (Aktuell – interne Alpha)
+
+**Stand:** November 2026
+
+_Jeder Schichttyp hat jetzt seine eigene Seite: Dort stellst du ihn ein und siehst gleich, wie ein Tag mit ihm abläuft._
+
+### ✨ Neu
+
+- **Eigene Seite statt Dialog:** Ein Tipp auf einen Schichttyp öffnet jetzt eine eigene Seite. Änderungen gelten erst, wenn du „Speichern“ tippst. Gehst du mit ungespeicherten Änderungen zurück, fragt die App vorher nach.
+- **Karte „Typ“:** Name, Kalender-Codes als Chips (× entfernt einen, + fügt einen hinzu) und die Kategorie mit Farbmarke, per Tipp wechselbar. Weckzeit und Muster bleiben beim Wechsel erhalten.
+- **Karte „Wecker“:** „Wecker an diesem Tag“, Weckzeit und „Stummer Wecker“ an einer Stelle. Ist der Wecker aus, bleiben die Werte ausgegraut stehen. Bei Rufbereitschaft, Krank und Ignorieren erklärt ein Kasten, was der Typ stattdessen tut.
+- **„So läuft ein Tag“:** Eine Leiste zeigt von 18 Uhr am Vortag bis 18 Uhr am Folgetag, wann gedimmt wird, wann „Nicht stören“ gilt, wann das Licht angeht und wann der Wecker klingelt. Änderst du die Weckzeit, rechnet sie sofort mit. Von dort kommst du auch in den Bereich „Wecker“. Ist ein Typ ausgeschaltet, sagt die Karte das, statt einen Ablauf zu zeigen.
+- **Neue Typen auf derselben Seite:** Das + in der Liste und „Einordnen“ führen jetzt auf die Typ-Seite. Gespeichert wird erst mit „Erstellen“, und bei einem Kürzel aus dem Kalender steht dort, woher es kommt.
+- **„Ohne Kalendereintrag“ als eigene Seite:** Die feste Zeile öffnet jetzt ebenfalls eine eigene Seite, und von dort kommst du direkt zum gewählten Typ.
+
+## Version 1.57.1
 
 **Stand:** Oktober 2026
 

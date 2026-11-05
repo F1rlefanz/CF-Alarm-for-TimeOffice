@@ -224,6 +224,10 @@ function LimitWarten([string]$text) {
 function StarteClaude([string]$goal, [string]$model, [int]$cap, [string]$cwd, [string]$logName) {
     $env:ANDROID_SERIAL = $Emu
     Remove-Item Env:CFALARM_SCHLEUSE -ErrorAction SilentlyContinue   # Notausgang der Schleuse nie erben
+    # Ein Lauf, der auf Hintergrund-Agenten wartet, wurde nach 10 min ohne Zug beendet und die Agenten
+    # mit ihm abgebrochen (05.11.2026: Abschluss Etappe 2, Versuch 1 verlor so einen Fix-Agenten).
+    # 45 min reichen fuer Fix- und Pruef-Agenten; endlos nicht, damit ein Haenger den Runner nicht stilllegt.
+    $env:CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS = '2700000'
     $roh = Join-Path $Logs "$logName.jsonl"
     $live = Join-Path $Logs "$logName.log"
     $a = @('-p', '--model', $model, '--effort', 'xhigh', '--max-turns', "$($cap + 5)",

@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Umbau-Fortschritt CF Alarm</title>
+<style>
+/* Statusseite: Kopf mit Lage, Fortschrittsbalken, Kacheln, zwei Tabellen, Meldungsliste. */
+:root {
+  --bg: #f6f5f2; --panel: #ffffff; --fg: #1f2328; --muted: #5d6470; --line: #dedbd4;
+  --ok: #1f7a4d; --warn: #9a6200; --bad: #b3261e; --accent: #c8102e; --track: #ebe8e1;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --serif: Georgia, "Times New Roman", serif;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #16181c; --panel: #1f2227; --fg: #e8e6e1; --muted: #a2a8b3; --line: #343841;
+  --ok: #5fc48f; --warn: #e2a944; --bad: #f2867d; --accent: #ff5c6f; --track: #2c3037; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #16181c; --panel: #1f2227; --fg: #e8e6e1; --muted: #a2a8b3; --line: #343841;
+  --ok: #5fc48f; --warn: #e2a944; --bad: #f2867d; --accent: #ff5c6f; --track: #2c3037; color-scheme: dark }
+body { background: var(--bg); color: var(--fg); font-family: var(--sans); margin: 0; }
+.ub { max-width: 1100px; margin-inline: auto; padding-block: 20px 40px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; gap: 16px; }
+h1 { font-family: var(--serif); font-weight: 400; font-size: 1.7rem; margin: 0; text-wrap: balance; }
+h2 { font-size: 1rem; font-weight: 600; margin: 0 0 4px; }
+.notiz { color: var(--muted); font-size: .82rem; margin: 0 0 12px; }
+.lage { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin-top: 8px; color: var(--muted); font-size: .9rem; }
+.pill { display: inline-flex; align-items: center; gap: .45em; padding: 2px 10px; border-radius: 999px; border: 1px solid var(--line); color: var(--fg); font-size: .82rem; }
+.pill::before { content: ""; width: .5rem; height: .5rem; border-radius: 50%; background: var(--ok); }
+.pill[data-lage="wartet"]::before { background: var(--warn); }
+.pill[data-lage="angehalten"]::before { background: var(--bad); }
+.karte { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; min-width: 0; }
+.gross { font-family: var(--serif); font-size: 2.6rem; line-height: 1; font-variant-numeric: tabular-nums; }
+.balken { height: 12px; border-radius: 6px; background: var(--track); overflow: hidden; margin-top: 12px; }
+.balken > div { height: 100%; background: var(--ok); border-radius: 6px; }
+.raster { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 11rem), 1fr)); }
+.kachel .unter { color: var(--muted); font-size: .8rem; }
+.kachel .wert { font-family: var(--serif); font-size: 1.6rem; font-variant-numeric: tabular-nums; }
+.zwei { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 24rem), 1fr)); }
+.scroll { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; font-size: .9rem; }
+th { text-align: left; font-weight: 600; color: var(--muted); font-size: .78rem; padding: 4px 6px; border-bottom: 1px solid var(--line); }
+td { padding: 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+tr:last-child td { border-bottom: 0; }
+.chip { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: .76rem; border: 1px solid var(--line); white-space: nowrap; color: var(--muted); }
+.chip[data-z="fertig"] { color: var(--ok); border-color: currentColor; }
+.chip[data-z="läuft"] { color: var(--fg); border-color: var(--fg); font-weight: 600; }
+.chip[data-z="blockiert"] { color: var(--bad); border-color: currentColor; }
+.mini { display: inline-block; width: 56px; height: 6px; border-radius: 3px; background: var(--track); vertical-align: middle; margin-right: 6px; overflow: hidden; }
+.mini > span { display: block; height: 100%; background: var(--ok); }
+.verlauf { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; max-height: 24rem; overflow: auto; }
+.verlauf li { display: grid; grid-template-columns: 6.8rem 1fr; gap: 8px; font-size: .82rem; }
+.verlauf time { color: var(--muted); font-variant-numeric: tabular-nums; }
+.verlauf span { min-width: 0; overflow-wrap: anywhere; }
+.alt { color: var(--warn); font-size: .82rem; }
+</style>
+</head>
+<body>
+<main class="ub">
+  <header>
+    <h1>Umbau „Schichttyp als Zentrale“</h1>
+    <div class="lage"><span class="pill" id="lage">—</span><span>Stand <b id="stand">—</b></span><span class="alt" id="alt" hidden></span></div>
+    <p class="notiz" style="margin-top:8px">Gerade: <span id="aktuell">—</span></p>
+  </header>
+
+  <section class="karte">
+    <h2>Gesamtfortschritt</h2>
+    <p class="notiz">Fertige Etappen plus der Anteil fertiger Pakete der laufenden Etappe (ihr Abschluss zählt als Rest).</p>
+    <div class="gross" id="prozent">—</div>
+    <div class="balken" aria-hidden="true"><div id="fuell" style="width:0"></div></div>
+    <p class="notiz" style="margin:8px 0 0"><span id="etappen_fertig">—</span> von <span id="etappen_gesamt">—</span> Etappen ausgeliefert</p>
+  </section>
+
+  <section class="raster">
+    <div class="karte kachel"><div class="unter">Pakete fertig</div><div class="wert"><span id="pakete_fertig">—</span><span class="unter"> / <span id="pakete_bekannt">—</span> geschnitten</span></div></div>
+    <div class="karte kachel"><div class="unter">Pakete in 24 Stunden</div><div class="wert" id="pakete_letzte_24h">—</div></div>
+    <div class="karte kachel"><div class="unter">Wochenkontingent</div><div class="wert"><span id="woche_prozent">—</span> %</div><div class="unter">Pause ab 90 %, Reset <span id="woche_reset">—</span></div></div>
+    <div class="karte kachel"><div class="unter">5-Stunden-Fenster</div><div class="wert"><span id="fenster_prozent">—</span> %</div><div class="unter">Reset <span id="fenster_reset">—</span></div></div>
+    <div class="karte kachel"><div class="unter">Funde für später</div><div class="wert" id="spaeter">—</div><div class="unter">außerhalb des Umfangs</div></div>
+  </section>
+
+  <div class="zwei">
+    <section class="karte">
+      <h2>Etappen</h2>
+      <p class="notiz">Jede fertige Etappe wird geprüft und an den internen Track ausgeliefert. Vor Etappe 3 und 9 ist der Eigentümer kurz dran.</p>
+      <div class="scroll"><table><thead><tr><th>Nr.</th><th>Inhalt</th><th>Stand</th><th>Pakete</th><th>Version</th></tr></thead><tbody id="etappen"></tbody></table></div>
+    </section>
+    <section class="karte">
+      <h2>Pakete der laufenden Etappe</h2>
+      <p class="notiz">Opus setzt Pakete mit hohem Risiko um, Sonnet die übrigen. Ein zweiter Lauf heißt: der erste stieß an seine Turn-Grenze.</p>
+      <div class="scroll"><table><thead><tr><th>#</th><th>Paket</th><th>Stand</th><th>Modell</th><th>Läufe</th></tr></thead><tbody id="pakete"></tbody></table></div>
+    </section>
+  </div>
+
+  <section class="karte">
+    <h2>Letzte Meldungen des Runners</h2>
+    <p class="notiz">Neueste oben, aus seinem Protokoll.</p>
+    <ul class="verlauf" id="verlauf"></ul>
+  </section>
+</main>
+<script>
+const DATEN = /*DATEN*/null;
+const zeit = (s) => s ? s.replace('T', ' ').slice(5, 16).replace(/^(\d\d)-(\d\d)/, '$2.$1.') : '—';
+const setze = (id, t) => { const el = document.getElementById(id); if (el) el.textContent = t ?? '—'; };
+function zelle(tr, inhalt) { const td = document.createElement('td'); if (inhalt instanceof Node) td.append(inhalt); else td.textContent = inhalt; tr.append(td); }
+function chip(z) { const c = document.createElement('span'); c.className = 'chip'; c.dataset.z = z; c.textContent = z; return c; }
+if (DATEN) {
+  const k = DATEN.kennzahlen[0];
+  setze('lage', k.lage);
+  document.getElementById('lage').dataset.lage = /wartet/.test(k.lage) ? 'wartet' : /angehalten/.test(k.lage) ? 'angehalten' : 'arbeitet';
+  setze('stand', zeit(k.stand)); setze('aktuell', k.aktuell);
+  const alterH = (Date.now() - new Date(k.stand).getTime()) / 3.6e6;
+  if (alterH > 2) { const a = document.getElementById('alt'); a.hidden = false; a.textContent = 'Stand ist ' + Math.round(alterH) + ' Stunden alt'; }
+  setze('prozent', Math.round(k.fortschritt * 100) + ' %');
+  document.getElementById('fuell').style.width = Math.round(k.fortschritt * 100) + '%';
+  ['etappen_fertig', 'etappen_gesamt', 'pakete_fertig', 'pakete_bekannt', 'pakete_letzte_24h', 'woche_prozent', 'fenster_prozent', 'spaeter'].forEach((f) => setze(f, k[f]));
+  setze('woche_reset', zeit(k.woche_reset)); setze('fenster_reset', zeit(k.fenster_reset));
+  const eb = document.getElementById('etappen');
+  DATEN.etappen.forEach((r) => {
+    const tr = document.createElement('tr');
+    zelle(tr, String(r.etappe)); zelle(tr, r.titel); zelle(tr, chip(r.zustand));
+    if (r.pakete_gesamt) {
+      const w = document.createElement('span'); const m = document.createElement('span'); m.className = 'mini';
+      const s = document.createElement('span'); s.style.width = (r.pakete_fertig / r.pakete_gesamt * 100) + '%'; m.append(s);
+      w.append(m, document.createTextNode(r.pakete_fertig + ' / ' + r.pakete_gesamt)); zelle(tr, w);
+    } else zelle(tr, '—');
+    zelle(tr, r.version || '—'); eb.append(tr);
+  });
+  const pb = document.getElementById('pakete');
+  DATEN.pakete.forEach((r) => { const tr = document.createElement('tr'); zelle(tr, String(r.nr)); zelle(tr, r.titel); zelle(tr, chip(r.zustand)); zelle(tr, r.modell); zelle(tr, String(r.laeufe)); pb.append(tr); });
+  const ul = document.getElementById('verlauf');
+  DATEN.verlauf.forEach((r) => { const li = document.createElement('li'); const t = document.createElement('time'); t.textContent = zeit(r.zeit.replace(' ', 'T')); const s = document.createElement('span'); s.textContent = r.meldung; li.append(t, s); ul.append(li); });
+}
+</script>
+</body>
+</html>

@@ -1,5 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.typ.ShiftDefinitionTexte
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
@@ -40,10 +41,10 @@ import androidx.compose.ui.window.DialogProperties
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftKategorie
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftCodeSuggestion
-import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.CodeMarke
-import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.KategorieMarke
-import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.SonderfallMarke
-import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.kategorieFarben
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.CodeMarke
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.KategorieMarke
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.SonderfallMarke
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.kategorieFarben
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.LayoutFractions
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.listenCode

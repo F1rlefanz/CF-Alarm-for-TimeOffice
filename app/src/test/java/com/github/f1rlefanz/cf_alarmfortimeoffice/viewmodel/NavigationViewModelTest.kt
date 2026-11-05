@@ -1,5 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
 import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.GateEinstieg
 import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.GateLage
 import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.GateSchritt
@@ -12,6 +13,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.time.LocalTime
 
 /**
  * NavigationViewModel hat keine injizierten Dependencies (kein Context/DataStore) - reine,
@@ -426,6 +428,118 @@ class NavigationViewModelTest {
         vm.navigateBackFrom(gerendert)
         vm.navigateBackFrom(gerendert)
         assertEquals(NavigationState.HueSettings(MainTab.HUE), vm.navigationState.value)
+    }
+
+    // ---- Typ-Seite (Umbau #187) ---------------------------------------------------------
+
+    @Test
+    fun `NavigateToTypSeite setzt TypSeite mit id und Herkunftstab`() {
+        val vm = newViewModel()
+        vm.handleNavigationAction(NavigationAction.NavigateToTypSeite("typ-1", MainTab.WECKER))
+        assertEquals(NavigationState.TypSeite("typ-1", MainTab.WECKER), vm.navigationState.value)
+    }
+
+    @Test
+    fun `Zurueck aus der Typ-Seite fuehrt zur Typ-Liste und von dort zum Tab - nie still auf HOME`() {
+        // Ohne den Zweig in rueckwegZiel faellt TypSeite in den else-Zweig und landet auf HOME;
+        // der Compiler meldet das nicht. Die Kette prueft beide Stufen mit einem Tab, der NICHT
+        // der Default ist (SETTINGS ist Default der Typ-Seite, WECKER nicht).
+        val vm = newViewModel()
+        vm.navigateToShiftConfig(MainTab.WECKER)
+        vm.navigateToTypSeite("typ-1", MainTab.WECKER)
+
+        vm.navigateBackToMain()
+        assertEquals(NavigationState.ShiftConfig(MainTab.WECKER), vm.navigationState.value)
+
+        vm.navigateBackToMain()
+        assertEquals(NavigationState.MainContent(MainTab.WECKER), vm.navigationState.value)
+    }
+
+    @Test
+    fun `navigateBackFrom mit dem gerenderten TypSeite-Zustand ist idempotent`() {
+        // BackHandler, Zurueck-Pfeil, Speichern und "Verwerfen" rufen alle navigateBackFrom(state)
+        // mit dem GERENDERTEN Zustand: ein zweiter Tipp springt nicht von der Liste weiter nach Main.
+        val vm = newViewModel()
+        vm.navigateToTypSeite("typ-1", MainTab.STATUS)
+        val gerendert = vm.navigationState.value
+        vm.navigateBackFrom(gerendert)
+        vm.navigateBackFrom(gerendert)
+        assertEquals(NavigationState.ShiftConfig(MainTab.STATUS), vm.navigationState.value)
+    }
+
+    // ---- Neuanlage ueber die Typ-Seite (Umbau #190) -------------------------------------------
+
+    private val vorlage = ShiftDefinition(id = "neu-1", name = "AD1", keywords = listOf("AD1"), alarmTime = LocalTime.of(6, 0))
+
+    @Test
+    fun `NavigateToNeuerTyp traegt Vorlage, Fund-Code und Herkunftstab - id ist die der Vorlage`() {
+        // Die Vorlage reist im NavigationState und nirgends sonst (Festlegung des Betreuers).
+        val vm = newViewModel()
+        vm.navigateToNeuerTyp(vorlage, "AD1", MainTab.WECKER)
+        assertEquals(NavigationState.TypSeite("neu-1", MainTab.WECKER, vorlage, "AD1"), vm.navigationState.value)
+
+        // Das „+“ der Liste hat keinen Fund-Code.
+        vm.navigateToNeuerTyp(vorlage, fromTab = MainTab.WECKER)
+        assertEquals(null, (vm.navigationState.value as NavigationState.TypSeite).fundCode)
+    }
+
+    @Test
+    fun `Zurueck aus einer Neuanlage fuehrt zur Typ-Liste - nicht auf HOME und nicht in einen Typ`() {
+        val vm = newViewModel()
+        vm.navigateToShiftConfig(MainTab.WECKER)
+        vm.navigateToNeuerTyp(vorlage, "AD1", MainTab.WECKER)
+
+        vm.navigateBackFrom(vm.navigationState.value)
+
+        assertEquals(NavigationState.ShiftConfig(MainTab.WECKER), vm.navigationState.value)
+    }
+
+    // ---- Die feste Zeile „Ohne Kalendereintrag“ als Seite (Umbau #191) ---------------------------
+
+    @Test
+    fun `NavigateToOhneEintragSeite setzt die Seite der festen Zeile mit dem Herkunftstab`() {
+        val vm = newViewModel()
+        vm.handleNavigationAction(NavigationAction.NavigateToOhneEintragSeite(MainTab.WECKER))
+        assertEquals(NavigationState.OhneEintragSeite(MainTab.WECKER), vm.navigationState.value)
+    }
+
+    @Test
+    fun `Zurueck aus der festen Seite fuehrt zur Typ-Liste und von dort zum Tab - nie auf die Uebersicht`() {
+        // Ohne den Zweig in rueckwegZiel faellt der neue Zustand in den else-Zweig und landet auf HOME;
+        // der Compiler meldet das nicht. WECKER ist nicht der Default (SETTINGS), HOME ist die Falle.
+        val vm = newViewModel()
+        vm.navigateToShiftConfig(MainTab.WECKER)
+        vm.navigateToOhneEintragSeite(MainTab.WECKER)
+
+        vm.navigateBackFrom(vm.navigationState.value)
+        assertEquals(NavigationState.ShiftConfig(MainTab.WECKER), vm.navigationState.value)
+
+        vm.navigateBackFrom(vm.navigationState.value)
+        assertEquals(NavigationState.MainContent(MainTab.WECKER), vm.navigationState.value)
+    }
+
+    @Test
+    fun `Typ oeffnen von der festen Seite zeigt dessen Typ-Seite, Zurueck fuehrt zur Liste - nicht zur Uebersicht`() {
+        // „<Name> oeffnen“ ist navigateToTypSeite mit der id des gewaehlten Typs, aus dem Tab der Seite.
+        // Der Rueckweg ist der einer gewoehnlichen Typ-Seite: Liste, nicht die feste Seite, nicht HOME.
+        val vm = newViewModel()
+        vm.navigateToOhneEintragSeite(MainTab.WECKER)
+
+        vm.navigateToTypSeite("fruehschicht", MainTab.WECKER)
+        assertEquals(NavigationState.TypSeite("fruehschicht", MainTab.WECKER), vm.navigationState.value)
+
+        vm.navigateBackFrom(vm.navigationState.value)
+        assertEquals(NavigationState.ShiftConfig(MainTab.WECKER), vm.navigationState.value)
+    }
+
+    @Test
+    fun `navigateBackFrom mit dem gerenderten Zustand der festen Seite ist idempotent`() {
+        val vm = newViewModel()
+        vm.navigateToOhneEintragSeite(MainTab.STATUS)
+        val gerendert = vm.navigationState.value
+        vm.navigateBackFrom(gerendert)
+        vm.navigateBackFrom(gerendert)
+        assertEquals(NavigationState.ShiftConfig(MainTab.STATUS), vm.navigationState.value)
     }
 
     @Test

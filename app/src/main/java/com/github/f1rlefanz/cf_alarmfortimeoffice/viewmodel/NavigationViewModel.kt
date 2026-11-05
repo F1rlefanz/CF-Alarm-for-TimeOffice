@@ -7,6 +7,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.NavigationAction
 import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.NavigationState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.asMainContent
 import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.isMainContent
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.BatteryOptimizationHelper
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
@@ -54,6 +55,21 @@ class NavigationViewModel @Inject constructor() : ViewModel() {
                 NavigationState.EventList(action.fromTab)
             }
             
+            is NavigationAction.NavigateToTypSeite -> {
+                Logger.d(LogTags.NAVIGATION, "Shift Config -> Typ-Seite (from ${action.fromTab}, id: ${action.definitionId})")
+                NavigationState.TypSeite(action.definitionId, action.fromTab)
+            }
+
+            is NavigationAction.NavigateToNeuerTyp -> {
+                Logger.d(LogTags.NAVIGATION, "Shift Config -> Typ-Seite, neuer Typ (from ${action.fromTab}, aus Fund: ${action.fundCode != null})")
+                NavigationState.TypSeite(action.vorlage.id, action.fromTab, action.vorlage, action.fundCode)
+            }
+
+            is NavigationAction.NavigateToOhneEintragSeite -> {
+                Logger.d(LogTags.NAVIGATION, "Shift Config -> Ohne-Kalendereintrag-Seite (from ${action.fromTab})")
+                NavigationState.OhneEintragSeite(action.fromTab)
+            }
+
             // Battery and OEM navigation
             is NavigationAction.NavigateToBatteryExemption -> {
                 Logger.d(LogTags.NAVIGATION, "Main -> Battery Exemption (from ${action.fromTab})")
@@ -142,6 +158,15 @@ class NavigationViewModel @Inject constructor() : ViewModel() {
     fun navigateToEventList(fromTab: MainTab = MainTab.HOME) = 
         handleNavigationAction(NavigationAction.NavigateToEventList(fromTab))
     
+    fun navigateToTypSeite(definitionId: String, fromTab: MainTab = MainTab.SETTINGS) =
+        handleNavigationAction(NavigationAction.NavigateToTypSeite(definitionId, fromTab))
+
+    fun navigateToNeuerTyp(vorlage: ShiftDefinition, fundCode: String? = null, fromTab: MainTab = MainTab.SETTINGS) =
+        handleNavigationAction(NavigationAction.NavigateToNeuerTyp(vorlage, fundCode, fromTab))
+
+    fun navigateToOhneEintragSeite(fromTab: MainTab = MainTab.SETTINGS) =
+        handleNavigationAction(NavigationAction.NavigateToOhneEintragSeite(fromTab))
+
     // Battery and OEM navigation convenience methods
     fun navigateToBatteryExemption(fromTab: MainTab = MainTab.HOME) = 
         handleNavigationAction(NavigationAction.NavigateToBatteryExemption(fromTab))
@@ -212,6 +237,20 @@ class NavigationViewModel @Inject constructor() : ViewModel() {
         if (state is NavigationState.OrtFuerTageslicht) {
             Logger.d(LogTags.NAVIGATION, "-> zurueck aus Ort fuer Tageslicht (${state.zurueckZu::class.simpleName})")
             return state.zurueckZu
+        }
+        // Typ-Seite: zurueck zur Typ-Liste (mit ihrem Tab), nicht auf die Uebersicht. Ohne diesen
+        // Zweig fiele sie in den else-Zweig unten und Zurueck landete still auf HOME - der Compiler
+        // meldet das nicht (das when hat ein else), nur der Test in NavigationViewModelTest.
+        if (state is NavigationState.TypSeite) {
+            Logger.d(LogTags.NAVIGATION, "-> Shift Config (${state.returnToTab} tab, aus der Typ-Seite)")
+            return NavigationState.ShiftConfig(state.returnToTab)
+        }
+        // Die feste Zeile „Ohne Kalendereintrag“ (#191): ebenfalls zur Typ-Liste. Auch die Typ-Seite, die
+        // man von dort mit „<Name> oeffnen“ erreicht, fuehrt zur Liste (sie ist eine gewoehnliche TypSeite) -
+        // so wie der Dialog davor, der sich beim Oeffnen schloss.
+        if (state is NavigationState.OhneEintragSeite) {
+            Logger.d(LogTags.NAVIGATION, "-> Shift Config (${state.returnToTab} tab, aus der Ohne-Kalendereintrag-Seite)")
+            return NavigationState.ShiftConfig(state.returnToTab)
         }
         // HueRuleConfig/DimmerRuleConfig haben zwei Einstiegspfade (siehe cameFromSettingsList) -
         // ein Zurueck darf hier NICHT blind zu MainContent aufloesen, sonst ueberspringt der

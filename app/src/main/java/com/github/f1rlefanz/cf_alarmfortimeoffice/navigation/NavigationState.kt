@@ -1,5 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.navigation
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.BatteryOptimizationHelper
 
 /**
@@ -13,6 +14,32 @@ sealed class NavigationState {
     data class CalendarSelection(val returnToTab: MainTab = MainTab.HOME) : NavigationState()
     data class ShiftConfig(val returnToTab: MainTab = MainTab.WECKER) : NavigationState()
     data class EventList(val returnToTab: MainTab = MainTab.HOME) : NavigationState()
+
+    /**
+     * Die Typ-Seite (Umbau, SPEC 3.3): ein Schichttyp als eigener Bildschirm, erreichbar nur aus
+     * [ShiftConfig]. Zurueck fuehrt dorthin (NavigationViewModel.rueckwegZiel), mit demselben
+     * [returnToTab] - nicht auf die Uebersicht. [definitionId] ist die stabile id des Typs, nie sein
+     * Name (der ist frei aenderbar). Der Entwurf liegt im Bildschirm, nicht hier.
+     *
+     * NEUANLAGE (#190): [vorlage] ist ein noch NICHT gespeicherter Typ, [definitionId] ist dann
+     * `vorlage.id`. Die Vorlage reist hier und in keinem zweiten Speicher; gespeichert wird erst mit
+     * „Erstellen“ auf der Seite. [fundCode] ist der Kalender-Code aus „Im Kalender gefunden“, aus dem
+     * die Vorlage entstand (`null` beim „+“ der Liste): er bestimmt Banner und Schreibweg.
+     */
+    data class TypSeite(
+        val definitionId: String,
+        val returnToTab: MainTab = MainTab.SETTINGS,
+        val vorlage: ShiftDefinition? = null,
+        val fundCode: String? = null
+    ) : NavigationState()
+
+    /**
+     * Die Typ-Seite der festen Zeile „Ohne Kalendereintrag“ (#191, SPEC E5/3.3 Punkt 2), erreichbar nur
+     * aus [ShiftConfig]. Ein eigener Zustand statt einer [TypSeite] mit Kennung: die feste Zeile ist kein
+     * Eintrag in `definitions`, hat also keine `id`, keinen Entwurf und kein „Speichern“ - ihre Wahl
+     * schreibt beim Tippen. Zurueck fuehrt in die Typ-Liste (NavigationViewModel.rueckwegZiel).
+     */
+    data class OhneEintragSeite(val returnToTab: MainTab = MainTab.SETTINGS) : NavigationState()
 
     // Onboarding-Screens
     data class BatteryExemption(val returnToTab: MainTab = MainTab.HOME) : NavigationState()
@@ -106,6 +133,19 @@ sealed class NavigationAction {
     data class NavigateToCalendarSelection(val fromTab: MainTab = MainTab.HOME) : NavigationAction()
     data class NavigateToShiftConfig(val fromTab: MainTab = MainTab.SETTINGS) : NavigationAction()
     data class NavigateToEventList(val fromTab: MainTab = MainTab.HOME) : NavigationAction()
+    data class NavigateToTypSeite(
+        val definitionId: String,
+        val fromTab: MainTab = MainTab.SETTINGS
+    ) : NavigationAction()
+    /** Die Typ-Seite fuer einen noch nicht gespeicherten Typ (#190); [fundCode] siehe [NavigationState.TypSeite]. */
+    data class NavigateToNeuerTyp(
+        val vorlage: ShiftDefinition,
+        val fundCode: String? = null,
+        val fromTab: MainTab = MainTab.SETTINGS
+    ) : NavigationAction()
+
+    /** Die Seite der festen Zeile „Ohne Kalendereintrag“ (#191). */
+    data class NavigateToOhneEintragSeite(val fromTab: MainTab = MainTab.SETTINGS) : NavigationAction()
 
     // Onboarding Navigation Actions
     data class NavigateToBatteryExemption(val fromTab: MainTab = MainTab.HOME) : NavigationAction()

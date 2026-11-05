@@ -298,7 +298,12 @@ Ist eine Pruefung rot und nicht behebbar: nichts nach main, Bericht in #$($etIss
 # ---------------------------------------------------------------- Start
 if (Test-Path $Lock) {
     $alt = Get-Content $Lock -ErrorAction SilentlyContinue
-    if ($alt -and (Get-Process -Id ([int]$alt) -ErrorAction SilentlyContinue)) { Write-Host "Runner laeuft bereits (PID $alt)."; exit 0 }
+    # Nur ein PowerShell-Prozess, der runner.ps1 ausfuehrt, zaehlt: nach einem PC-Neustart vergibt
+    # Windows die alte Nummer an beliebige Programme (05.11.2026: PID 24656 war ein python.exe).
+    $lebt = $alt -and (Get-CimInstance Win32_Process -Filter "ProcessId = $([int]$alt)" -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -match '^(powershell|pwsh)\.exe$' -and $_.CommandLine -match 'runner\.ps1' })
+    if ($lebt) { Write-Host "Runner laeuft bereits (PID $alt)."; exit 0 }
+    if ($alt) { Write-Host "Alte Sperrdatei (PID $alt gehoert keinem Runner mehr) - wird ersetzt." }
 }
 if (-not $DryRun) { Set-Content -Path $Lock -Value $PID }
 

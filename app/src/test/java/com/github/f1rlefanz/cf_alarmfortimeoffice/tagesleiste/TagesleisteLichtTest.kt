@@ -120,6 +120,13 @@ class TagesleisteLichtTest {
         assertEquals(emptyList<LichtBereich>(), rechne(eingabe(), regel("F")))
     }
 
+    @Test
+    fun `eine Sonnenaufgangs-Regel braucht eine Lampe oder Gruppe - eine Szene rampt nichts`() {
+        // `HueSunriseExecutor.sunriseTargets` ueberspringt Szenen und leere Ids: ohne Ziel keine Rampe.
+        assertEquals(emptyList<LichtBereich>(), rechne(eingabe(), regel("F", lampe(dauer = 20, id = " "), sonnenaufgang = 30)))
+        assertEquals(emptyList<LichtBereich>(), rechne(eingabe(), regel("F", lampe(dauer = 20, szene = "s1"), sonnenaufgang = 30)))
+    }
+
     // ── Welche Regeln gelten ─────────────────────────────────────────────────────────────────
 
     @Test

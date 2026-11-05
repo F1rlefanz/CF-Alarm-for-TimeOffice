@@ -30,7 +30,7 @@ class TageslichtAmMustertag(val datum: LocalDate, val stand: TageslichtStand)
 /**
  * Die heutigen Hue-Einstellungen, aus denen die Leiste rechnet.
  *
- * @param hueKonfiguriert `IHueConfigRepository.hasStoredBridge()` - "eingerichtet", NICHT
+ * @param hueKonfiguriert `HueBridgeConnectionManager.hasStoredBridge()` - "eingerichtet", NICHT
  *   "verbunden" (wie `HueSmartScheduler`). Ohne Bridge geht kein Licht an, egal wie viele Regeln es gibt.
  * @param regeln alle Hue-Regeln, wie `IHueConfigRepository.getScheduleRules()` sie liefert. Ein
  *   gescheitertes Lesen DARF hier nicht als `emptyList()` ankommen: "keine Licht-Spur" waere dann eine

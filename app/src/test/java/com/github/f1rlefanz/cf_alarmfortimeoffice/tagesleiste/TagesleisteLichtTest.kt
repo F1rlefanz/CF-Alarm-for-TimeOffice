@@ -282,13 +282,37 @@ class TagesleisteLichtTest {
     }
 
     @Test
-    fun `die Tageslicht-Bedingung liest den Wecktag - ein Wecker am Vortag, nach dessen Sonnenaufgang, entfaellt`() {
-        // Nachtschicht, Wecker 17:30 am VORTAG (20.12.): laengst hell gewesen -> die Regel entfaellt.
+    fun `Nachtschicht mit Wecker am Abend desselben Tages - nach Sonnenaufgang entfaellt die Regel`() {
+        // Weckzeit 17:30 vor einem Dienst ab 20:45: Weckpunkt 1410 = 17:30 am MUSTERTAG (21.12.), laengst hell.
         val nachts = eingabe(name = "N", dienstzeit = nacht, weckzeit = LocalTime.of(17, 30))
 
         assertEquals(
             emptyList<LichtBereich>(),
             rechne(nachts, regel("N", lampe(dauer = 20), hellAb = HellAb.SONNENAUFGANG), tageslicht = amMustertag)
+        )
+    }
+
+    @Test
+    fun `die Tageslicht-Bedingung liest den Wecktag - liegt der Wecker am Vortag, zaehlt dessen Sonne`() {
+        // Tromsoe: am ersten Sonnentag D geht die Sonne wieder auf, am Tag davor (Polarnacht) gibt es keinen
+        // Hell-Zeitpunkt. Dienst ab 00:30, Weckzeit 23:30: der Wecker steht am VORTAG (Minute 330 < 360).
+        // Am Vortag gibt es kein Hell -> die Regel laeuft; haette der Adapter den Mustertag D genommen
+        // (Sonnenaufgang ~11 Uhr, Wecker 23:30 danach), entfiele sie.
+        val tromsoe = TageslichtStand(Ort(69.65, 18.96, OrtQuelle.PLZ, null), ZoneId.of("Europe/Oslo"))
+        val ersterSonnentag = generateSequence(LocalDate.of(2026, 12, 25)) { it.plusDays(1) }.first {
+            tromsoe.hellZeitpunkt(it, HellAb.SONNENAUFGANG) != null && tromsoe.hellZeitpunkt(it.minusDays(1), HellAb.SONNENAUFGANG) == null
+        }
+        val kurzNachMitternacht = eingabe(
+            name = "N0", dienstzeit = Dienstzeit(LocalTime.of(0, 30), 450, ganztaegig = false), weckzeit = LocalTime.of(23, 30)
+        )
+
+        assertEquals(
+            listOf(LichtBereich(330, 350, LichtArt.AN)),
+            rechne(
+                kurzNachMitternacht,
+                regel("N0", lampe(dauer = 20), hellAb = HellAb.SONNENAUFGANG),
+                tageslicht = TageslichtAmMustertag(ersterSonnentag, tromsoe)
+            )
         )
     }
 

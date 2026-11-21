@@ -38,7 +38,11 @@ data class ShiftDefinition(
     private val kategorieGespeichert: String? = null,
     // Umbau E2 „Wecker an/aus“ (Vorgabe an). NICHT [isEnabled] - das heisst weiter „Typ wird
     // erkannt“. Wirkt erst mit dem Paket „Wecker aus am Typ“; eine aeltere App liest das Feld nicht.
-    val weckerAn: Boolean = true
+    val weckerAn: Boolean = true,
+    // Umbau E6/E7 (#213): Dimmen und „Nicht stoeren“ des Typs, siehe TypEinstellungen.kt. Noch liest
+    // sie niemand; eine aeltere App ueberliest die Schluessel.
+    val dimmen: TypDimmen = TypDimmen(),
+    val nichtStoeren: TypNichtStoeren = TypNichtStoeren()
 ) {
     /**
      * Die wirksame Kategorie (Umbau E1) - immer deckungsgleich mit den Flags, weil sie aus ihnen

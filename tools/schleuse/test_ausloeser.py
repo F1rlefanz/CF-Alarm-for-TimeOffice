@@ -194,5 +194,52 @@ class DieAusnahmenGreifenNichtZuWeit(unittest.TestCase):
         self.assertFalse(soll_pruefen("git push --dry-run && git push origin main"))
 
 
+class AndererArbeitsordner(unittest.TestCase):
+    """#212 (05.11.2026): Aus einem anderen Worktree gemergt oder gepusht, lief keine Pruefung.
+
+    Beim Abschluss von Etappe 2 ging `git -C <worktree> merge` ohne Schleuse durch, und
+    `cd <worktree> && git push origin main` ebenso. Griff der Hook doch, pruefte er den
+    Baum der Sitzung statt den des Ziels. Beides gehoert zum vollautonomen Auslieferungspfad.
+    """
+
+    def test_git_mit_C_loest_aus(self):
+        self.assertTrue(soll_pruefen("git -C ../CFAlarm-umbau-wt/main push origin main"))
+        self.assertTrue(soll_pruefen('git -C "C:/x y/wt" merge --no-ff feature/a'))
+
+    def test_globale_optionen_vor_dem_befehl_loesen_aus(self):
+        self.assertTrue(soll_pruefen("git -c core.hooksPath=/dev/null push origin main"))
+        self.assertTrue(soll_pruefen("git --no-pager -C wt merge x"))
+
+    def test_rettungsbefehle_mit_C_bleiben_frei(self):
+        self.assertFalse(soll_pruefen("git -C ../wt merge --abort"))
+
+    def test_lesebefehle_mit_C_bleiben_frei(self):
+        self.assertFalse(soll_pruefen("git -C ../wt log --oneline -3"))
+        self.assertFalse(soll_pruefen("git -C ../wt merge-base HEAD origin/main"))
+
+    def test_ziel_aus_C(self):
+        z = pruefe_schleuse.ziel_verzeichnis("git -C ../wt/main push origin main", "C:/repo")
+        self.assertEqual(os.path.normpath(z), os.path.normpath("C:/wt/main"))
+
+    def test_ziel_aus_cd_davor(self):
+        z = pruefe_schleuse.ziel_verzeichnis('cd "C:/a b/wt" && git push origin main', "C:/repo")
+        self.assertEqual(os.path.normpath(z), os.path.normpath("C:/a b/wt"))
+
+    def test_letztes_cd_vor_dem_befehl_zaehlt(self):
+        z = pruefe_schleuse.ziel_verzeichnis("cd /c/x; cd ../y && git merge z; cd /c/q", "C:/repo")
+        self.assertEqual(os.path.normpath(z), os.path.normpath("C:/y"))
+
+    def test_msys_pfad_wird_windows_pfad(self):
+        z = pruefe_schleuse.ziel_verzeichnis("cd /c/Users/x/wt && git push", "C:/repo")
+        self.assertEqual(os.path.normpath(z), os.path.normpath("C:/Users/x/wt"))
+
+    def test_ohne_cd_und_C_kein_fremdes_ziel(self):
+        self.assertIsNone(pruefe_schleuse.ziel_verzeichnis("git push origin main", "C:/repo"))
+
+    def test_powershell_set_location(self):
+        z = pruefe_schleuse.ziel_verzeichnis("Set-Location -Path 'D:\\wt'; git push", "C:/repo")
+        self.assertEqual(os.path.normpath(z), os.path.normpath("D:/wt"))
+
+
 if __name__ == "__main__":
     unittest.main()

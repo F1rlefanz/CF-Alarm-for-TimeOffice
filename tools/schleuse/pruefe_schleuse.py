@@ -452,9 +452,55 @@ def befehl_aus_stdin():
     if not eingabe.strip():
         return None
     try:
-        return (json.loads(eingabe).get("tool_input") or {}).get("command") or ""
+        daten = json.loads(eingabe)
+        global HOOK_CWD
+        HOOK_CWD = daten.get("cwd") or None   # Ordner, in dem der Befehl startet (#212)
+        return (daten.get("tool_input") or {}).get("command") or ""
     except (ValueError, AttributeError):
         return None
+
+
+HOOK_CWD = None
+
+
+def toplevel(ordner):
+    """Wurzel des git-Baums, zu dem `ordner` gehoert, normalisiert; None wenn keiner."""
+    try:
+        r = subprocess.run(["git", "-C", ordner, "rev-parse", "--show-toplevel"], capture_output=True,
+                           text=True, encoding="utf-8", errors="replace", timeout=TIMEOUT_KURZ_S)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if r.returncode != 0 or not r.stdout.strip():
+        return None
+    return os.path.normcase(os.path.realpath(r.stdout.strip()))
+
+
+def pruefe_im_ziel(befehl, ziel):
+    """Laesst die Schleuse des Zielbaums pruefen und gibt deren Rueckgabewert zurueck.
+
+    Sie liegt in jedem Worktree mit dem Stand seines Branches; sie dort laufen zu lassen
+    prueft genau das, was gemergt oder gepusht wird. Fehlt sie oder laesst sie sich nicht
+    starten: BLOCKIEREN (fail-closed) - ungeprueft auszuliefern ist das, was #212 behebt.
+    """
+    skript = os.path.join(ziel, "tools", "schleuse", "pruefe_schleuse.py")
+    if not os.path.isfile(skript):
+        sys.stderr.write("Schleuse: Der Befehl wirkt in {}, dort gibt es keine Schleuse. "
+                         "Nicht geprueft - blockiert.\n".format(ziel))
+        return 2
+    # Dem Ziel nur `git push` bzw. `git merge` geben: die Schleuse dort kann eine aeltere Fassung
+    # sein, die `git -C ...` noch nicht erkennt - mit dem Originalbefehl sprach sie am 21.11.2026
+    # im Gegentest nach 1 s frei, ohne eine Pruefung zu fahren.
+    art = "push" if re.search(r"\bgit" + GIT_OPTIONEN + r"\s+push\b", befehl) else "merge"
+    eingabe = json.dumps({"tool_input": {"command": "git " + art}, "cwd": ziel})
+    try:
+        r = subprocess.run([sys.executable, skript], input=eingabe, cwd=ziel, capture_output=True,
+                           text=True, encoding="utf-8", errors="replace")
+    except OSError as fehler:
+        sys.stderr.write("Schleuse: Pruefung in {} liess sich nicht starten ({}). Blockiert.\n".format(ziel, fehler))
+        return 2
+    sys.stdout.write(r.stdout or "")
+    sys.stderr.write(r.stderr or "")
+    return r.returncode
 
 
 def soll_pruefen(befehl):
@@ -478,13 +524,49 @@ def soll_pruefen(befehl):
     nicht die Blockade. Was nach `--continue` entsteht, prueft ohnehin der
     anschliessende Push.
     """
-    if not re.search(r"\bgit\s+(merge|push)(?![\w-])", befehl):
+    if not AUSLOESER.search(befehl):
         return False
     if "--dry-run" in befehl:
         return False
-    if re.search(r"\bgit\s+merge\s+(--abort|--continue|--quit)\b", befehl):
+    if re.search(r"\bgit" + GIT_OPTIONEN + r"\s+merge\s+(--abort|--continue|--quit)\b", befehl):
         return False
     return True
+
+
+# Globale git-Optionen zwischen `git` und dem Befehl (`git -C <ordner> push`, `git -c x=y merge`).
+# Bis #212 (05.11.2026) verlangte der Ausloeser `git push` direkt hintereinander; ein Merge per
+# `git -C <worktree> merge` beim Abschluss von Etappe 2 lief deshalb ungeprueft durch.
+GIT_OPTIONEN = r"(?:\s+(?:-C|-c)\s+(?:\"[^\"]*\"|'[^']*'|\S+)|\s+--?[A-Za-z][\w-]*(?:=\S+)?)*"
+AUSLOESER = re.compile(r"\bgit" + GIT_OPTIONEN + r"\s+(merge|push)(?![\w-])")
+
+
+def _pfad(text, basis):
+    """Ein Pfad aus einem Befehl: Anfuehrungszeichen weg, MSYS-Form (/c/...) als Windows-Pfad."""
+    text = text.strip().strip("\"'")
+    text = os.path.expanduser(text)
+    m = re.match(r"^/([a-zA-Z])(/.*)?$", text)
+    if m and os.name == "nt":
+        text = m.group(1).upper() + ":" + (m.group(2) or "/")
+    return os.path.normpath(os.path.join(basis, text))
+
+
+def ziel_verzeichnis(befehl, basis):
+    """In welchem Ordner wirkt der pruefpflichtige git-Befehl? None = im Ordner der Sitzung.
+
+    `git -C <ordner>` geht vor; sonst das letzte `cd`/`pushd`/`Set-Location` davor (#212).
+    """
+    m = AUSLOESER.search(befehl)
+    if not m:
+        return None
+    c = re.search(r"\s-C\s+(\"[^\"]*\"|'[^']*'|\S+)", m.group(0))
+    hier, gewechselt = basis, False
+    for w in re.finditer(
+            r"(?:^|[;&|]\s*|\s)(?:cd|pushd|Set-Location|sl)\s+(?:-Path\s+)?(\"[^\"]*\"|'[^']*'|[^\s;&|]+)",
+            befehl[:m.start()]):
+        hier, gewechselt = _pfad(w.group(1), hier), True   # jedes cd bezieht sich auf das vorige
+    if c:
+        return _pfad(c.group(1), hier)                       # -C gilt relativ zum Ordner danach
+    return hier if gewechselt else None
 
 
 def main():
@@ -505,7 +587,17 @@ def main():
     if not soll_pruefen(befehl):
         return 0
 
-    ist_push = bool(re.search(r"\bgit\s+push\b", befehl))
+    # Wirkt der Befehl in einem anderen Baum (`git -C`, `cd ... &&`), prueft der (#212).
+    ziel = ziel_verzeichnis(befehl, HOOK_CWD or os.getcwd())
+    if ziel:
+        ziel_wurzel = toplevel(ziel)
+        # Kein git-Baum: meist Text, der wie ein Befehl aussieht (eine Commit-Nachricht, die
+        # `cd <worktree> && git push` zitiert). Dann wie bisher im Baum der Sitzung pruefen -
+        # ein echter git-Befehl in einem Nicht-Repo scheitert ohnehin selbst.
+        if ziel_wurzel and ziel_wurzel != os.path.normcase(os.path.realpath(WURZEL)):
+            return pruefe_im_ziel(befehl, ziel_wurzel)
+
+    ist_push = bool(re.search(r"\bgit" + GIT_OPTIONEN + r"\s+push\b", befehl))
     code, branch = git("rev-parse", "--abbrev-ref", "HEAD")
     branch = (branch or "").strip() if code == 0 else ""
 

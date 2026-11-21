@@ -134,6 +134,11 @@ class DimmFensterFormTest {
         assertEquals(listOf(960L..1860L), lage(hart, nacht))
         val beimWecker = fenster(form(DimWann.NACHT_DAVOR, von = uhr(16), bis = uhr(7), beimWecker = true))
         assertEquals(listOf(960L..1170L), lage(beimWecker, nacht))
+        // Dieselbe Grenze mit der Vorgabe von "+ Weiteres Fenster" (Prototyp: Nacht davor 22:00-07:00):
+        // Wecker 22:00 und 22:30 liegen nicht VOR Von - IST die ganze Dienstnacht 1320..1860.
+        val vorgabe = fenster(form(DimWann.NACHT_DAVOR, von = uhr(22), bis = uhr(7)))
+        assertEquals(listOf(1320L..1860L), lage(vorgabe, Tag(wecker = uhr(22), dienstende = 1860)))
+        assertEquals(listOf(1320L..1860L), lage(vorgabe, Tag(wecker = uhr(22, 30), dienstende = 1860)))
     }
 
     @Test

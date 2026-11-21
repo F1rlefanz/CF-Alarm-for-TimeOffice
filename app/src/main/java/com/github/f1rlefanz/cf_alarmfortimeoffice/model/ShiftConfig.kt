@@ -16,8 +16,34 @@ data class ShiftConfig(
      * unbekannten Schluessel, statt die Zeile als Schicht mit Mustern zu deuten (SPEC 4).
      * Wirkt erst mit den Paketen zu „Tage ohne Kalendereintrag“. Lesen ueber [ohneKalendereintragWieTyp].
      */
-    val ohneKalendereintragWie: String? = null
+    val ohneKalendereintragWie: String? = null,
+    /**
+     * Umbau E6/E7 (#213): die EIGENEN Einstellungen der festen Zeile (Dimmen, „Solange gedimmt
+     * wird“). Aus demselben Grund wie [ohneKalendereintragWie] ein Feld hier und nie ein Eintrag in
+     * [definitions]. Noch liest sie niemand.
+     */
+    val ohneKalendereintrag: OhneEintragEinstellungen = OhneEintragEinstellungen(),
+    /**
+     * Umbau Etappe 3 (#213): welche Modell-Migration diese Konfiguration schon hinter sich hat
+     * (0 = keine). Bewusst HIER und kein eigener Preference-Schluessel: schreibt eine per Revert
+     * zurueckgenommene App die Konfiguration zurueck, faellt der Marker mit den neuen Feldern weg,
+     * und die Migration laeuft beim naechsten Update erneut aus dem unangetasteten Altbestand. Ein
+     * importierter alter Export traegt ihn ebenso wenig und wird migriert.
+     *
+     * Wer eine Konfiguration NEU baut statt per `copy()`, uebernimmt die Stufe (siehe
+     * [aufStandardZurueckgesetzt]) - sonst liefe die Migration erneut und ueberschriebe spaetere
+     * Aenderungen aus dem eingefrorenen Altbestand.
+     */
+    val modellStufe: Int = 0
 ) {
+    /**
+     * „Auf Standardwerte zuruecksetzen“: die Typen und die feste Zeile gehen auf [getDefaultConfig],
+     * es BLEIBEN [autoAlarmEnabled] (eine bewusste Pause gehoert dem Wecker-Tab, Hergang an
+     * `resetToDefaultsPreservingAutoAlarm`) und [modellStufe] (siehe dort).
+     */
+    fun aufStandardZurueckgesetzt(): ShiftConfig =
+        getDefaultConfig().copy(autoAlarmEnabled = autoAlarmEnabled, modellStufe = modellStufe)
+
     /**
      * Der Typ, auf den „Ohne Kalendereintrag“ verweist, oder `null` fuer „eigene Einstellungen“.
      * Ein VERWAISTER Verweis (Typ inzwischen geloescht) liest sich ebenfalls als `null` - der

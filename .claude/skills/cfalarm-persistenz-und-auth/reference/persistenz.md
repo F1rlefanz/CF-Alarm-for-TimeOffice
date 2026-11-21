@@ -16,6 +16,7 @@
 - `TinkEncryptionException` wird in `EncryptedDataStoreFactory` als `CorruptionException`
 - `isPersistenceBlocked()` heisst NUR "der Bestand ist in diesem Prozess unlesbar"
 - `saveAlarm()` meldete Erfolg, obwohl nichts geschrieben wurde
+- Die Quellen der Tagesleiste: Unbekannt statt leer, je Quelle einzeln (#196)
 
 ---
 
@@ -151,3 +152,39 @@
   Stellen, die Dauerhaftigkeit wirklich brauchen, fragen NACH dem Speichern nach
   (`AlarmViewModel.createManualAlarm()`, und fuer Ueberspringen wie Tag-Freigabe gemeinsam
   `loescheDauerhaftMitNachfassen()` in `usecase/DauerhaftesLoeschen.kt`).
+
+## Die Quellen der Tagesleiste: Unbekannt statt leer, je Quelle einzeln (#196, November 2026)
+
+Die Tagesleiste der Typ-Seite (Einheit und Dienstzeit: Skill `cfalarm-kalender-und-schichten`)
+liest Spannen, Dimm-Regeln, Dimm- und DND-Schalter, Hue-Regeln und Hue-Konfiguration über
+`ShiftViewModel.tagesleisteQuellen` (`tagesleiste/TagesleisteQuellen.kt`). Festlegung des Betreuers:
+
+- **Jeder Lesefehler wird `Quelle.Unbekannt`, nie eine leere Liste — und zwar JE QUELLE EINZELN VOR
+  dem `combine`** (`fehlerAlsUnbekannt` für werfende Flows, `alsQuelle` für `Result`). `null` heißt
+  nur „noch nicht gelesen". Ein einziger Fang HINTER dem `combine` (so macht es `schichtFolgen` mit
+  `emit(emptyMap())`) ist hier genau das verbotene Muster und ließe bei einem Fehler alle Spuren
+  zugleich ausfallen.
+- **`TagesleisteQuellen.stand(spur)` sagt je Spur BEKANNT/UNBEKANNT:** die Spannen hängen an JEDER
+  Spur (die Dienstzeit legt den Weckpunkt fest, ein Nachtdienst weckt am Vortag), „Nicht stören"
+  hängt an der Dimm-Quelle nur, solange „folgt dem Dimmer" an ist.
+- **Grenze (belegt, #210):** Dimm-Regeln (`DimRuleRepository.rules`), Dimm-Schalter und DND-Schalter
+  (`safeData`) sowie `HueConfigRepository.getConfiguration()` degradieren in ihren Stores selbst auf
+  leer/aus und melden den Fehler nicht weiter; unbekannt werden dort nur Würfe, in Produktion also
+  nur Hue-Regeln und Spannen (beide `Result`).
+- **Falle `getScheduleRules()`:** fängt `Exception`, also auch `CancellationException`, und verpackt
+  sie in `Result.failure` — `alsQuelle` wirft sie weiter.
+- **Spannen werden bei ZWEI Anlässen neu gelesen** (Prüfer-Befund): neue Eventliste UND das Ende von
+  `triggerAlarmCreationFromConfigUpdate` (`spannenAusloeser`, im `finally`, also auch bei
+  gescheitertem Sync — der schreibt die Spannen vor dem Scheitern). Der Sync schreibt die Spannen
+  neu, die Eventliste bleibt gleich; ohne Auslöser fand `dienstzeitAus` nach dem Umbenennen eines
+  Typs nichts mehr. Der Test geht über den echten Einstieg `updateShiftConfig`, kein Test-Haken.
+  **Offen (#211):** der Kalender-Sync im `CalendarViewModel` setzt die Events VOR `syncAlarms()` —
+  dafür sieht das `ShiftViewModel` kein Signal.
+- **Falle im Test:** `aktualisiereLetztenSchichtStand()` fasst den Span-Store schon nach der ersten
+  Event-Emission an (`letzterStand()`); „ohne Abo nichts gelesen" gilt für `spansNow()`, nicht für
+  das Lazy. Die Vorlauf-Rechnung (`LichtQuelle.vorlaufMinuten`) greift erst beim Aufruf auf
+  `HueRuleUseCase` zu — Abo und Lesen bauen den Hue-Graphen nicht.
+- Test: `TagesleisteQuellenTest` (12 Mutationen gemessen am 05.11.2026, alle rot: u. a.
+  Hue-Fehlschlag als leere Liste, ein Fang hinter dem `combine`, `CancellationException`
+  geschluckt, Spannen-Fehlschlag als leere Liste, kein Neu-Lese-Auslöser nach dem Speichern,
+  Auslöser nur im Erfolgszweig des Syncs).

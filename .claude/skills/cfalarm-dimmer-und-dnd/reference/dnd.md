@@ -128,7 +128,8 @@
 - **Verstrichene Weckzeit ist KEINE entfernte Schicht.** Der Löschzweig des Delta-Syncs meldete
   jeden Schichtmorgen „Schicht entfernt" für den Dienst, den der Nutzer gerade antrat — beide
   Fälle landen im selben Zweig (`!newAlarmsMap.containsKey(eventId)`), aber nur einer ist eine
-  Änderung des Dienstplans. `expiredEventIds` trennt sie: der Alarm wird weiterhin gecancelt und
+  Änderung des Dienstplans. `expiredEventIds` trennte sie (seit der Paarung ein `SyncKandidat` ohne
+  Alarm, `ohneWecker = VERSTRICHEN`; Skill `cfalarm-wecker-und-boot`): der Alarm wird weiterhin gecancelt und
   gelöscht (in dieser Reihenfolge), nur `notifyDeleted()` unterbleibt und das Log sagt „Weckzeit
   verstrichen, Termin läuft weiter". `AlarmUseCaseDeltaSyncTest` hält BEIDE Richtungen fest —
   der Regressionswächter für die echte Löschmeldung ist der wichtigere Teil.

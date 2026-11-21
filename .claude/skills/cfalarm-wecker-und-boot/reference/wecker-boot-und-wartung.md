@@ -47,6 +47,7 @@
 - `ShiftConfig.autoAlarmEnabled = false` ist eine ECHTE, sofortige Pause
 - `AlarmMaintenanceService.start()` fängt den abgelehnten Vordergrund-Start selbst — nicht die
 - Die zwei Abgleiche nach „TimeOffice öffnen" (Slots 8804/8805) sind EINMALIG und kein zweiter
+- Treffer ohne Wecker und Wecker ohne Termin (Umbau Schichttyp, Etappe 1; eigener Abschnitt unten)
 
 ---
 
@@ -415,9 +416,22 @@
   wirklich feuern lassen, nicht nur Code-Review) hat das aufgedeckt — der ansonsten korrekt
   aussehende Fix an `createEnhancedAlarmIntent()` allein hätte den Bug NICHT behoben, weil dieser
   Pfad in der Praxis kaum greift. Snooze und Direct-Boot-Restore reichen denselben Wert unverändert
-  durch (Schichtbeginn ändert sich durchs Schlummern nicht). Fallback bei `shiftStartTime <= 0`
-  (z. B. manueller Test-Alarm ohne echte Schicht) bleibt bewusst die Weckzeit — unveränderte
-  UX für den Fall, der nicht Teil dieses Bugs war.
+  durch (Schichtbeginn ändert sich durchs Schlummern nicht). **Unbekannter Schichtbeginn
+  (`shiftStartTime <= 0`: manueller Wecker, Tag ohne Kalendereintrag) heißt leeres
+  `EXTRA_SHIFT_START_TIME`, der Satz entfällt (#183, 17.10.2026).** `scheduleSystemAlarm` lässt
+  `startTime` des Ersatz-Termins weiter auf die Weckzeit fallen (`AlarmUseCaseDeltaSyncTest` hält
+  das fest), markiert den Fall aber in `calendarId`
+  (`AlarmManagerService.KALENDER_ID_OHNE_SCHICHTBEGINN`); `schichtbeginnText()` macht daraus `""`,
+  wie `AlarmRepository.formatShiftStartTime()` für den Direct-Boot-Spiegel. Hergang: bis dahin
+  formatierte `createEnhancedAlarmIntent` `calendarEvent.startTime` ungeprüft — jeder manuelle
+  Wecker zeigte „Deine Schicht beginnt um <Weckzeit>", seit #175 auch jeder laute Wecker „wie F" an
+  einem Tag ohne Eintrag. **Falle:** `setAlarmFromShiftMatch(shiftMatch, autoAlarmEnabled, alarmId)`
+  ist in 11 Testdateien mit `any(), any(), any()` gemockt; ein vierter Parameter mit Default bräche
+  sie (Kotlin ruft `…$default`, Mockito sieht vier Argumente und drei Matcher), eine Überladung
+  ließe die Mocks `null` liefern — deshalb reist die Information im `ShiftMatch`. Verworfen:
+  `startTime == calculatedAlarmTime` als Signal, es verschluckte einen echten Schichtbeginn genau
+  auf der Weckzeit. Test: `SchichtbeginnImWeckerTest` (ohne Markierung rot mit
+  `expected:<[]> but was:<[04.06.2035 05:30]>`, 17.10.2026).
 - **`ShiftConfig.autoAlarmEnabled = false` ist eine ECHTE, sofortige Pause** (seit v1.21.0,
   Wecker-Tab): `AlarmUseCase.syncAlarms()` ruft in diesem Zweig `clearInternalAlarms()` (cancelt
   System-Alarme + räumt Repository + Direct-Boot-Spiegel), nicht nur ein stilles `return
@@ -741,3 +755,70 @@ Zwei Fallen, die beim Nachstellen Zeit gekostet haben und beim nächsten Mal Zei
   der Schichtbeginn `>=` Horizont, lautet das Urteil `JENSEITS_DES_ABRUFS`: wiederherstellen, nichts
   löschen, nichts melden. Ohne das räumte ein Neustart nach einer verkleinerten Vorausschau alle
   Wecker hinter dem neuen Fenster ab — dieselbe Regel wie `syncAlarms()` Schritt 1.
+
+## Treffer ohne Wecker und Wecker ohne Termin (Umbau Schichttyp, Etappe 1, Oktober 2026)
+
+Der Umbau machte zwei neue Fälle möglich: einen erkannten Termin, der keinen Wecker bekommt, und
+einen Wecker, zu dem es keinen Termin gibt. Beide laufen durch die Paarung von `syncAlarms()`
+(`SyncKandidat`, Paarung erst über Kennung, dann über Weckzeit + Schicht) — der Grund, warum ein
+Kandidat keinen Alarm hat, steht in `SyncKandidat.ohneWecker` (`OhneWecker`), nur fürs Log.
+
+- **Wecker aus am Typ (#168).** Ein Typ mit `weckerAn = false` ist erkannt, aber ohne Wecker: sein
+  Treffer wird `SyncKandidat` mit `neuerAlarm = null`, `ohneWecker = WECKER_AUS` — wie einer mit
+  verstrichener Weckzeit. Schritt 1 räumt einen gepaarten Wecker ab (Cancel vor Delete), OHNE
+  „Schicht entfernt"; Spannen und Krank-Logik sehen den Treffer weiter. `weckerAn` ist nicht
+  `isEnabled` (das schaltet die Erkennung und mit ihr die Spanne ab). Den Treffer stattdessen aus
+  den Kandidaten wegzulassen — der Weg, den `isEnabled = false` nimmt — fände den gestellten Wecker
+  in der Paarung nicht, und Schritt 1 meldete ihn als entfernte Schicht. Festlegung des Betreuers
+  in #168. Test: `WeckerAusAmTypSyncTest` (auch Paarungsrunde (b) bei gleichzeitig neuer
+  Feed-Kennung). **Hingenommen:** aus → an meldet über `notifyCreated` „Neue Schicht erkannt", wie
+  ein wieder aktivierter Typ — es gibt keinen Merker, warum der Wecker fehlte.
+- **Ein Dienst übernimmt die Rufbereitschaft (#172).** Steht am selben Tag wie eine Rufbereitschaft
+  ein Treffer der Kategorie Dienst (der nachgetragene Einsatz), wird der Ruf-Treffer `SyncKandidat`
+  ohne Alarm (`RUF_UEBERNOMMEN`) — derselbe Weg wie „Wecker aus". Die Ruf-SPANNE bleibt in
+  `persistShiftSpans`, denn aus ihr lesen `RufbereitschaftAbfrage` und `DndOnCallCutoffResolver`.
+  Die Frage stellt EINE reine Funktion, `uebernommeneRufTermine` (`shift/RufUebernahme.kt`); **der
+  Tag ist das Datum des Termin-BEGINNS, nicht der Weckzeit** (beim Nachtdienst fallen sie
+  auseinander; ganztägig = sein Datum). Nur Kategorie Dienst übernimmt, unabhängig von `weckerAn`
+  und verstrichener Weckzeit des Dienstes: der Tag folgt dem Dienst-Typ. Den Treffer stattdessen
+  aus `shiftMatches` zu entfernen, nähme die Spanne mit — stündliche Abfrage und das DND-Ende 05:00
+  fielen an genau dem Tag weg, an dem der Chef angerufen hat. Festlegung des Betreuers in #172
+  (SPEC E3). Tests: `RufUebernahmeTest`, `RufUebernahmeSyncTest` (auch Paarungsrunde (b)).
+  **Hingenommen wie bei #168:** wird der Einsatz gestrichen, meldet der Sync den Dienst-Wecker zu
+  Recht als entfernt und den zurückkehrenden Ruf-Wecker als „Neue Schicht erkannt".
+- **Wecker an einem Tag ohne Kalendereintrag (#175).** Ein Wecker „wie <Typ>" ist ein
+  `SyncKandidat` mit der Kennung `ohne-eintrag:<Datum>` (`AlarmUseCase.OHNE_EINTRAG_PRAEFIX`, Test
+  `istOhneEintragWecker()`), `shiftStartTime = 0`, Name, `shiftId` und `isSilent` vom Verweistyp,
+  alles deterministisch. Welche Tage es sind, sagt `tageOhneEintrag` (Kalender-Skill
+  `cfalarm-kalender-und-schichten`). Er läuft durch den normalen Delta-Pfad (Cancel vor Delete,
+  Freigabe-Gate, Skip-Anker, Leerlisten-Räumung — die Kennung ist NICHT leer), meldet aber NIE
+  `notifyCreated`/`notifyUpdated`/`notifyDeleted` und zählt nicht in der Krankmeldung. **Er nimmt
+  an Paarungsrunde (b) auf KEINER Seite teil:** sonst übernähme ein echter Termin desselben Typs
+  auf einem bisher leeren Tag (gleiche Weckzeit, gleiche Schicht) den synthetischen Wecker still,
+  und die neue Schicht meldete sich nie. Keine Schichtspanne. Der Zweig `shiftMatches.isEmpty()`
+  greift nur, wenn auch keine leeren Tage anstehen. **Heute** fällt weg, wenn eine schon BEENDETE
+  Spanne aus dem `ShiftSpanStore` (Stand VOR dem Schreiben dieses Laufs) heute berührt
+  (`heuteDurchBeendeteSpanneBelegt`), oder wenn die Spannen unlesbar sind. Hier ist „im Zweifel
+  wecken" die falsche Richtung: der Abruf beginnt bei jetzt, nach einem Nachtdienst bis 07:00 sähe
+  heute leer aus, und der Verweistyp klingelte nach dem Dienst. **Bekannte Restlücke:** ein heute
+  beendeter, noch nicht eingeordneter Code hat keine Spanne. Test: `OhneEintragSyncTest`.
+- **Die Boot-Validierung urteilt nicht über diese Wecker (#182).** `BootReceiver.performAlarmRecovery`
+  stellt sie über `scheduleSystemAlarm` wieder her; ob der Tag noch leer ist, entscheidet allein
+  `syncAlarms()`. Die Frisch-Nachlese (`BootAlarmValidation.snapshotStillCurrent`) gilt weiter: anders
+  als manuelle Wecker gehören sie dem Sync, der parallele Wartungs-Anker räumt sie ab, sobald der Tag
+  einen Termin hat, und ohne Nachlese armierte die Recovery den gerade gelöschten Eintrag aus ihrem
+  alten Snapshot (System-Alarm ohne Repository-Eintrag). Ihr `eventChecksum` ist immer leer, die
+  Nachlese fragt also nur „steht er noch im Bestand?". Hergang: die Kennung steht nie in
+  `currentEventMap` und ihr Weckpunkt nie in `ermittleWeckpunkte()`, also urteilte `beurteile()` bei
+  jedem Neustart mit vollständigem Abruf `LOESCHEN_TERMIN_WEG`. Test: `BootAlarmOhneEintragTest` (in
+  `BootAlarmValidationTest.kt`, ganzer `performAlarmRecovery`-Ablauf; Mutationsprobe 17.10.2026:
+  Zweig abgeschaltet → Behalten-Test rot, „am ganzen Validierungsblock vorbei" → Nachlese-Test rot).
+- **Im Wecker-Tab ist so ein Wecker KEIN Dienst** (Gegenprüfung Etappe 1): `baueWeckerTage` nimmt
+  `AlarmUseCase.istOhneEintragWecker` aus `schichtenDesTages`. Er hat keine Spanne, Dimmen,
+  „Nicht stören" und die Rufbereitschafts-Abfrage des Typs treten nicht ein; nur das Licht hängt am
+  Wecker und bleibt als Kärtchen. Test: `WeckerTageTest` „Tag ohne Eintrag nennt keinen Dienst …"
+  (vor dem Fix rot).
+- **Lehre aus allen vier:** wer einen weiteren Wecker ohne Termin oder einen Treffer ohne Wecker
+  einführt, prüft ihn gegen jeden Löschzweig, der über Kennung oder Weckpunkt mit der
+  Kalenderlesung vergleicht (Delta-Sync UND Boot-Validierung), gegen die Meldungen von
+  `syncAlarms()` und gegen jede Anzeige, die aus `shiftName` auf Typ-Wirkungen schließt.

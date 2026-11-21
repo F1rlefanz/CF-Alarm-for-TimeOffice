@@ -210,6 +210,19 @@ das baut man dieselbe Falle in neuer Form nach.
   Kalendertag ab. Ein Platzhalter datiert alle Dimm-Fenster auf 1970.
 - **Rufbereitschaft-Cutoff klippt, statt eine eigene Fensterlogik/Policy zu duplizieren.** Zwei Fallen:
   der Cutoff-Tag muss auf den Folgetag rollen, und der Zeitpunkt wird als echte Wanduhrzeit aufgelöst.
+  **Erst je Fenster kappen, DANN vereinen** (wie `DndScheduleUseCase.computeWindows`, so auch die
+  Tagesleiste, #193): umgekehrt verschmilzt ein Bereich ab 06:00 mit dem an 05:00 gekappten davor
+  und verschluckt den Cutoff.
+- **`DimWindow.startNurAmWecktag` (Default `false`) lässt einen CLOCK-Start auf den Kalendertag der
+  Weckzeit zeigen, nie auf den Vortag; liegt die Weckzeit davor, entfällt das Fenster** (#151). Nur
+  das Vorschlaf-Fenster der Nachtdienst-Vorlage setzt es; der allgemeine Rücksprung in
+  `clockAtOrBefore` bleibt („20:00 vor Wecker 05:30" ist der Vorabend).
+- **Die Tagesleiste der Typ-Seite rechnet Dimmen und „Nicht stören" NICHT nach**, sondern lässt
+  `DimWindowResolver.buildRuleSpans` auf einem erfundenen Mustertag laufen
+  (`tagesleiste/TagesleisteDimmenDnd.kt`, `dimmenUndNichtStoeren`, #194). Gezeigt werden nur die
+  Fenster des Kalendertags der Weckzeit; den EIGENEN Ruf-Cutoff kappt `Tagesleiste.rechne()`, die
+  Cutoffs der NACHBARTAGE im Block der Adapter selbst (`kappenAmNachbarCutoff`). Wer eine Anzeige
+  der Dimm-/DND-Fenster baut, ruft dieselben Resolver — eine zweite Fensterlogik driftet.
 - **`AutomaticZenRule`, nicht rohes `setInterruptionFilter()`** (das überschreibt manuelles DND und
   fremde Automatisierung kommentarlos). Nur ab API 30.
 - **Policy vollständig nutzer-konfigurierbar, NICHTS hart codiert.** Ein hart gesetztes

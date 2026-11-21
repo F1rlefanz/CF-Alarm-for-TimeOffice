@@ -31,6 +31,8 @@
 - „Kurz hell, dann wieder dunkel“ — das Verschwinden ist nicht loggbar, die Rueckkehr schon
 - `DimCorrectionNotifier.show()` prüft `NotificationManagerCompat.areNotificationsEnabled()`
 - Manuelle Wecker nach dem Klingeln, der Nachlauf nach der Weckzeit und der Nachzug beim Anlegen (1.49.0)
+- Tageslicht-Nachlauf (#140, Oktober 2026)
+- Umbau Schichttyp: Vorschlaf nur am Wecktag (#151) und die Tagesleiste (#193/#194)
 
 ---
 
@@ -847,3 +849,67 @@ dann sinnlos ab. Gewaehlt wurde je Dimm-Fenster `HellAb { IMMER, DAEMMERUNG, SON
   (`DimmerPreviewScreen.tageslichtGrundZeile`: „endet bei Sonnenaufgang 07:31“ aus
   `tageslicht_vorschau_endet`, bzw. „an der Weckzeit, Sonnenaufgang war schon um 07:31“ aus
   `tageslicht_dimmer_grund_weckzeit`); der Editor zeigt fuer den naechsten Wecker live, was passiert (`tageslicht_dimmer_grund_*`).
+
+## Umbau Schichttyp: Vorschlaf nur am Wecktag (#151) und die Tagesleiste (#193/#194)
+
+### `DimWindow.startNurAmWecktag` (#151)
+
+Hergang: Wecker 13:30 → das Vorschlaf-Fenster „16:00 bis Wecker" der Nachtdienst-Vorlage wurde zu
+16:00 des VORTAGS, 21,5 h gedimmt. Der allgemeine Rücksprung in `clockAtOrBefore` (ein CLOCK-Start
+zielt auf die Uhrzeit VOR der Weckzeit) ist für alle übrigen Fenster richtig — ihn zu ändern bräche
+„20:00 vor Wecker 05:30" (Test „CLOCK-Start zielt auf die Uhrzeit VOR der Weckzeit"). Deshalb ein
+Feld je Fenster, Default `false`: gesetzt zeigt der Start auf den Kalendertag der Weckzeit, liegt die
+Weckzeit davor, entfällt das Fenster. Nur das Vorschlaf-Fenster der Nachtdienst-Vorlage setzt es
+(`DimmerRulesViewModel`). Bestehende Regeln aus der Vorlage tragen das Feld nicht und wirken weiter
+wie bisher — bewusst, bis Etappe 3 die Fenster an den Typ hängt; eine Oberfläche dafür gibt es
+nicht, weil der Umbau dort „Nacht davor / Abend danach / Nach dem Dienst" wählen lässt. Tests:
+`NachtdienstVorlageVorschlafFensterTest`, `DimWindowResolverTest`.
+
+### Die Tagesleiste zeigt Dimmen und „Nicht stören" über die echten Resolver (#193, #194)
+
+Einheit und Dienstzeit der Leiste: Skill `cfalarm-kalender-und-schichten`, Hergang-Datei zum
+Kalender-Datenfluss. Hier nur, was Dimmer und DND betrifft.
+
+- **Kein Nachrechnen.** `dimmenUndNichtStoeren` (`tagesleiste/TagesleisteDimmenDnd.kt`) lässt
+  `DimWindowResolver.buildRuleSpans` auf einem erfundenen Mustertag in UTC laufen (dort fallen
+  Wanduhr und Instant zusammen): der Typ plus je Blockposition ein Nachbar-Slot mit derselben
+  Weckzeit (ERSTER: Folgetag, MITTLERER: beide, LETZTER: Vortag), Regelwahl über
+  `findRuleForShift`/`findRuleForFreeDay`. Leere Fensterliste, `startNurAmWecktag`,
+  Weckzeit-Nachlauf und „Hell ab" kommen damit vom Resolver selbst.
+- **Gezeigt werden NUR die Fenster des Kalendertags der Weckzeit,** herausgelöst als Differenz zweier
+  Läufe (`horizonDays = 1` minus `horizonDays = 0`) — das hängt nicht an der Zahl der Rückblick-Tage
+  (`LOOKBACK_DAYS` ist `private`). Hergang: der erste Plan nahm alles, was die Leiste berührt, auch
+  die Fenster des freien Vortags; damit hätte „leere Fensterliste an F" trotzdem die UNIVERSAL-Nacht
+  davor gezeigt, beschriftet mit „(F)" — gegen die Abnahme „leere Fensterliste → kein Dimmen" und
+  gegen das Zielmodell (Etappe 3: Fenster hängen am Typ).
+- **Ein erkannter Typ ist ein Schichttag**, auch Frei/Urlaub/Fortbildung und auch mit Wecker aus
+  (#181); die FREI-Regel greift nur an einem Tag OHNE Eintrag und bei Krank (keine Spanne).
+  Ignorieren geht denselben Weg wie Krank (freier Tag), die Leiste zeigt es trotzdem nicht. Ohne
+  gültige Weckzeit gibt es keinen Anker und damit weder Dimmen noch „folgt dem Dimmer".
+- **„Nicht stören, solange gedimmt wird" ist `mergeToTimeline` OHNE Nachlauf und OHNE „Hell ab"**
+  (wie `DndScheduleUseCase.computeWindows`), „während des Eintrags" ist
+  `DndShiftSpanResolver.buildShiftSpans` (Krank hat keinen).
+- **Kappen am Ruf-Cutoff:** die Leiste kappt über `DndOnCallCutoffResolver.cutoffInstants` und `clip`
+  und vereint DANACH — wie der Betrieb, wo jedes Fenster für sich geklippt wird. Erst vereinen, dann
+  kappen ließ einen Bereich ab 06:00 mit dem an 05:00 gekappten davor verschmelzen und den Cutoff
+  verschlucken (`TagesleisteTest`, Mutationsprobe: Reihenfolge getauscht → rot). Der Adapter kappt
+  NICHT am EIGENEN Cutoff — `Tagesleiste.rechne()` tut es und braucht das ungekappte Ende, um
+  „endet spätestens jetzt" zu sagen. Der Text steht nur, wenn der Cutoff einen Bereich WIRKLICH
+  beendet; schließt unmittelbar ein zweiter an (Cutoff 06:00, Folgebereich ab 06:00), läuft „Nicht
+  stören" weiter — Abweichung vom Prototyp, der ihn immer zeigt. Der Cutoff ist Eingabe
+  (`rufCutoffMinuten`, Vorgabe `DndPrefs.DEFAULT_ONCALL_CUTOFF_MIN`).
+- **Die Cutoffs der NACHBARTAGE im Block kappt der Adapter selbst** (`kappenAmNachbarCutoff`): der
+  Betrieb bildet die Cutoffs über ALLE Ruf-Spannen, die Leiste kennt nur den eigenen Slot. Ohne den
+  Schritt endete „Nicht stören" mitten in einem Ruf-Block eine Stunde zu spät (Befund des
+  unabhängigen Prüfers, mit eigenem Test belegt: 06:00 statt 05:00). Offen: dort fehlt der Text
+  „endet spätestens jetzt" (#204).
+- **`endetBeimWecker`** heißt: Wecker an UND das Ende liegt auf einer Weckzeit des Mustertags oder
+  seiner Nachbarn — nie bei Nachlauf, nie bei Wecker aus.
+- **Falle Mitternacht:** `weckzeitpunkt()` legt den Wecker eines Dienstes kurz nach Mitternacht auf
+  den VORTAG, und `buildRuleSpans` datiert den Slot nach der Weckzeit — „der Tag des Typs" ist dann
+  der Vortag des Mustertags (Test „Dienst kurz nach Mitternacht"). Es gibt zwei Mustertage (Adapter
+  und `Tagesleiste.kt`, dort `private`); der Test hält das Ende „beim Wecker" gegen `weckpunktMin()`.
+- Tests: `TagesleisteDimmenDndTest` (18 Mutationen gemessen am 17.10.2026, alle rot: u. a.
+  `dim_enabled` ignoriert, Nachbar-Slot fehlt oder vertauscht, DND mit Nachlauf, „Hell ab"
+  ignoriert, Krank als Schichttag, Wecker aus ohne Anker, Nachbar-Cutoff entfällt). Wie die Probe
+  unter Windows zuverlässig läuft: Skill `cfalarm-bauen-und-testen`.

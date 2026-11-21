@@ -197,7 +197,7 @@ Wortlaut: Skill `cfalarm-wecker-und-boot`.
 - **Die Wecker-Identitaet haengt NICHT allein an der Kalender-Kennung.**
 - **Die Skip-Erkennung nimmt den WECKZEITPUNKT als Anker, nicht nur die id** (in beiden Gates, auch
   im Backstop).
-- **Verstrichene Weckzeit ist KEINE entfernte Schicht** (`expiredEventIds`).
+- **Verstrichene Weckzeit ist KEINE entfernte Schicht** (`OhneWecker.VERSTRICHEN`).
 - **Alle `setAlarmClock()`-Aufrufstellen fangen die entzogene Exact-Alarm-Berechtigung**
   (`setExactOrInexact`: try/catch + inexakter Fallback).
 - **Das Skip-Flag läuft zeitbasiert ab, nicht per ID-Match**

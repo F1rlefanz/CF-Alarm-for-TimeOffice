@@ -172,7 +172,8 @@ das baut man dieselbe Falle in neuer Form nach.
 - **Stille Schicht = kein Hue, auf BEIDEN Wegen.** Der `AlarmReceiver` überspringt Hue für `isSilent`;
   bis 1.45 plante `HueSmartScheduler` den Sonnenaufgangs-Worker trotzdem 15 min vor der Weckzeit —
   das Licht fuhr nachts hoch, und weil der Wecker still blieb, entstand kein Auto-Aus. Gefunden über
-  die Statuszeile (#70). Ein dritter Hue-Pfad muss die Stille ebenfalls prüfen.
+  die Statuszeile (#70). Ein dritter Hue-Pfad muss die Stille ebenfalls prüfen — auch ein rein
+  ANZEIGENDER: die Licht-Spur der Tagesleiste tut es (nächste Regel unten, #195).
 - **Der Sonnenaufgangs-Worker prüft beim Feuern, ob sein Wecker noch gilt**
   (`HueSmartScheduler.sonnenaufgangNochGedeckt`: derselbe aktive, nicht stille Wecker zur
   mitgeführten Weckzeit; Bestand unlesbar = kein Licht). Bis 1.50.0 räumte nur der Alarm-Beobachter
@@ -193,7 +194,8 @@ das baut man dieselbe Falle in neuer Form nach.
   kalten Prozess wirft der den gerade klingelnden Wecker beim Laden als verstrichen weg, die
   Bedingung lief dann still ins Leere — Review 14.10.2026). Verglichen wird die **Weckzeit** (strikt `<`) mit dem Hell-Zeitpunkt
   **des Wecktags**, auch bei der Sonnenaufgangs-Rampe: ganz oder gar nicht. `SchichtFolgen` zaehlt
-  nur. **Ein kuenftiger fuenfter Hue-Pfad muss die Bedingung mit anwenden** (wie die stille Schicht).
+  nur. **Ein kuenftiger weiterer Hue-Pfad muss die Bedingung mit anwenden** (wie die stille Schicht;
+  die Tagesleiste tut es seit #195, siehe unten).
   Kein Ort/Lesefehler = Regel laeuft. Das Auto-Aus bei Tageslicht ist NICHT Teil davon, sondern
   eine eigene Wahl je Regel (`ausBeiHell`, #143, naechste Regel).
 - **„Auto-Aus spaetestens bei Tageslicht“ (#143, `HueScheduleRule.ausBeiHell`) hat EINEN
@@ -204,3 +206,12 @@ das baut man dieselbe Falle in neuer Form nach.
   wird nur, wenn es NACH der Weckzeit hell wird (sonst Dauer), nie vor dem Rampenende, nie unter
   1 min; kein Ort/keine Weckzeit = Dauer. Die Editorzeile (`HueRuleFormState.autoAusUrteil`) nutzt
   dieselben Funktionen. Gespeichert wird die Wahl nur mit Auto-Aus-Dauer.
+- **Die Licht-Spur der Tagesleiste (`tagesleiste/TagesleisteLicht.kt`, `licht(...)`, #195) ist ein
+  weiterer LESER der Hue-Regeln und wendet beide Bedingungen an**: kein Licht bei stillem Wecker,
+  Wecker aus, ohne Weckpunkt (Krank, Ignorieren, ungültige Weckzeit) und ohne eingerichtete Bridge
+  (`hasStoredBridge`, nicht „verbunden"); Regelwahl `enabled && passtAufSchicht`, „Nur bei
+  Dunkelheit" am Wecktag des Weckpunkts. Anders als Dimmer/DND behält Hue bei Wecker aus KEINEN
+  Anker — Hue-Regeln laufen nur zu einem Alarm. **Eine Anzeige ruft `autoOffTargetsOf()` NIE mit
+  `fruehAus`**: jeder solche Aufruf schreibt „Auto-Aus vorgezogen" als WARN ins Release-Log
+  (`logVorgezogen`) — genau die Zeile, die ein Tester als Beleg für zu früh ausgegangenes Licht
+  nennt. Die Leiste kürzt `ausBeiHell` deshalb (noch) nicht (#209).

@@ -32,7 +32,8 @@ betreffen beide Stellen.
 - **Die Skip-Erkennung nimmt den WECKZEITPUNKT als Anker, nicht nur die id** (in beiden Gates,
   auch im Backstop). `skipNextAlarm()` loescht den Eintrag; nach einer Kennungsrotation gaebe es
   sonst nichts mehr zu paaren, und der uebersprungene Wecker klingelte am freien Morgen.
-- **Verstrichene Weckzeit ist KEINE entfernte Schicht** (`expiredEventIds`).
+- **Verstrichene Weckzeit ist KEINE entfernte Schicht** (früher `expiredEventIds`, seit der
+  Paarung `SyncKandidat` ohne Alarm mit `ohneWecker = VERSTRICHEN`).
 - **Alle `setAlarmClock()`-Aufrufstellen fangen die entzogene Exact-Alarm-Berechtigung**
   (`setExactOrInexact`: try/catch + inexakter Fallback). Ein verzögerter Wecker schlägt keinen Wecker.
 - **Das Skip-Flag läuft zeitbasiert ab, nicht per ID-Match** — plus Gate in `syncAlarms()` UND
@@ -74,7 +75,9 @@ betreffen beide Stellen.
 - **Der Schlummer-Read in `AlarmReceiver` MUSS hinter `userUnlocked` gegated sein** — `AlarmPrefs`
   liegt im CE-Storage, ungegatet bleibt der Wecker bei Direct Boot komplett stumm.
 - **Stille Schicht (`isSilent`) gated NUR die Auslösung.** Fail-safe: Lookup-Fehler = NICHT still.
-- **„Deine Schicht beginnt um" zeigt `AlarmInfo.shiftStartTime`, nicht `triggerTime`.**
+- **„Deine Schicht beginnt um" zeigt `AlarmInfo.shiftStartTime`, nicht `triggerTime`.** Unbekannter
+  Schichtbeginn (`shiftStartTime <= 0`: manueller Wecker, Tag ohne Kalendereintrag) heißt leeres
+  `EXTRA_SHIFT_START_TIME` — die Weckzeit erscheint nie als Schichtbeginn (#183).
 - **Wer die Wichtigkeit eines Notification-Kanals anhebt, braucht eine NEUE Kanal-ID.** Android
   ändert die Importance eines bestehenden Kanals nur nach UNTEN und ignoriert alle übrigen Felder;
   ein unter derselben ID neu angelegter Kanal kommt mit seinen ALTEN Einstellungen zurück. Ein

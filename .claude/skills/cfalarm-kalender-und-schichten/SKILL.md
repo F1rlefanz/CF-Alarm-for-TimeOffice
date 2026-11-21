@@ -53,7 +53,13 @@ das baut man dieselbe Falle in neuer Form nach.
 - **Der Collector der Kalenderauswahl nimmt sich wieder auf (`retryWhen`)**, statt beim ersten
   Upstream-Fehler dauerhaft zu enden.
 - **Ganztägige Termine gehen durch `CalendarEventConverter`** und setzen `isAllDay`;
-  `calculateAlarmTime()` überspringt dann die Nachtschicht-Vortags-Heuristik.
+  `weckzeitpunkt()` überspringt dann die Nachtschicht-Vortags-Heuristik.
+- **Die Weckzeit-Regel ist EINE reine Funktion: `weckzeitpunkt(beginn, ganztaegig, weckzeit)` in
+  `shift/Weckzeitpunkt.kt`** (samt `MAX_NIGHT_SHIFT_LEAD_TIME`, #192); die Erkennung delegiert
+  dorthin, keine zweite Rechnung. **Gerechnet wird auf der Wanduhr, auch die
+  12-h-Grenze** — echte Dauer verschöbe den Wecker an beiden Umstellungstagen um einen Tag. Die
+  Zonen-Variante (`Instant` + `zone`) rechnet nur in Ortszeit um; die Erkennung ruft die
+  Ortszeit-Variante direkt.
 - **Nachgeladen wird immer ein PRÄFIX, nie eine Seite ab Offset** (`offset = 0`, `maxEvents =
   angezeigt + limit`); `mergeMoreEvents()` dedupliziert und sortiert defensiv.
 - **`loadEventsForSelectedCalendars()` braucht einen Generation-Counter**, kein In-Flight-Flag — und
@@ -90,14 +96,15 @@ das baut man dieselbe Falle in neuer Form nach.
   WIEDERHERGESTELLTE Activity zählt mit (Konfigurationswechsel im Hintergrund). Der ERSTE Abruf
   jedes ViewModels verwirft den Zwischenspeicher ebenfalls — sonst nennt „Abgeglichen um" einen
   Abruf, der nie bei Google war. Hergang in `reference/kalender-datenfluss.md`.
-- **Rufbereitschaft ist ein Flag am Schichttyp (`ShiftDefinition.isOnCall`), EINE Quelle für zwei
-  Leser**: die stündliche Kalender-Abfrage an solchen Tagen (`RufbereitschaftAbfrage`, Regeln im
-  Wecker-Skill) und den DND-Cutoff. Welches Kürzel eine Rufbereitschaft ist, weiß nur der Nutzer
-  seiner Station — deshalb der Schalter im Schicht-Editor mit dem Text, WARUM stündlich gefragt
-  wird (kein Stups vom Kalender). Die alte DND-Namensliste `dnd_oncall_shifts` übernimmt
-  `RufbereitschaftMigration` einmalig (App-Start, 6h-Wartung, Import einer alten Datei);
-  idempotent über die Existenz des Altschlüssels, gelöscht erst nach belegtem Erfolg.
-- **Krankmeldung ist ebenfalls ein Flag am Schichttyp (`ShiftDefinition.isSickDay`, #142)**, aber
+- **Rufbereitschaft ist die Kategorie eines Schichttyps (gespeichert als Flag
+  `ShiftDefinition.isOnCall`), EINE Quelle für zwei Leser**: die stündliche Kalender-Abfrage an
+  solchen Tagen (`RufbereitschaftAbfrage`, Regeln im Wecker-Skill) und den DND-Cutoff. Welches
+  Kürzel eine Rufbereitschaft ist, weiß nur der Nutzer seiner Station — deshalb die Kategorie-Wahl
+  auf der Typ-Seite mit dem Text, WARUM stündlich gefragt wird (kein Stups vom Kalender). Die alte
+  DND-Namensliste `dnd_oncall_shifts` übernimmt `RufbereitschaftMigration` einmalig (App-Start,
+  6h-Wartung, Import einer alten Datei); idempotent über die Existenz des Altschlüssels, gelöscht
+  erst nach belegtem Erfolg.
+- **Krank ist ebenfalls eine Kategorie (Flag `ShiftDefinition.isSickDay`, #142)**, aber
   mit umgekehrter Wirkung: ein solcher Termin gibt den Tag FREI. Die Engine liefert Krank-Treffer
   getrennt (`erkenne()` → `Erkennung.krankTermine`, Vorrang vor jeder Schicht im selben Termin,
   derselbe Cache, dieselbe Epoche) - `getAllMatchingShifts` enthält sie NICHT. Wer einen neuen
@@ -117,6 +124,20 @@ das baut man dieselbe Falle in neuer Form nach.
   meldet nichts**: der Sync-Merker speichert das Fenster des Abrufs; Altbestand = 14. Der Cache-Eintrag
   trägt seine Fenstertage. Pre-Alarm-Refresh, Dimmer- und Hue-Horizont sind bewusst NICHT gekoppelt.
   Hergang in `reference/kalender-datenfluss.md`.
+- **Für „Ohne Kalendereintrag" wirkt die Unvollständigkeit UMGEKEHRT** (#173): eine lückenhafte
+  Liste lässt Tage leer aussehen und STELLT Wecker. Die Frage beantwortet EINE reine Funktion,
+  `tageOhneEintrag` (`shift/TageOhneEintrag.kt`): leere Liste = kein Tag, nur Tage von heute bis VOR
+  den Tag des Abruf-Endes, nur Ignoriertes zählt nicht als Eintrag, ein Ende genau 00:00 deckt
+  seinen Endtag nicht, `freieTage` fallen weg, der Verweistyp muss `istWaehlbareSchicht()` UND
+  `weckerAn` sein. Ein heute schon beendeter Termin fehlt im Abruf (`timeMin = now`) — das fängt
+  `syncAlarms()` über die Spannen ab (Wecker-Skill, #175).
+- **Die Wahl „Tage ohne Eintrag verhalten sich wie" (`ShiftConfig.ohneKalendereintragWie`) schreibt
+  NUR `ShiftViewModel.waehleOhneEintrag()`; einen Schichttyp löscht NUR
+  `ShiftViewModel.loescheSchichttyp()`** (`OhneEintragWahl.ohneTyp`), nie
+  `config.copy(definitions = definitions - …)`: der Verweis fällt im SELBEN Schreibvorgang auf
+  „Eigene Einstellungen" zurück — zwei Schreibvorgänge ließen dazwischen einen Sync einen Wecker
+  für einen gelöschten Typ stellen (#177). Ein Verweis ins Leere (Import) ist harmlos:
+  `tageOhneEintrag` liefert dann nichts.
 
 ## Schichterkennung — Kurzregeln
 
@@ -162,14 +183,37 @@ das baut man dieselbe Falle in neuer Form nach.
   nach einem Namenstausch fremd gewordener Eintrag wird geräumt statt stehen gelassen.
   **Nacharmiert wird erst NACH dem Alarm-Sync** — vorher tragen die Schichtspannen noch den alten
   Namen (Hergang im Referenzteil).
-- **Geraten wird nicht mehr — vorgeschlagen wird** (`ShiftCodeSuggester`). Die App ordnet NICHTS selbst zu.
+- **Ein Muster ohne Buchstabe und ohne Ziffer („+") trifft in `matchesKeywords` nur den GANZEN
+  getrimmten Titel** (#150, Zeichenklasse `\p{L}\p{N}` wie die Wortgrenzen); gemischte Muster („N+")
+  bleiben beim Wortgrenzen-Abgleich.
+- **Die Kategorie eines Typs ist `ShiftDefinition.kategorie`, BERECHNET aus den Flags** (`isSickDay`
+  → Krank, sonst `isOnCall` → Rufbereitschaft, sonst der gespeicherte Wert, sonst Dienst; beide
+  true = Krank). Ändern nur über `mitKategorie()`, das beide Flags setzt (#166).
+- **Ignorieren ergibt keine Schicht und wird erst NACH der Schicht-Suche gefragt** (#167): ein
+  Ignorieren-Typ verdrängt nie einen echten Treffer („F TB" ist Schicht F, egal in welcher
+  Reihenfolge die Typen stehen). Die Engine liefert solche Termine getrennt
+  (`Erkennung.ignorierteTermine`) — `getAllMatchingShifts` enthält sie NICHT, wie bei Krank.
+- **Welche Typen eine AUSWAHLLISTE anbieten darf, entscheidet EINE Funktion:
+  `ShiftDefinition.istWaehlbareSchicht()`** (`SchichttypAuswahl.kt`: aktiv UND weder Krank noch
+  Ignorieren, #171). Listen rufen `waehlbareSchichttypen()`/`waehlbareSchichtNamen()`, nie eine eigene
+  `isEnabled && !isSickDay`-Bedingung. Bewusst ausgenommen: `ShiftViewModel.schichtFolgen` (braucht
+  Ignorieren für „wird übergangen"), „Gehört zu" im Einordnen-Dialog (`gehoertZuZiele`: nur ohne
+  Ignorieren) und die Wahl bei „Ohne Kalendereintrag" (Krank und ausgeschaltete Typen wählbar).
+- **Geraten wird nicht mehr — vorgeschlagen wird** (`ShiftCodeSuggester`). Die App ordnet NICHTS
+  selbst zu. Eingeordnet wird in „Im Kalender gefunden, noch nicht eingeordnet" (`EinordnenDialog`),
+  drei Schreibwege, alle über `updateShiftConfig()`: `assignCodeToDefinition()`, `ignoriereCode()`
+  und `legeTypAusCodeAn()` — Letzteres erst mit „Erstellen" auf der Typ-Seite.
+  **`SchichttypEinordnen.neuerTypAusCode()` speichert NICHT** (sonst wird eine geratene Weckzeit
+  scharf); `ignorieren()` zielt nur auf einen AKTIVEN Ignorieren-Typ (#169).
 - **Der manuelle Wecker liest die Schichtliste REAKTIV** (`observeAvailableShifts()`) und löst die
   Definition kurz vor dem Armieren frisch auf (`getCurrentShiftConfig()`), statt einen Snapshot aus
   dem `init{}`-Block zu benutzen.
 - **`ShiftUseCase.add/update/deleteShiftDefinition` sind ENTFERNT** — sie speicherten, ohne die
   System-Alarme anzufassen. Einziger richtiger Weg: `ShiftViewModel.updateShiftConfig(config)`.
 - **`withCodeAssignedTo()` macht DREI Dinge zusammen**: Muster ergänzen, Zieldefinition aktivieren,
-  Kürzel bei allen anderen entfernen. Jedes einzeln wäre wirkungslos oder gefährlich.
+  Kürzel bei allen anderen entfernen. Jedes einzeln wäre wirkungslos oder gefährlich. **Weil es das
+  Ziel IMMER einschaltet**, stellt `legeTypAusCodeAn` danach `isEnabled` auf den Wert des Editors
+  zurück (#176) — und ein ausgeschalteter Typ wird nie Ziel von „Ignorieren" (#169).
 - **Fünf bekannte `syncAlarms()`-Aufrufer** (Boot, Wartung, Pre-Alarm-Worker, `CalendarViewModel`,
   `ShiftViewModel`); ein sechster erbt das Master-Pause-Gating automatisch, **muss sich aber selbst
   um die Vollständigkeit seiner Eventliste kümmern**. Zwei davon haben zusätzlich eine **absichtlich

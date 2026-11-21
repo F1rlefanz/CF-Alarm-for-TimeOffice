@@ -47,6 +47,12 @@ das baut man dieselbe Falle in neuer Form nach.
     Zustand als 0-Byte-Datei.
   - **`DimRuleRepository`**: `coerceInputValues` gilt für die ANZEIGE, `editRules()` liest **strikt**;
     `upsert`/`delete` als Read-Modify-Write INNERHALB einer `dataStore.edit{}`-Transaktion.
+  - **Die Quellen der Tagesleiste** (`ShiftViewModel.tagesleisteQuellen`,
+    `tagesleiste/TagesleisteQuellen.kt`, #196) führen jeden Lesefehler als `Quelle.Unbekannt`, nie
+    als leere Liste — JE QUELLE EINZELN VOR dem `combine` (`fehlerAlsUnbekannt`, `alsQuelle`); `null`
+    heißt nur „noch nicht gelesen". Ein einziger Fang HINTER dem `combine` (wie `schichtFolgen` mit
+    `emit(emptyMap())`) ließe bei einem Fehler alle Spuren zugleich ausfallen. `alsQuelle` wirft
+    `CancellationException` weiter (`getScheduleRules()` verpackt sie in `Result.failure`).
 - **Ein CE-DataStore-Read VOR der ersten Entsperrung wirft NICHT — er liefert still leere
   Preferences.** Deshalb fragt `AlarmRepository` VOR dem Read den `UserManager`, akzeptiert bei
   gesperrtem Nutzer KEIN Ergebnis und lädt beim ersten Zugriff nach dem Entsperren nach —
@@ -103,6 +109,13 @@ das baut man dieselbe Falle in neuer Form nach.
   sind zusätzlich bereichsgeprüft — **und zusätzlich im LESEPFAD geklemmt** (Android-Backup ist ein
   zweiter Weg, den der Import nie sieht).
 - **Unlesbare Regelwerke werden beim Import BENANNT abgelehnt**, statt still auf „leere Liste" zu fallen.
+- **Ein neues Feld an `ShiftDefinition`/`ShiftConfig` hat einen Default und wird gegen eine
+  testlokale Kopie der Vorgänger-Klassen geprüft (`AltDecoderKompatibilitaetTest`); eine Aufzählung
+  wird als TEXT gespeichert, nie als kotlinx-Enum** (#166). `ShiftConfigRepository.json` hat kein
+  `coerceInputValues`: ein unbekannter Enum-Wert (spätere Version, dann Revert) machte die GANZE
+  Konfiguration `Broken`. `formatVersion` der Sicherung bleibt 1, sonst lehnt die Vorversion jede
+  neue Datei ab. Gespeichert wird ein Typ vom bestehenden aus (`copy`), nie über einen neuen
+  `ShiftDefinition(...)`-Aufruf — der ließe jedes künftige Feld still auf den Default fallen.
 
 ## Auth — Kurzregeln
 

@@ -16,6 +16,7 @@ das baut man dieselbe Falle in neuer Form nach.
 
 - `reference/navigation.md` — BackHandler, Onboarding-Gates, Rueckweg aus Unterscreens
 - `reference/ui-texte-und-layout.md` — Textregeln und die Compose-Layout-Fallen
+- `reference/typ-seite.md` — Umbau Schichttyp: Typ-Liste, Typ-Seite, Einordnen, „Ohne Kalendereintrag", Tagesleisten-Karte
 - `reference/pflichtregeln-aus-claude-md.md` — die Pflichtregeln aus der CLAUDE.md im vollen Wortlaut, mit Begründung
 
 ---
@@ -146,7 +147,9 @@ das baut man dieselbe Falle in neuer Form nach.
   der Weckzeit, wie bei Skip und Freigabe. Ein abgelaufener, noch nicht geraeumter Skip
   (`SkipLage.wirktNoch`) darf die Liste nicht sperren. Die Liste rechnet beim Zurueckkehren in die
   App und bei jedem neuen Ziel nach — sonst haengt der Knopf an einem verstrichenen Wecker
-  (Review 14.10.2026). Kaertchen kommen aus `SchichtFolgen`, keine Nachbildung.
+  (Review 14.10.2026). Kaertchen kommen aus `SchichtFolgen`, keine Nachbildung. Ein Wecker „wie
+  <Typ>“ an einem Tag ohne Kalendereintrag ist dort KEIN Dienst (`baueWeckerTage` nimmt
+  `AlarmUseCase.istOhneEintragWecker` aus `schichtenDesTages`; nur das Licht-Kaertchen bleibt).
   **Ein schwebender Snooze steht als Zeile „Weckt wieder · schlummert“** (Tagesliste) bzw. als
   „… · schlummert“ in „Nächster Wecker“, Quelle ist der Snooze-Merker (`schwebendesSchlummern`).
   Vorher war ein geschlummerter Wecker nirgends zu sehen: sein Eintrag ist nach dem Klingeln aus
@@ -196,3 +199,50 @@ das baut man dieselbe Falle in neuer Form nach.
 - **Endlos-Animationen in der Zeichenphase lesen** (`graphicsLayer { }` mit `State` ohne `by`), und
   Listen mit `rememberSaveable` je Eintrag brauchen `key = { it.id }` — sonst wandert ein offener
   Löschdialog zur Nachbarregel.
+
+## Umbau Schichttyp: Typ-Seite, Einordnen, „Ohne Kalendereintrag" — Kurzregeln
+
+Hergang, Textwahrheits-Entscheidungen und Tests: `reference/typ-seite.md`.
+
+- **Ein bildschirmlokaler `BackHandler` darf nur GATEN, nie das Ziel bestimmen** (#187): die
+  Typ-Seite hat `BackHandler(enabled = geaendert) { rueckfrageOffen = true }`; ohne Änderungen löst
+  der `BackHandler` in `MainScreen` über `navigateBackFrom` auf. Das Ziel steht nur in `rueckwegZiel`.
+- **Ein neuer `NavigationState` hat FÜNF Stellen**: Zustand, Aktion, Zweig in `rueckwegZiel`, Zweig in
+  `MainScreen` und — für Seiten des Typ-Bereichs — `imTypBereich` (sonst springt der Scroll-Stand der
+  Typ-Liste). **`rueckwegZiel` hat `else -> MainTab.HOME`**: ein vergessener Zweig kompiliert und
+  landet still auf der Übersicht; fangen kann das nur `NavigationViewModelTest`.
+- **Eine Wahl, die die Seite nicht verlässt, ist ein `Dialog`, kein `NavigationState`**
+  (`KategorieWahlDialog`, `EinordnenDialog`): Zurück schließt ihn, bevor ein `BackHandler` etwas
+  erfährt.
+- **Ein Entwurf, der Drehen, Dunkelmodus und Schriftgröße überleben soll, ist EIN Wert mit `Saver`**
+  (`TypEntwurf.alsSpeicherListe()`), sein Ausgangsstand wird beim Öffnen eingefroren, nicht auf das
+  `ShiftDefinition`-Objekt gekeyt — jede Config-Emission brächte sonst ein neues Objekt und setzte ihn
+  zurück. „Geändert" heißt `ausgang != entwurf`. Eingabe-Callbacks sind Umformungen
+  (`aendere { it.copy(...) }`), keine fertigen Werte. Gespeichert wird höchstens einmal
+  (`TypSeiteSpeicherung`); ein verschwundener Typ wird nie neu angelegt.
+- **Neuanlage läuft über die Typ-Seite** (#190): `navigateToNeuerTyp(vorlage, fundCode, tab)`, Vorlage und
+  Fund-Code reisen im `NavigationState.TypSeite`, geschrieben wird NUR mit „Erstellen"
+  (`TypSeiteSpeicherung.erstelle`, höchstens einmal für BEIDE Wege).
+- **„Ohne Kalendereintrag" ist eine EIGENE Seite** (`NavigationState.OhneEintragSeite`), keine
+  `TypSeite` mit Sonderkennung; ihre Wahl schreibt beim Tippen (`waehleOhneEintrag`, einziger
+  Aufruf je Tipp) — die einzige Ausnahme vom Entwurf mit Speichern.
+- **Die Schichttypen-Liste ist NUR in der Anzeige nach Kategorien gruppiert** (`schichttypBloecke`):
+  die gespeicherte Reihenfolge wird nie umsortiert (die Erkennung nimmt den ersten Treffer),
+  Bearbeiten und Löschen arbeiten per `id`, nie per Index einer Anzeigeliste.
+- **Marke · Text · Knopf in einer Zeile: die Textbreite bei 320 dp nachrechnen** — Marke links und
+  Papierkorb als eigene Spalte ließen 146 dp, die NBSP-Abschnitte der Statuszeile brachen mitten
+  im Wort; der Papierkorb steht deshalb in der Namenszeile.
+- **Auch ein leerer Platzhalter-`Scaffold { }` benutzt seinen `padding`-Parameter** — Lint
+  `UnusedMaterial3ScaffoldPaddingParameter` ist ein Fehler, die Schleuse blockiert.
+- **Ein Text unter einem Editor-Feld wird gegen ALLE Kategorien geprüft, in denen das Feld sichtbar
+  ist** (nicht nur gegen Dienst), und **eine Meldung, die einen Knopfzustand erklärt, liest dieselbe
+  Größe wie der Knopf** (`TypAbschnittLogik.fehltMuster` = Chips MIT dem Text im „+"-Feld).
+- **WAS ein Sonderfall-Kasten sagt, entscheidet EINE Funktion: `ShiftDefinitionTexte.sonderfall()`**;
+  ein ausgeschalteter Typ hat keinen Kasten, Krank und Ignorieren haben keine Karte „Wecker".
+- **Kein Text am Typ verspricht, was der Typ (noch) nicht steuert**: Dimmen und Licht hängen bis
+  Etappe 3/4 an Regeln, nicht am Typ; ein stummer Wecker startet kein Licht. **Wer Etappe 3 oder 4
+  baut, tauscht die vorgemerkten Sätze** (Liste in `reference/typ-seite.md`).
+- **Die Karte „So läuft ein Tag" ist nur Verdrahtung** der Adapter aus `tagesleiste/` und zeigt nur,
+  was zur Laufzeit wirklich passiert: ein ausgeschalteter Typ hat keinen Ablauf, Tageslicht-
+  Bedingungen werden übergeben. Weckzeit/Wecker/Kategorie kommen aus dem ENTWURF, Regeln und Spannen
+  hängen am GESPEICHERTEN Namen; `tagesleisteQuellen == null` heißt „wird gelesen", nie leere Leiste.

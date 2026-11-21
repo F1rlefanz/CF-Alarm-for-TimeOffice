@@ -16,8 +16,16 @@ Gilt für jedes Paket des Umbaus, das einen Bildschirm ändert. Vorlage ist der 
   Das Fairphone wird nie angesprochen.
 - **Texte werden hart geprüft, nicht per Auge.** Ein Screenshot-Urteil ersetzt `pruefe_texte.py` nicht.
 - **Der Bewerter ist ein anderes Modell als der Umsetzer** (Sonnet setzt um → Opus bewertet und
-  umgekehrt) und sieht nur Screenshot, Prototyp-Stelle und SPEC-Abschnitt, nicht den Weg.
+  umgekehrt) und sieht Screenshot, Prototyp-Stelle, SPEC-Abschnitt **und die „Festlegungen des
+  Betreuers" des Issues im Wortlaut**, nicht den Weg. Ohne die Festlegungen zieht er für jede
+  bewusste Abweichung vom Prototyp ab (#189: Krank 11/16 statt 16/16). Wird nachgereicht, gehören
+  BEIDE Wertungen in den Abschlusskommentar.
 - Jede Änderung am Gerätezustand (Dichte, Dunkelmodus) danach **zurücksetzen**.
+- **Die Abnahme läuft als Skript, ein Bash-Aufruf je Bildschirmzustand** (navigieren,
+  `pruefe_texte.py`, Screenshots, Zurücksetzen im `finally`) — Einzel-Taps verbrauchen das
+  Turn-Budget, und ein Log mit Prosa statt AUSGABE zählt nicht als Beleg.
+
+Fallen und Belege im Einzelnen: `reference/emulator-fallen.md`.
 
 ## Ablauf
 
@@ -28,7 +36,9 @@ Gilt für jedes Paket des Umbaus, das einen Bildschirm ändert. Vorlage ist der 
 3. **Texte:** Pflichttexte des Bildschirms aus `BILDSCHIRME.md` in eine Datei schreiben (eine Zeile
    je Text, verbotene mit `!`, z. B. `!Prototyp`), dann
    `python tools/geraet/pruefe_texte.py --datei <datei>` → muss `BESTANDEN` melden (Exit 0).
-   Die Ausgabe gehört ins Log bzw. in den Abschlusskommentar des Issues.
+   Die Ausgabe gehört ins Log bzw. in den Abschlusskommentar des Issues. **Vor JEDEM Lauf an den
+   Seitenanfang wischen** (es scrollt nur nach unten); Seitentitel nicht in die geordnete
+   Erwartung, und von zwei Texten im selben Knoten nur den ersten.
 4. **320 dp:** `adb -s emulator-5554 shell wm density <Breite_px / 2>` (1080 px → 540), Bildschirm
    erneut öffnen, Screenshot, nichts abgeschnitten; danach `wm density reset`.
 5. **Dunkelmodus:** `adb -s emulator-5554 shell cmd uimode night yes`, Screenshot, lesbar; danach
@@ -42,7 +52,15 @@ Gilt für jedes Paket des Umbaus, das einen Bildschirm ändert. Vorlage ist der 
 
 - `adb shell input text` kann keinen Doppelpunkt: Zeitfelder nicht neu tippen, sondern einen
   bestehenden Eintrag mit gültiger Zeit bearbeiten.
-- Mit Git Bash `MSYS_NO_PATHCONV=1` setzen, sonst werden `/data/local/tmp`-Pfade verbogen.
+- Mit Git Bash `MSYS_NO_PATHCONV=1` setzen, sonst werden `/data/local/tmp`-Pfade verbogen — dann
+  aber Pfade an Windows-Python mit `cygpath -w` übergeben, und Text mit Umlauten kommt dort
+  verstümmelt an (nur ASCII-Teilstrings suchen).
+- **Vor jedem Tipp neu `uiautomator dump`en, nie per Teiltreffer tippen, nach jedem Bildschirm
+  prüfen, wo man steht.** Dialoge wachsen und verschieben Zeilen, ein Teiltreffer traf eine sofort
+  speichernde Auswahlzeile, und Wischen über einer offenen Tastatur tippt.
+- Zustände wie Krank/Ignorieren im ENTWURF einer bestehenden Typ-Seite prüfen (Kategorie wechseln,
+  danach Zurück → „Verwerfen"), statt Typen anzulegen. Die Tagesleiste ist ein Canvas: belegt wird
+  sie über die Ereignisliste darunter.
 - Das Overlay des Dimmers erscheint nicht im Screenshot; Nachweis über `dumpsys SurfaceFlinger`.
 - Hängt mobile-mcp am Gerät, ist die Bedienungshilfe still aus (Memory
   `env_mobile_mcp_legt_bedienungshilfen_lahm`).

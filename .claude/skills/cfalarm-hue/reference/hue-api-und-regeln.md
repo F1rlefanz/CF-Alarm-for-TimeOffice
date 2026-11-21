@@ -29,6 +29,7 @@
 - `HueSmartScheduler.getInstance()` veröffentlicht `INSTANCE` erst NACH `initialize()`
 - Regel speichern navigiert sofort weg
 - Szenen: was am 25.08.2026 an der echten Bridge gemessen wurde
+- Die Licht-Spur der Tagesleiste (#195, Umbau Schichttyp)
 
 ---
 
@@ -318,3 +319,43 @@ Gerundet wird AUF (`aufgerundeteMinuten`), der Timer endet nie vor dem Hell-Zeit
 tatsaechliches Vorziehen loggt EINE WARN-Zeile je Regel (Release-Log) - nicht schon das Tragen der
 Wahl, das waere Rauschen. Downgrade: `HueConfigRepository` liest mit `ignoreUnknownKeys`, das neue
 Feld faellt in aelteren Versionen still weg.
+
+## Die Licht-Spur der Tagesleiste (#195, Umbau Schichttyp, November 2026)
+
+`licht(eingabe, LichtEinstellungen, vorlaufMinuten)` in `tagesleiste/TagesleisteLicht.kt` zeigt auf
+der Typ-Seite, wann Licht an ist (Einheit der Leiste: Skill `cfalarm-kalender-und-schichten`).
+
+- **Bedingungen wie im Betrieb:** kein Licht bei stillem Wecker, Wecker aus, ohne `weckpunktMin()`
+  (Krank, Ignorieren, ungültige Weckzeit) und ohne eingerichtete Bridge (`hasStoredBridge`, nicht
+  „verbunden"). Regelwahl `enabled && passtAufSchicht(Typname)` — eigene UND „ALL" feuern
+  gemeinsam —, mit `TageslichtAmMustertag` zusätzlich `laeuftBeiTageslicht` am Wecktag des
+  Weckpunkts (er kann am Vortag liegen; ohne Standort wird die Bedingung nicht behauptet).
+- **Spuren:** Beginn = Weckpunkt minus `getPreAlarmSunriseLeadMinutes` (die längste „vor dem
+  Wecker"-Rampe; die Funktion wird dem Adapter hereingereicht, der Test bindet den echten
+  `HueSunriseExecutor`), Spur `SONNENAUFGANG`; dahinter `AN` ab dem Weckpunkt bis zum SPÄTESTEN
+  Auto-Aus (`HueRuleUseCase.autoOffTargetsOf`, zählt die Rampe einer erst zum Wecker startenden
+  Regel mit). Hat auch nur EINE gültige Regel kein Auto-Aus, bleibt ihr Licht an: der Bereich läuft
+  bis `TAGESLEISTE_MIN`, und die Leiste sagt dort kein „Licht aus" — ein stilles Verschwinden einer
+  gültigen Regel wäre falscher (#209: eine Leiste ohne „offenes Ende").
+- **Falle Log:** jeder Aufruf von `autoOffTargetsOf(…, fruehAus)` aus einer ANZEIGE schreibt eine
+  WARN-Zeile „Auto-Aus vorgezogen" ins Release-Log (`logVorgezogen`) — die Zeile, die ein Tester als
+  Beleg für ein zu früh ausgegangenes Licht nennt; die Leiste rechnet bei jeder Eingabe neu und
+  erzeugte sie ständig. Darum kürzt sie `ausBeiHell` nicht, sondern zeigt die Dauer als Obergrenze
+  (#209: nicht loggende Kürzung aus den reinen Funktionen `hellNachWeckzeit`/`kuerzeAutoAus`).
+- **Eine Szene trägt `on == true` als gespeicherte Zusage**; eine Szene mit `on == null` (Bestand,
+  Editor-Fehler) schaltet trotzdem an (`executeActionsWithAutoRevert`), bekommt aber von
+  `autoOffTargetsOf` kein Auto-Aus — das Licht bleibt an, die Spur läuft offen.
+- Anders als Dimmer und DND behält Hue bei Wecker aus die Weckzeit NICHT als Anker: Hue-Regeln
+  laufen nur zu einem ALARM (SPEC E8). Geerbt von `weckpunktMin`: ein Wecker außerhalb 0..2880
+  zeigt keine Spur, auch wenn der Vorlauf ins Fenster reichte. Ein Lesefehler der Regeln darf nicht
+  als `emptyList()` ankommen: der Aufrufer ruft den Adapter dann nicht auf (Quellen: Skill
+  `cfalarm-persistenz-und-auth`).
+- Tests: `TagesleisteLichtTest` (Mutationsprobe 05.11.2026, 16 Mutationen, jede rot). Zwei
+  überlebten zuerst: die Id-Prüfung im Sonnenaufgangs-Zweig von `schaltetLicht` (der Test „ohne
+  schaltbares Ziel" hatte nur Regeln ohne Rampe) und der Wecker am Vortag (der Test hieß „Vortag",
+  lag aber am Mustertag; der Prüfer fand es). **Ein Tageswechsel-Test braucht eine Eingabe, bei der
+  der falsche Tag ein ANDERES Ergebnis gibt:** Sonnenaufgänge liegen an Nachbartagen Sekunden
+  auseinander, darum nimmt der Test Tromsø am ersten Sonnentag (Vortag Polarnacht = kein
+  Hell-Zeitpunkt = Regel läuft). Die erste Fehlfassung `max(0, …)` war ÄQUIVALENT — sie legt den
+  Wecker auf 00:00 des Mustertags, vor dem Sonnenaufgang, und die Regel läuft auch dort; erst
+  `floorMod(…, 1440)` (der Wecker mit Uhrzeit 23:30 am Mustertag) wird rot.

@@ -22,6 +22,7 @@
 - Die Notification-Entscheidung lebt INNERHALB von `AlarmUseCase.syncAlarms()`, nicht bei dessen
 - Der allererste Sync (z. B. nach Neuinstallation) flutet nicht
 - Den letzten Kalender abwählen IST eine Löschgrundlage — ein leeres Ladeergebnis nicht
+- Umbau Schichttyp: Weckzeitpunkt, „Ohne Kalendereintrag" und die Dienstzeit der Tagesleiste (eigener Abschnitt am Ende)
 
 ---
 
@@ -94,8 +95,9 @@
   01:00/02:00 lokal — vorher stand „Deine Schicht beginnt um 02:00" in Notification/Vollbild, das
   DND-Dienstzeit-Fenster begann um 02:00, und wegen des end-exklusiven `end.date` war das Event ~24 h
   zu lang. Der Konverter leitet den Kalendertag zonenunabhängig aus dem UTC-Wert ab und macht daraus
-  lokale Tagesgrenzen (00:00 bis 23:59 des LETZTEN Tages). **`calculateAlarmTime()` überspringt die
-  Nachtschicht-Vortags-Heuristik bei `isAllDay`**: ein ganztägiger Eintrag hat keinen Schichtbeginn,
+  lokale Tagesgrenzen (00:00 bis 23:59 des LETZTEN Tages). **`weckzeitpunkt()` (früher
+  `calculateAlarmTime()`, #192) überspringt die Nachtschicht-Vortags-Heuristik bei `isAllDay`**: ein
+  ganztägiger Eintrag hat keinen Schichtbeginn,
   gegen den „danach" prüfbar wäre. Ohne diesen Zusatz weckte die Standard-Spätschicht (12:30) einen
   ganzen Tag zu früh — und am Schichttag gar nicht.
 - **Nachgeladen wird immer ein PRÄFIX, nie eine Seite ab Offset.** Der Erst-Ladevorgang holt PRO
@@ -567,3 +569,96 @@ frisch, und ein zu kleiner Wert ist durch Punkt 1 ungefährlich (Review 02.10.20
 
 **Noch nicht verifiziert:** ob Dimmer/DND bei einer Vorausschau < 14 Tage die Tage jenseits des
 Kalenderfensters als schichtfrei verplanen (`ShiftSpanStore` kennt nur die Schichten der Liste).
+
+## Umbau Schichttyp: Weckzeitpunkt, „Ohne Kalendereintrag" und die Dienstzeit der Tagesleiste (Oktober/November 2026)
+
+### Die Weckzeit-Regel als reine Funktion (#192)
+
+`weckzeitpunkt(beginn, ganztaegig, weckzeit)` in `shift/Weckzeitpunkt.kt` (samt
+`MAX_NIGHT_SHIFT_LEAD_TIME`). Der frühere `ShiftRecognitionEngine.calculateAlarmTime()` ist seit #192 nur
+noch ein Ein-Zeilen-Delegat und entfällt mit #202 (KDoc in `CalendarRepository.kt` und Kommentare in
+Tests nennen ihn noch; die Skills nicht mehr). **Gerechnet wird auf der Wanduhr,
+auch die 12-h-Grenze** (`Duration.between` auf `LocalDateTime`, so schon vorher): am Umstellungstag
+sind 18:00 → 06:00 auf der Uhr 12 h, verstrichen aber 13 h (Herbst); 17:30 → 06:00 sind auf der
+Uhr 12 h 30, verstrichen 11 h 30 (Frühjahr). Echte Dauer verschöbe den Wecker an beiden Tagen um
+einen Tag. Deshalb liest die Zonen-Variante `weckzeitpunkt(beginn: Instant, ganztaegig, weckzeit,
+zone)` (für `ShiftSpan.startTime` der Tagesleiste) die Zone nur zum Umrechnen in Ortszeit, und die
+Erkennung ruft die Ortszeit-Variante direkt — kein Umweg `LocalDateTime → Instant → LocalDateTime`,
+der bei geänderter Zone keine Identität ist. Tests: `WeckzeitpunktTest` (eine Falltabelle mit
+Literalen, geprüft an der Funktion UND durch die Erkennung, dazu beide Umstellungstage;
+Mutationsprobe 17.10.2026: `<=` → `<` und Ganztags-Ausnahme entfernt → jeweils rot). Die Lehre für
+„X ruft genau Y"-Tests steht im Skill `cfalarm-bauen-und-testen`.
+
+### „Ohne Kalendereintrag": die Unvollständigkeit wirkt umgekehrt (#173, #177)
+
+Für die Wecker an leeren Tagen ist eine lückenhafte Liste nicht harmlos, sondern gefährlich: sie
+lässt Tage leer AUSSEHEN und stellt Wecker. Die Frage beantwortet EINE reine Funktion,
+`tageOhneEintrag` (`shift/TageOhneEintrag.kt`, KDoc mit allen Festlegungen):
+
+- leere Liste = kein Tag (die Kalender-Abwahl ruft `syncAlarms()` absichtlich mit leerer Liste auf);
+- nur Tage von heute bis VOR den Tag, der das Abruf-Ende enthält (exklusiv wie
+  `SyncHorizonStore.istJenseitsDesAbrufs`) — dass kein ausgewählter Kalender fehlt
+  (`CalendarFetchOutcome.isComplete`), prüft der Aufrufer;
+- nur Ignoriertes (`Erkennung.ignorierteTermine`) zählt nicht als Eintrag, ein noch nicht
+  eingeordneter Code und ein Krank-Termin sind Einträge; ein Ende genau 00:00 deckt seinen Endtag
+  nicht ab;
+- `freieTage` fallen weg; der Verweistyp muss `istWaehlbareSchicht()` UND `weckerAn` sein (also
+  auch Krank = kein Tag — steht nicht in der Festlegung des Betreuers, folgt aber aus „wie <Typ>":
+  ein Krank-Eintrag stellt nie einen Wecker).
+
+Die reine Funktion hat kein Gedächtnis: der Abruf beginnt bei JETZT (`timeMin = now`), ein heute
+schon beendeter Termin (Nachtdienst bis 07:00, Sync um 08:00) fehlt. Diese Falle schließt der
+Einbau in `syncAlarms()` über die beendeten Spannen (`heuteDurchBeendeteSpanneBelegt`, Hergang im
+Skill `cfalarm-wecker-und-boot`, #175). Test: `TageOhneEintragTest` (je Festlegung ein Block;
+Mutationsprobe 17.10.2026: zwölf Mutationen, jede rot).
+
+Die Wahl selbst (`ShiftConfig.ohneKalendereintragWie`) schreibt nur `ShiftViewModel.waehleOhneEintrag()`;
+gelöscht wird ein Typ nur über `ShiftViewModel.loescheSchichttyp()` (= `OhneEintragWahl.ohneTyp`), der
+den Verweis im SELBEN Schreibvorgang auf „Eigene Einstellungen" zurücksetzt — ein zweiter
+Schreibvorgang ließe dazwischen einen Sync einen Wecker für einen Typ stellen, den es nicht mehr
+gibt. Ein Verweis ins Leere (Import, ältere Sicherung) bleibt ungefährlich: `tageOhneEintrag`
+liefert dann nichts (WARN), `gewaehlterTyp()` liest ihn als „eigene", und die Wahl räumt ihn bei
+„Eigene Einstellungen" ab. Krank und ausgeschaltete Typen stehen bewusst zur Wahl (SPEC E2), sie
+stellen dann eben keinen Wecker (`OhneEintragWahl.weckt()`, ein Test hält es gegen
+`tageOhneEintrag`). Test: `OhneEintragWahlTest` (Mutationsprobe 17.10.2026: Löschen setzt nicht
+zurück + Ignorieren wählbar + Wahl setzt nichts → 8 von 16 rot).
+
+### Die Tagesleiste der Typ-Seite: Einheit und Dienstzeit (#193)
+
+Die Leiste „So läuft ein Tag" ist eine reine Rechnung in `tagesleiste/` (`Tagesleiste.kt`,
+`Dienstzeit.kt`; die Adapter für Dimmen/DND, Licht und Quellen liegen daneben, ihre Regeln in den
+Skills `cfalarm-dimmer-und-dnd`, `cfalarm-hue`, `cfalarm-persistenz-und-auth`, die Karte in
+`cfalarm-ui-und-navigation`).
+
+- **Ihre EINE Einheit sind Minuten ab 18:00 am Vortag** (0..2880 = `TAGESLEISTE_MIN`; Mustertag
+  00:00 = 360, Folgetag 00:00 = 1800) — für Eingaben wie Ausgaben. Der Prototyp zählt ab
+  Mitternacht des Mustertags (1440); wer von dort übersetzt, rechnet `-1080`.
+- **Die Dienstzeit eines Typs ist die NÄCHSTE ANSTEHENDE Spanne aus dem `ShiftSpanStore`**
+  (`endTime > jetzt`, also auch eine laufende), sonst die letzte (`dienstzeitAus`). Gelegt werden
+  nur Uhrzeiten, auf der Wanduhr. Der Namensvergleich ist genau der von `RufbereitschaftAbfrage`, also
+  mit dem GESPEICHERTEN Namen — ein umbenannter Entwurf hat bis zum nächsten Sync keine Spanne. Die
+  Dauer ist die Wanduhr-Differenz, gedeckelt auf einen Tag; eine Wanduhr-Dauer ≤ 0 (nur eine Spanne
+  in der doppelten Stunde der Rückstellung) ergibt keine Dienstzeit statt eines Absturzes an
+  `require`.
+- **Ein Google-Ganztagstermin steht im `ShiftSpan` als 00:00 bis 23:59 des letzten Tages**
+  (`CalendarEventConverter`, siehe oben) — der Span trägt kein `isAllDay`, dieses Ende ist sein
+  Fingerabdruck (`Dienstzeit.ganztaegig`). Ein zeitgebundener Termin 00:00 bis 00:00 (so stand ein
+  Abrufdienst am 14.10.2026 auf dem Fairphone) ist NICHT ganztägig im Sinn von `weckzeitpunkt()`:
+  bei Weckzeit 13:00 fällt sein Wecker auf den Vortag. Beide füllen den ganzen Tag (`ganzerTag`);
+  die Frage an `weckzeitpunkt(ganztaegig = …)` stellt nur `ganztaegig`. Die Wecker-Anzeige
+  `dienstzeitText` kennt den Fingerabdruck noch nicht und zeigt „00:00–23:59" (#203).
+- **Frei, Urlaub, Fortbildung und Krank ohne Spanne gelten als ganztägig** (`wirksameDienstzeit`),
+  Dienst und Rufbereitschaft ohne Spanne nicht: keine erfundene Dienstzeit, stattdessen
+  `Hinweis.KEIN_TERMIN_IM_KALENDER`; der Wecker steht dann auf der Weckzeit des Mustertags. Krank
+  hat nie einen Wecker, Ignorieren keine Leiste (`Tagesleiste.LEER`).
+- Dimmen, „Nicht stören" und Licht kommen als fertige Bereiche herein (`DimBereich`, `DndBereich`,
+  `LichtBereich`), unabhängig von `DimRule`/`HueSchedule`; die Blockposition (`dimmer.Blockposition`,
+  Vorgabe mittendrin bei Dienst/Ruf, sonst einzeln) filtert nur Dimmen und „Nicht stören".
+- **Das Ruf-Raster ist Beginn + k·1 h, solange vor dem Ende, und steht UNABHÄNGIG neben
+  `RufbereitschaftAbfrage.naechsteAbfrage`** (eigene Kette, nicht angefasst). `TagesleisteTest` ruft
+  `naechsteAbfrage` wiederholt über eine Spanne ab 21:30 auf und vergleicht — bei einer Spanne ab
+  voller Stunde fielen „Beginn + k·h" und „Wanduhr-Stunden" zusammen und die Probe wäre leer.
+  Tests: `TagesleisteTest`, `DienstzeitTest` (Mutationsprobe 17.10.2026: 22 Mutationen, jede rot;
+  „Raster bis einschließlich Ende" fiel zuerst durch, weil ein Ende von 07:00 auf keinem
+  Rasterpunkt ab 21:30 liegt — seither prüft ein Test eine Spanne 22:00–06:00, deren Ende AUF dem
+  Raster liegt).

@@ -102,10 +102,28 @@ das baut man dieselbe Falle in neuer Form nach.
   ordnet ueber Keywords zu): still nur, wenn ALLE gleichnamigen still sind - nie `firstOrNull`,
   sonst macht eine stille Dublette davor den Wecker aus der lauten stumm.
 - **„Deine Schicht beginnt um" zeigt `AlarmInfo.shiftStartTime`, nicht `triggerTime`.** Die Falle
-  liegt im Re-Arming-Pfad `scheduleSystemAlarm()`, nicht in der Erstplanung.
+  liegt im Re-Arming-Pfad `scheduleSystemAlarm()`, nicht in der Erstplanung. **Unbekannter
+  Schichtbeginn (`shiftStartTime <= 0`: manueller Wecker, Tag ohne Kalendereintrag) heißt leeres
+  `EXTRA_SHIFT_START_TIME`** — markiert über `AlarmManagerService.KALENDER_ID_OHNE_SCHICHTBEGINN`,
+  aufgelöst in `schichtbeginnText()`; die Weckzeit erscheint nie als Schichtbeginn (#183).
 - **Der Delta-Sync hat pro Event ein eigenes `try/catch`, das `CancellationException` weiterwirft.**
-- **Verstrichene Weckzeit ist KEINE entfernte Schicht** (`expiredEventIds`) — sonst meldet die App
-  jeden Schichtmorgen „Schicht entfernt" für den Dienst, den der Nutzer gerade antritt.
+- **Verstrichene Weckzeit ist KEINE entfernte Schicht** (`SyncKandidat` mit `neuerAlarm = null`,
+  `ohneWecker = VERSTRICHEN`) — sonst meldet die App jeden Schichtmorgen „Schicht entfernt" für den
+  Dienst, den der Nutzer gerade antritt.
+- **Ein erkannter Termin OHNE Wecker geht denselben Weg** (`OhneWecker.WECKER_AUS` bei einem Typ mit
+  `weckerAn = false`, #168; `OhneWecker.RUF_UEBERNOMMEN`, wenn am Tag des Ruf-BEGINNS ein Treffer der
+  Kategorie Dienst steht, `shift/RufUebernahme.kt`, #172): ein gestellter Wecker geht über die
+  Paarung (Cancel vor Delete) OHNE „Schicht entfernt", die Schichtspanne bleibt. Nie den Treffer
+  aus den Kandidaten oder aus `shiftMatches` nehmen — dann meldet Schritt 1 eine entfernte Schicht
+  bzw. Ruf-Abfrage und DND-Cutoff fallen weg. `weckerAn` ist nicht `isEnabled`.
+- **Ein Wecker an einem Tag ohne Kalendereintrag („wie <Typ>“, #175) trägt die Kennung
+  `ohne-eintrag:<Datum>`** (`AlarmUseCase.istOhneEintragWecker`): normaler Delta-Pfad (Cancel vor
+  Delete, Freigabe-Gate, Skip-Anker), aber NIE eine Schicht-Meldung, keine Paarungsrunde (b),
+  keine Schichtspanne. Heute entfällt er, wenn eine schon beendete Spanne heute berührt
+  (`heuteDurchBeendeteSpanneBelegt`) oder die Spannen unlesbar sind — hier ist „im Zweifel
+  wecken" die falsche Richtung. **Wer einen weiteren Wecker ohne Termin einführt, prüft jeden
+  Löschzweig, der über Kennung oder Weckpunkt mit dem Kalender vergleicht** (Delta-Sync UND
+  Boot-Validierung), und jede Anzeige, die aus `shiftName` auf Typ-Wirkungen schließt.
 - **Die 6h-Wartungskette hat GENAU einen Planer: `scheduleNext()`, auf genau einem Request-Code.**
   Wer „sicherheitshalber" nachplant, erzeugt zwei parallele Zyklen.
 - **`scheduleNext(context, frueherenTerminBehalten = true)` NUR an den drei Eintritten in
@@ -131,6 +149,10 @@ das baut man dieselbe Falle in neuer Form nach.
   Leerlisten-Sperre bleibt.
 - **`BootReceiver` liest die Kalenderauswahl über den DataStore**, nicht über den noch nicht
   hydrierten `StateFlow`, und setzt **vor** der langen Recovery einen Wartungs-Anker.
+- **Die Boot-Validierung urteilt NICHT über Ohne-Eintrag-Wecker** (#182): `performAlarmRecovery`
+  stellt sie über `scheduleSystemAlarm` wieder her, ob der Tag noch leer ist, entscheidet allein
+  `syncAlarms()`. Die Frisch-Nachlese (`BootAlarmValidation.snapshotStillCurrent`) gilt für sie
+  weiter. Sonst löscht jeder Neustart mit vollständigem Abruf sie als `LOESCHEN_TERMIN_WEG`.
 - **Ein Update VOR der ersten Entsperrung (MY_PACKAGE_REPLACED, gesperrt) macht NUR den
   Spiegel-Restore** — wie LOCKED_BOOT_COMPLETED; die volle Recovery bringt BOOT_COMPLETED nach dem
   Entsperren. Vorher lief sie: `armiereNebenketten` → Dimmer-`enable()` las den settings-DataStore

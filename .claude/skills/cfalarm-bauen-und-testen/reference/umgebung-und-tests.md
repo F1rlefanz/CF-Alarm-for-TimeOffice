@@ -29,6 +29,7 @@
 - Volles `/data` sieht wie ein Build-Fehler aus
 - Drei Verdrahtungen sind bewusst ohne JVM-Test
 - Die Gate-Kette ist am Emulator nicht end-to-end prüfbar
+- Mutationsproben, Windows-Python und Reflection-Tests (Umbau Schichttyp, Oktober/November 2026)
 
 ---
 
@@ -290,3 +291,39 @@ Was beim Umbenennen bricht, sieht kein Unit-Test. Am 02.10.2026 am Emulator mit 
 Release-APK belegt: Anmeldung, Kalender laden (`@Key`-Reflexion), Schichterkennung, Wecker stellen,
 alle sechs Tabs, Statuszeile (Hue-Speicher) und `pruefe_direct_boot.py` (5/5 Wecker ohne Entsperren).
 Nicht belegt: Hue mit echter Bridge (Gson-Antworten) und Konfigurations-Import.
+
+## Mutationsproben, Windows-Python und Reflection-Tests (Umbau Schichttyp, Oktober/November 2026)
+
+Die Pakete des Umbaus belegen jeden neuen Test mit einer Mutationsprobe (Code gezielt brechen, Test
+muss rot werden). Was dabei gelernt wurde:
+
+- **Als ein Skript, nicht von Hand:** je Mutation `testDebugUnitTest --tests …` starten und die Datei
+  im `finally` zurückschreiben (≈ 40 s je Mutation bei den Kern-Klassen).
+- **Gradle aus Python unter Windows:** `subprocess.run(['./gradlew', …])` scheitert mit WinError 193,
+  `gradlew.bat` ohne Pfad mit WinError 2 — `os.path.abspath('gradlew.bat')`. Über `cmd.exe`
+  (`shell=True`) scheiterte `./gradlew` still, und das alte Ergebnis-XML las sich wie „alles grün“:
+  15 grüne Mutationen waren Täuschung, bevor die Probe stimmte (#194). **Das Ergebnis-XML vor jeder
+  Mutation löschen.**
+- **Zweiter Worktree, solange ein Prüfer-Subagent im ersten liest** (`git worktree add --detach
+  ../<name> HEAD`, `keystore.properties` und `local.properties` hineinkopieren) — sonst liest er eine
+  mutierte Datei (#197).
+- **Ein „X ruft genau Y“-Test prüft gegen Literale, nie `x() == y()`** — sonst ändern sich beide
+  Seiten mit, und die Mutationsprobe ist leer (#192, `WeckzeitpunktTest`: eine Falltabelle mit
+  Literalen, geprüft an der Funktion UND durch den Aufrufer).
+- **Ein Vorgabewert „keine Einschränkung“ an einem Adapter fällt keinem Test auf,** solange kein Test
+  den Aufrufer mit gesetztem Wert prüft (Gegenprüfung Etappe 2: `hellUm`/`tageslicht` der
+  Tagesleiste wurden nie übergeben).
+- **Windows-Python aus Git Bash:** mit `MSYS_NO_PATHCONV=1` (das `adb`-Pfade schützt) wandelt Git
+  Bash `/tmp/skript.py` NICHT mehr in einen Windows-Pfad um — `python /tmp/…` findet die Datei
+  nicht. Hilfsskripte unter `$TEMP` ablegen und mit `$(cygpath -m "$TEMP")/skript.py` aufrufen; aus
+  Windows-Python immer einen Windows-Pfad (`C:/Users/…`), nicht `/c/Users/…`. `python -I` ignoriert
+  `PYTHONPATH` und das Arbeitsverzeichnis — eigene Hilfsmodule werden ohne `-I` importiert.
+- **`internal` verziert den JVM-Namen** (`performAlarmRecovery$app`). `BootReceiverKalenderNachlageTest`
+  und `BootAlarmOhneEintragTest` holen die private `performAlarmRecovery` per Reflection
+  (`getDeclaredMethod("performAlarmRecovery", Continuation::class.java)`); sie „für Tests“ auf
+  `@VisibleForTesting internal` zu stellen, machte das mit `NoSuchMethodException` rot (gemessen,
+  #182). Für private `suspend`-Funktionen bleibt das Muster
+  `suspendCoroutineUninterceptedOrReturn { methode.invoke(this, it) }`.
+- **Testvorlagen des Umbaus:** `UmbauTestvorlageTest` findet `..Projektdateien/umbau/testvorlagen/`
+  auch aus einem Worktree (über `gitdir:` der `.git`-Datei zum Hauptbaum); fehlt sie, `Assume` mit
+  Meldung (#166).

@@ -164,11 +164,12 @@
   Leser einen kaputten Wert bereits abfangen. Genau dieser Rückfall auf „leere Liste" ist das
   Problem: der Import meldete Erfolg, und der Nutzer sah eine leere Regelliste ohne Grund. Der
   Import ist der letzte Ort, an dem das noch sagbar ist.
-- **`ShiftConfig.withCodeAssignedTo()` (Kürzel-Vorschlagskarte) macht DREI Dinge zusammen, weil
+- **`ShiftConfig.withCodeAssignedTo()` (heute „Im Kalender gefunden" → Einordnen, früher
+  Kürzel-Vorschlagskarte; Regeln im Skill `cfalarm-kalender-und-schichten`) macht DREI Dinge zusammen, weil
   jedes einzeln wirkungslos wäre:** Muster ergänzen, **Zieldefinition aktivieren** (die
   `ShiftRecognitionEngine` beachtet seit v1.23.0 nur aktivierte Definitionen — eine Zuordnung an
-  eine ausgeschaltete Schicht wäre ein garantierter Nichts-passiert-Klick, und die Karte bietet
-  genau solche Kürzel an, weil sie von keiner aktivierten Definition getroffen werden) und das
+  eine ausgeschaltete Schicht wäre ein garantierter Nichts-passiert-Klick; der Fund zählt seit
+  v1.29.2 auch ausgeschaltete Definitionen als Zuordnung, „Gehört zu" bietet sie aber weiter an) und das
   Kürzel **bei allen anderen Definitionen entfernen** (zwei Besitzer hieße: `findDefinitionFor`
   nimmt den ersten Treffer, und die LISTENREIHENFOLGE entscheidet still über die Weckzeit). Reine
   Funktion im Modell, damit alle drei Fallen testbar festgehalten sind.
@@ -180,6 +181,19 @@
 - **`kalender_vorausschau_tage` (#51)** ist Nutzerkonfiguration und reist mit; der Import prüft 7..90.
   `last_successful_sync_window_days` ist Laufzeitzustand (`RUNTIME_KEYS`): ein fremdes Fenster neben
   dem eigenen Zeitpunkt behauptete einen Abruf, den es nie gab.
+- **Neue Felder am Schichttyp müssen vom Vorgänger lesbar bleiben (#166, Umbau Schichttyp).** SPEC 4
+  „Kopieren, nicht verschieben": ein zurückgenommener Stand muss lesen, was der neue schrieb. Darum
+  hat jedes neue Feld an `ShiftDefinition`/`ShiftConfig` einen Default und wird gegen eine
+  testlokale Kopie der Vorgänger-Klassen geprüft (`AltDecoderKompatibilitaetTest`). Eine Aufzählung
+  wird als Text gespeichert (`ShiftDefinition.kategorieGespeichert`), nie als kotlinx-Enum:
+  `ShiftConfigRepository.json` hat `ignoreUnknownKeys`, aber kein `coerceInputValues`, ein
+  unbekannter Enum-Wert (spätere Version, dann Revert) machte die GANZE Konfiguration `Broken`.
+  `formatVersion` der Sicherung bleibt 1 (`ConfigBackup.CURRENT_FORMAT_VERSION`), sonst lehnt die
+  Vorversion jede neue Datei ab. **Zweite Falle, seit #174 behoben:** der alte Schicht-Dialog baute
+  beim Speichern ein NEUES `ShiftDefinition(...)`, jedes neue Feld fiel dort still auf den Default;
+  heute geht das Speichern vom bestehenden Typ aus (`copy`, dann `mitKategorie`, in
+  `ui/screens/typ/TypFormular.kt`), und ein künftiges Feld (Etappe 3: Dimm-Fenster, DND) bleibt ohne
+  Zutun erhalten — solange niemand wieder einen neuen Konstruktoraufruf baut.
 - **Lücke im Inventurtest:** `Pruefrunde6BackupSchluesselInventurTest` findet nur Schlüssel als
   Text-Literal; über `const` deklarierte rutschen durch. Bei neuen Schlüsseln die Entscheidung
   trotzdem treffen.

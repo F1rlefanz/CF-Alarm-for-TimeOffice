@@ -22,6 +22,7 @@
 - `ShiftDefinition.isEnabled` wird in `performRecognition()` respektiert
 - Ein gescheiterter Konfigurations-Read darf NIE zur leeren Definitionsliste werden
 - Eine defekte Schicht-Konfiguration erfährt der Nutzer nur über das Log
+- Umbau Schichttyp (Etappe 1/2): Sonderzeichen-Muster, Kategorie, Ignorieren, Auswahllisten, Einordnen
 
 ---
 
@@ -80,16 +81,18 @@ Wecker gekostet:**
   Stationskürzel trägt, plus die Gegenprobe, dass die einbuchstabigen Muster keinen unscharfen
   Teiltreffer gewinnen (auch „S2" fällt nicht auf das „S" der Spätschicht).
 - **Geraten wird nicht mehr — vorgeschlagen wird** (seit v1.23.0). `ShiftCodeSuggester` (rein, ohne
-  Android) sammelt die Termintitel, die von KEINEM aktiven Muster getroffen werden, sortiert nach
+  Android) sammelt die Termintitel, die von KEINEM Muster getroffen werden, sortiert nach
   Häufigkeit (bei Gleichstand alphabetisch, damit die Reihenfolge nicht springt) und deckelt auf 8 —
-  die Deckelung wird als `droppedCount` **benannt**, nicht verschwiegen. Zwei Ausschlüsse, beide
-  technisch: zu lang (>24 Zeichen) ist Freitext, und ein Titel ohne einzigen Buchstaben/Ziffer („+"
-  steht real im Dienstplan) könnte über Wortgrenzen NIE treffen — ihn vorzuschlagen wäre ein
-  Versprechen, das die Erkennung nicht hält. Muster einer **deaktivierten** Definition unterdrücken
-  keinen Vorschlag: sie erkennen nichts, für dieses Kürzel fehlt also gerade ein Wecker. Karte „Diese
-  Kürzel stehen in deinem Kalender", oben im Schicht-Konfigurationsscreen. **Die App ordnet NICHTS
-  selbst zu** — eine stille Automatik, die danebengreift, stellt einen Wecker auf die falsche Uhrzeit.
-  `assignCodeToDefinition()` ergänzt das Kürzel als exaktes Keyword und geht über
+  die Deckelung wird als `droppedCount` **benannt**, nicht verschwiegen. **Einziger Ausschluss: zu
+  lang** (> `MAX_CODE_LENGTH` = 24 Zeichen) ist Freitext. Ein Titel ohne einzigen Buchstaben/Ziffer
+  („+") wird seit #150 vorgeschlagen — die frühere Begründung, er könne über Wortgrenzen NIE
+  treffen, war falsch (Abschnitt „Umbau Schichttyp" unten). **Muster ALLER Definitionen zählen als
+  Zuordnung, auch deaktivierter** (seit v1.29.2; v1.29.1 filterte auf `isEnabled`, Test „Muster
+  einer deaktivierten Definition unterdruecken den Vorschlag"), ebenso die eines Ignorieren-Typs
+  (#167). Angezeigt seit #176 als „Im Kalender gefunden, noch nicht eingeordnet" in der
+  Schichttypen-Liste (vorher Karte „Diese Kürzel stehen in deinem Kalender"). **Die App ordnet
+  NICHTS selbst zu** — eine stille Automatik, die danebengreift, stellt einen Wecker auf die falsche
+  Uhrzeit. `assignCodeToDefinition()` ergänzt das Kürzel als exaktes Keyword und geht über
   `updateShiftConfig()`, damit Speichern, Cache-Invalidierung, Erkennung und Alarm-Sync mitlaufen.
 - **Kein stiller Default-Überschreiber der Schicht-Konfiguration — es gab DREI Schreibstellen.**
   Seit `ShiftConfigRepository` „noch nie konfiguriert" (liefert den Default als **Erfolg**) von
@@ -254,3 +257,64 @@ Lesung, nicht aus dem Anzeigezustand.
 
 **Statuszeile je Schicht (#70):** bindet über `definition.name` (nie Keywords) an Dimm-, Hue- und
 DND-Regeln, rein lesend — kein Eintrag im Umbenennungs-Nachzug nötig, weil nichts gespeichert wird.
+
+## Umbau Schichttyp (Etappe 1/2, Oktober 2026): Sonderzeichen-Muster, Kategorie, Ignorieren, Auswahllisten, Einordnen
+
+- **Sonderzeichen-Muster („+") treffen den GANZEN Titel (#150).** Ein Muster ohne Buchstabe und ohne
+  Ziffer trifft in `matchesKeywords` nur den ganzen getrimmten Titel (`matchesAsWholeWord`),
+  Zeichenklasse `\p{L}\p{N}` wie die Wortgrenzen; gemischte Muster („N+") bleiben beim
+  Wortgrenzen-Abgleich. Hergang: der Vorschlag verwarf reine Zeichen mit der Begründung, die
+  Wortgrenzen könnten sie NIE treffen — falsch, die Lookarounds trafen ein von Hand eingetragenes
+  „+" längst, und zwar auch in „C++" und „x + y". Ein Dienstplan mit „+" konnte den Eintrag nie
+  einordnen. Tests: `ShiftCodeSuggesterTest`, `ShiftDefinitionPatternMatchingTest` (Abschnitt 4).
+- **Die Kategorie ist berechnet, nicht gespeichert neben den Flags (#166).** `ShiftDefinition.kategorie`
+  liest `isSickDay` → Krank, sonst `isOnCall` → Rufbereitschaft, sonst den gespeicherten Wert, sonst
+  Dienst; beide Flags true gilt als Krank, `isOnCall` bleibt dabei stehen. Geändert wird nur über
+  `mitKategorie()`, das beide Flags setzt; die Flags bleiben die Sprache aller älteren Leser. Ein
+  gespeichertes Kategorie-Feld NEBEN den Flags liefe auseinander, sobald ein Schreiber nur
+  `copy(isSickDay = …)` macht; beide-true war schon vorher speicherbar und wirkungslos, weil
+  `ShiftRecognitionEngine` Krank vor jeder Schichtspanne abzweigt. Test: `ShiftKategorieTest`.
+- **Ignorieren wird erst NACH der Schicht-Suche gefragt (#167),** anders als Krank. Unter „erste
+  passende Definition gewinnt" hätte ein vorn stehender Ignorieren-Typ einen Dienst geschluckt;
+  deshalb stehen in `IgnorierenErkennungTest` die Ignorieren-Typen absichtlich VOR dem Dienst. Die
+  Engine liefert solche Termine getrennt (`erkenne()` → `Erkennung.ignorierteTermine`, derselbe
+  Cache, dieselbe Epoche). Der Code-Vorschlag brauchte keine Änderung (jedes Muster zählt als
+  Zuordnung, Test „ein ignorierter Code erscheint nicht als Vorschlag"). Die Home-Karte „Keine
+  Schicht erkannt" schließt Ignorieren aus (Zählung und Titel-Kostprobe, nächster Punkt).
+- **Auswahllisten über EINE Funktion (#171).** `istWaehlbareSchicht()` (`SchichttypAuswahl.kt`) ist
+  exakt die Menge, aus der `ShiftRecognitionEngine` Schichttreffer macht; die Engine ruft sie aber
+  nicht selbst (Kerntest-Nähe). Angeschlossen: manueller Wecker (Liste UND frische Abfrage im
+  Erstellungspfad), Dimmer-Regel-Ziele, DND-Ausnahmen, Hue-Regelmuster, Zählung
+  `enabledShiftTypeCount` der Übersichtskarte. Zweite Frage derselben Datei:
+  `istIgnorierterTermin(titel)` (Gegenstück zu `istKrankmeldung`) für die Titel-Kostprobe der Karte
+  „Keine Schicht erkannt" (`kostprobeTitel`) — ohne sie stünde ein ignorierter Code dort als „im
+  Kalender steht: TB" und legte nahe, ihn als Muster einzutragen. Sie prüft einfach (aktiv +
+  Ignorieren + Muster), nicht in Engine-Reihenfolge: die Kostprobe steht nur, wenn nichts erkannt
+  wurde. **Verhaltensänderung, bewusst:** Dimmer-Regeln und DND-Ausnahmen schlossen vorher nur Krank
+  aus, jetzt auch ausgeschaltete Typen (wie Hue und manueller Wecker schon vorher) — eine bestehende
+  Regel/Ausnahme auf einen ausgeschalteten Typ bleibt gespeichert, ist aber bis zum Wiedereinschalten
+  nicht als Chip/Option sichtbar. Hergang: die Bedingung stand an sechs Stellen kopiert, die
+  Ignorieren-Kategorie hätte sechs Änderungen verlangt, und eine vergessene hätte einen Typ
+  angeboten, der nie greift. Tests: `SchichttypAuswahlTest`, `SchichttypAuswahlVerdrahtungTest` (mit
+  den alten Bedingungen an vier Stellen alle vier rot, 17.10.2026); Hue-Karte und Übersichts-Zählung
+  sind Einzeiler im Composable ohne eigenen Test.
+- **Einordnen (#169, #176, #190).** `SchichttypEinordnen.neuerTypAusCode()` speichert NICHT — erst
+  „Erstellen" auf der Typ-Seite (`TypSeiteSpeicherung.erstelle` → `ShiftViewModel.legeTypAusCodeAn`),
+  sonst wird eine geratene Weckzeit scharf. Voreinstellung „Wecker an" nur bei Dienst und
+  Fortbildung (`SchichttypEinordnen.voreinstellung`, Festlegung des Betreuers; der Prototyp nennt nur
+  Dienst „dienstartig"). `ignorieren()` geht über `withCodeAssignedTo()` an den ersten AKTIVEN
+  Ignorieren-Typ — ein ausgeschalteter würde dabei eingeschaltet und ignorierte still auch seine
+  alten Codes. Ein neu angelegter Ignorieren-Typ startet OHNE Muster: trüge er den Code schon, sähe
+  `withCodeAssignedTo()` im Normalfall nichts zu tun und lieferte `null`, der Klick verpuffte (die
+  Mutationsprobe zeigte genau diese Lücke im ersten Testsatz). `legeTypAusCodeAn` hängt den Typ an
+  und ruft `withCodeAssignedTo(code, neu.id)` nur, wenn der Typ den Code noch als Muster trägt (hat
+  der Nutzer ihn im Editor entfernt, bleibt der Code im Fund) — sonst behielte ein ausgeschalteter
+  Typ ein zweites Exemplar, und `findDefinitionFor` entschiede nach Listenreihenfolge. **Danach
+  stellt er `isEnabled` auf den Wert des Editors zurück**, weil `withCodeAssignedTo()` das Ziel
+  immer einschaltet: ein im Editor bewusst ausgeschalteter Dienst-Typ wurde sonst eingeschaltet
+  gespeichert und hätte an jedem Tag des Codes geweckt (Prüfer ohne Umsetzungskontext, Test „ein im
+  Editor ausgeschalteter neuer Typ wird ausgeschaltet gespeichert"). **Achtung:** der NAME zählt ab
+  zwei Zeichen als Muster, ein Typ mit `name == code` trifft den Code also auch ohne Muster. Die
+  Liste „Gehört zu" filtert nur `kategorie != IGNORIEREN` (`gehoertZuZiele`): Krank und
+  ausgeschaltete Typen bleiben wählbar (ein ausgeschalteter wird dabei eingeschaltet, die Zeile sagt
+  es). Tests: `SchichttypEinordnenTest`, `EinordnenAblaufTest`.

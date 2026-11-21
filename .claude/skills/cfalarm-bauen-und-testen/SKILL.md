@@ -86,3 +86,10 @@ das baut man dieselbe Falle in neuer Form nach.
   dabei `MSYS_NO_PATHCONV=1` setzen, sonst wird `/sdcard/...` zu einem Windows-Pfad.
 - **„Activity class … does not exist“ / „No activities found“ nach einem Emulator-Boot** heißt fast
   immer: Nutzer noch `RUNNING_LOCKED` (PIN 1234). Erst entsperren, dann installieren und starten.
+- **Mutationsproben laufen als Skript, unter Windows mit `gradlew.bat` über den VOLLEN Pfad**
+  (`os.path.abspath`), das alte Ergebnis-XML vorher gelöscht — `./gradlew` über `cmd.exe`/
+  `shell=True` scheitert still, und das alte XML liest sich wie „alles grün“. Läuft parallel ein
+  Prüfer im Baum, mutiert man in einem zweiten Worktree. Ein „X ruft genau Y“-Test prüft gegen
+  LITERALE, nie `x() == y()` — sonst ändern sich beide Seiten mit. Hergang: `reference/umgebung-und-tests.md`.
+- **`internal` verziert den JVM-Namen** (`performAlarmRecovery$app`): eine per Reflection geholte
+  private Funktion „für Tests“ auf `internal` zu stellen, macht den Reflection-Test rot (#182).

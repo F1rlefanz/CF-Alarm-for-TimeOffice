@@ -164,13 +164,17 @@ internal object ShiftConfigTexte {
  * Wecker-Tab und bleibt deshalb unangetastet - dieselbe Trennung, die auch die Master-Pause
  * einhaelt (sie ruehrt `autoAlarmEnabled` bewusst nicht an).
  *
+ * Ebenso bleibt die Modell-Stufe ([ShiftConfig.modellStufe], Umbau #213): sie sagt, welche Migration
+ * der Bestand schon hinter sich hat. Fiele sie hier auf 0, liefe die Migration nach dem Zuruecksetzen
+ * erneut und ueberschriebe die Typen aus dem eingefrorenen Altbestand. Beides haelt
+ * [ShiftConfig.aufStandardZurueckgesetzt] zusammen.
+ *
  * Nur wenn noch gar keine Konfiguration geladen ist, gelten die Standardwerte vollstaendig - dann
- * gibt es keinen Nutzerwunsch, der erhalten werden koennte.
+ * gibt es keinen Nutzerwunsch, der erhalten werden koennte (Stufe 0: nichts gespeichert, die
+ * Migration soll laufen).
  */
-internal fun resetToDefaultsPreservingAutoAlarm(current: ShiftConfig?): ShiftConfig {
-    val defaults = ShiftConfig.getDefaultConfig()
-    return current?.let { defaults.copy(autoAlarmEnabled = it.autoAlarmEnabled) } ?: defaults
-}
+internal fun resetToDefaultsPreservingAutoAlarm(current: ShiftConfig?): ShiftConfig =
+    current?.aufStandardZurueckgesetzt() ?: ShiftConfig.getDefaultConfig()
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

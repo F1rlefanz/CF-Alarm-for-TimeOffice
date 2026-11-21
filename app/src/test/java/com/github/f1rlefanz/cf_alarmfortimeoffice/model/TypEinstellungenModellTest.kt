@@ -7,6 +7,8 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftConfigDecodeResult
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.decodeShiftConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.HellAb
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.resetToDefaultsPreservingAutoAlarm
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.typ.ShiftEditFormular
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -208,10 +210,11 @@ class TypEinstellungenModellTest {
     /**
      * Neu gebaute Konfigurationen behalten die Stufe (Festlegung #213): sonst liefe die Migration
      * nach „Auf Standardwerte zuruecksetzen“ erneut und ueberschriebe die Typen aus dem Altbestand.
+     * Ueber die Funktion, die der Knopf wirklich ruft (`ShiftConfigScreen`), nicht ueber einen Ersatz.
      */
     @Test
     fun `Zuruecksetzen auf Standard behaelt Modell-Stufe und Automatik-Pause`() {
-        val zurueck = eingestellt.aufStandardZurueckgesetzt()
+        val zurueck = resetToDefaultsPreservingAutoAlarm(eingestellt)
 
         assertEquals(1, zurueck.modellStufe)
         assertEquals(false, zurueck.autoAlarmEnabled)
@@ -220,11 +223,18 @@ class TypEinstellungenModellTest {
         assertEquals(null, zurueck.ohneKalendereintragWie)
     }
 
+    /** Ueber die drei Wege, auf denen die App einen neuen Typ anlegt (Festlegung #213). */
     @Test
     fun `neue Typen bekommen die Defaults`() {
-        val neu = ShiftDefinition(id = "x", name = "X", keywords = listOf("X"), alarmTime = LocalTime.of(6, 0))
+        val neue = listOf(
+            ShiftEditFormular.leererTyp { "plus" },
+            SchichttypEinordnen.neuerTypAusCode("ND", ShiftKategorie.DIENST) { "code" }!!,
+            SchichttypEinordnen.ignorieren(eingestellt, "XY") { "ign" }!!.definitions.single { it.id == "ign" }
+        )
 
-        assertEquals(TypDimmen(), neu.dimmen)
-        assertEquals(TypNichtStoeren(), neu.nichtStoeren)
+        neue.forEach { neu ->
+            assertEquals(neu.id, TypDimmen(), neu.dimmen)
+            assertEquals(neu.id, TypNichtStoeren(), neu.nichtStoeren)
+        }
     }
 }

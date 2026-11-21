@@ -70,14 +70,15 @@ ein. Schon Etappe 1 enthält Migration und Erkennung (Opus) und berührt Kerntes
 (`ShiftRecognitionEngineTest`, `AlarmReceiverSilentGateTest`, `KrankSyncTest`,
 `ShiftConfigDecodeTest`) – dort ist das Feld „bewusste Verhaltensänderung“ Pflicht.
 
-**Vor Etappe 3 und vor Etappe 9 ist der Eigentümer dran (interaktiv, etwa 15 Minuten):** Diese
-Etappen entfernen Symbole (globaler Dimm-Schalter, Regel-Editor, DND-Seite, alte Bildschirme), die
-die Skills `cfalarm-dimmer-und-dnd`, `cfalarm-hue` und `cfalarm-ui-und-navigation` nennen.
+**Skills und entfernte Symbole (seit 21.11.2026 über die Nachtrags-Brücke):**
 `tools/aufraeumen/pruefe_reste.py` meldet jeden Skill-Absatz, der ein entferntes Symbol nennt, und
-die Schleuse blockiert dann den Merge. Headless kann `.claude/**` nicht schreiben. Deshalb werden
-die Skills vorher interaktiv auf den Zielzustand gebracht (oder die Absätze mit „entfernt (Umbau,
-Etappe N)“ als historisch markiert). Der Runner wartet mit `bereit` dieser Etappen, bis das Epic
-das Label `skills-bereit-N` trägt.
+die Schleuse blockiert dann den Merge. Headless kann `.claude/**` nicht schreiben, und welche
+Symbole eine Etappe entfernt, steht erst nach ihrem Schnitt fest. Deshalb trägt der Umsetzer jede
+Entfernung als Punkt mit Signalwort in `skill-nachtraege.md` ein („`X` entfällt …“). Das Gatter
+nimmt so dokumentierte Symbole aus. **Nach jeder Etappe** arbeitet eine interaktive Sitzung die
+Nachträge in die Skills ein. Die Skills hinken also höchstens eine Etappe hinterher, das Wissen
+geht nicht verloren. Nur **vor Etappe 9** (Altlasten und Doku, da werden die Skills selbst
+überarbeitet) wartet der Runner auf das Label `skills-bereit-9` am Epic.
 
 ## 4. Aufbau eines Paket-Issues
 

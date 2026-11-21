@@ -38,7 +38,7 @@ $Adb = Join-Path $Sdk 'platform-tools\adb.exe'
 $Caps = @{ 'groesse-S' = 40; 'groesse-M' = 75 }
 $WochenReserve = 0.9   # ab diesem Wochenverbrauch pausiert der Runner (Rest bleibt dem Eigentuemer)
 $script:Woche = $null
-$SkillEtappen = @(3, 9)   # brauchen vorher Label skills-bereit-N am Epic (ABLAUF Abschnitt 3)
+$SkillEtappen = @(9)   # braucht vorher Label skills-bereit-9 am Epic; Etappe 3 laeuft seit 21.11.2026 ueber die Nachtrags-Bruecke (ABLAUF Abschnitt 3)
 
 New-Item -ItemType Directory -Force $Logs | Out-Null
 
@@ -321,7 +321,7 @@ Fertig erst, wenn: (1) jede Abnahme-Zeile des Issues erfuellt ist und ihre Ausga
 Nach jedem gruenen Schritt committen und $branch pushen. Fasse nur die Dateien aus dem Feld Dateien an.
 Funde ausserhalb des Umfangs: eigenes Issue mit Labels umbau und spaeter; Teilung des Pakets hoechstens 3 neue Issues.
 Unbelegte Fehlerhypothesen nie in ein Issue, sondern nach ..Projektdateien/umbau/hypothesen.md.
-Lehren fuer Skills nach entwurf/umbau-schichttyp/skill-nachtraege.md (.claude/** ist schreibgeschuetzt).
+Lehren fuer Skills nach entwurf/umbau-schichttyp/skill-nachtraege.md (.claude/** ist schreibgeschuetzt). Entfernst du ein Symbol, das ein Skill oder CLAUDE.md noch nennt, trage dort einen Punkt ein: `Symbol` entfaellt, mit Grund und Ersatz - sonst blockiert die Schleuse den Merge.
 Konsultiere den Advisor genau an drei Stellen: vor dem Plan, beim zweiten gleichen Fehler, vor der Fertigmeldung.
 Niemand ist anwesend: keine Rueckfragen, begruendete Entscheidungen im Issue dokumentieren.
 Braucht eine Frage eine Betreuer-Entscheidung (sie liegt ausserhalb deines Umfangs, etwa Dateien ausserhalb des Felds Dateien, oder eine Abnahmezeile ist so nicht erfuellbar): schreibe sie als Kommentar ins Issue (Frage, zwei bis drei Optionen, deine Empfehlung mit Grund), setze das Label braucht-betreuer (gh issue edit $($issue.number) --add-label braucht-betreuer) und beende den Lauf. Arbeite nicht an ihr vorbei. Steht im Issue schon eine "Betreuer-Entscheidung", folge ihr.

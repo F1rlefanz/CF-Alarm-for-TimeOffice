@@ -29,7 +29,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from pruefe_reste import _als_symbol_genannt  # noqa: E402
+from pruefe_reste import _als_symbol_genannt, im_nachtrag_dokumentiert  # noqa: E402
 
 
 class WortInEinemKommando(unittest.TestCase):
@@ -88,6 +88,24 @@ class Wortgrenzen(unittest.TestCase):
         zeile = "`bridge.portForwarding` bleibt unberuehrt"
 
         self.assertFalse(_als_symbol_genannt(zeile, "port"))
+
+
+class NachtragAlsBruecke(unittest.TestCase):
+    """21.11.2026: Unbeaufsichtigte Laeufe duerfen Skills nicht aendern. Entfernt ein Paket ein Symbol,
+    das ein Skill nennt, haette das Gatter den Merge fuer immer blockiert. Traegt das Paket die
+    Entfernung in die Nachtragsdatei ein, gilt das Symbol als dokumentiert - aber nur mit Signalwort."""
+
+    def test_entfernung_mit_signalwort_zaehlt(self):
+        text = "- `DimOverlayPrefs.KEY_DIM_ON` entfaellt mit dem globalen Schalter (#230)."
+        self.assertEqual(im_nachtrag_dokumentiert(text, {"KEY_DIM_ON", "andereSache"}), {"KEY_DIM_ON"})
+
+    def test_blosse_erwaehnung_zaehlt_nicht(self):
+        text = "- `KEY_DIM_ON` wird jetzt auch von der Typ-Seite gelesen."
+        self.assertEqual(im_nachtrag_dokumentiert(text, {"KEY_DIM_ON"}), set())
+
+    def test_signalwort_im_nachbarpunkt_zaehlt_nicht(self):
+        text = "- `KEY_DIM_ON` bleibt vorerst.\n- `altesFeld` ist entfernt."
+        self.assertEqual(im_nachtrag_dokumentiert(text, {"KEY_DIM_ON", "altesFeld"}), {"altesFeld"})
 
 
 if __name__ == "__main__":

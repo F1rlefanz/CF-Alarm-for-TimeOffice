@@ -43,6 +43,11 @@ WURZEL = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file_
 QUELLEN = os.path.join(WURZEL, "app", "src")
 STRINGS = os.path.join(QUELLEN, "main", "res", "values", "strings.xml")
 DOKU_ORTE = [os.path.join(WURZEL, "CLAUDE.md"), os.path.join(WURZEL, ".claude", "skills")]
+# Bruecke fuer unbeaufsichtigte Laeufe (21.11.2026): Sie duerfen `.claude/**` nicht schreiben.
+# Entfernt ein Paket ein Symbol, das ein Skill nennt, traegt es die Entfernung hier ein; das
+# Gatter nimmt das Symbol dann aus. Eine interaktive Sitzung arbeitet die Nachtraege nach
+# jeder Etappe in die Skills ein (entwurf/umbau-schichttyp/ABLAUF.md).
+NACHTRAEGE = os.path.join(WURZEL, "entwurf", "umbau-schichttyp", "skill-nachtraege.md")
 
 # ---------------------------------------------------------------------------------------------
 # DIE FALLE, DIE DIESES WERKZEUG VOR ALLEM ABSICHERN MUSS
@@ -167,7 +172,7 @@ def pruefe_verwaiste_strings(befunde):
 # ist an ihren Signalwoertern erkennbar (siehe HISTORISCH).
 # ---------------------------------------------------------------------------------------------
 HISTORISCH = re.compile(
-    r"ENTFERNT|entfernt|entfallen|abgel(oe|ö)st|frueher|früher|bis v\d|"
+    r"ENTFERNT|entfernt|entfallen|entf(ae|ä)llt|abgel(oe|ö)st|frueher|früher|bis v\d|"
     r"nicht mehr|KEIN |KEINE |damalig|ehemal|seit v\d",
     re.I,
 )
@@ -225,6 +230,24 @@ def _absaetze(zeilen):
         yield start, len(zeilen)
 
 
+def im_nachtrag_dokumentiert(text, symbole):
+    """Welche dieser Symbole nennt die Nachtragsdatei in einem Absatz, der ihre Entfernung beschreibt?
+
+    Nur ein Absatz mit Signalwort (HISTORISCH) zaehlt: ein Nachtrag, der das Symbol bloss erwaehnt,
+    sagt nicht, dass die Skills es nicht mehr nennen sollen.
+    """
+    zeilen = text.splitlines()
+    gefunden = set()
+    for start, ende in _absaetze(zeilen):
+        absatz = zeilen[start:ende]
+        if not HISTORISCH.search("\n".join(absatz)):
+            continue
+        for symbol in symbole:
+            if any(_als_symbol_genannt(z, symbol) for z in absatz):
+                gefunden.add(symbol)
+    return gefunden
+
+
 def pruefe_doku_verweise(befunde, basis):
     if not basis:
         return
@@ -255,6 +278,7 @@ def pruefe_doku_verweise(befunde, basis):
         # kaputtzumachen - der sichere Weg, ein Gatter unglaubwuerdig zu machen.
         and not re.search(r"[(,]\s*(?:@\w+\s+)?" + re.escape(s) + r"\s*:", quelltext)
     }
+    verschwunden -= im_nachtrag_dokumentiert(_lies(NACHTRAEGE), verschwunden)
     if not verschwunden:
         return
 

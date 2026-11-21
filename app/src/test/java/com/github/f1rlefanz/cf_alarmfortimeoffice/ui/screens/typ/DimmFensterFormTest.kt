@@ -117,6 +117,25 @@ class DimmFensterFormTest {
         assertEquals(listOf(-240L..420L), lage(beimWecker, nacht))
     }
 
+    /**
+     * BEKANNTE GRENZE, offen als Betreuer-Frage in #215 (Befund des unabhaengigen Pruefers): "Nacht davor"
+     * mit Von >= Bis liegt nur dann am Vorabend, wenn die Weckzeit VOR Von liegt - der Resolver rollt den
+     * Start (`clockAtOrBefore`) nur zurueck, wenn Von nach der Weckzeit liegt. Laut Prototyp (Zeile 904,
+     * `st >= en -> st -= 1440`) und Text ("Vom Vorabend ...") waere IMMER -480..420 richtig. Dieser Test
+     * haelt den IST-Zustand fest, damit er nicht unbemerkt bleibt und bei einer Resolver-Aenderung rot wird.
+     */
+    @Test
+    fun nachtDavor_vorabendGiltNurWennDieWeckzeitVorVonLiegt_bekannteGrenze() {
+        val hart = fenster(form(DimWann.NACHT_DAVOR, von = uhr(16), bis = uhr(7)))
+        // Wecker 13:30 liegt VOR Von 16:00: Vorabend, wie der Text es sagt.
+        assertEquals(listOf(-480L..420L), lage(hart, Tag(wecker = uhr(13, 30), dienstende = 1320)))
+        // Wecker 19:30 liegt NACH Von 16:00 (Nachtdienst): der Start bleibt auf dem Diensttag, das
+        // Ende rollt auf den Folgetag - IST 960..1860 statt SOLL -480..420.
+        assertEquals(listOf(960L..1860L), lage(hart, nacht))
+        val beimWecker = fenster(form(DimWann.NACHT_DAVOR, von = uhr(16), bis = uhr(7), beimWecker = true))
+        assertEquals(listOf(960L..1170L), lage(beimWecker, nacht))
+    }
+
     @Test
     fun nachtDavor_brauchtEinenKalendereintragMitWeckzeit() {
         // Ohne Eintrag gibt es kein "Aufstehen an diesem Tag": kein Fenster, statt eines geratenen.

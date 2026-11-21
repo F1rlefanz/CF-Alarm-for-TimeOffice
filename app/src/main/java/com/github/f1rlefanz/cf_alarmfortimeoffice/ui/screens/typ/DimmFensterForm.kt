@@ -169,11 +169,18 @@ object DimFensterAbbildung {
      * - **Nach dem Dienst** = Start `SHIFT_END` (Versatz 0), Ende CLOCK. Braucht ein Dienstende.
      * - **Nacht davor** = Start `ALARM_SONST_CLOCK`, Ende CLOCK (oder `ALARM_SONST_CLOCK` mit „beim Wecker“),
      *   dazu `startNurAmWecktag = Von < Bis`. Gemessen die EINZIGE Kodierung, die zugleich: (1) bei Von >= Bis
-     *   am Vorabend beginnt, (2) „spaetestens Bis“ haelt (Wecker 10:00, Bis 07:00 -> Ende 07:00), (3) bei
+     *   am Vorabend beginnt - NUR, WENN DIE WECKZEIT VOR Von LIEGT (offene Grenze, siehe unten), (2) „spaetestens Bis“ haelt (Wecker 10:00, Bis 07:00 -> Ende 07:00), (3) bei
      *   Von < Bis (z. B. Vorschlaf 16:00 bis 19:30) am Tag SELBST beginnt und bei einem Wecker davor entfaellt
      *   statt 21,5 h ab dem Vortag zu dimmen (E14, #151), und (4) vom „Abend danach“ unterscheidbar bleibt
      *   (Rundreise). `CLOCK -> ALARM` ignoriert Bis; `CLOCK -> CLOCK/ALARM_SONST_CLOCK` beginnt immer am Tag
      *   selbst. Braucht einen Kalendereintrag mit Weckzeit - ohne gibt es kein „Aufstehen“.
+     *
+     *   OFFENE GRENZE (Befund des unabhaengigen Pruefers, Betreuer-Frage in #215): der Resolver rollt den
+     *   Start nur dann auf den Vortag zurueck, wenn Von NACH der Weckzeit liegt (`clockAtOrBefore`). Bei
+     *   Von >= Bis und einer Weckzeit NACH Von (Nachtdienst, Wecker 19:30, Von 16:00, Bis 07:00) beginnt das
+     *   Fenster am Diensttag und laeuft ueber die ganze Nacht (960..1860 statt -480..420); mit „beim Wecker“
+     *   dimmt es nur den Nachmittag. Mit den heutigen Ankern nicht ausdrueckbar, Test
+     *   `nachtDavor_vorabendGiltNurWennDieWeckzeitVorVonLiegt_bekannteGrenze`.
      *
      *   ACHTUNG, bewusst: `ALARM_SONST_CLOCK` ist laut `DimAnchor` „kein START-Anker“; die Aufloesung
      *   behandelt ihn am Start wie CLOCK, aber ueber den Schichtpfad (`loeseSchichtFenster`) statt ueber die

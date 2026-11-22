@@ -69,7 +69,9 @@ object DimWindowResolver {
     const val NACHLAUF_MAX_MINUTEN = 120
 
     /**
-     * Ein aufgelöstes Dimm-Fenster samt Intensität der Regel, aus der es stammt. [tageslicht] ist
+     * Ein aufgelöstes Dimm-Fenster samt Intensität: die Stärke des FENSTERS
+     * ([DimRule.staerkeFuerFenster] - am Typ hat jedes Fenster sein eigenes „Mit %“), die Wärme der
+     * Regel bzw. des Typs. [tageslicht] ist
      * gesetzt, wenn das Ende durch Tageslicht gekuerzt wurde (#140) - reine Auskunft fuer die
      * Vorschau, KEIN Teil der Fenster-Identitaet ([isOverrideStale] liest es nicht).
      */
@@ -79,6 +81,29 @@ object DimWindowResolver {
         val warmth: Int,
         val tageslicht: TageslichtEnde? = null
     )
+
+    /**
+     * Von welchem Kalendertag eine Spanne stammt (#218): an einem Schicht-Tag der Name der Schicht,
+     * an der die Regel des Tages verankert ist ([Tagesregel.anker]), an einem Tag ohne Schichtspanne
+     * (frei, freigegeben, ohne Kalendereintrag) die feste Zeile.
+     *
+     * Nur Auskunft - die Fensterlogik liest sie nicht. „Nicht stoeren“ filtert damit die Dimm-Fenster
+     * auf die Tage, deren Typ „Solange gedimmt wird“ an hat. Der Dimmer weiss dabei nichts von DND:
+     * er nennt die Herkunft, den Filter reicht der Aufrufer herein (Einbahnstrasse `dnd/` -> `dimmer/`).
+     */
+    sealed interface SpanHerkunft {
+        /** Ein Schicht-Tag; [name] ist der Schichtname der Spanne (`ShiftSpan.shiftName`). */
+        data class Schicht(val name: String) : SpanHerkunft
+
+        /** Ein Tag ohne Schichtspanne - es gilt die feste Zeile „Ohne Kalendereintrag“. */
+        data object OhneSchicht : SpanHerkunft
+    }
+
+    /**
+     * Eine [DimSpan] samt [SpanHerkunft]. Bewusst ein Umschlag statt eines Felds in [DimSpan]: deren
+     * Gleichheit (Vorschau, Tests, Override-Identitaet) bleibt so unberuehrt.
+     */
+    data class HerkunftSpan(val span: DimSpan, val herkunft: SpanHerkunft)
 
     /** Spanne samt Kuerzungs-Grund - intern, damit die oeffentlichen Aufloeser bei `LongRange?` bleiben. */
     private data class Aufgeloest(val range: LongRange, val tageslicht: TageslichtEnde?)
@@ -90,6 +115,10 @@ object DimWindowResolver {
      * Fenster eines Schicht-Tags. [alarmEpoch] = Weckzeit, [shiftEndEpoch] = Schichtende
      * (0 = unbekannt). Ein SHIFT_END-Anker an einem Alarm ohne bekanntes Schichtende liefert `null`.
      * Ergebnis `null` auch, wenn Ende ≤ Start (leeres/ungültiges Fenster).
+     *
+     * [DimWindow.startAmVorabend] liest diese Funktion nicht: Fenster mit CLOCK-Start und CLOCK-
+     * bzw. [DimAnchor.ALARM_SONST_CLOCK]-Ende - nur fuer die gilt das Feld - loest
+     * [buildRuleSpans] immer als Kalendernacht auf ([resolveWindowForDate]), nie hier.
      */
     fun resolveShiftWindow(
         w: DimWindow,
@@ -156,6 +185,8 @@ object DimWindowResolver {
     /**
      * Fenster einer KALENDERNACHT – Start immer CLOCK, Ende CLOCK oder [DimAnchor.ALARM_SONST_CLOCK].
      * Braucht weder Wecker noch Schicht und gilt deshalb an freien wie an Schicht-Tagen gleich.
+     * Gemeint ist die Nacht NACH [date] (Start um Von an [date]); mit [DimWindow.startAmVorabend]
+     * und Von ≥ Bis die Nacht DAVOR (Start um Von am Vortag, Ende an [date]).
      *
      * [weckzeiten] ist die aufsteigend sortierte Zeitleiste ALLER Weckzeiten im Horizont (siehe
      * [buildRuleSpans]) und wird nur vom [DimAnchor.ALARM_SONST_CLOCK]-Ende gelesen. Leer heisst
@@ -177,13 +208,16 @@ object DimWindowResolver {
         hellZeitpunkt: HellZeitpunkt
     ): Aufgeloest? {
         if (w.startAnchor != DimAnchor.CLOCK) return null
-        val start = wallClock(date, w.startClockMinutes, zone)
+        // „Nacht davor“ (#227): die Kalendernacht des VORTAGS. Ueber Kalendertage zurueck, nie
+        // −24-h-Millis - an DST-Tagen traefe das die falsche Wanduhrzeit (siehe [wallClock]).
+        val nacht = if (istNachtDavor(w)) date.minusDays(1) else date
+        val start = wallClock(nacht, w.startClockMinutes, zone)
         return when (w.endAnchor) {
             DimAnchor.CLOCK -> {
                 // Über Mitternacht = die Uhrzeit auf dem FOLGE-KALENDERTAG (nicht Start + 24h-Millis) –
                 // sonst eine Stunde falsch an DST-Umstellungstagen.
-                val end = wallClock(date, w.endClockMinutes, zone).let {
-                    if (it <= start) wallClock(date.plusDays(1), w.endClockMinutes, zone) else it
+                val end = wallClock(nacht, w.endClockMinutes, zone).let {
+                    if (it <= start) wallClock(nacht.plusDays(1), w.endClockMinutes, zone) else it
                 }
                 Aufgeloest(start..end, null)
             }
@@ -198,6 +232,13 @@ object DimWindowResolver {
             else -> null
         }
     }
+
+    /**
+     * [DimWindow.startAmVorabend] wirkt nur bei Von ≥ Bis; mit Von < Bis loest das Fenster auf wie
+     * ohne Feld. Start- und Ende-Anker prueft der einzige Aufrufer [loeseNachtFenster] selbst.
+     */
+    private fun istNachtDavor(w: DimWindow): Boolean =
+        w.startAmVorabend && w.startClockMinutes >= w.endClockMinutes
 
     /**
      * Das Ende eines [DimAnchor.ALARM_SONST_CLOCK]-Fensters: die FRÜHESTE Weckzeit echt nach
@@ -330,11 +371,16 @@ object DimWindowResolver {
      * Regel gewählt (Schicht-Tag → [ruleForShift]; freier Tag → [ruleForFreeDay]); eine gefundene
      * Regel mit LEERER Fensterliste = Unterdrückung (kein Dimmen an diesem Tag → Nachtdienst-Ausnahme).
      *
+     * Woher die Regeln kommen, entscheidet der Aufrufer. Der Scheduler baut sie seit #217 aus den
+     * Fenstern am Typ ([TypDimmQuelle]: je Typ eine Regel, ein Typ ohne wirksames Fenster ist eine
+     * leere Regel und unterdrückt damit seinen Tag) - die Auswahl hier bleibt dieselbe.
+     *
      * Fenster-Auflösung hängt am Anker (siehe [resolveWindowForDate]):
      * - **CLOCK↔CLOCK** = fester Nacht-Zeitplan → „die Nacht DIESES Kalendertags" (lückenlos jede Nacht,
      *   unabhängig von Schicht/frei). Genau das ermöglicht „immer 22–7 dimmen, außer an Nachtdienst-
      *   Nächten": UNIVERSAL trägt das 22–7-Fenster jede Nacht, die leere Nachtdienst-Regel nimmt die
-     *   Arbeitsnächte heraus.
+     *   Arbeitsnächte heraus. Mit [DimWindow.startAmVorabend] (Von ≥ Bis) ist es die Nacht VOR dem
+     *   Kalendertag – gewählt von der Regel DIESES Tages, unabhängig von seiner Weckzeit (#227).
      * - **ALARM/SHIFT_END** = schicht-relativ (Wind-down / ND-Tagschlaf) → braucht einen Alarm an
      *   diesem Datum, sonst übersprungen.
      *
@@ -371,12 +417,31 @@ object DimWindowResolver {
         weckzeiten: List<Long> = emptyList(),
         mitWeckzeitNachlauf: Boolean = true,
         hellZeitpunkt: HellZeitpunkt = OHNE_TAGESLICHT,
-    ): List<DimSpan> {
+    ): List<DimSpan> = buildRuleSpansMitHerkunft(
+        alarms, horizonDays, today, zone, ruleForShift, ruleForFreeDay, weckzeiten, mitWeckzeitNachlauf, hellZeitpunkt
+    ).map { it.span }
+
+    /**
+     * Wie [buildRuleSpans], jede Spanne zusaetzlich mit ihrer [SpanHerkunft] (#218) - dieselbe
+     * Berechnung, keine zweite Fensterlogik. Der Scheduler rechnet hiermit, damit „Nicht stoeren“
+     * vor dem Vereinen nach Tagen filtern kann.
+     */
+    fun buildRuleSpansMitHerkunft(
+        alarms: List<AlarmSlot>,
+        horizonDays: Int,
+        today: LocalDate,
+        zone: ZoneId,
+        ruleForShift: (String) -> DimRule?,
+        ruleForFreeDay: () -> DimRule?,
+        weckzeiten: List<Long> = emptyList(),
+        mitWeckzeitNachlauf: Boolean = true,
+        hellZeitpunkt: HellZeitpunkt = OHNE_TAGESLICHT,
+    ): List<HerkunftSpan> {
         val byDate = slotsByDate(alarms, zone)
         // Aufsteigend sortiert, weil [endeAnWeckzeitSonstUhrzeit] die FRUEHESTE passende Weckzeit
         // per firstOrNull sucht. Hier einmal statt in jeder Fenster-Aufloesung erneut.
         val sortierteWeckzeiten = weckzeiten.sorted()
-        val out = mutableListOf<DimSpan>()
+        val out = mutableListOf<HerkunftSpan>()
         val konflikte = mutableListOf<String>()
         // Beginnt bewusst EINEN Tag vor [today] (siehe [LOOKBACK_DAYS]): ein CLOCK<->CLOCK-Fenster
         // vom Vorabend gehoert nach dem Datumswechsel weiterhin zur laufenden Nacht.
@@ -387,9 +452,14 @@ object DimWindowResolver {
             if (shifts.isEmpty()) {
                 // Freier Tag - unveraendert: FREI schlaegt UNIVERSAL, sonst nichts.
                 val freeRule = ruleForFreeDay() ?: continue
-                for (w in freeRule.windows) {
+                for ((i, w) in freeRule.windows.withIndex()) {
                     resolveWindowForDate(ohneNachlaufFalls(w, mitWeckzeitNachlauf), date, null, zone, sortierteWeckzeiten, hellZeitpunkt)
-                        ?.let { out += DimSpan(it.range, freeRule.strength, freeRule.warmth, it.tageslicht) }
+                        ?.let {
+                            out += HerkunftSpan(
+                                DimSpan(it.range, freeRule.staerkeFuerFenster(i), freeRule.warmth, it.tageslicht),
+                                SpanHerkunft.OhneSchicht
+                            )
+                        }
                 }
                 continue
             }
@@ -412,10 +482,16 @@ object DimWindowResolver {
             // Bewusst ueber `byDate` (alle bekannten Slots), nicht ueber die Horizont-Schleife:
             // der Vortag von `today - LOOKBACK_DAYS` entscheidet mit, ob heute der erste Tag ist.
             val position = blockpositionFuerTag(date, wahl.anker.shiftName, byDate)
-            for (w in wahl.rule.windows) {
+            val herkunft = SpanHerkunft.Schicht(wahl.anker.shiftName)
+            for ((i, w) in wahl.rule.windows.withIndex()) {
                 if (position !in w.blockPositionen) continue
                 resolveWindowForDate(ohneNachlaufFalls(w, mitWeckzeitNachlauf), date, wahl.anker, zone, sortierteWeckzeiten, hellZeitpunkt)
-                    ?.let { out += DimSpan(it.range, wahl.rule.strength, wahl.rule.warmth, it.tageslicht) }
+                    ?.let {
+                        out += HerkunftSpan(
+                            DimSpan(it.range, wahl.rule.staerkeFuerFenster(i), wahl.rule.warmth, it.tageslicht),
+                            herkunft
+                        )
+                    }
             }
         }
         if (konflikte.isNotEmpty()) {
@@ -643,7 +719,8 @@ object DimWindowResolver {
      * Mit CLOCK-Start gehen BEIDE Kalendernacht-Enden hier durch — das feste [DimAnchor.CLOCK] und
      * das neue [DimAnchor.ALARM_SONST_CLOCK]. Letzteres braucht bewusst KEINEN Slot dieses Tages:
      * seine Weckzeit sucht es in der Zeitleiste [weckzeiten], nicht im Tages-Slot. Genau das macht
-     * es an einem weckerfreien Tag ebenso auflösbar wie an einem Schicht-Tag.
+     * es an einem weckerfreien Tag ebenso auflösbar wie an einem Schicht-Tag. Dasselbe gilt für
+     * „Nacht davor“ ([DimWindow.startAmVorabend]): auch sie folgt allein aus [date], nie aus [alarm].
      */
     private fun resolveWindowForDate(
         w: DimWindow,

@@ -2,6 +2,7 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer
 
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.HellAb
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 
 /**
  * Eine Dimm-Regel, gekoppelt an eine (nutzerdefinierte) Schicht. Vorbild: das Hue-Regelsystem
@@ -25,8 +26,20 @@ data class DimRule(
     // Pro-Regel-Intensitaet: der Scheduler traegt diese Werte in die DimSpan der Regel-Fenster
     // (bei Ueberlappung gewinnt die dunkelste Spanne).
     val strength: Int = 55,
-    val warmth: Int = 40
+    val warmth: Int = 40,
+    /**
+     * Umbau Etappe 3 (#217): die Staerke JE FENSTER, gleich lang wie [windows]. Nur die Regeln, die
+     * [TypDimmQuelle] aus den Fenstern am Typ baut, tragen sie - am Typ hat jedes Fenster sein
+     * eigenes „Mit %“. Leer (alle gespeicherten Regeln) = [strength] fuer jedes Fenster.
+     *
+     * [Transient]: gehoert nie in den Regel-Speicher oder einen Export - die Quelle ist der Typ.
+     */
+    @Transient
+    val fensterStaerken: List<Int> = emptyList()
 ) {
+    /** Die Staerke des Fensters an Position [index] in [windows] (siehe [fensterStaerken]). */
+    fun staerkeFuerFenster(index: Int): Int = fensterStaerken.getOrNull(index) ?: strength
+
     companion object {
         const val SHIFT_FREE = "__FREI__"
         const val SHIFT_UNIVERSAL = "__UNIVERSAL__"
@@ -115,7 +128,9 @@ enum class Blockposition {
  * - [DimAnchor.ALARM]: Weckzeit + Offset ([startOffsetMinutes]/[endOffsetMinutes]).
  *
  * CLOCK-Auflösung an einem Schicht-Tag zielt bewusst auf die Uhrzeit **vor** der Weckzeit
- * (z. B. „20:00" vor einem 05:30-Wecker = Vorabend); Ausnahme: [startNurAmWecktag]. Bei freien Tagen (kein Wecker) sind nur
+ * (z. B. „20:00" vor einem 05:30-Wecker = Vorabend); Ausnahmen: [startNurAmWecktag] (die Uhrzeit
+ * meint den Tag der Weckzeit) und [startAmVorabend] (die Nacht VOR dem Kalendertag – dort
+ * bestimmt die Weckzeit die Lage gar nicht). Bei freien Tagen (kein Wecker) sind nur
  * CLOCK-Anker sinnvoll; Fenster über Mitternacht (Start ≥ Ende) werden erkannt.
  */
 @Serializable
@@ -176,9 +191,30 @@ data class DimWindow(
      *
      * Default `false` = Verhalten wie bisher; ein Bestand ohne dieses Feld liest sich so
      * (kotlinx-Default). Regeln, die vor #151 aus der Vorlage entstanden sind, tragen es nicht -
-     * sie wirken weiter wie bisher, bis sie neu angelegt oder im Umbau (Etappe 3) migriert werden.
-     * Eine Oberflaeche dafuer gibt es bewusst noch nicht: im Umbau waehlt der Nutzer pro Typ
-     * "Nacht davor" / "Abend danach" / "Nach dem Dienst" und sieht damit, was gilt.
+     * und die Migration auf die Typen (Etappe 3, #214) kopiert das Feld 1:1: auch am Typ wirken
+     * diese Altfenster deshalb weiter wie bisher (verlustfrei geht vor). Erst ein Fenster, das der
+     * Nutzer am Typ neu anlegt oder als „Nacht davor“ / „Abend danach“ / „Nach dem Dienst“
+     * waehlt, sagt ausdruecklich, was gilt.
      */
-    val startNurAmWecktag: Boolean = false
+    val startNurAmWecktag: Boolean = false,
+    /**
+     * „Nacht davor“ (#227): Nur fuer Start [DimAnchor.CLOCK] mit Ende [DimAnchor.CLOCK] oder
+     * [DimAnchor.ALARM_SONST_CLOCK] UND Von ≥ Bis ([startClockMinutes] ≥ [endClockMinutes]). Das
+     * Fenster des Tages D beginnt dann um Von am Kalendertag D−1 und endet um Bis an D; mit
+     * [DimAnchor.ALARM_SONST_CLOCK] an der fruehesten Weckzeit dazwischen, spaetestens um Bis (samt
+     * [weckzeitNachlaufMinuten] und [nachlaufBisHell], wie jedes solche Ende). Die Weckzeit von D
+     * bestimmt die Lage nicht: aufgeloest wird allein aus dem Kalendertag, an Schicht-Tagen wie an
+     * Tagen ohne Eintrag. Mit Von < Bis wirkt das Feld nicht, das Fenster loest auf wie ohne Feld.
+     *
+     * WARUM DAS ES GIBT: Ohne das Feld ist ein solches Fenster die Nacht NACH dem Kalendertag (Von
+     * an D, Bis an D+1), und ein ALARM-Ende haengt an der Weckzeit. „Nacht davor“ mit Von ≥ Bis war
+     * so nicht ausdrueckbar – in #215 dimmte bei einem Nachtdienst-Wecker um 19:30 und Von 16:00
+     * die ganze Dienstnacht.
+     *
+     * Bewusst ein Feld und KEIN neuer [DimAnchor]-Wert: einen unbekannten Anker kann ein per
+     * Revert zurueckgenommener Stand nicht deuten (Nachtrag #213), ein unbekanntes Feld ueberlesen
+     * beide Stores (`ignoreUnknownKeys`) – das Fenster dimmt dann wie vor #227. Default `false` =
+     * Verhalten wie bisher; ein Bestand ohne dieses Feld liest sich so (kotlinx-Default).
+     */
+    val startAmVorabend: Boolean = false
 )

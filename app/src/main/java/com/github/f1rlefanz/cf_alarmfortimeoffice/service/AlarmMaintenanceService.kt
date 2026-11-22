@@ -616,6 +616,9 @@ class AlarmMaintenanceService : Service() {
     lateinit var rufbereitschaftMigration:
         com.github.f1rlefanz.cf_alarmfortimeoffice.shift.RufbereitschaftMigration
 
+    @Inject
+    lateinit var typModellMigration: com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.TypModellMigration
+
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     /** Siehe [ServiceRunTracker]: erst der zuletzt endende Zyklus darf den Service abraeumen. */
@@ -1093,6 +1096,15 @@ class AlarmMaintenanceService : Service() {
             rufbereitschaftMigration.migriereEinmalig()
         } catch (e: Exception) {
             Logger.w(LogTags.SHIFT_CONFIG, "Wartung: Rufbereitschaft-Migration fehlgeschlagen", e)
+        }
+
+        // UMBAU ETAPPE 3 (#216): derselbe zweite Anlass fuer die Uebernahme von Dimmen und "Nicht
+        // stoeren" auf die Typen - NACH den beiden Migrationen oben (sie prueft das selbst), VOR
+        // den Nebenketten. Wer die App nach dem Update nicht oeffnet, erreicht sie nur hier.
+        try {
+            typModellMigration.migriereEinmalig()
+        } catch (e: Exception) {
+            Logger.w(LogTags.DIMMER, "Wartung: Typ-Modellmigration fehlgeschlagen", e)
         }
 
         // Die Nebenketten (Dimmer, DND, Pre-Alarm-Refresh, Rufbereitschafts-Abfrage) - Master-Pause

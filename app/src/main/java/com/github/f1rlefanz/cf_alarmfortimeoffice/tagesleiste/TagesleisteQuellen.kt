@@ -1,9 +1,7 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste
 
-import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimRule
-import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimRuleUseCase
-import com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueSchedule
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpan
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.TageslichtStand
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
@@ -14,14 +12,16 @@ import kotlinx.coroutines.flow.catch
 
 /*
  * Die QUELLEN der Tagesleiste (Umbau #196, SPEC 3.3 Punkt 3): was `ShiftViewModel.tagesleisteQuellen`
- * den Adaptern aus #193 bis #195 in die Hand gibt - Dimm-Schalter und -Regeln, die Schalter von
- * "Nicht stoeren" mit Ausnahmen und Cutoff, Hue-Regeln samt "Bridge eingerichtet", dazu die
- * Schichtspannen und der Tageslicht-Stand.
+ * den Adaptern aus #193 bis #195 in die Hand gibt - die Schicht-Konfiguration (seit #219 liegen
+ * Dimmen und "Nicht stoeren" am Typ), Hue-Regeln samt "Bridge eingerichtet", dazu die Schichtspannen
+ * und der Tageslicht-Stand.
  *
  * LESEFEHLER WERDEN SICHTBAR. Jede Quelle ist ein [Quelle]: [Quelle.Bekannt] mit dem Wert, oder
  * [Quelle.Unbekannt], wenn sie sich nicht lesen liess. Eine unlesbare Quelle wird NIE zur leeren
- * Liste - "keine Dimm-Regel" hiesse "kein Dimmen" und waere eine Behauptung ueber Regeln, die man nie
- * gesehen hat (Pflichtregel "Kein Fehler darf als leeres Erfolgsergebnis durchrutschen"). `null` als
+ * Liste oder zu Standardwerten - "kein Typ hat ein Fenster" hiesse "kein Dimmen" und waere eine
+ * Behauptung ueber Einstellungen, die man nie gesehen hat (Pflichtregel "Kein Fehler darf als leeres
+ * Erfolgsergebnis durchrutschen"; der Flow `shiftConfig` degradiert auf Standardwerte und taugt hier
+ * deshalb nicht, gelesen wird ueber `getCurrentShiftConfig()`). `null` als
  * Zustand des ViewModels heisst dagegen nur "noch nicht gelesen" - das ist kein Fehler.
  *
  * Diese Datei kennt weder ViewModel noch Compose: sie haelt die Zustaende, die Abhaengigkeiten der
@@ -36,26 +36,6 @@ sealed interface Quelle<out T> {
     /** Die Quelle liess sich nicht lesen. Der Grund steht im Release-Log (WARN), nicht hier. */
     data object Unbekannt : Quelle<Nothing>
 }
-
-/**
- * Dimm-Schalter (`dim_enabled`) und alle Dimm-Regeln - der Teil von `DimDndEinstellungen`, der aus dem
- * Dimmer kommt.
- *
- * @param regelwahl dieselbe Instanz, die `DimScheduleUseCase` benutzt; `dimmenUndNichtStoeren` braucht
- *   sie wegen `findRuleForShift`/`findRuleForFreeDay` (kein Repository-Zugriff).
- */
-data class DimmerQuelle(val an: Boolean, val regeln: List<DimRule>, val regelwahl: DimRuleUseCase)
-
-/**
- * Die beiden Quellen-Schalter von "Nicht stoeren", die Dienstzeit-Ausnahmen und der Ruf-Cutoff
- * (`DndPrefs.onCallCutoffMinutes`, Minuten seit Mitternacht) - ohne den zeigte die Leiste fuer jeden
- * die Vorgabe 05:00 (`TagesleisteEingabe.rufCutoffMinuten`).
- */
-data class NichtStoerenQuelle(
-    val toggles: DndPrefs.Toggles,
-    val ausgenommeneSchichten: Set<String>,
-    val rufCutoffMinuten: Int
-)
 
 /**
  * Hue-Regeln und ob eine Bridge eingerichtet ist.
@@ -86,8 +66,7 @@ enum class SpurStand { BEKANNT, UNBEKANNT }
  * den Tag, dessen Sonne gilt - die liefert der Aufrufer.
  */
 data class TagesleisteQuellen(
-    val dimmer: Quelle<DimmerQuelle>,
-    val nichtStoeren: Quelle<NichtStoerenQuelle>,
+    val typen: Quelle<ShiftConfig>,
     val licht: Quelle<LichtQuelle>,
     val spannen: Quelle<List<ShiftSpan>>,
     val tageslicht: TageslichtStand = TageslichtStand.ohneOrt()
@@ -97,10 +76,8 @@ data class TagesleisteQuellen(
      * fehlt, von der sie abhaengt:
      *
      * - Eintrag, Ruf-Abfrage, Wecker: die Schichtspannen.
-     * - Dimmen: Dimm-Quelle und Spannen.
-     * - Nicht stoeren: seine eigene Quelle und die Spannen - und die Dimm-Quelle, aber NUR wenn "folgt
-     *   dem Dimmer" an ist; dann ist die Dimm-Zeitleiste seine Fensterquelle. Ist der Schalter aus,
-     *   haengt "Nicht stoeren" nicht am Dimmer, und ein Dimm-Lesefehler macht die Spur nicht unbekannt.
+     * - Dimmen und Nicht stoeren: die Konfiguration ([typen], dort liegen seit #219 beide am Typ,
+     *   "Solange gedimmt wird" ueber dieselben Fenster) und die Spannen.
      * - Licht: Hue-Quelle und Spannen.
      *
      * DIE SPANNEN HAENGEN AN JEDER SPUR: sie liefern die Dienstzeit des Typs, und die legt fest, WO der
@@ -112,12 +89,8 @@ data class TagesleisteQuellen(
         if (spannen !is Quelle.Bekannt) return SpurStand.UNBEKANNT
         val bekannt = when (spur) {
             Spur.EINTRAG, Spur.RUF_ABFRAGE, Spur.WECKER -> true
-            Spur.DIMMEN -> dimmer is Quelle.Bekannt
+            Spur.DIMMEN, Spur.NICHT_STOEREN -> typen is Quelle.Bekannt
             Spur.LICHT -> licht is Quelle.Bekannt
-            Spur.NICHT_STOEREN -> when (nichtStoeren) {
-                Quelle.Unbekannt -> false
-                is Quelle.Bekannt -> !nichtStoeren.wert.toggles.followDimmerEnabled || dimmer is Quelle.Bekannt
-            }
         }
         return if (bekannt) SpurStand.BEKANNT else SpurStand.UNBEKANNT
     }

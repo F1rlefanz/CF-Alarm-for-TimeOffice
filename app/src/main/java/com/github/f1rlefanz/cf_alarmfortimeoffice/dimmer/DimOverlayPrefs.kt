@@ -11,6 +11,7 @@ import androidx.datastore.preferences.core.longPreferencesKey
 import com.github.f1rlefanz.cf_alarmfortimeoffice.di.qualifiers.MainDataStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
@@ -226,6 +227,21 @@ class DimOverlayPrefs @Inject constructor(
      * NotificationSettingsViewModel/SettingsTabContent. */
     val correctionNotificationEnabled: Flow<Boolean> = safeData.map {
         it[KEY_CORRECTION_NOTIFICATION_ENABLED] ?: false
+    }
+
+    /**
+     * STRIKTE Lese-Stelle fuer die Typ-Modellmigration (#216): `dim_enabled`, ohne den Umweg ueber
+     * [safeData]. Der degradiert einen Lesefehler auf "aus" - fuer den Dimmer die richtige
+     * Richtung, fuer die Migration nicht: die schriebe "aus" an jeden Typ und setzte ihre Stufe,
+     * ein eingeschalteter Dimmer bliebe nach dem Umbau dauerhaft aus. Hier kommt der Fehler
+     * (Store unlesbar, falsch typisierter Wert) als `Result.failure` an; [toggles] bleibt, wie es ist.
+     */
+    suspend fun dimmenAnOderFehler(): Result<Boolean> = try {
+        Result.success(dataStore.data.first()[KEY_DIM_ON] ?: false)
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Result.failure(e)
     }
 
     suspend fun togglesNow(): Toggles = toggles.first()

@@ -8,6 +8,7 @@ import androidx.annotation.VisibleForTesting
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.GeklingelteWeckzeiten
 import com.github.f1rlefanz.cf_alarmfortimeoffice.freietage.FreieTageStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPausePrefs
+import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IShiftConfigRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpanStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.HellAb
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.TageslichtQuelle
@@ -27,8 +28,11 @@ import kotlin.coroutines.cancellation.CancellationException
  * den nächsten Fenster-Rand (Muster wie NachtDimmer-ScheduleManager /
  * [com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmMaintenanceService]).
  *
- * Die Quelle sind die [DimRule]n: pro Kalendertag die passende Regel (Schicht-Tag →
- * Schicht/UNIVERSAL, freier Tag → FREI/UNIVERSAL; siehe [DimRuleUseCase]). CLOCK↔CLOCK-Fenster =
+ * Die Quelle sind seit #217 die Fenster AM TYP ([TypDimmQuelle]): pro Kalendertag die Fenster des
+ * Typs, der die Schichtspanne traegt, an freien und freigegebenen Tagen die der festen Zeile
+ * „Ohne Kalendereintrag“ (bzw. „wie <Typ>“). Einen Hauptschalter gibt es nicht mehr (SPEC E7):
+ * `dim_enabled` wird nicht gelesen, ein Typ ohne wirksames Fenster dimmt an seinem Tag nicht.
+ * Die Dimm-Regeln (`DimRuleRepository`) liest der Scheduler nicht mehr. CLOCK↔CLOCK-Fenster =
  * lückenlos jede Nacht, ALARM/SHIFT_END schicht-relativ, `ALARM_SONST_CLOCK` als Ende = „bis zur
  * Weckzeit, spätestens um X", leere Fensterliste = Unterdrückung. Details in
  * [DimWindowResolver.buildRuleSpans].
@@ -42,7 +46,12 @@ class DimScheduleUseCase @Inject constructor(
     private val alarmUseCase: IAlarmUseCase,
     private val shiftSpanStore: ShiftSpanStore,
     private val freieTageStore: FreieTageStore,
-    private val dimRuleUseCase: DimRuleUseCase,
+    /**
+     * Die Fenster-Quelle (#217). Gelesen wird STRIKT ueber [IShiftConfigRepository.getCurrentShiftConfig]
+     * (ein Fehler ist nie eine leere oder die Standard-Konfiguration), nie ueber den Anzeige-Flow.
+     * Dasselbe Muster wie `DndScheduleUseCase` (Rufbereitschafts-Flag).
+     */
+    private val shiftConfigRepository: IShiftConfigRepository,
     private val prefs: DimOverlayPrefs,
     private val correctionNotifier: DimCorrectionNotifier,
     private val masterPausePrefs: MasterPausePrefs,
@@ -88,17 +97,20 @@ class DimScheduleUseCase @Inject constructor(
 
     /** Fenster-Ergebnis samt der beiden Gruende, aus denen es LEER sein kann (siehe [fallbackTick]). */
     private data class Windows(
-        val spans: List<DimWindowResolver.DimSpan>,
+        /** Die Spannen samt Herkunft (#218) - die Herkunft liest nur [previewTimelineWithStatus]. */
+        val mitHerkunft: List<DimWindowResolver.HerkunftSpan>,
         val alarmReadFailed: Boolean,
         val anySourceEnabled: Boolean,
         /**
-         * Lag mindestens EINE aktivierte Regel vor? Rein diagnostisch (siehe [meldeAbschaltung]):
-         * "Dimmer an, Regeln da, trotzdem kein Fenster" ist der einzige Aus-Weg, der spaeter
-         * jemanden interessiert. Der Wert faellt bei der Berechnung ohnehin an - ihn hier
-         * mitzufuehren spart einen zusaetzlichen DataStore-Read allein fuers Log.
+         * Hat ein Typ oder die feste Zeile SICHER (gelesen, nicht vermutet) ein wirksames Fenster?
+         * Rein diagnostisch (siehe [meldeAbschaltung]): "Fenster am Typ da, trotzdem kein Fenster"
+         * ist der einzige Aus-Weg, der spaeter jemanden interessiert. Bei unlesbarer Grundlage
+         * `false` - dafuer steht schon eine eigene WARN-Zeile im Log.
          */
-        val regelnVorhanden: Boolean = false
-    )
+        val typFensterVorhanden: Boolean = false
+    ) {
+        val spans: List<DimWindowResolver.DimSpan> get() = mitHerkunft.map { it.span }
+    }
 
     /** Nur fuer die Messung (siehe computeWindows) - laeuft im Release-Build ins Leere. */
     private val zaehler = java.util.concurrent.atomic.AtomicInteger(0)
@@ -181,7 +193,7 @@ class DimScheduleUseCase @Inject constructor(
         }
         val now = System.currentTimeMillis()
         // Das ganze Ergebnis statt nur der Spannen: die Diagnostik unten braucht auch
-        // `anySourceEnabled` und `regelnVorhanden`, und beide fallen bei der Berechnung ohnehin an.
+        // `anySourceEnabled` und `typFensterVorhanden`, und beide fallen bei der Berechnung ohnehin an.
         val fenster = computeWindows()
         // Aktive Spanne (überlappen mehrere, gewinnt die dunkelste – Logik in DimWindowResolver).
         val active = DimWindowResolver.activeSpan(fenster.spans, now)
@@ -202,8 +214,8 @@ class DimScheduleUseCase @Inject constructor(
             meldeAbschaltung(
                 DimDiagnostik.abschaltGrund(
                     masterPause = false,
-                    dimEnabled = fenster.anySourceEnabled,
-                    regelnVorhanden = fenster.regelnVorhanden,
+                    dimmenEingerichtet = fenster.anySourceEnabled,
+                    typFensterVorhanden = fenster.typFensterVorhanden,
                     fensterAktiv = false,
                     overridePausiert = false
                 )
@@ -276,10 +288,10 @@ class DimScheduleUseCase @Inject constructor(
      * Protokolliert, WARUM das Overlay abgeschaltet wird.
      *
      * Das Level verzweigt am Verdachtsmoment, nach dem Vorbild von `visibilitySnapshot()` am
-     * Weckbildschirm: Was der Nutzer selbst eingestellt hat (Pause, Hauptschalter aus, Fenster von
+     * Weckbildschirm: Was der Nutzer selbst eingestellt hat (Pause, kein Typ dimmt, Fenster von
      * Hand pausiert) ist kein Vorfall und bleibt DEBUG - im Release-Log waere es taeglich
      * wiederkehrendes Rauschen. WARN bekommt nur der eine Fall, bei dem spaeter jemand fragen
-     * wird: Dimmer AN, Regeln da, trotzdem kein Fenster. Genau der ist im Release-Log noetig,
+     * wird: Fenster am Typ da, trotzdem kein Fenster. Genau der ist im Release-Log noetig,
      * weil dort nur WARN+ landet.
      *
      * Der Dienst-Zustand haengt bewusst mit dran: ein aktives Fenster auf einem NICHT gebundenen
@@ -346,12 +358,21 @@ class DimScheduleUseCase @Inject constructor(
      * [mitWeckzeitNachlauf] = false laesst den Nachlauf nach der Weckzeit weg
      * ([DimWindow.weckzeitNachlaufMinuten]): DND-Modus 1 folgt dem Dimmer, endet aber an der
      * Weckzeit - wer gerade geweckt wurde, soll erreichbar sein (Nutzerentscheidung 13.10.2026).
+     *
+     * [nurTage] behaelt nur die Spannen der Tage, deren Herkunft er annimmt - VOR dem Vereinen, denn
+     * danach ist die Herkunft weg (#218): „Nicht stoeren“ folgt dem Dimmer nur an Tagen, deren Typ
+     * (bzw. die feste Zeile) „Solange gedimmt wird“ an hat. Welche das sind, entscheidet der
+     * Aufrufer; der Dimmer kennt den Schalter nicht (Einbahnstrasse). Ohne Filter: alle Tage.
      */
-    suspend fun previewTimelineWithStatus(mitWeckzeitNachlauf: Boolean = true): TimelinePreview {
+    suspend fun previewTimelineWithStatus(
+        mitWeckzeitNachlauf: Boolean = true,
+        nurTage: (DimWindowResolver.SpanHerkunft) -> Boolean = { true }
+    ): TimelinePreview {
         val now = System.currentTimeMillis()
         val w = computeWindows(mitWeckzeitNachlauf)
+        val behalten = w.mitHerkunft.filter { nurTage(it.herkunft) }.map { it.span }
         return TimelinePreview(
-            intervals = DimWindowResolver.mergeToTimeline(w.spans).filter { it.range.last > now },
+            intervals = DimWindowResolver.mergeToTimeline(behalten).filter { it.range.last > now },
             alarmReadFailed = w.alarmReadFailed
         )
     }
@@ -389,8 +410,24 @@ class DimScheduleUseCase @Inject constructor(
     }
 
     private suspend fun computeWindowsIntern(mitWeckzeitNachlauf: Boolean): Windows {
-        val anySourceEnabled = prefs.togglesNow().dimEnabled
-        if (!anySourceEnabled) return Windows(emptyList(), alarmReadFailed = false, anySourceEnabled = false)
+        // DIE EINZIGE FENSTER-QUELLE (#217): die Fenster am Typ und an der festen Zeile. Kein
+        // Hauptschalter mehr - `dim_enabled` wird hier bewusst NICHT gelesen (SPEC E7).
+        //
+        // ZUERST und STRIKT: Ist die Konfiguration nicht lesbar (vor der ersten Entsperrung
+        // verweigert das Repository den Read, eine kaputte Konfiguration meldet es als Fehler),
+        // wird nicht gedimmt - aber die Kette bestellt sich NICHT ab: `alarmReadFailed` plant den
+        // 15-min-Retry, dieselbe Behandlung wie unlesbare Schichtspannen. Ein Fehler darf nie zu
+        // "kein Typ hat Fenster" werden, sonst risse die Tick-Kette an einem voruebergehenden
+        // Lesefehler ab. Und vor dieser Pruefung wird kein weiterer CE-Speicher angefasst.
+        val config = shiftConfigRepository.getCurrentShiftConfig().getOrElse { e ->
+            Logger.w(LogTags.DIMMER, "Schicht-Konfiguration nicht lesbar - kein Dimming, Retry (${e.javaClass.simpleName})")
+            return Windows(emptyList(), alarmReadFailed = true, anySourceEnabled = true)
+        }
+        val quelle = TypDimmQuelle(config, vorgabeWaerme = prefs.warmthNow())
+        // Kein Typ und nicht die feste Zeile hat ein wirksames Fenster: nichts zu dimmen, und die
+        // Kette darf sich abbestellen (self-cleaning). Jede Aenderung an einem Typ armiert neu
+        // (`ShiftViewModel.updateShiftConfig` -> `ZeitkettenArmierer`), ebenso die Migration.
+        if (!quelle.hatWirksamesFenster) return Windows(emptyList(), alarmReadFailed = false, anySourceEnabled = false)
 
         val alarmsResult = alarmUseCase.getAllAlarms()
         if (alarmsResult.isFailure) {
@@ -418,12 +455,10 @@ class DimScheduleUseCase @Inject constructor(
             zone = zone
         )
 
-        val out = mutableListOf<DimWindowResolver.DimSpan>()
-
-        // DIE EINZIGE FENSTER-QUELLE: eine Regel pro Kalendertag, gewaehlt aus ALLEN Schichten des Tages
-        // (DimWindowResolver.buildRuleSpans); Unterdrueckung schlaegt alles. Den Tag bei einem Konflikt
-        // auszulassen ist verboten - es gibt keine zweite Quelle, die einspringen koennte.
-        val rules = dimRuleUseCase.getAllRules()
+        // DIE EINZIGE FENSTER-QUELLE: je Kalendertag die Regel EINES Typs, gewaehlt aus ALLEN
+        // Schichten des Tages (DimWindowResolver.buildRuleSpans); Unterdrueckung (ein Typ ohne
+        // wirksames Fenster) schlaegt alles. Den Tag bei einem Konflikt auszulassen ist verboten -
+        // es gibt keine zweite Quelle, die einspringen koennte.
         // `triggerTime` MUSS hier die urspruenglich berechnete Weckzeit sein, auch wenn sie
         // laengst verstrichen ist: DimWindowResolver leitet daraus den KALENDERTAG des Slots ab
         // (buildRuleSpans). Genau deshalb fuehrt ShiftSpan sie mit - mit einem Platzhalter waere
@@ -473,27 +508,25 @@ class DimScheduleUseCase @Inject constructor(
             .distinct()
             .sorted()
 
-        if (rules.any { it.enabled }) {
-            val hell = hellZeitpunktFuer(rules, mitWeckzeitNachlauf)
-            out += DimWindowResolver.buildRuleSpans(
-                alarms = slots,
-                horizonDays = HORIZON_DAYS,
-                today = LocalDate.now(zone),
-                zone = zone,
-                ruleForShift = { name -> dimRuleUseCase.findRuleForShift(name, rules) },
-                ruleForFreeDay = { dimRuleUseCase.findRuleForFreeDay(rules) },
-                weckzeiten = weckzeiten,
-                mitWeckzeitNachlauf = mitWeckzeitNachlauf,
-                hellZeitpunkt = hell,
-            )
-        }
+        val spannen = DimWindowResolver.buildRuleSpansMitHerkunft(
+            alarms = slots,
+            horizonDays = HORIZON_DAYS,
+            today = LocalDate.now(zone),
+            zone = zone,
+            ruleForShift = quelle::fuerSchicht,
+            ruleForFreeDay = quelle::fuerFreienTag,
+            weckzeiten = weckzeiten,
+            mitWeckzeitNachlauf = mitWeckzeitNachlauf,
+            hellZeitpunkt = hellZeitpunktFuer(quelle.regeln, mitWeckzeitNachlauf),
+        )
 
-        return Windows(out, alarmReadFailed = false, anySourceEnabled = true, regelnVorhanden = rules.any { it.enabled })
+        return Windows(spannen, alarmReadFailed = false, anySourceEnabled = true, typFensterVorhanden = true)
     }
 
     /**
-     * Der Tageslicht-Schnappschuss fuer [DimWindowResolver.buildRuleSpans] - aber NUR, wenn eine
-     * aktivierte Regel ein Fenster hat, dessen Nachlauf am Tageslicht endet (#140). Sonst wird
+     * Der Tageslicht-Schnappschuss fuer [DimWindowResolver.buildRuleSpans] - aber NUR, wenn ein
+     * Typ oder die feste Zeile ([TypDimmQuelle.regeln]) ein Fenster hat, dessen Nachlauf am
+     * Tageslicht endet (#140). Sonst wird
      * nichts gelesen: der Tick laeuft auch im Direct-Boot-Prozess, und ein unnoetiger Read ist
      * dort genau die Flaeche, die wir nicht wollen. Die DND-Sicht (ohne Nachlauf) braucht ihn nie.
      *

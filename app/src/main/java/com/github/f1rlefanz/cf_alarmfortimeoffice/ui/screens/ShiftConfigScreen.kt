@@ -71,6 +71,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.CompactOutlinedB
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.EinordnenDialog
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.EinordnenTexte
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.KnopfZeile
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.typ.DimFensterAbbildung
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.typ.OhneEintragTexte
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.typ.ShiftDefinitionTexte
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.typ.ShiftEditFormular
@@ -139,17 +140,51 @@ internal val SHIFT_RECOGNITION_HINT: String =
 
 /** Texte der Typ-Liste, die ein Test festhaelt (Beschriftungen wortgleich zum Editor). */
 internal object ShiftConfigTexte {
-    /** Nennt auch die Wahl der festen Zeile: [resetToDefaultsPreservingAutoAlarm] setzt sie zurueck. */
+    /**
+     * Nennt auch Dimmen und „Nicht stören“ (liegen seit Etappe 3 am Typ und gehen mit ihm verloren)
+     * sowie die eigenen Einstellungen der festen Zeile: [resetToDefaultsPreservingAutoAlarm] setzt sie zurueck.
+     */
     const val RESET_RUECKFRAGE =
         "Alle Schichtdefinitionen werden durch die Standardwerte ersetzt – eigene Namen, " +
             "Erkennungsmuster, Kategorien, Weckzeiten, die Schalter „Wecker an diesem Tag“ und " +
-            "„Stummer Wecker“ sowie die Wahl bei „Ohne Kalendereintrag“ gehen verloren. Alle " +
+            "„Stummer Wecker“, die Dimm-Fenster und die „Nicht stören“-Schalter der Typen sowie " +
+            "die eigenen Einstellungen bei „Ohne Kalendereintrag“ gehen verloren. Alle " +
             "kommenden Wecker werden mit den Standard-Weckzeiten neu gesetzt. Der Schalter " +
             "„Automatische Alarme“ im Bereich „Wecker“ bleibt dabei unverändert. Das lässt sich " +
             "nicht rückgängig machen."
 
     /** contentDescription des Symbols an einer Zeile mit stummem Wecker. */
     const val STUMM_SYMBOL = "Stummer Wecker – kein Ton, keine Vibration, kein Vollbild"
+}
+
+/**
+ * PURE, TESTBAR: Die Dimm-Kurzform einer Zeile der Schichttypen-Liste (SPEC E9 / 3.1, Prototyp
+ * `zeile`): „dimmt 20:00–Wecker“, „dimmt nach Dienst“, „2 Dimm-Fenster“ oder „Dimmen aus“ - `null`,
+ * wenn die Zeile zum Dimmen nichts sagt.
+ *
+ * Der Wortlaut der Fenster kommt von [DimFensterAbbildung.kurzform] (Paket #215), nicht nachgebaut.
+ * Dazu gelten fuer die LISTE:
+ * - **Ignorieren und Krank: nichts.** Beide haben in Etappe 3 keinen Dimm-Abschnitt; ein Krank-Tag
+ *   rechnet mit der festen Zeile (`TypDimmQuelle.fuerFreienTag`), nicht mit den Fenstern des Typs -
+ *   eine Kurzform an der Zeile wuerde dort etwas zusagen, das nicht gilt.
+ * - **Ausgeschalteter Typ: nichts.** Er wird nicht erkannt, die Statuszeile sagt „kein Dimmer- und
+ *   kein DND-Fenster“; „dimmt …“ daneben widerspraeche ihr.
+ * - **`an = false`: „Dimmen aus“.** Die Fenster bleiben gespeichert, wirken aber nicht
+ *   („Ausgeschaltet bleibt ausgeschaltet“, SPEC 4) - das darf die Zeile sagen.
+ * - **Ohne wirksames Fenster: nichts.** Die Liste ist kein Ort fuer „Nicht dimmen“; das sagt die
+ *   Typ-Seite.
+ */
+internal fun dimmKurzform(definition: ShiftDefinition): String? {
+    if (!definition.isEnabled) return null
+    if (definition.kategorie == ShiftKategorie.IGNORIEREN || definition.kategorie == ShiftKategorie.KRANK) return null
+    if (!definition.dimmen.an) return TypListeTexte.DIMMEN_AUS
+    return DimFensterAbbildung.kurzform(definition.dimmen, definition.weckerAn)
+}
+
+/** Texte der Typ-Liste, die nicht schon die Typ-Seite oder ein ViewModel besitzt. */
+internal object TypListeTexte {
+    /** Der Typ hat Dimm-Fenster gespeichert, aber „Dimmen an diesem Tag“ ist aus. */
+    const val DIMMEN_AUS = "Dimmen aus"
 }
 
 /**
@@ -823,6 +858,15 @@ private fun SchichttypZeile(
                 }
             }
             StatusZeile(definition)
+            // Dimm-Kurzform (SPEC E9, #220): „dimmt 20:00–Wecker“. Eigene Zeile, weil die Statuszeile
+            // darunter ihren Dimm-Abschnitt in SchichtFolgen.kt baut.
+            dimmKurzform(definition)?.let { dimmen ->
+                Text(
+                    dimmen,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
             // Kurzform (SPEC 3.1): rein lesend, nicht eigens tippbar, keine Warnfarbe - sie
             // beschreibt die Konfiguration, sie mahnt nicht (#70).
             kurzform(definition, folgen)?.let { kurz ->

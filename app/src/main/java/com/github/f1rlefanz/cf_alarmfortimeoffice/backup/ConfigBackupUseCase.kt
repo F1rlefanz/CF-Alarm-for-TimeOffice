@@ -16,6 +16,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.di.qualifiers.MainDataStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimRule
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.ZeitkettenArmierer
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimmerModellMigration
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.TypModellMigration
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.RufbereitschaftMigration
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueSchedule
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.scheduling.HueSmartScheduler
@@ -81,6 +82,8 @@ class ConfigBackupUseCase @Inject constructor(
     private val dimmerModellMigration: DimmerModellMigration,
     // Gleicher Fall fuer die alte Rufbereitschaft-Namensliste (`dnd_oncall_shifts`, bis v1.40.8).
     private val rufbereitschaftMigration: RufbereitschaftMigration,
+    // Umbau Etappe 3 (#216): ein alter Export (ohne Modell-Stufe) geht danach in die Typen ueber.
+    private val typModellMigration: TypModellMigration,
     // Nur fuer den Ziel-Abgleich der importierten Hue-Regeln (siehe
     // reconcileImportedHueTargets). Beide werden ausschliesslich im Import benutzt und beruehren
     // die Bridge nur, wenn sie erreichbar ist.
@@ -196,6 +199,14 @@ class ConfigBackupUseCase @Inject constructor(
             runCatching { rufbereitschaftMigration.migriereEinmalig() }
                 .onFailure { Logger.w(LogTags.SHIFT_CONFIG, "⚠️ IMPORT: Rufbereitschaft-Migration uebersprungen", it) }
         }
+
+        // UMBAU ETAPPE 3 (#216): EIN ALTER EXPORT traegt keine Modell-Stufe in seiner
+        // Schicht-Konfiguration - die gerade geschriebene Fassung steht also auf 0, und ihre
+        // Regeln und DND-Schalter liegen jetzt im Store. NACH den beiden Migrationen oben (ein
+        // Export mit Wellness-Schluesseln geht erst in Regeln, dann in Typen) und VOR der
+        // Armierung unten. Ein neuer Export traegt die Stufe schon - dann ist das ein No-op.
+        // Wirft nicht; ein Fehlschlag steht als Karte im System-Status.
+        typModellMigration.migriereEinmalig()
 
         // "Jeder Setter, der einen DimOverlayPrefs-Wert schreibt, MUSS direkt danach
         // DimScheduleUseCase.enable() aufrufen" (CLAUDE.md). Der Import ist ein neuer, generischer

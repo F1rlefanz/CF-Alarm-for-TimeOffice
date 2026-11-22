@@ -36,6 +36,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -53,6 +54,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FeedNeueinlesenStand
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimBedienungshilfenWunsch
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.TypModellMigration
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AuthState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmMaintenanceService
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.RufbereitschaftAbfrage
@@ -213,6 +215,11 @@ fun StatusTabContent(
             pausiert = masterPausePaused,
             onWiederAktivieren = onResumeMasterPause
         )
+
+        // Umbau Etappe 3 (#216): nur, wenn die Uebernahme von Dimmen und "Nicht stoeren" auf die
+        // Typen in diesem Prozess gescheitert ist. Kein Zustand ohne Anzeige.
+        val typMigration by TypModellMigration.stand.collectAsState()
+        TypMigrationFehlgeschlagenCard(typMigration)
 
         // Auth Status. Bewusst OHNE Aktions-Button: "Nicht angemeldet" ist hier ein
         // architektonisch unerreichbarer Zustand - MainActivity zeigt bei !isSignedIn bereits
@@ -479,6 +486,74 @@ private fun VerwaisteWeckerNachAbwahlCard(
                 onClick = onErneutVersuchen,
                 text = CalendarViewModel.DESELECTION_CLEANUP_RETRY_ACTION,
                 modifier = Modifier.fillMaxWidth()
+            )
+        }
+    }
+}
+
+/**
+ * Nutzertexte der Karte "Uebernahme gescheitert" (#216). Der Text behauptet nur, was gilt: die
+ * alten Einstellungen liegen unveraendert da (kopieren statt verschieben), und die App versucht
+ * es von selbst erneut - beim naechsten Start (MainActivity) und in der Hintergrund-Wartung.
+ * Ob gerade gedimmt wird, sagt er bewusst NICHT: das haengt davon ab, welche Quelle der Dimmer
+ * im ausgelieferten Stand liest.
+ */
+internal const val TYP_MIGRATION_TITEL: String = "Dimmen und „Nicht stören“ nicht übernommen"
+
+internal const val TYP_MIGRATION_TEXT: String =
+    "Deine Einstellungen für Dimmen und „Nicht stören“ konnten noch nicht zu den Schichttypen " +
+        "übernommen werden. Sie bleiben unverändert gespeichert. Die App versucht es beim " +
+        "nächsten Start und bei der regelmäßigen Hintergrund-Wartung von selbst erneut."
+
+/**
+ * Zeigt, dass die Typ-Modellmigration gescheitert ist, samt Grund. Ohne Knopf: der Nutzer kann
+ * hier nichts ausloesen, was die App nicht ohnehin beim naechsten Anlass tut - und ein Knopf,
+ * der dasselbe noch einmal scheitern laesst, waere keine Hilfe.
+ */
+@Composable
+private fun TypMigrationFehlgeschlagenCard(stand: TypModellMigration.Stand) {
+    val fehler = stand as? TypModellMigration.Stand.Fehlgeschlagen ?: return
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.errorContainer
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(SpacingConstants.PADDING_CARD),
+            verticalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_SMALL)
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_LARGE),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Error,
+                    // dekorativ: der Titel daneben benennt den Zustand in Worten
+                    contentDescription = null,
+                    modifier = Modifier.size(SpacingConstants.ICON_SIZE_LARGE),
+                    tint = MaterialTheme.colorScheme.onErrorContainer
+                )
+                Text(
+                    TYP_MIGRATION_TITEL,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onErrorContainer
+                )
+            }
+
+            Text(
+                TYP_MIGRATION_TEXT,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onErrorContainer
+            )
+
+            Text(
+                "Grund: ${fehler.grund.text}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onErrorContainer
             )
         }
     }

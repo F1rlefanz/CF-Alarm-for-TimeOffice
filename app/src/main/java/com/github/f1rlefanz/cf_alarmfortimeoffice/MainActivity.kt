@@ -28,6 +28,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.manager.CalendarPermissio
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.manager.OAuth2TokenManager
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimBedienungshilfenWunsch
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimmerModellMigration
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.TypModellMigration
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndScheduleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmMaintenanceService
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.RufbereitschaftAbfrage
@@ -138,6 +139,8 @@ class MainActivity : ComponentActivity() {
     // Einmalige Uebernahme der alten DND-Rufbereitschaft-Auswahl ins Schicht-Flag - siehe onCreate().
     @Inject lateinit var rufbereitschaftMigration: RufbereitschaftMigration
     @Inject lateinit var rufbereitschaftAbfrage: RufbereitschaftAbfrage
+    // Umbau Etappe 3 (#216): Dimmen und "Nicht stoeren" auf die Typen - siehe onCreate().
+    @Inject lateinit var typModellMigration: TypModellMigration
 
     private val authViewModel: AuthViewModel by viewModels()
     // Der Lazy selbst als eigenes Feld: pruefeRueckkehrAbgleich() fragt, ob das ViewModel schon existiert, ohne
@@ -195,6 +198,11 @@ class MainActivity : ComponentActivity() {
                         .onFailure { Logger.w(LogTags.MAINTENANCE, "⚠️ Rufbereitschafts-Abfrage nach der Migration nicht neu geplant", it) }
                 }
             }
+            // UMBAU ETAPPE 3 (#216): Regeln und DND-Schalter auf die Typen - zwingend NACH den
+            // beiden oben (ein alter Bestand geht erst in Regeln bzw. das Ruf-Flag, dann in die
+            // Typen; die Migration prueft das selbst noch einmal). Armiert Dimmer und DND nach
+            // Erfolg selbst; ein Fehlschlag steht als Karte im System-Status.
+            typModellMigration.migriereEinmalig()
         }
 
         // NUR beim ECHTEN Erststart dieser Activity, nicht nach einer Drehung: `onCreate` laeuft

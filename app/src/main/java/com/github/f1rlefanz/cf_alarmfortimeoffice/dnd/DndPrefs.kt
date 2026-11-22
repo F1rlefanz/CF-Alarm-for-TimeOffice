@@ -12,6 +12,7 @@ import androidx.datastore.preferences.core.emptyPreferences
 import com.github.f1rlefanz.cf_alarmfortimeoffice.di.qualifiers.MainDataStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
@@ -180,6 +181,39 @@ class DndPrefs @Inject constructor(
 
     /** Die einmal registrierte [android.app.AutomaticZenRule]-ID; leer = noch nicht registriert. */
     val zenRuleId: Flow<String> = safeData.map { it[KEY_ZEN_RULE_ID] ?: "" }
+
+    /**
+     * Was die Typ-Modellmigration (#216) von hier braucht, in EINEM Lesevorgang: beide Schalter,
+     * die Dienstzeit-Ausnahmen und der Ruf-Cutoff (geklemmt wie [onCallCutoffMinutes]).
+     */
+    data class Altbestand(
+        val folgtDimmer: Boolean,
+        val waehrendDienst: Boolean,
+        val dienstAusnahmen: Set<String>,
+        val rufCutoffMinuten: Int
+    )
+
+    /**
+     * STRIKTE Lese-Stelle fuer die Typ-Modellmigration (#216), ohne den Umweg ueber [safeData].
+     * Der degradiert einen Lesefehler auf "beide Schalter aus" - fuer den DND-Tick die fail-safe
+     * Richtung, fuer die Migration nicht: sie schriebe "aus" an jeden Typ und setzte ihre Stufe.
+     * Hier kommt der Fehler als `Result.failure` an; die degradierenden Flows bleiben unveraendert.
+     */
+    suspend fun altbestandOderFehler(): Result<Altbestand> = try {
+        val p = dataStore.data.first()
+        Result.success(
+            Altbestand(
+                folgtDimmer = p[KEY_FOLLOW_DIMMER] ?: false,
+                waehrendDienst = p[KEY_DURING_SHIFT] ?: false,
+                dienstAusnahmen = p[KEY_SHIFT_EXCLUDED_SHIFTS] ?: emptySet(),
+                rufCutoffMinuten = (p[KEY_ONCALL_CUTOFF_MIN] ?: DEFAULT_ONCALL_CUTOFF_MIN).coerceIn(0, 24 * 60 - 1)
+            )
+        )
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Result.failure(e)
+    }
 
     suspend fun togglesNow(): Toggles = toggles.first()
     suspend fun policyNow(): Policy = policy.first()

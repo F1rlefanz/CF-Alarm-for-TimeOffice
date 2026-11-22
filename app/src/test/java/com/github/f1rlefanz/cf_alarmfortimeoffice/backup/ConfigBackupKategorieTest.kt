@@ -4,6 +4,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.emptyPreferences
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimmerModellMigration
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.TypModellMigration
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.ZeitkettenArmierer
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.scheduling.HueSmartScheduler
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.IHueLightUseCase
@@ -57,6 +58,8 @@ class ConfigBackupKategorieTest {
         armierer = mock<ZeitkettenArmierer>(),
         dimmerModellMigration = mock<DimmerModellMigration>(),
         rufbereitschaftMigration = mock<RufbereitschaftMigration>(),
+        // #216: neuer Anlass der Typ-Modellmigration - hier nicht Gegenstand, nur Konstruktor.
+        typModellMigration = mock<TypModellMigration> { onBlocking { migriereEinmalig() } doReturn false },
         hueLightUseCase = mock<IHueLightUseCase>(),
         hueRuleUseCase = mock<IHueRuleUseCase>(),
         hueSmartScheduler = { mock<HueSmartScheduler>() }

@@ -152,8 +152,13 @@ class DndTypSchalterTest {
     @Test
     fun `Die feste Zeile folgt ihrem eigenen Schalter, bei wie Typ dem Schalter des Typs`() = runTest {
         // Kein Dienst: jeder Tag ist ein Tag ohne Kalendereintrag, die feste Zeile dimmt jede Nacht.
+        // B hat den Schalter an, kommt aber nie vor - so wird die Dimm-Zeitleiste in beiden Faellen
+        // gerechnet, und nur der Filter je Tag entscheidet.
         val eigeneAn = ShiftConfig(
-            definitions = listOf(typ("A", TypNichtStoeren(solangeGedimmt = false), dimmen = mitNacht())),
+            definitions = listOf(
+                typ("A", TypNichtStoeren(solangeGedimmt = false), dimmen = mitNacht()),
+                typ("B", TypNichtStoeren(solangeGedimmt = true), dimmen = mitNacht())
+            ),
             ohneKalendereintrag = OhneEintragEinstellungen(dimmen = mitNacht(), nichtStoerenSolangeGedimmt = true)
         )
         val store = spanStore(emptyList())

@@ -142,13 +142,14 @@ internal val SHIFT_RECOGNITION_HINT: String =
 internal object ShiftConfigTexte {
     /**
      * Nennt auch Dimmen und „Nicht stören“ (liegen seit Etappe 3 am Typ und gehen mit ihm verloren)
-     * sowie die eigenen Einstellungen der festen Zeile: [resetToDefaultsPreservingAutoAlarm] setzt sie zurueck.
+     * sowie die Wahl („wie <Typ>“) und die eigenen Einstellungen der festen Zeile:
+     * [resetToDefaultsPreservingAutoAlarm] setzt beides zurueck (`getDefaultConfig()` kennt keinen Verweis).
      */
     const val RESET_RUECKFRAGE =
         "Alle Schichtdefinitionen werden durch die Standardwerte ersetzt – eigene Namen, " +
             "Erkennungsmuster, Kategorien, Weckzeiten, die Schalter „Wecker an diesem Tag“ und " +
             "„Stummer Wecker“, die Dimm-Fenster und die „Nicht stören“-Schalter der Typen sowie " +
-            "die eigenen Einstellungen bei „Ohne Kalendereintrag“ gehen verloren. Alle " +
+            "die Wahl und die eigenen Einstellungen bei „Ohne Kalendereintrag“ gehen verloren. Alle " +
             "kommenden Wecker werden mit den Standard-Weckzeiten neu gesetzt. Der Schalter " +
             "„Automatische Alarme“ im Bereich „Wecker“ bleibt dabei unverändert. Das lässt sich " +
             "nicht rückgängig machen."

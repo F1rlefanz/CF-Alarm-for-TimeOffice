@@ -8,8 +8,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Gegenpruefung Etappe 1: die Texte rund um die Schichttyp-Liste sagen nur zu, was in Etappe 1
- * wirklich gilt, und nennen Schalter mit ihrer heutigen Beschriftung.
+ * Gegenpruefung Etappe 1, seit #220 mitgefuehrt: die Texte rund um die Schichttyp-Liste sagen nur zu,
+ * was wirklich gilt, und nennen Schalter mit ihrer heutigen Beschriftung.
  */
 class SchichttypTexteTest {
 
@@ -51,5 +51,10 @@ class SchichttypTexteTest {
         assertTrue(reset, reset.contains("„${ShiftDefinitionTexte.WECKER_AN_TITEL}“"))
         assertTrue(reset, reset.contains("Kategorien"))
         assertTrue(reset, reset.contains("„${OhneEintragTexte.TITEL}“"))
+        // Der Reset verliert BEIDES an der festen Zeile: die Wahl („wie <Typ>“, `getDefaultConfig()` setzt
+        // keinen Verweis) UND ihre eigenen Dimm-/DND-Einstellungen (Pruefer-Befund zu #220).
+        assertTrue(reset, reset.contains("die Wahl und die eigenen Einstellungen bei „${OhneEintragTexte.TITEL}“"))
+        assertTrue(reset, reset.contains("Dimm-Fenster"))
+        assertTrue(reset, reset.contains("„Nicht stören“-Schalter"))
     }
 }

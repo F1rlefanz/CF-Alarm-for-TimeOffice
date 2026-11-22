@@ -44,7 +44,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.Blockposition
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndPrefs
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.OhneEintragEinstellungen
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftKategorie
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.TypDimmen
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.TypNichtStoeren
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.DimDndEinstellungen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.Hinweis
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.LichtEinstellungen
@@ -58,6 +62,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.TagesleisteQuellen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.TageslichtAmMustertag
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.dienstzeitAus
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.dimmenUndNichtStoeren
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.freierTagAus
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.licht
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.standardBlockposition
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.tagesleiste
@@ -148,6 +153,13 @@ internal data class TagesleisteAnzeige(
     }
 }
 
+/** Dimmen und „Nicht stören“ eines Typs samt aufgeloester fester Zeile - die Eingabe des Adapters aus [DimDndEinstellungen]. */
+internal data class TypLeistenEinstellungen(
+    val dimmen: TypDimmen,
+    val nichtStoeren: TypNichtStoeren,
+    val freierTag: OhneEintragEinstellungen
+)
+
 /**
  * Die Rechnung der Karte, ohne Compose (Umbau #197): aus dem Entwurf der Seite und den Quellen
  * (`ShiftViewModel.tagesleisteQuellen`, #196) wird mit den Adaptern aus #193 bis #195 die Leiste. Es
@@ -178,15 +190,21 @@ internal object TagesleisteKarteLogik {
         if (zeigtBlockwahl(kategorie) && gewaehlt != null) gewaehlt else standardBlockposition(kategorie)
 
     /**
-     * Die Spuren, die aus gelesenen Quellen nicht zu rechnen sind: [TagesleisteQuellen.stand], dazu
-     * „Nicht stören“, sobald die Dimm-Quelle fehlt. Der Adapter braucht ihre `regelwahl` fuer jeden Aufruf
-     * (auch fuer „waehrend des Kalendereintrags“); ohne sie liesse sich das Ergebnis nur mit einer zweiten
-     * Rechnung bilden. Das trifft nur den Fall, dass die Dimm-Quelle WIRFT - in Produktion degradiert sie
-     * im Store und wirft nie (#196, #210).
+     * Die Spuren, die aus gelesenen Quellen nicht zu rechnen sind: [TagesleisteQuellen.stand]. Dimmen und
+     * „Nicht stören“ haengen seit #219 an derselben Quelle, der Konfiguration (#210).
      */
-    fun unbekannteSpuren(quellen: TagesleisteQuellen): List<Spur> = Spur.entries.filter {
-        quellen.stand(it) == SpurStand.UNBEKANNT ||
-            (it == Spur.NICHT_STOEREN && quellen.dimmer !is Quelle.Bekannt)
+    fun unbekannteSpuren(quellen: TagesleisteQuellen): List<Spur> =
+        Spur.entries.filter { quellen.stand(it) == SpurStand.UNBEKANNT }
+
+    /**
+     * Die Einstellungen, aus denen die Leiste rechnet: die des GESPEICHERTEN Typs (nach Namen, Gross/Klein
+     * egal - wie die Laufzeit einen Schichtnamen auf seinen Typ abbildet), bei der Neuanlage die Vorgaben
+     * eines neuen Typs. Die Typ-Seite uebergibt hier spaeter den ungespeicherten Entwurf (Paket G); der
+     * Adapter nimmt sie ohnehin als Parameter.
+     */
+    fun einstellungenAus(config: ShiftConfig, gespeicherterName: String?): TypLeistenEinstellungen {
+        val typ = gespeicherterName?.let { name -> config.definitions.firstOrNull { it.name.equals(name, ignoreCase = true) } }
+        return TypLeistenEinstellungen(typ?.dimmen ?: TypDimmen(), typ?.nichtStoeren ?: TypNichtStoeren(), freierTagAus(config))
     }
 
     /**
@@ -224,8 +242,8 @@ internal object TagesleisteKarteLogik {
         val spannen = quellen.spannen.wertOderNull()
             ?: return TagesleisteAnzeige(gelesen = true, leiste = Tagesleiste.LEER, unbekannt = unbekannt, typNochNichtAngelegt = gespeicherterName == null)
 
-        val dimmer = quellen.dimmer.wertOderNull()
-        val nichtStoeren = quellen.nichtStoeren.wertOderNull()
+        val typen = quellen.typen.wertOderNull()
+        val einstellungen = typen?.let { einstellungenAus(it, gespeicherterName) }
         val lichtQuelle = quellen.licht.wertOderNull()
         // Die Sonne von heute: der Mustertag hat kein Datum, die Tageslicht-Bedingung braucht aber eins.
         // Ohne Ort liefert `hellZeitpunkt` null, also keine Einschraenkung - wie zur Laufzeit.
@@ -240,28 +258,24 @@ internal object TagesleisteKarteLogik {
             still = entwurf.isSilent,
             dienstzeit = gespeicherterName?.let { dienstzeitAus(spannen, it, jetztMs, zone) },
             blockposition = blockposition,
-            rufCutoffMinuten = nichtStoeren?.rufCutoffMinuten ?: DndPrefs.DEFAULT_ONCALL_CUTOFF_MIN
+            rufCutoffMinuten = einstellungen?.nichtStoeren?.endetSpaetestensMinuten ?: DndPrefs.DEFAULT_ONCALL_CUTOFF_MIN
         )
 
-        if (dimmer != null) {
-            // Fehlt die „Nicht stören“-Quelle, laufen ihre Schalter AUS: nur das Dimm-Ergebnis wird uebernommen.
+        // Ohne gelesene Konfiguration gibt es weder Dimmen noch „Nicht stören“ zu rechnen: beide Spuren
+        // stehen dann auf „unbekannt“ (`unbekannt`), nie auf „kein Dimmen“.
+        if (einstellungen != null) {
             val ergebnis = dimmenUndNichtStoeren(
                 eingabe,
                 DimDndEinstellungen(
-                    dimEnabled = dimmer.an,
-                    regeln = dimmer.regeln,
-                    nichtStoeren = nichtStoeren?.toggles ?: DndPrefs.Toggles(followDimmerEnabled = false, duringShiftEnabled = false),
-                    ausgenommeneSchichten = nichtStoeren?.ausgenommeneSchichten.orEmpty(),
+                    dimmen = einstellungen.dimmen,
+                    nichtStoeren = einstellungen.nichtStoeren,
+                    freierTag = einstellungen.freierTag,
                     hellUm = { art ->
                         sonne.hellZeitpunkt(sonnentag, art)?.let { Instant.ofEpochMilli(it).atZone(sonne.zone).toLocalTime() }
                     }
-                ),
-                dimmer.regelwahl
+                )
             )
-            eingabe = eingabe.copy(
-                dimmen = ergebnis.dimmen,
-                nichtStoeren = if (nichtStoeren != null) ergebnis.nichtStoeren else emptyList()
-            )
+            eingabe = eingabe.copy(dimmen = ergebnis.dimmen, nichtStoeren = ergebnis.nichtStoeren)
         }
         if (lichtQuelle != null) {
             // Ein Lesefehler der Hue-Regeln kommt hier nie als leere Liste an: der Adapter wird nur mit

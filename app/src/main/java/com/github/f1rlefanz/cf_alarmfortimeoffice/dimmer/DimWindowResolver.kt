@@ -82,6 +82,29 @@ object DimWindowResolver {
         val tageslicht: TageslichtEnde? = null
     )
 
+    /**
+     * Von welchem Kalendertag eine Spanne stammt (#218): an einem Schicht-Tag der Name der Schicht,
+     * an der die Regel des Tages verankert ist ([Tagesregel.anker]), an einem Tag ohne Schichtspanne
+     * (frei, freigegeben, ohne Kalendereintrag) die feste Zeile.
+     *
+     * Nur Auskunft - die Fensterlogik liest sie nicht. „Nicht stoeren“ filtert damit die Dimm-Fenster
+     * auf die Tage, deren Typ „Solange gedimmt wird“ an hat. Der Dimmer weiss dabei nichts von DND:
+     * er nennt die Herkunft, den Filter reicht der Aufrufer herein (Einbahnstrasse `dnd/` -> `dimmer/`).
+     */
+    sealed interface SpanHerkunft {
+        /** Ein Schicht-Tag; [name] ist der Schichtname der Spanne (`ShiftSpan.shiftName`). */
+        data class Schicht(val name: String) : SpanHerkunft
+
+        /** Ein Tag ohne Schichtspanne - es gilt die feste Zeile „Ohne Kalendereintrag“. */
+        data object OhneSchicht : SpanHerkunft
+    }
+
+    /**
+     * Eine [DimSpan] samt [SpanHerkunft]. Bewusst ein Umschlag statt eines Felds in [DimSpan]: deren
+     * Gleichheit (Vorschau, Tests, Override-Identitaet) bleibt so unberuehrt.
+     */
+    data class HerkunftSpan(val span: DimSpan, val herkunft: SpanHerkunft)
+
     /** Spanne samt Kuerzungs-Grund - intern, damit die oeffentlichen Aufloeser bei `LongRange?` bleiben. */
     private data class Aufgeloest(val range: LongRange, val tageslicht: TageslichtEnde?)
 
@@ -377,12 +400,31 @@ object DimWindowResolver {
         weckzeiten: List<Long> = emptyList(),
         mitWeckzeitNachlauf: Boolean = true,
         hellZeitpunkt: HellZeitpunkt = OHNE_TAGESLICHT,
-    ): List<DimSpan> {
+    ): List<DimSpan> = buildRuleSpansMitHerkunft(
+        alarms, horizonDays, today, zone, ruleForShift, ruleForFreeDay, weckzeiten, mitWeckzeitNachlauf, hellZeitpunkt
+    ).map { it.span }
+
+    /**
+     * Wie [buildRuleSpans], jede Spanne zusaetzlich mit ihrer [SpanHerkunft] (#218) - dieselbe
+     * Berechnung, keine zweite Fensterlogik. Der Scheduler rechnet hiermit, damit „Nicht stoeren“
+     * vor dem Vereinen nach Tagen filtern kann.
+     */
+    fun buildRuleSpansMitHerkunft(
+        alarms: List<AlarmSlot>,
+        horizonDays: Int,
+        today: LocalDate,
+        zone: ZoneId,
+        ruleForShift: (String) -> DimRule?,
+        ruleForFreeDay: () -> DimRule?,
+        weckzeiten: List<Long> = emptyList(),
+        mitWeckzeitNachlauf: Boolean = true,
+        hellZeitpunkt: HellZeitpunkt = OHNE_TAGESLICHT,
+    ): List<HerkunftSpan> {
         val byDate = slotsByDate(alarms, zone)
         // Aufsteigend sortiert, weil [endeAnWeckzeitSonstUhrzeit] die FRUEHESTE passende Weckzeit
         // per firstOrNull sucht. Hier einmal statt in jeder Fenster-Aufloesung erneut.
         val sortierteWeckzeiten = weckzeiten.sorted()
-        val out = mutableListOf<DimSpan>()
+        val out = mutableListOf<HerkunftSpan>()
         val konflikte = mutableListOf<String>()
         // Beginnt bewusst EINEN Tag vor [today] (siehe [LOOKBACK_DAYS]): ein CLOCK<->CLOCK-Fenster
         // vom Vorabend gehoert nach dem Datumswechsel weiterhin zur laufenden Nacht.
@@ -395,7 +437,12 @@ object DimWindowResolver {
                 val freeRule = ruleForFreeDay() ?: continue
                 for ((i, w) in freeRule.windows.withIndex()) {
                     resolveWindowForDate(ohneNachlaufFalls(w, mitWeckzeitNachlauf), date, null, zone, sortierteWeckzeiten, hellZeitpunkt)
-                        ?.let { out += DimSpan(it.range, freeRule.staerkeFuerFenster(i), freeRule.warmth, it.tageslicht) }
+                        ?.let {
+                            out += HerkunftSpan(
+                                DimSpan(it.range, freeRule.staerkeFuerFenster(i), freeRule.warmth, it.tageslicht),
+                                SpanHerkunft.OhneSchicht
+                            )
+                        }
                 }
                 continue
             }
@@ -418,10 +465,16 @@ object DimWindowResolver {
             // Bewusst ueber `byDate` (alle bekannten Slots), nicht ueber die Horizont-Schleife:
             // der Vortag von `today - LOOKBACK_DAYS` entscheidet mit, ob heute der erste Tag ist.
             val position = blockpositionFuerTag(date, wahl.anker.shiftName, byDate)
+            val herkunft = SpanHerkunft.Schicht(wahl.anker.shiftName)
             for ((i, w) in wahl.rule.windows.withIndex()) {
                 if (position !in w.blockPositionen) continue
                 resolveWindowForDate(ohneNachlaufFalls(w, mitWeckzeitNachlauf), date, wahl.anker, zone, sortierteWeckzeiten, hellZeitpunkt)
-                    ?.let { out += DimSpan(it.range, wahl.rule.staerkeFuerFenster(i), wahl.rule.warmth, it.tageslicht) }
+                    ?.let {
+                        out += HerkunftSpan(
+                            DimSpan(it.range, wahl.rule.staerkeFuerFenster(i), wahl.rule.warmth, it.tageslicht),
+                            herkunft
+                        )
+                    }
             }
         }
         if (konflikte.isNotEmpty()) {

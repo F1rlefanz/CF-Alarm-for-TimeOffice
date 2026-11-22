@@ -97,7 +97,8 @@ class DimScheduleUseCase @Inject constructor(
 
     /** Fenster-Ergebnis samt der beiden Gruende, aus denen es LEER sein kann (siehe [fallbackTick]). */
     private data class Windows(
-        val spans: List<DimWindowResolver.DimSpan>,
+        /** Die Spannen samt Herkunft (#218) - die Herkunft liest nur [previewTimelineWithStatus]. */
+        val mitHerkunft: List<DimWindowResolver.HerkunftSpan>,
         val alarmReadFailed: Boolean,
         val anySourceEnabled: Boolean,
         /**
@@ -107,7 +108,9 @@ class DimScheduleUseCase @Inject constructor(
          * `false` - dafuer steht schon eine eigene WARN-Zeile im Log.
          */
         val typFensterVorhanden: Boolean = false
-    )
+    ) {
+        val spans: List<DimWindowResolver.DimSpan> get() = mitHerkunft.map { it.span }
+    }
 
     /** Nur fuer die Messung (siehe computeWindows) - laeuft im Release-Build ins Leere. */
     private val zaehler = java.util.concurrent.atomic.AtomicInteger(0)
@@ -355,12 +358,21 @@ class DimScheduleUseCase @Inject constructor(
      * [mitWeckzeitNachlauf] = false laesst den Nachlauf nach der Weckzeit weg
      * ([DimWindow.weckzeitNachlaufMinuten]): DND-Modus 1 folgt dem Dimmer, endet aber an der
      * Weckzeit - wer gerade geweckt wurde, soll erreichbar sein (Nutzerentscheidung 13.10.2026).
+     *
+     * [nurTage] behaelt nur die Spannen der Tage, deren Herkunft er annimmt - VOR dem Vereinen, denn
+     * danach ist die Herkunft weg (#218): „Nicht stoeren“ folgt dem Dimmer nur an Tagen, deren Typ
+     * (bzw. die feste Zeile) „Solange gedimmt wird“ an hat. Welche das sind, entscheidet der
+     * Aufrufer; der Dimmer kennt den Schalter nicht (Einbahnstrasse). Ohne Filter: alle Tage.
      */
-    suspend fun previewTimelineWithStatus(mitWeckzeitNachlauf: Boolean = true): TimelinePreview {
+    suspend fun previewTimelineWithStatus(
+        mitWeckzeitNachlauf: Boolean = true,
+        nurTage: (DimWindowResolver.SpanHerkunft) -> Boolean = { true }
+    ): TimelinePreview {
         val now = System.currentTimeMillis()
         val w = computeWindows(mitWeckzeitNachlauf)
+        val behalten = w.mitHerkunft.filter { nurTage(it.herkunft) }.map { it.span }
         return TimelinePreview(
-            intervals = DimWindowResolver.mergeToTimeline(w.spans).filter { it.range.last > now },
+            intervals = DimWindowResolver.mergeToTimeline(behalten).filter { it.range.last > now },
             alarmReadFailed = w.alarmReadFailed
         )
     }
@@ -496,7 +508,7 @@ class DimScheduleUseCase @Inject constructor(
             .distinct()
             .sorted()
 
-        val spannen = DimWindowResolver.buildRuleSpans(
+        val spannen = DimWindowResolver.buildRuleSpansMitHerkunft(
             alarms = slots,
             horizonDays = HORIZON_DAYS,
             today = LocalDate.now(zone),

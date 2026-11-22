@@ -69,7 +69,9 @@ object DimWindowResolver {
     const val NACHLAUF_MAX_MINUTEN = 120
 
     /**
-     * Ein aufgelöstes Dimm-Fenster samt Intensität der Regel, aus der es stammt. [tageslicht] ist
+     * Ein aufgelöstes Dimm-Fenster samt Intensität: die Stärke des FENSTERS
+     * ([DimRule.staerkeFuerFenster] - am Typ hat jedes Fenster sein eigenes „Mit %“), die Wärme der
+     * Regel bzw. des Typs. [tageslicht] ist
      * gesetzt, wenn das Ende durch Tageslicht gekuerzt wurde (#140) - reine Auskunft fuer die
      * Vorschau, KEIN Teil der Fenster-Identitaet ([isOverrideStale] liest es nicht).
      */
@@ -330,6 +332,10 @@ object DimWindowResolver {
      * Regel gewählt (Schicht-Tag → [ruleForShift]; freier Tag → [ruleForFreeDay]); eine gefundene
      * Regel mit LEERER Fensterliste = Unterdrückung (kein Dimmen an diesem Tag → Nachtdienst-Ausnahme).
      *
+     * Woher die Regeln kommen, entscheidet der Aufrufer. Der Scheduler baut sie seit #217 aus den
+     * Fenstern am Typ ([TypDimmQuelle]: je Typ eine Regel, ein Typ ohne wirksames Fenster ist eine
+     * leere Regel und unterdrückt damit seinen Tag) - die Auswahl hier bleibt dieselbe.
+     *
      * Fenster-Auflösung hängt am Anker (siehe [resolveWindowForDate]):
      * - **CLOCK↔CLOCK** = fester Nacht-Zeitplan → „die Nacht DIESES Kalendertags" (lückenlos jede Nacht,
      *   unabhängig von Schicht/frei). Genau das ermöglicht „immer 22–7 dimmen, außer an Nachtdienst-
@@ -387,9 +393,9 @@ object DimWindowResolver {
             if (shifts.isEmpty()) {
                 // Freier Tag - unveraendert: FREI schlaegt UNIVERSAL, sonst nichts.
                 val freeRule = ruleForFreeDay() ?: continue
-                for (w in freeRule.windows) {
+                for ((i, w) in freeRule.windows.withIndex()) {
                     resolveWindowForDate(ohneNachlaufFalls(w, mitWeckzeitNachlauf), date, null, zone, sortierteWeckzeiten, hellZeitpunkt)
-                        ?.let { out += DimSpan(it.range, freeRule.strength, freeRule.warmth, it.tageslicht) }
+                        ?.let { out += DimSpan(it.range, freeRule.staerkeFuerFenster(i), freeRule.warmth, it.tageslicht) }
                 }
                 continue
             }
@@ -412,10 +418,10 @@ object DimWindowResolver {
             // Bewusst ueber `byDate` (alle bekannten Slots), nicht ueber die Horizont-Schleife:
             // der Vortag von `today - LOOKBACK_DAYS` entscheidet mit, ob heute der erste Tag ist.
             val position = blockpositionFuerTag(date, wahl.anker.shiftName, byDate)
-            for (w in wahl.rule.windows) {
+            for ((i, w) in wahl.rule.windows.withIndex()) {
                 if (position !in w.blockPositionen) continue
                 resolveWindowForDate(ohneNachlaufFalls(w, mitWeckzeitNachlauf), date, wahl.anker, zone, sortierteWeckzeiten, hellZeitpunkt)
-                    ?.let { out += DimSpan(it.range, wahl.rule.strength, wahl.rule.warmth, it.tageslicht) }
+                    ?.let { out += DimSpan(it.range, wahl.rule.staerkeFuerFenster(i), wahl.rule.warmth, it.tageslicht) }
             }
         }
         if (konflikte.isNotEmpty()) {

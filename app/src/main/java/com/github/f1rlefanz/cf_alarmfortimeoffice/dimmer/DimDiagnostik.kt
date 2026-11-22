@@ -51,7 +51,11 @@ internal object DimDiagnostik {
         /** Die Master-Pause ist aktiv. Der Nutzer hat das ausdrücklich so gewollt. */
         MASTER_PAUSE,
 
-        /** Der Dimmer ist im Ganzen ausgeschaltet. Ebenfalls eine bewusste Einstellung. */
+        /**
+         * Kein Typ und nicht die feste Zeile „Ohne Kalendereintrag“ hat ein wirksames Fenster -
+         * gedimmt wird nirgends. Ebenfalls eine bewusste Einstellung. Einen Hauptschalter gibt es
+         * seit #217 nicht mehr (SPEC E7); dieser Grund ist sein sinngemaesser Nachfolger.
+         */
         DIMMER_AUS,
 
         /** Gerade läuft kein Fenster. Der Normalfall — tagsüber trifft das fast immer zu. */
@@ -61,12 +65,13 @@ internal object DimDiagnostik {
         OVERRIDE_PAUSIERT,
 
         /**
-         * Der Dimmer ist AN, es gibt Regeln — und trotzdem kein Fenster. Das kann völlig richtig
-         * sein (Mittagszeit), aber es ist auch die Signatur eines stillen Ausfalls: eine Regel,
-         * die nie greift, ein leerer Schichtspannen-Speicher, eine versehentlich leere
-         * Fensterliste. Genau dieser Fall soll im Release-Log auffindbar sein.
+         * Ein Typ oder die feste Zeile hat ein wirksames Fenster — und trotzdem läuft keins. Das
+         * kann völlig richtig sein (Mittagszeit), aber es ist auch die Signatur eines stillen
+         * Ausfalls: ein Fenster, das nie greift, ein leerer Schichtspannen-Speicher, ein
+         * Schichtname, den kein Typ mehr trägt. Genau dieser Fall soll im Release-Log auffindbar
+         * sein. Hieß bis #217 `KEIN_FENSTER_TROTZ_REGELN` (Quelle waren die Dimm-Regeln).
          */
-        KEIN_FENSTER_TROTZ_REGELN
+        KEIN_FENSTER_TROTZ_TYP_FENSTERN
     }
 
     /**
@@ -74,20 +79,25 @@ internal object DimDiagnostik {
      * damit die Entscheidung testbar bleibt und keinen zusätzlichen DataStore-Zugriff kostet.
      *
      * Die Reihenfolge ist bedeutungstragend und folgt der Reihenfolge der Gates in
-     * [DimScheduleUseCase.applyCurrentState]: Master-Pause schlägt alles, dann der Hauptschalter,
+     * [DimScheduleUseCase.applyCurrentState]: Master-Pause schlägt alles, dann „kein Typ dimmt“,
      * dann die Fensterlage.
+     *
+     * @param dimmenEingerichtet hat ein Typ oder die feste Zeile ein wirksames Fenster? Bei
+     *   unlesbarer Grundlage `true` - unbekannt ist nicht „aus“.
+     * @param typFensterVorhanden dasselbe, aber SICHER gelesen; bei unlesbarer Grundlage `false`,
+     *   damit der Lesefehler (eigene WARN-Zeile) nicht zusätzlich als Verdachtsfall erscheint.
      */
     fun abschaltGrund(
         masterPause: Boolean,
-        dimEnabled: Boolean,
-        regelnVorhanden: Boolean,
+        dimmenEingerichtet: Boolean,
+        typFensterVorhanden: Boolean,
         fensterAktiv: Boolean,
         overridePausiert: Boolean
     ): AbschaltGrund = when {
         masterPause -> AbschaltGrund.MASTER_PAUSE
-        !dimEnabled -> AbschaltGrund.DIMMER_AUS
+        !dimmenEingerichtet -> AbschaltGrund.DIMMER_AUS
         fensterAktiv && overridePausiert -> AbschaltGrund.OVERRIDE_PAUSIERT
-        regelnVorhanden -> AbschaltGrund.KEIN_FENSTER_TROTZ_REGELN
+        typFensterVorhanden -> AbschaltGrund.KEIN_FENSTER_TROTZ_TYP_FENSTERN
         else -> AbschaltGrund.KEIN_FENSTER
     }
 
@@ -95,13 +105,13 @@ internal object DimDiagnostik {
      * Gehört dieser Grund ins RELEASE-Log (WARN) oder reicht DEBUG?
      *
      * Release-Logs führen nur WARN+. Alles, was der Nutzer selbst eingestellt hat — Pause,
-     * Hauptschalter aus, Fenster von Hand pausiert — ist kein Vorfall und würde das Log nur
+     * kein Typ dimmt, Fenster von Hand pausiert — ist kein Vorfall und würde das Log nur
      * zumüllen. Bleibt der eine Fall, bei dem später jemand fragen wird „warum war es hell?":
-     * eingeschaltet, Regeln da, trotzdem kein Fenster. Dieselbe Verzweigung nach Verdachtsmoment
+     * Fenster am Typ da, trotzdem kein Fenster. Dieselbe Verzweigung nach Verdachtsmoment
      * wie beim Weckbildschirm.
      */
     fun istVerdaechtig(grund: AbschaltGrund): Boolean =
-        grund == AbschaltGrund.KEIN_FENSTER_TROTZ_REGELN
+        grund == AbschaltGrund.KEIN_FENSTER_TROTZ_TYP_FENSTERN
 
     /**
      * Laeuft gerade ein Fenster, das gar nichts bewirken KANN, weil der Bedienungshilfen-Dienst

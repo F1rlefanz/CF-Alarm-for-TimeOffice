@@ -12,7 +12,7 @@
 #
 # Bewusst nur ASCII: Windows PowerShell 5.1 liest UTF-8 ohne BOM falsch.
 
-param([switch]$DryRun)
+param([switch]$DryRun, [double]$WochenReserve = 0.9)
 
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 # Der Auftrag geht per Standardeingabe an claude (siehe StarteClaude); ohne UTF-8 hier wuerde
@@ -38,7 +38,8 @@ $Sdk = Join-Path $env:LOCALAPPDATA 'Android\Sdk'
 $Adb = Join-Path $Sdk 'platform-tools\adb.exe'
 # M von 60 auf 75 (17.10.2026): drei von fuenf UI-Paketen in Etappe 1 brauchten bei 60 einen zweiten Lauf.
 $Caps = @{ 'groesse-S' = 40; 'groesse-M' = 75 }
-$WochenReserve = 0.9   # ab diesem Wochenverbrauch pausiert der Runner (Rest bleibt dem Eigentuemer)
+# $WochenReserve (Parameter, Standard 0.9): ab diesem Wochenverbrauch pausiert der Runner, der Rest bleibt
+# dem Eigentuemer. Braucht er den Rest nicht, startet er mit -WochenReserve 1 (dann greift nur das Limit selbst).
 $script:Woche = $null
 $SkillEtappen = @(9)   # braucht vorher Label skills-bereit-9 am Epic; Etappe 3 laeuft seit 21.11.2026 ueber die Nachtrags-Bruecke (ABLAUF Abschnitt 3)
 

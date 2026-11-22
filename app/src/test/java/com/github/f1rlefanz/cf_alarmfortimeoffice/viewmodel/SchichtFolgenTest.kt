@@ -296,24 +296,45 @@ class SchichtFolgenTest {
         assertFalse(text.contains(" ·"))
     }
 
-    // --- Kurzform der Zeile in der Schichttypen-Liste (Umbau Etappe 1, SPEC 3.1) ---------------
+    // --- Kurzform der Zeile in der Schichttypen-Liste (SPEC 3.1, E9; Etappe 3 #220) -------------
 
-    private fun kurz(definition: ShiftDefinition, f: SchichtFolgen? = folgen(definition = definition)): String? =
-        kurzform(definition, f)?.replace(NBSP, ' ')
+    /** [dimmKurz]: die Dimm-Kurzform, die die Liste aus der Definition bildet (`dimmKurzform`, `ui.`). */
+    private fun kurz(
+        definition: ShiftDefinition,
+        f: SchichtFolgen? = folgen(definition = definition),
+        dimmKurz: String? = null
+    ): String? = kurzform(definition, f, dimmKurz)?.replace(NBSP, ' ')
 
-    private val volleFolgen = "Dimmen: keine · Licht: keine · Nicht stören: aus"
+    private val ohneDimmen = "Licht: keine · Nicht stören: aus"
 
     @Test
-    fun `Kurzform - ein normaler Typ zeigt die heutige Statuszeile unveraendert`() {
-        assertEquals(volleFolgen, kurz(def()))
+    fun `Kurzform - ohne Dimm-Text beginnt die Zeile mit Licht, einen Abschnitt Dimmen gibt es nicht`() {
+        assertEquals(ohneDimmen, kurz(def()))
+    }
+
+    /**
+     * Bewusste Verhaltensaenderung (#220, Betreuer-Entscheidung): die Liste zeigt EINE Dimm-Angabe. Der
+     * Dimm-Text ersetzt „Dimmen: …“ an derselben Stelle, statt neben ihm zu stehen.
+     */
+    @Test
+    fun `Kurzform - der Dimm-Text steht an der Stelle von Dimmen, nie daneben`() {
+        val text = kurz(def(), dimmKurz = "dimmt 20:00–Wecker")!!
+        assertEquals("dimmt 20:00–Wecker · Licht: keine · Nicht stören: aus", text)
+        assertFalse("Dimmen: darf neben dem Dimm-Text nicht noch einmal stehen: $text", text.contains("Dimmen:"))
+        // Auch bei einem Typ MIT Fenstern in den Folgen: der Text kommt aus dem Parameter.
+        val mitFenster = folgen(dimmen = dimmenMit(nachtFenster))
+        assertEquals("Testvoraussetzung: die Statuszeile kennt das Fenster", "Dimmen: 1 Fenster", abschnitt(mitFenster, 0))
+        val zeile = kurz(def(), mitFenster, "dimmt 20:00–Wecker")!!
+        assertEquals("dimmt 20:00–Wecker · Licht: keine · Nicht stören: aus", zeile)
     }
 
     @Test
-    fun `Kurzform - Wecker aus heisst kein Wecker vor der Statuszeile`() {
+    fun `Kurzform - Wecker aus heisst kein Wecker vor den Abschnitten`() {
         // Ohne den Licht-Abschnitt: ohne Alarm laeuft keine Hue-Regel (siehe der Test darunter).
+        assertEquals("kein Wecker · Nicht stören: aus", kurz(def().copy(weckerAn = false)))
         assertEquals(
-            "kein Wecker · Dimmen: keine · Nicht stören: aus",
-            kurz(def().copy(weckerAn = false))
+            "kein Wecker · dimmt 20:00–07:00 · Nicht stören: aus",
+            kurz(def().copy(weckerAn = false), dimmKurz = "dimmt 20:00–07:00")
         )
     }
 
@@ -329,19 +350,21 @@ class SchichtFolgenTest {
 
         val text = kurz(ohneWecker, f)!!
         assertFalse("Ohne Alarm laeuft keine Hue-Regel: $text", text.contains("Licht"))
-        assertEquals("kein Wecker · Dimmen: keine · Nicht stören: aus", text)
+        assertEquals("kein Wecker · Nicht stören: aus", text)
         // Mit Wecker bleibt die Regel Teil der Zeile.
         assertTrue(kurz(def(), folgen(hueRegeln = regeln))!!.contains("Licht: 1 Regel + allgemeine"))
     }
 
     @Test
-    fun `Kurzform - Wecker aus ohne gelesene Folgen sagt trotzdem kein Wecker`() {
+    fun `Kurzform - Wecker aus ohne gelesene Folgen sagt trotzdem kein Wecker, mit Dimm-Text auch den`() {
         assertEquals("kein Wecker", kurz(def().copy(weckerAn = false), null))
+        assertEquals("kein Wecker · dimmt 20:00–07:00", kurz(def().copy(weckerAn = false), null, "dimmt 20:00–07:00"))
     }
 
     @Test
-    fun `Kurzform - ohne gelesene Folgen gibt es keine Kurzform, nie eine erfundene`() {
+    fun `Kurzform - ohne gelesene Folgen gibt es nur den Dimm-Text der Definition, nie ein erfundenes Licht`() {
         assertNull(kurz(def(), null))
+        assertEquals("dimmt 20:00–Wecker", kurz(def(), null, "dimmt 20:00–Wecker"))
     }
 
     @Test
@@ -362,13 +385,21 @@ class SchichtFolgenTest {
     fun `Kurzform - ausgeschaltet und Krank haben keine, ihre Statuszeile sagt es`() {
         assertNull(kurz(def(enabled = false), null))
         assertNull(kurz(def().mitKategorie(ShiftKategorie.KRANK), null))
+        // Auch dann, wenn jemand einen Dimm-Text uebergibt: die Liste verlaesst sich nicht darauf.
+        assertNull(kurz(def(enabled = false), null, "dimmt 20:00–Wecker"))
+        assertNull(kurz(def().mitKategorie(ShiftKategorie.KRANK), null, "dimmt 20:00–Wecker"))
     }
 
     @Test
     fun `Kurzform - nach dem Trenner darf umbrochen werden, kein Wort und kein Name zerfaellt`() {
-        val text = kurzform(def().copy(weckerAn = false), folgen())!!
+        val text = kurzform(def().copy(weckerAn = false), folgen(), "dimmt 20:00–07:00")!!
         assertTrue("kein${NBSP}Wecker" in text)
-        assertTrue("${NBSP}· Dimmen:" in text)
+        // Der Dimm-Text ist wie die Abschnitte geschuetzt: kein normales Leerzeichen mittendrin.
+        assertTrue("dimmt${NBSP}20:00–07:00" in text)
+        assertTrue("${NBSP}· dimmt" in text)
+        assertTrue("${NBSP}· Nicht" in text)
+        // Normale Leerzeichen gibt es genau HINTER den beiden Trennern.
+        assertEquals(text, 2, text.count { it == ' ' })
     }
 
     // --- ViewModel: deaktivierte Schicht, Lesen erst beim Abo --------------------------------

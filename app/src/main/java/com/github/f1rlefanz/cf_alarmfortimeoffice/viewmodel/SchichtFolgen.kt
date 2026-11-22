@@ -188,31 +188,48 @@ private fun SchichtFolgen.abschnitte(mitLicht: Boolean): String =
     ).joinToString(Texte.TRENNER)
 
 /**
- * Die Kurzform einer Zeile der Schichttypen-Liste (Umbau Etappe 1, SPEC 3.1) - `null`, wenn die
+ * Die Kurzform einer Zeile der Schichttypen-Liste (SPEC E9 / 3.1, Prototyp `zeile`) - `null`, wenn die
  * Zeile keine hat und ihre Statuszeile darueber schon alles sagt.
  *
- * In Etappe 1 ist sie die heutige Statuszeile ([alsText]) plus zwei Faelle, die die Statuszeile nicht
- * kennt: „kein Wecker“ (`weckerAn = false`, steht VOR der Statuszeile) und „wird übergangen“
- * (Ignorieren). Dimm-Kurzformen wie „dimmt 20:00–Wecker“ kommen erst mit Etappe 3. Bei „kein Wecker“ fehlt der Licht-Abschnitt
- * der Statuszeile ([alsTextOhneLicht]): ohne Alarm laeuft keine Hue-Regel.
+ * EINE Zeile, in dieser Reihenfolge, mit " · " verbunden: `[kein Wecker]` · `[dimmKurz]` · `Licht: …` ·
+ * `Nicht stören: …`. [dimmKurz] ersetzt hier den Abschnitt „Dimmen: …“ der Statuszeile ([alsText]) an
+ * derselben Stelle („dimmt 20:00–Wecker“ statt „Dimmen: 1 Fenster“); `null` heisst: kein Dimm-Abschnitt
+ * (kein Fenster, Krank, Ignorieren - die Liste ist kein Ort fuer „Nicht dimmen“). Der Text kommt aus
+ * der Definition, nicht aus [folgen] (`viewmodel/` importiert kein `ui.`; die Zeile der Liste ruft
+ * `listenKurzform` in `ShiftConfigScreen.kt`) und steht deshalb auch ohne gelesene Folgen.
+ * [alsText] bleibt fuer die Tagesliste unveraendert.
+ *
+ * Zwei Faelle kennt die Statuszeile nicht: „kein Wecker“ (`weckerAn = false`, steht VOR den Abschnitten)
+ * und „wird übergangen“ (Ignorieren). Bei „kein Wecker“ fehlt der Licht-Abschnitt: ohne Alarm laeuft keine
+ * Hue-Regel ([alsTextOhneLicht]).
  *
  * - **Ignorieren** zuerst: ein solcher Typ wirkt weder mit Wecker noch mit Dimmer, Licht oder DND,
  *   auch wenn das ViewModel ihm [SchichtFolgen] liefert (er passiert dort den Filter). Ein
  *   AUSGESCHALTETER Ignorieren-Typ uebergeht nichts - dann gibt es keine Kurzform.
  * - **Ausgeschaltet und Krank** haben keine: ihre Statuszeile sagt, was sie tun bzw. nicht tun.
- * - **`folgen == null`** heisst „noch nicht gelesen“ und bleibt `null` - eine Zeile „Dimmen: keine“
- *   waere eine erfundene Aussage.
+ * - **`folgen == null`** heisst „noch nicht gelesen“: Licht und „Nicht stören“ stehen dann nicht, eine
+ *   Zeile „Licht: keine“ waere eine erfundene Aussage. Uebrig bleibt, was die Definition allein sagt:
+ *   [dimmKurz] und „kein Wecker“ - oder `null`.
  */
-internal fun kurzform(definition: ShiftDefinition, folgen: SchichtFolgen?): String? {
+internal fun kurzform(definition: ShiftDefinition, folgen: SchichtFolgen?, dimmKurz: String?): String? {
     if (definition.kategorie == ShiftKategorie.IGNORIEREN) {
         return if (definition.isEnabled) schuetze(SchichttypTexte.WIRD_UEBERGANGEN) else null
     }
     if (!definition.isEnabled || definition.kategorie == ShiftKategorie.KRANK) return null
-    if (definition.weckerAn) return folgen?.alsText()
     // Geschuetzt wie die Abschnitte der Statuszeile: umbrochen wird nur HINTER dem Trenner.
-    val keinWecker = schuetze(SchichttypTexte.KEIN_WECKER)
-    return if (folgen == null) keinWecker else keinWecker + Texte.TRENNER + folgen.alsTextOhneLicht()
+    val keinWecker = if (definition.weckerAn) null else schuetze(SchichttypTexte.KEIN_WECKER)
+    val dimmen = dimmKurz?.let(::schuetze)
+    val rest = folgen?.kurzAbschnitte(dimmen, mitLicht = definition.weckerAn) ?: dimmen
+    return listOfNotNull(keinWecker, rest).joinToString(Texte.TRENNER).ifEmpty { null }
 }
+
+/** Wie [abschnitte], aber mit dem Dimm-Abschnitt der Liste ([dimmen], bereits geschuetzt) statt „Dimmen: …“. */
+private fun SchichtFolgen.kurzAbschnitte(dimmen: String?, mitLicht: Boolean): String =
+    listOfNotNull(
+        dimmen,
+        if (mitLicht) teil(Texte.LICHT, licht.teile()) else null,
+        teil(Texte.DND, dnd.teile())
+    ).joinToString(Texte.TRENNER)
 
 /**
  * Ein Abschnitt: Beschriftung + erstes Stueck geschuetzt, jedes weitere Stueck ebenfalls in sich

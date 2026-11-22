@@ -13,13 +13,17 @@ import org.junit.Test
  */
 class SchichttypTexteTest {
 
-    /** Der Editor bietet in Etappe 1 nur den Wecker; Dimmen, DND und Licht kommen mit Etappe 3/4. */
+    /**
+     * Seit Etappe 3 (#220) stehen Dimmen und „Nicht stören“ am Typ, der Hinweis nennt sie (SPEC 3.2);
+     * Licht kommt erst mit Etappe 4 und wird bis dahin nicht versprochen. Bewusste Verhaltensaenderung
+     * gegenueber dem Stand von Etappe 1 („verspricht am Typ nur den Wecker“) - kein Kerntest.
+     */
     @Test
-    fun `Der Einordnen-Hinweis verspricht am Typ nur den Wecker`() {
+    fun `Der Einordnen-Hinweis verspricht am Typ Wecker, Dimmen und Nicht stoeren, noch kein Licht`() {
         val text = EinordnenTexte.KATEGORIE_HINWEIS
         assertTrue(text, text.startsWith("Die Kategorie sortiert nur."))
-        assertTrue(text, text.contains("Wecker"))
-        listOf("Dimmen", "Nicht stören", "Licht").forEach { assertFalse("$it: $text", text.contains(it)) }
+        listOf("Wecker", "Dimmen", "„Nicht stören“").forEach { assertTrue("$it: $text", text.contains(it)) }
+        assertFalse("Licht kommt erst mit Etappe 4: $text", text.contains("Licht"))
     }
 
     /**

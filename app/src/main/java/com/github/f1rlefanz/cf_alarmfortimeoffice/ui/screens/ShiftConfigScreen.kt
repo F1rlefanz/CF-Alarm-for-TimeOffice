@@ -181,6 +181,15 @@ internal fun dimmKurzform(definition: ShiftDefinition): String? {
     return DimFensterAbbildung.kurzform(definition.dimmen, definition.weckerAn)
 }
 
+/**
+ * PURE, TESTBAR: Die ganze Kurzform einer Zeile der Schichttypen-Liste - die Statuszeile aus
+ * [kurzform] mit der Dimm-Kurzform ([dimmKurzform]) an der Stelle von „Dimmen: …“. Die Zeile
+ * [SchichttypZeile] ruft genau diese Funktion; ein Test ueber sie faengt eine falsch verdrahtete
+ * (oder doppelte) Dimm-Angabe, die ein Test nur ueber [kurzform] nicht sieht.
+ */
+internal fun listenKurzform(definition: ShiftDefinition, folgen: SchichtFolgen?): String? =
+    kurzform(definition, folgen, dimmKurzform(definition))
+
 /** Texte der Typ-Liste, die nicht schon die Typ-Seite oder ein ViewModel besitzt. */
 internal object TypListeTexte {
     /** Der Typ hat Dimm-Fenster gespeichert, aber „Dimmen an diesem Tag“ ist aus. */
@@ -858,18 +867,10 @@ private fun SchichttypZeile(
                 }
             }
             StatusZeile(definition)
-            // Dimm-Kurzform (SPEC E9, #220): „dimmt 20:00–Wecker“. Eigene Zeile, weil die Statuszeile
-            // darunter ihren Dimm-Abschnitt in SchichtFolgen.kt baut.
-            dimmKurzform(definition)?.let { dimmen ->
-                Text(
-                    dimmen,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            // Kurzform (SPEC 3.1): rein lesend, nicht eigens tippbar, keine Warnfarbe - sie
-            // beschreibt die Konfiguration, sie mahnt nicht (#70).
-            kurzform(definition, folgen)?.let { kurz ->
+            // Kurzform (SPEC 3.1): EINE Zeile, rein lesend, nicht eigens tippbar, keine Warnfarbe - sie
+            // beschreibt die Konfiguration, sie mahnt nicht (#70). Die Dimm-Kurzform („dimmt 20:00–Wecker“,
+            // SPEC E9) steht darin, nicht als zweite Dimm-Angabe daneben.
+            listenKurzform(definition, folgen)?.let { kurz ->
                 Text(
                     kurz,
                     style = MaterialTheme.typography.bodySmall,

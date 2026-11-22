@@ -7,7 +7,10 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.model.TypDimmen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.typ.DimFensterAbbildung.zuFenster
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.typ.DimFensterForm
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.typ.DimWann
+import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.SchichtFolgen
+import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.ermittleSchichtFolgen
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Test
 import java.time.LocalTime
@@ -44,6 +47,48 @@ class TypListeKurzformTest {
     private val nachDemDienst = fenster(DimWann.NACH_DEM_DIENST, von = null, bis = 14 * 60)
 
     private fun dimmen(vararg f: TypDimmFenster, an: Boolean = true) = TypDimmen(an = an).mitFenster(f.toList())
+
+    /** Die Statuszeilen-Folgen, wie das ViewModel sie je Typ liest: keine Hue-Regel, Bridge da. */
+    private fun folgen(definition: ShiftDefinition): SchichtFolgen =
+        ermittleSchichtFolgen(definition, Result.success(emptyList()), hueKonfiguriert = true)
+
+    /** Der Text der Zeile, wie ihn die Liste anzeigt (ohne die geschuetzten Leerzeichen der Umbruchsteuerung). */
+    private fun zeile(definition: ShiftDefinition, gelesen: Boolean = true): String? =
+        listenKurzform(definition, folgen(definition).takeIf { gelesen })?.replace(Char(0x00A0), ' ')
+
+    /**
+     * Der ganze Weg einer Zeile: Definition -> `listenKurzform` -> Text. Faengt, was ein Test nur ueber
+     * `kurzform()` oder `dimmKurzform()` nicht sieht - die Zeile aus Lauf 1 zeigte die Dimm-Angabe
+     * ZWEIMAL („dimmt …“ darueber, „Dimmen: 1 Fenster“ darunter), und beide Teile waren fuer sich gruen.
+     */
+    @Test
+    fun `Die Zeile der Liste nennt das Dimmen genau einmal und an der Stelle von Dimmen`() {
+        assertEquals(
+            "Fenster",
+            "dimmt 20:00–Wecker · Licht: keine · Nicht stören: aus",
+            zeile(typ(dimmen = dimmen(abendsBisWecker)))
+        )
+        assertEquals("ohne Fenster", "Licht: keine · Nicht stören: aus", zeile(typ(dimmen = dimmen())))
+        assertEquals(
+            "Dimmen aus", "Dimmen aus · Licht: keine · Nicht stören: aus",
+            zeile(typ(dimmen = dimmen(abendsBisWecker, an = false)))
+        )
+        assertEquals(
+            "kein Wecker", "kein Wecker · dimmt 20:00–07:00 · Nicht stören: aus",
+            zeile(typ(weckerAn = false, dimmen = dimmen(abendsBisWecker)))
+        )
+        assertNull("Krank", zeile(typ(kategorie = ShiftKategorie.KRANK, dimmen = dimmen(abendsBisWecker))))
+        listOf(
+            typ(dimmen = dimmen(abendsBisWecker)), typ(dimmen = dimmen()),
+            typ(dimmen = dimmen(abendsBisWecker, an = false)), typ(weckerAn = false, dimmen = dimmen(abendsBisWecker))
+        ).forEach { assertFalse(zeile(it), zeile(it)!!.contains("Dimmen:")) }
+    }
+
+    @Test
+    fun `Ohne gelesene Folgen steht nur, was die Definition allein sagt`() {
+        assertEquals("dimmt 20:00–Wecker", zeile(typ(dimmen = dimmen(abendsBisWecker)), gelesen = false))
+        assertNull(zeile(typ(dimmen = dimmen()), gelesen = false))
+    }
 
     @Test
     fun `Ein Typ mit Fenster zeigt dessen Kurzform`() {

@@ -2,7 +2,6 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel
 
 import com.github.f1rlefanz.cf_alarmfortimeoffice.di.state.CalendarStateHolder
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimOverlayPrefs
-import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimRule
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimRuleRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimRuleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimWindow
@@ -16,6 +15,10 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.repository.interfaces.IHue
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.HueRuleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.CalendarEvent
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.TypDimmFenster
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.TypDimmen
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.TypNichtStoeren
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpan
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpanStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.Quelle
@@ -56,6 +59,7 @@ import org.junit.Before
 import org.junit.Test
 import org.mockito.kotlin.any
 import org.mockito.kotlin.anyOrNull
+import org.mockito.kotlin.doAnswer
 import org.mockito.kotlin.doReturn
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.never
@@ -64,15 +68,16 @@ import org.mockito.kotlin.verifyBlocking
 import org.mockito.kotlin.whenever
 import java.io.IOException
 import java.time.LocalDateTime
+import java.time.LocalTime
 import java.time.ZoneId
 
 /**
  * Die Quellen der Tagesleiste im `ShiftViewModel` (Umbau #196, SPEC 3.3 Punkt 3).
  *
- * Der Kern: ein LESEFEHLER einer Quelle wird [Quelle.Unbekannt], nie eine leere Liste - "keine
- * Dimm-Regel" hiesse "kein Dimmen", "keine Hue-Regel" hiesse "kein Licht" (Pflichtregel "Kein Fehler
+ * Der Kern: ein LESEFEHLER einer Quelle wird [Quelle.Unbekannt], nie eine leere Liste - "kein Typ
+ * hat ein Fenster" hiesse "kein Dimmen", "keine Hue-Regel" hiesse "kein Licht" (Pflichtregel "Kein Fehler
  * darf als leeres Erfolgsergebnis durchrutschen"). Und er trifft nur die Spuren, die an der Quelle
- * haengen.
+ * haengen. Seit #219 liegen Dimmen und "Nicht stoeren" am Typ: beide Spuren haengen an der Konfiguration.
  */
 @OptIn(ExperimentalCoroutinesApi::class) // Dispatchers.setMain/resetMain, advanceUntilIdle, runCurrent
 class TagesleisteQuellenTest {
@@ -91,20 +96,18 @@ class TagesleisteQuellenTest {
 
     // --- Bausteine -------------------------------------------------------------------------
 
-    private val dimRegel = DimRule(
-        id = "r1", name = "Regel r1", shiftPattern = DimRule.SHIFT_UNIVERSAL, enabled = true,
-        windows = listOf(DimWindow())
+    private val typF = ShiftDefinition(
+        id = "id-F", name = "F", keywords = listOf("F"), alarmTime = LocalTime.of(4, 30),
+        dimmen = TypDimmen().mitFenster(listOf(TypDimmFenster(DimWindow(), 55))),
+        nichtStoeren = TypNichtStoeren(solangeGedimmt = true, waehrendEintrag = true)
     )
     private val hueRegel: HueSchedule =
         HueScheduleRule(id = "h1", name = "Hue h1", shiftPattern = "AD1", enabled = true, timeRanges = emptyList())
     private val spanne = ShiftSpan("AD1", startTime = 1_000L, endTime = 2_000L, alarmTriggerTime = 500L)
 
-    private val toggles = DndPrefs.Toggles(followDimmerEnabled = true, duringShiftEnabled = true)
-
     /** Alles, was ein Lauf einstellen kann; der Rest sind gesunde Vorgaben. */
     private class Welt(
-        var dimRegeln: Flow<List<DimRule>>,
-        var dndToggles: DndPrefs.Toggles,
+        var konfig: Result<ShiftConfig>,
         var hueRegeln: Result<List<HueSchedule>>,
         var spannen: Result<List<ShiftSpan>>
     ) {
@@ -119,30 +122,24 @@ class TagesleisteQuellenTest {
     }
 
     private fun welt(
-        dimRegeln: Flow<List<DimRule>> = flowOf(listOf(dimRegel)),
-        dndToggles: DndPrefs.Toggles = toggles,
+        konfig: Result<ShiftConfig> = Result.success(ShiftConfig(definitions = listOf(typF))),
         hueRegeln: Result<List<HueSchedule>> = Result.success(listOf(hueRegel)),
         spannen: Result<List<ShiftSpan>> = Result.success(listOf(spanne)),
         tageslicht: TageslichtQuelle = TageslichtQuelle.OHNE
     ): Welt {
-        val w = Welt(dimRegeln, dndToggles, hueRegeln, spannen)
+        val w = Welt(konfig, hueRegeln, spannen)
         val config = ShiftConfig(definitions = emptyList())
         val shiftUseCase = mock<IShiftUseCase>()
         whenever(shiftUseCase.shiftConfig).thenReturn(flowOf(config))
         shiftUseCase.stub {
-            on { getCurrentShiftConfig() } doReturn Result.success(config)
+            // Der Wert der Tagesleiste kommt aus dem Result - nie aus dem Flow, der auf Standard degradiert.
+            onBlocking { getCurrentShiftConfig() } doAnswer { w.konfig }
             on { saveShiftConfig(any()) } doReturn Result.success(Unit)
             on { recognizeShiftsInEvents(any()) } doReturn Result.success(emptyList())
         }
-        val dimRepo = mock<DimRuleRepository>()
-        whenever(dimRepo.rules).thenReturn(dimRegeln)
-        val dimUseCase = DimRuleUseCase(dimRepo)
+        val dimUseCase = DimRuleUseCase(mock<DimRuleRepository>())
         val overlay = mock<DimOverlayPrefs>()
-        whenever(overlay.toggles).thenReturn(flowOf(DimOverlayPrefs.Toggles(dimEnabled = true)))
         val dnd = mock<DndPrefs>()
-        whenever(dnd.toggles).thenReturn(flowOf(dndToggles))
-        whenever(dnd.shiftExcludedShifts).thenReturn(flowOf(setOf("Ruf")))
-        whenever(dnd.onCallCutoffMinutes).thenReturn(flowOf(6 * 60))
         val hue = mock<IHueConfigRepository>()
         whenever(hue.getConfiguration()).thenReturn(
             flowOf(HueConfiguration(bridgeIp = "1.2.3.4", username = "u", isConfigured = true))
@@ -234,38 +231,40 @@ class TagesleisteQuellenTest {
             q.staende()
         )
         // Die uebrigen Quellen sind unberuehrt - ein Fehler schaltet nicht alle Spuren ab.
-        assertTrue(q.dimmer is Quelle.Bekannt)
-        assertTrue(q.nichtStoeren is Quelle.Bekannt)
+        assertTrue(q.typen is Quelle.Bekannt)
         assertTrue(q.spannen is Quelle.Bekannt)
     }
 
     /**
-     * Gilt auf ViewModel-Ebene: der Flow WIRFT. Die echten Stores degradieren selbst auf leer/aus und
-     * werfen nie (`DimRuleRepository.rules`, `safeData` in `DimOverlayPrefs`/`DndPrefs`) - das ist die
-     * angenommene Grenze, siehe #210 und die Betreuer-Entscheidung in #196.
+     * #219 / #210: Dimmen und "Nicht stoeren" kommen aus der Konfiguration, und die wird ueber das `Result`
+     * gelesen. Scheitert der Read, stehen BEIDE Spuren auf "unbekannt" - nie auf "kein Dimmen". Vor #219
+     * lasen sie aus Stores, die still auf leer/aus degradierten (`DimRuleRepository.rules`, `safeData`):
+     * ein Lesefehler kam als "kein Dimmen" an.
      */
     @Test
-    fun `Lesefehler bei den Dimm-Regeln macht Dimmen unbekannt - und Nicht stoeren nur, solange es dem Dimmer folgt`() =
-        runTest(dispatcher) {
-            val kaputt = flow<List<DimRule>> { throw IOException("dim_rules nicht lesbar") }
+    fun `Lesefehler der Konfiguration macht Dimmen und Nicht stoeren unbekannt - nicht kein Dimmen`() = runTest(dispatcher) {
+        val q = lese(welt(konfig = Result.failure(IOException("shift_config nicht lesbar"))))
 
-            val folgtDemDimmer = lese(welt(dimRegeln = kaputt, dndToggles = toggles))
-            assertEquals("Dimm-Regeln unlesbar heisst Dimmen unbekannt, nicht 'kein Dimmen'", Quelle.Unbekannt, folgtDemDimmer.dimmer)
-            assertEquals(
-                alleBekannt() + (Spur.DIMMEN to SpurStand.UNBEKANNT) + (Spur.NICHT_STOEREN to SpurStand.UNBEKANNT),
-                folgtDemDimmer.staende()
-            )
-        }
+        assertEquals(Quelle.Unbekannt, q.typen)
+        assertEquals(
+            alleBekannt() + (Spur.DIMMEN to SpurStand.UNBEKANNT) + (Spur.NICHT_STOEREN to SpurStand.UNBEKANNT),
+            q.staende()
+        )
+        assertTrue("Hue und Spannen sind vom Konfigurations-Fehler unberuehrt", q.licht is Quelle.Bekannt && q.spannen is Quelle.Bekannt)
+    }
 
     @Test
-    fun `Dimm-Lesefehler laesst Nicht stoeren bekannt, wenn es nicht dem Dimmer folgt`() = runTest(dispatcher) {
-        val kaputt = flow<List<DimRule>> { throw IOException("dim_rules nicht lesbar") }
-        val nurDienstzeit = DndPrefs.Toggles(followDimmerEnabled = false, duringShiftEnabled = true)
+    fun `ein Speichern liest die Typ-Einstellungen neu - auch nach einem frueheren Lesefehler`() = runTest(dispatcher) {
+        val w = welt(konfig = Result.failure(IOException("shift_config nicht lesbar")))
+        assertEquals(Quelle.Unbekannt, lese(w).typen)
 
-        val q = lese(welt(dimRegeln = kaputt, dndToggles = nurDienstzeit))
+        // Der Bestand ist wieder lesbar; das Speichern ist der Ausloeser fuers Neu-Lesen.
+        val neu = ShiftConfig(definitions = listOf(typF))
+        w.konfig = Result.success(neu)
+        w.vm.updateShiftConfig(neu)
+        advanceUntilIdle()
 
-        assertEquals(alleBekannt() + (Spur.DIMMEN to SpurStand.UNBEKANNT), q.staende())
-        assertTrue("Hue und Spannen sind vom Dimm-Fehler unberuehrt", q.licht is Quelle.Bekannt && q.spannen is Quelle.Bekannt)
+        assertEquals(Quelle.Bekannt(neu), w.vm.tagesleisteQuellen.value!!.typen)
     }
 
     @Test
@@ -275,22 +274,16 @@ class TagesleisteQuellenTest {
         assertEquals(Quelle.Unbekannt, q.spannen)
         assertEquals(Spur.entries.associateWith { SpurStand.UNBEKANNT }, q.staende())
         // Die anderen Quellen wurden trotzdem gelesen und sind bekannt.
-        assertTrue(q.dimmer is Quelle.Bekannt && q.nichtStoeren is Quelle.Bekannt && q.licht is Quelle.Bekannt)
+        assertTrue(q.typen is Quelle.Bekannt && q.licht is Quelle.Bekannt)
     }
 
     @Test
-    fun `gesunde Quellen kommen mit ihren Werten an, auch der Ruf-Cutoff`() = runTest(dispatcher) {
+    fun `gesunde Quellen kommen mit ihren Werten an, auch die Typ-Einstellungen`() = runTest(dispatcher) {
         val w = welt()
         val q = lese(w)
 
         assertEquals(alleBekannt(), q.staende())
-        val dimmer = (q.dimmer as Quelle.Bekannt).wert
-        assertEquals(true, dimmer.an)
-        assertEquals(listOf(dimRegel), dimmer.regeln)
-        val dnd = (q.nichtStoeren as Quelle.Bekannt).wert
-        assertEquals(toggles, dnd.toggles)
-        assertEquals(setOf("Ruf"), dnd.ausgenommeneSchichten)
-        assertEquals(6 * 60, dnd.rufCutoffMinuten)
+        assertEquals(listOf(typF), (q.typen as Quelle.Bekannt).wert.definitions)
         val licht = (q.licht as Quelle.Bekannt).wert
         assertEquals(true, licht.konfiguriert)
         assertEquals(listOf(hueRegel), licht.regeln)
@@ -405,14 +398,7 @@ class TagesleisteQuellenTest {
 
     // --- Die Abhaengigkeiten der Spuren (rein) ----------------------------------------------
 
-    private val bekanntDimmer = Quelle.Bekannt(
-        com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.DimmerQuelle(true, emptyList(), DimRuleUseCase(mock<DimRuleRepository>()))
-    )
-    private fun dnd(folgt: Boolean) = Quelle.Bekannt(
-        com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.NichtStoerenQuelle(
-            DndPrefs.Toggles(followDimmerEnabled = folgt, duringShiftEnabled = true), emptySet(), 300
-        )
-    )
+    private val bekannteTypen = Quelle.Bekannt(ShiftConfig(definitions = listOf(typF)))
     private val bekanntLicht = Quelle.Bekannt(
         com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.LichtQuelle(true, emptyList()) { _, _, _, _ -> null }
     )
@@ -421,18 +407,16 @@ class TagesleisteQuellenTest {
     @Test
     fun `jede Spur ist genau von ihren Quellen abhaengig`() {
         fun quellen(
-            dimmer: Quelle<com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.DimmerQuelle> = bekanntDimmer,
-            nichtStoeren: Quelle<com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.NichtStoerenQuelle> = dnd(folgt = true),
+            typen: Quelle<ShiftConfig> = bekannteTypen,
             licht: Quelle<com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.LichtQuelle> = bekanntLicht,
             spannen: Quelle<List<ShiftSpan>> = bekannteSpannen
-        ) = TagesleisteQuellen(dimmer, nichtStoeren, licht, spannen)
+        ) = TagesleisteQuellen(typen, licht, spannen)
 
         val unbekannt = SpurStand.UNBEKANNT
 
         assertEquals(alleBekannt(), quellen().staende())
-        assertEquals(alleBekannt() + (Spur.DIMMEN to unbekannt) + (Spur.NICHT_STOEREN to unbekannt), quellen(dimmer = Quelle.Unbekannt).staende())
-        assertEquals(alleBekannt() + (Spur.DIMMEN to unbekannt), quellen(dimmer = Quelle.Unbekannt, nichtStoeren = dnd(folgt = false)).staende())
-        assertEquals(alleBekannt() + (Spur.NICHT_STOEREN to unbekannt), quellen(nichtStoeren = Quelle.Unbekannt).staende())
+        // Dimmen UND "Nicht stoeren" liegen am Typ und haengen deshalb an derselben Quelle.
+        assertEquals(alleBekannt() + (Spur.DIMMEN to unbekannt) + (Spur.NICHT_STOEREN to unbekannt), quellen(typen = Quelle.Unbekannt).staende())
         assertEquals(alleBekannt() + (Spur.LICHT to unbekannt), quellen(licht = Quelle.Unbekannt).staende())
         assertEquals(Spur.entries.associateWith { unbekannt }, quellen(spannen = Quelle.Unbekannt).staende())
     }

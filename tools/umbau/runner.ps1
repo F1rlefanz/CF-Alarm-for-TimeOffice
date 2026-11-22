@@ -6,7 +6,7 @@
 # - Etappen-Abschluss nur, wenn kein Paket der Etappe mehr offen ist.
 # - Nur emulator-5554. Das Fairphone wird nie angesprochen.
 #
-# Aufruf:  powershell -ExecutionPolicy Bypass -File tools\umbau\runner.ps1 [-DryRun]
+# Aufruf:  powershell -ExecutionPolicy Bypass -File tools\umbau\runner.ps1 [-DryRun] [-WochenReserve 1]
 #   -DryRun  zeigt nur, was als Naechstes passieren wuerde, und beendet sich (kein Agent, keine Labels).
 # Notbremse: Label "umbau-pause" am Epic oder Datei ..Projektdateien\umbau\STOP.
 #

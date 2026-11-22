@@ -5,6 +5,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimScheduleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPausePrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.TypNichtStoeren
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IShiftConfigRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpan
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpanStore
@@ -16,7 +17,7 @@ import org.mockito.kotlin.mock
 import org.mockito.kotlin.whenever
 
 /**
- * "Waehrend der Dienstzeit" bezieht seine Fenster seit v1.25.2 aus den [ShiftSpan]s und NICHT mehr
+ * "Waehrend der Dienstzeit" (seit #218 „Waehrend des Kalendereintrags“ am Typ) bezieht seine Fenster seit v1.25.2 aus den [ShiftSpan]s und NICHT mehr
  * aus dem Alarm-Bestand.
  *
  * Der Grund ist am Geraet gemessen (14.08.2026, Emulator): am 20.08. um 08:00, mitten in der
@@ -31,21 +32,24 @@ class DndShiftSpanSourceTest {
     private val now = 1_770_000_000_000L
     private val hour = 60 * 60 * 1000L
 
-    private suspend fun duringShiftPrefs(): DndPrefs {
-        val prefs = mock<DndPrefs>()
-        whenever(prefs.togglesNow()).thenReturn(
-            DndPrefs.Toggles(followDimmerEnabled = false, duringShiftEnabled = true)
-        )
-        whenever(prefs.shiftExcludedShiftsNow()).thenReturn(emptySet())
-        whenever(prefs.onCallCutoffMinutesNow()).thenReturn(DndPrefs.DEFAULT_ONCALL_CUTOFF_MIN)
-        return prefs
-    }
-
-    /** Welche Schichten Rufbereitschaft sind, sagt seit dem Umbau vom 16.09.2026 die Schicht-Konfiguration. */
+    /**
+     * „Waehrend des Kalendereintrags“ steht seit #218 am Typ (frueher global "Waehrend der
+     * Dienstzeit"). Welche Schichten Rufbereitschaft sind, sagt seit dem Umbau vom 16.09.2026 die
+     * Schicht-Konfiguration; ihr Cutoff ist der Default 05:00 ihres Typs.
+     */
     private fun konfigMitRufbereitschaft(vararg onCall: String): IShiftConfigRepository {
         val repo = mock<IShiftConfigRepository>()
-        val defs = onCall.map {
-            ShiftDefinition(id = it, name = it, keywords = listOf(it), alarmTime = java.time.LocalTime.of(6, 0), isOnCall = true)
+        val waehrendEintrag = TypNichtStoeren(waehrendEintrag = true)
+        val defs = listOf(
+            ShiftDefinition(
+                id = "Fruehschicht", name = "Fruehschicht", keywords = listOf("F"),
+                alarmTime = java.time.LocalTime.of(5, 30), nichtStoeren = waehrendEintrag
+            )
+        ) + onCall.map {
+            ShiftDefinition(
+                id = it, name = it, keywords = listOf(it), alarmTime = java.time.LocalTime.of(6, 0),
+                isOnCall = true, nichtStoeren = waehrendEintrag
+            )
         }
         kotlinx.coroutines.runBlocking {
             whenever(repo.getCurrentShiftConfig()).thenReturn(Result.success(ShiftConfig(definitions = defs)))
@@ -54,14 +58,13 @@ class DndShiftSpanSourceTest {
     }
 
     private fun sut(
-        prefs: DndPrefs,
         spans: Result<List<ShiftSpan>>,
         konfig: IShiftConfigRepository = konfigMitRufbereitschaft()
     ): DndScheduleUseCase {
         val spanStore = mock<ShiftSpanStore>()
         kotlinx.coroutines.runBlocking { whenever(spanStore.spansNow()).thenReturn(spans) }
         return DndScheduleUseCase(
-            mock<Context>(), spanStore, keineFreienTage(), mock<DimScheduleUseCase>(), prefs, mock<MasterPausePrefs>(), konfig
+            mock<Context>(), spanStore, keineFreienTage(), mock<DimScheduleUseCase>(), mock<DndPrefs>(), mock<MasterPausePrefs>(), konfig
         )
     }
 
@@ -76,7 +79,7 @@ class DndShiftSpanSourceTest {
             alarmTriggerTime = now - 3 * hour
         )
 
-        val next = sut(duringShiftPrefs(), Result.success(listOf(span))).computeNextTransition(now)
+        val next = sut(Result.success(listOf(span))).computeNextTransition(now)
 
         assertEquals(
             "Naechster Wechsel ist das Schichtende - es gibt also ein aktives Fenster, " +
@@ -89,7 +92,7 @@ class DndShiftSpanSourceTest {
     @Test
     fun `Ohne Schichtspannen bleibt es beim Keep-alive statt beim Retry`() = runTest {
         // Gegenprobe: "keine Schicht" ist eine gueltige Aussage (Urlaub), kein Lesefehler.
-        val next = sut(duringShiftPrefs(), Result.success(emptyList())).computeNextTransition(now)
+        val next = sut(Result.success(emptyList())).computeNextTransition(now)
 
         assertEquals(now + 6 * 60 * 60_000L, next)
     }
@@ -99,7 +102,7 @@ class DndShiftSpanSourceTest {
         // Der Unterschied, der dem alten Alarm-Pfad an der Dimmer-DND-Grenze gefehlt hat: ein
         // Fehlschlag darf nicht als "heute kein Dienst" durchgehen, sonst bleibt DND bis zu sechs
         // Stunden aus, obwohl der naechste Versuch schon in 15 Minuten Erfolg haette.
-        val next = sut(duringShiftPrefs(), Result.failure(RuntimeException("Store kaputt")))
+        val next = sut(Result.failure(RuntimeException("Store kaputt")))
             .computeNextTransition(now)
 
         assertEquals(now + 15 * 60_000L, next)
@@ -117,7 +120,7 @@ class DndShiftSpanSourceTest {
             alarmTriggerTime = dayStart + 6 * hour
         )
 
-        val next = sut(duringShiftPrefs(), Result.success(listOf(span)), konfigMitRufbereitschaft("AD1"))
+        val next = sut(Result.success(listOf(span)), konfigMitRufbereitschaft("AD1"))
             .computeNextTransition(dayStart + hour)
 
         assertEquals(

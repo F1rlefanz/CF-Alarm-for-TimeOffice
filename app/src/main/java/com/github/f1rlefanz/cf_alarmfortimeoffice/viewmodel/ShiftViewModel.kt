@@ -6,6 +6,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.di.state.CalendarStateHolder
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimOverlayPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimRule
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimRuleUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.TypDimmQuelle
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.ZeitkettenArmierer
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.error.ErrorHandler
@@ -636,7 +637,14 @@ class ShiftViewModel @Inject constructor(
                     // dagegen hinter den Sync - es braucht die Spannen mit dem neuen Namen, siehe
                     // [armiereZeitkettenNeu]. Deshalb wandert der Bedarf weiter, statt hier sofort
                     // ausgefuehrt zu werden.
+                    //
+                    // #217: Die Dimm-Fenster und „Nicht stoeren“-Schalter liegen am TYP. Hat dieses
+                    // Speichern sie veraendert (auch an der festen Zeile oder ueber „wie <Typ>“),
+                    // verschieben sich Fenstergrenzen - beide Ketten muessen neu armiert werden
+                    // (Pflichtregel). Bewusst ueber denselben Bedarf: armiert wird dann ebenfalls
+                    // erst nach dem Sync und genau einmal.
                     val nacharmieren = zieheRegelmusterNach(vorherigeConfig, config)
+                        .mitTypEinstellungen(TypDimmQuelle.dimmenOderNichtStoerenGeaendert(vorherigeConfig, config))
 
                     // DAS try/finally UMSCHLIESST AUCH DAS delay(200) (Befund 21.08.2026):
                     // `zieheRegelmusterNach` hat die Namenslisten unter NonCancellable bereits auf
@@ -865,13 +873,14 @@ class ShiftViewModel @Inject constructor(
         config.definitions.filter { it.isOnCall }.map { it.name }.toSet()
 
     /**
-     * Armiert die Dimm- und DND-Zeitketten neu, nachdem eine Umbenennung nachgezogen wurde:
-     * erst die Spannen (`syncAlarms()`), dann armieren - im `finally` von
-     * [triggerAlarmCreationFromConfigUpdate], weil der Sync oft ausfaellt. Hergang: schichterkennung.md.
+     * Armiert die Dimm- und DND-Zeitketten neu, nachdem eine Umbenennung nachgezogen oder die
+     * Dimm-/„Nicht stoeren“-Einstellungen eines Typs geaendert wurden (#217): erst die Spannen
+     * (`syncAlarms()`), dann armieren - im `finally` von [triggerAlarmCreationFromConfigUpdate],
+     * weil der Sync oft ausfaellt. Hergang: schichterkennung.md.
      */
     private suspend fun armiereZeitkettenNeu(bedarf: NacharmierBedarf) {
         if (!bedarf.beanspruche()) return
-        armierer.armiere("UMBENENNUNG", dimmer = bedarf.dimmer, dnd = bedarf.dnd)
+        armierer.armiere(bedarf.anlass, dimmer = bedarf.dimmer, dnd = bedarf.dnd)
     }
 
     /**
@@ -1161,8 +1170,21 @@ internal data class SchichtUmbenennung(val alterName: String, val neuerName: Str
  * Ein eigener Wert statt zweier Booleans im Aufruf: Er reist vom Nachzug bis hinter den Alarm-Sync,
  * und an dieser Strecke soll man lesen koennen, was transportiert wird.
  */
-internal data class NacharmierBedarf(val dimmer: Boolean, val dnd: Boolean) {
+internal data class NacharmierBedarf(
+    val dimmer: Boolean,
+    val dnd: Boolean,
+    /** Praefix der WARN-Zeile, falls eine Kette nicht neu armiert werden konnte (`ZeitkettenArmierer`). */
+    val anlass: String = ANLASS_UMBENENNUNG
+) {
     val irgendetwas: Boolean get() = dimmer || dnd
+
+    /**
+     * Derselbe Bedarf, erweitert um geaenderte Dimm-/„Nicht stoeren“-Einstellungen am Typ (#217):
+     * dann BEIDE Ketten, denn ein verschobenes Dimm-Fenster zieht DND im Modus „Solange gedimmt
+     * wird“ immer mit. Neu gebaut statt kopiert - die Einweg-Sperre [erledigt] ist hier noch frei.
+     */
+    fun mitTypEinstellungen(geaendert: Boolean): NacharmierBedarf =
+        if (geaendert) NacharmierBedarf(dimmer = true, dnd = true, anlass = ANLASS_TYP) else this
 
     /**
      * EINWEG-SPERRE. Das Nacharmieren wird an ZWEI Stellen angestossen: im `finally` von
@@ -1180,6 +1202,8 @@ internal data class NacharmierBedarf(val dimmer: Boolean, val dnd: Boolean) {
 
     companion object {
         val KEINE = NacharmierBedarf(dimmer = false, dnd = false)
+        private const val ANLASS_UMBENENNUNG = "UMBENENNUNG"
+        private const val ANLASS_TYP = "SCHICHTTYP"
     }
 }
 

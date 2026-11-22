@@ -310,7 +310,6 @@ class DimWindowTageslichtTest {
         val sysZone = ZoneId.systemDefault()
         val wecker = LocalDate.now(sysZone).plusDays(1).atTime(7, 0).atZone(sysZone).toInstant().toEpochMilli()
         val prefs = mock<DimOverlayPrefs>()
-        whenever(prefs.togglesNow()).thenReturn(DimOverlayPrefs.Toggles(dimEnabled = true))
         whenever(prefs.strengthNow()).thenReturn(55)
         whenever(prefs.warmthNow()).thenReturn(40)
         val alarmUseCase = mock<IAlarmUseCase>()
@@ -321,10 +320,11 @@ class DimWindowTageslichtTest {
         whenever(masterPausePrefs.pausedNow()).thenReturn(false)
         val spanStore = mock<ShiftSpanStore>()
         whenever(spanStore.spansNow()).thenReturn(Result.success(emptyList()))
-        val ruleRepo = mock<DimRuleRepository>()
-        whenever(ruleRepo.getRules()).thenReturn(listOf(regel))
+        // Seit #217 liegen die Fenster am Typ: die UNIVERSAL-Regel landet ueber die echte Migration an
+        // der festen Zeile - die Tageslicht-Frage muss dort ebenso ankommen wie frueher an der Regel.
         return DimScheduleUseCase(
-            mock<Context>(), alarmUseCase, spanStore, keineFreienTage(), DimRuleUseCase(ruleRepo),
+            mock<Context>(), alarmUseCase, spanStore, keineFreienTage(),
+            konfigRepo(Result.success(konfigAusRegeln(listOf(regel), schichtNamen = emptyList()))),
             prefs, mock<DimCorrectionNotifier>(), masterPausePrefs, quelle
         )
     }

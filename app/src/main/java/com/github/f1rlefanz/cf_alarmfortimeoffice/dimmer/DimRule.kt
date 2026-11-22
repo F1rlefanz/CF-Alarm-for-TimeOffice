@@ -2,6 +2,7 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer
 
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.HellAb
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 
 /**
  * Eine Dimm-Regel, gekoppelt an eine (nutzerdefinierte) Schicht. Vorbild: das Hue-Regelsystem
@@ -25,8 +26,20 @@ data class DimRule(
     // Pro-Regel-Intensitaet: der Scheduler traegt diese Werte in die DimSpan der Regel-Fenster
     // (bei Ueberlappung gewinnt die dunkelste Spanne).
     val strength: Int = 55,
-    val warmth: Int = 40
+    val warmth: Int = 40,
+    /**
+     * Umbau Etappe 3 (#217): die Staerke JE FENSTER, gleich lang wie [windows]. Nur die Regeln, die
+     * [TypDimmQuelle] aus den Fenstern am Typ baut, tragen sie - am Typ hat jedes Fenster sein
+     * eigenes „Mit %“. Leer (alle gespeicherten Regeln) = [strength] fuer jedes Fenster.
+     *
+     * [Transient]: gehoert nie in den Regel-Speicher oder einen Export - die Quelle ist der Typ.
+     */
+    @Transient
+    val fensterStaerken: List<Int> = emptyList()
 ) {
+    /** Die Staerke des Fensters an Position [index] in [windows] (siehe [fensterStaerken]). */
+    fun staerkeFuerFenster(index: Int): Int = fensterStaerken.getOrNull(index) ?: strength
+
     companion object {
         const val SHIFT_FREE = "__FREI__"
         const val SHIFT_UNIVERSAL = "__UNIVERSAL__"
@@ -176,9 +189,10 @@ data class DimWindow(
      *
      * Default `false` = Verhalten wie bisher; ein Bestand ohne dieses Feld liest sich so
      * (kotlinx-Default). Regeln, die vor #151 aus der Vorlage entstanden sind, tragen es nicht -
-     * sie wirken weiter wie bisher, bis sie neu angelegt oder im Umbau (Etappe 3) migriert werden.
-     * Eine Oberflaeche dafuer gibt es bewusst noch nicht: im Umbau waehlt der Nutzer pro Typ
-     * "Nacht davor" / "Abend danach" / "Nach dem Dienst" und sieht damit, was gilt.
+     * und die Migration auf die Typen (Etappe 3, #214) kopiert das Feld 1:1: auch am Typ wirken
+     * diese Altfenster deshalb weiter wie bisher (verlustfrei geht vor). Erst ein Fenster, das der
+     * Nutzer am Typ neu anlegt oder als „Nacht davor“ / „Abend danach“ / „Nach dem Dienst“
+     * waehlt, sagt ausdruecklich, was gilt.
      */
     val startNurAmWecktag: Boolean = false
 )

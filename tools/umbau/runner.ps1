@@ -173,10 +173,17 @@ function EmulatorBereit() {
     }
     if (-not $bereit) { Log "Emulator $Avd ist nach 5 min nicht hochgefahren - braucht den Eigentuemer"; return $false }
     # Test-PIN 1234 (Emulator braucht eine Sperre fuer Direct-Boot-Tests, Memory env_emulator_needs_pin_for_directboot)
-    & $Adb -s $Emu shell input keyevent 82 | Out-Null
-    & $Adb -s $Emu shell input text 1234 | Out-Null
-    & $Adb -s $Emu shell input keyevent 66 | Out-Null
-    return $true
+    # Android 17 (CFAlarm_Umbau) oeffnet die PIN-Eingabe erst nach Aus/An und Wischen, und `input text`
+    # kommt dort nicht an - die Ziffern als Tastencodes (KEYCODE_1..4 = 8..11). Gemessen 22.11.2026.
+    for ($v = 0; $v -lt 3; $v++) {
+        foreach ($k in @(26, 26, 82)) { & $Adb -s $Emu shell input keyevent $k | Out-Null; Start-Sleep -Milliseconds 800 }
+        & $Adb -s $Emu shell input swipe 540 2000 540 600 300 | Out-Null
+        foreach ($k in @(8, 9, 10, 11, 66)) { & $Adb -s $Emu shell input keyevent $k | Out-Null }
+        Start-Sleep -Seconds 2
+        if (((& $Adb -s $Emu shell dumpsys trust) | Out-String) -match 'deviceLocked=0') { return $true }
+    }
+    Log "Emulator $Avd laesst sich nicht entsperren - braucht den Eigentuemer"
+    return $false
 }
 
 function Worktree([string]$name, [string]$branch, [string]$basis) {

@@ -4,6 +4,8 @@ import android.content.Context
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimScheduleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPausePrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.TypNichtStoeren
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IShiftConfigRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpanStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.freietage.keineFreienTage
@@ -13,6 +15,8 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.mockito.kotlin.any
+import org.mockito.kotlin.eq
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.whenever
 
@@ -30,8 +34,9 @@ import org.mockito.kotlin.whenever
  * eigenstaendig abgesichert (vorher stand sie nur als Inline-Ausdruck im Tick, voellig ungetestet).
  *
  * Dritter Teil: der 15-Minuten-Retry muss auch dann greifen, wenn der Lesefehler des Alarm-Bestands
- * INNERHALB des Dimmers passiert (Modus 1 "Schlaf-Fenster folgt dem Dimmer") - dort kam er vorher
- * als ununterscheidbar leere Fensterliste an, und DND plante stattdessen den 6-Stunden-Keep-alive.
+ * INNERHALB des Dimmers passiert („Solange gedimmt wird“, frueher Modus 1 "Schlaf-Fenster folgt dem
+ * Dimmer") - dort kam er vorher als ununterscheidbar leere Fensterliste an, und DND plante
+ * stattdessen den 6-Stunden-Keep-alive.
  */
 class DndScheduleTickChainTest {
 
@@ -76,36 +81,33 @@ class DndScheduleTickChainTest {
 
     // --- Lesefehler INNERHALB des Dimmers (Modus 1) ---
 
-    private fun sut(dimSchedule: DimScheduleUseCase, prefs: DndPrefs): DndScheduleUseCase {
+    /**
+     * Nur „Solange gedimmt wird“ an einem Typ (seit #218 der Schalter am Typ statt des globalen
+     * Modus 1), keine Rufbereitschaft - dann wird der eigene Spannen-Zweig gar nicht betreten.
+     */
+    private fun sut(dimSchedule: DimScheduleUseCase): DndScheduleUseCase {
         val masterPausePrefs = mock<MasterPausePrefs>()
-        // Keine Rufbereitschafts-Schichten - dann wird der eigene Spannen-Zweig nicht betreten.
         val konfig = mock<IShiftConfigRepository>()
+        val nurSolangeGedimmt = ShiftDefinition(
+            id = "F", name = "F", keywords = listOf("F"), alarmTime = java.time.LocalTime.of(6, 0),
+            nichtStoeren = TypNichtStoeren(solangeGedimmt = true)
+        )
         kotlinx.coroutines.runBlocking {
-            whenever(konfig.getCurrentShiftConfig()).thenReturn(Result.success(ShiftConfig(definitions = emptyList())))
+            whenever(konfig.getCurrentShiftConfig()).thenReturn(Result.success(ShiftConfig(definitions = listOf(nurSolangeGedimmt))))
         }
         return DndScheduleUseCase(
-            mock<Context>(), mock<ShiftSpanStore>(), keineFreienTage(), dimSchedule, prefs, masterPausePrefs, konfig
+            mock<Context>(), mock<ShiftSpanStore>(), keineFreienTage(), dimSchedule, mock<DndPrefs>(), masterPausePrefs, konfig
         )
-    }
-
-    /** Nur Modus 1 an, keine Rufbereitschaft-Schichten - dann wird der eigene
-     *  `getAllAlarms()`-Zweig gar nicht betreten. */
-    private suspend fun followDimmerOnlyPrefs(): DndPrefs {
-        val prefs = mock<DndPrefs>()
-        whenever(prefs.togglesNow()).thenReturn(
-            DndPrefs.Toggles(followDimmerEnabled = true, duringShiftEnabled = false)
-        )
-        return prefs
     }
 
     @Test
     fun `Lesefehler im Dimmer-Pfad ergibt den 15-Minuten-Retry, nicht den 6-Stunden-Keep-alive`() = runTest {
         val dimSchedule = mock<DimScheduleUseCase>()
-        whenever(dimSchedule.previewTimelineWithStatus(mitWeckzeitNachlauf = false)).thenReturn(
+        whenever(dimSchedule.previewTimelineWithStatus(eq(false), any())).thenReturn(
             DimScheduleUseCase.TimelinePreview(intervals = emptyList(), alarmReadFailed = true)
         )
 
-        val next = sut(dimSchedule, followDimmerOnlyPrefs()).computeNextTransition(now)
+        val next = sut(dimSchedule).computeNextTransition(now)
 
         assertEquals(
             "Nur Modus 1 aktiv: der Lesefehler passiert im Dimmer. Ohne dessen Status-Kanal " +
@@ -121,11 +123,11 @@ class DndScheduleTickChainTest {
         // Gegenprobe: eine wirklich leere Nacht (z. B. Nachtdienst-Unterdrueckung) darf NICHT als
         // Fehler gelten - "leere Fensterliste" ist bedeutungstragend, kein Defekt.
         val dimSchedule = mock<DimScheduleUseCase>()
-        whenever(dimSchedule.previewTimelineWithStatus(mitWeckzeitNachlauf = false)).thenReturn(
+        whenever(dimSchedule.previewTimelineWithStatus(eq(false), any())).thenReturn(
             DimScheduleUseCase.TimelinePreview(intervals = emptyList(), alarmReadFailed = false)
         )
 
-        val next = sut(dimSchedule, followDimmerOnlyPrefs()).computeNextTransition(now)
+        val next = sut(dimSchedule).computeNextTransition(now)
 
         assertEquals(now + 6 * 60 * 60_000L, next)
     }

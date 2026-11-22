@@ -23,10 +23,17 @@ object DndDiagnostik {
         /** Master-Pause: die App laesst nichts schalten, bis der Nutzer sie aufhebt. */
         MASTER_PAUSE,
 
-        /** Weder "Folgt dem Dimmer" noch "Waehrend der Dienstzeit" ist eingeschaltet. */
+        /**
+         * Eine Grundlage war nicht lesbar (Schicht-Konfiguration, Schichtspannen, Dimm-Fenster) und es
+         * gibt kein Fenster: der 15-min-Retry ist geplant. Vor [KEINE_QUELLE] geprueft, denn ist die
+         * Konfiguration unlesbar, weiss niemand, ob ein Schalter an ist (#218).
+         */
+        LESEFEHLER,
+
+        /** Kein Typ und nicht die feste Zeile hat „Solange gedimmt wird“ oder „Waehrend des Kalendereintrags“ an (#218). */
         KEINE_QUELLE,
 
-        /** Eine Quelle ist an, hat aber kein Fenster geliefert (freier Tag, Urlaubswoche, Lesefehler). */
+        /** Ein Schalter ist an, hat aber kein Fenster geliefert (freier Tag, Urlaubswoche, Typ ohne Dimm-Fenster). */
         KEIN_FENSTER_TROTZ_QUELLE,
 
         /** Fenster gibt es, gerade laeuft nur keines - der Normalfall tagsueber. */
@@ -51,7 +58,8 @@ object DndDiagnostik {
     } else {
         val warum = when (grund) {
             AusGrund.MASTER_PAUSE -> "Master-Pause aktiv"
-            AusGrund.KEINE_QUELLE -> "keine Fenster-Quelle eingeschaltet"
+            AusGrund.LESEFEHLER -> "Grundlage nicht lesbar, neuer Versuch in 15 min"
+            AusGrund.KEINE_QUELLE -> "kein Typ hat einen Schalter fuer Nicht stoeren an"
             AusGrund.KEIN_FENSTER_TROTZ_QUELLE -> "Quelle an, aber kein Fenster berechnet"
             AusGrund.AUSSERHALB -> "ausserhalb aller $fensterGesamt Fenster"
         }
@@ -59,7 +67,13 @@ object DndDiagnostik {
     }
 }
 
-/** Woher ein DND-Fenster stammt. Rufbereitschaft ist KEINE Quelle - sie klippt nur. */
+/**
+ * Woher ein DND-Fenster stammt. Rufbereitschaft ist KEINE Quelle - sie klippt nur.
+ *
+ * Seit #218 sind es die beiden Schalter am Typ: [FOLGT_DIMMER] = „Solange gedimmt wird“,
+ * [DIENSTZEIT] = „Waehrend des Kalendereintrags“. Die Log-Texte bleiben, damit alte und neue
+ * Release-Logs vergleichbar sind; der Typ steht bewusst nicht im Log (Nutzertext).
+ */
 enum class DndQuelle(val anzeige: String) {
     FOLGT_DIMMER("folgt dem Dimmer"),
     DIENSTZEIT("Dienstzeit")

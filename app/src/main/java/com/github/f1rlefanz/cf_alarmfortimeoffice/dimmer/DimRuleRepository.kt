@@ -7,6 +7,7 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import com.github.f1rlefanz.cf_alarmfortimeoffice.di.qualifiers.MainDataStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
@@ -92,6 +93,29 @@ class DimRuleRepository @Inject constructor(
         }
 
     suspend fun getRules(): List<DimRule> = rules.first()
+
+    /**
+     * STRIKTE Lese-Stelle fuer die Typ-Modellmigration (#216) - das Gegenstueck zu [rules].
+     *
+     * [rules] degradiert jeden Fehler bewusst auf die leere Liste (diese Nacht kein Dimmen, die
+     * harmlose Richtung). Eine MIGRATION darf darauf nicht bauen: sie hielte einen unlesbaren
+     * Bestand fuer "keine Regeln", schriebe jeden Typ ohne Fenster und setzte ihre Stufe - die
+     * Regeln kaemen nie mehr an. Deshalb hier: ein Lesefehler des Stores oder ein Rohtext, den
+     * [strictJson] nicht deuten kann (auch ein unbekannter Anker), kommt als `Result.failure` an.
+     *
+     * Fehlender oder leerer Rohtext heisst "keine Regeln" - so behandelt ihn auch der Import
+     * (`ConfigBackupUseCase.structuralRejection`). `CancellationException` wird weitergeworfen.
+     */
+    suspend fun regelnOderFehler(): Result<List<DimRule>> = try {
+        val raw = dataStore.data.first()[KEY_RULES]
+        Result.success(
+            raw?.takeIf { it.isNotBlank() }?.let { strictJson.decodeFromString<List<DimRule>>(it) } ?: emptyList()
+        )
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Result.failure(e)
+    }
 
     // Kein oeffentliches saveRules(list) - Massen-Schreibpfade bauen auf editRules() auf.
 

@@ -4,6 +4,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.emptyPreferences
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimmerModellMigration
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.TypModellMigration
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.ZeitkettenArmierer
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.scheduling.HueSmartScheduler
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.IHueLightUseCase
@@ -17,6 +18,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.mockito.kotlin.doThrow
+import org.mockito.kotlin.doReturn
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.times
 import org.mockito.kotlin.verify
@@ -45,6 +47,8 @@ class ImportHueNachzugTest {
         armierer = mock<ZeitkettenArmierer>(),
         dimmerModellMigration = mock<DimmerModellMigration>(),
         rufbereitschaftMigration = mock<RufbereitschaftMigration>(),
+        // #216: neuer Anlass der Typ-Modellmigration - hier nicht Gegenstand, nur Konstruktor.
+        typModellMigration = mock<TypModellMigration> { onBlocking { migriereEinmalig() } doReturn false },
         hueLightUseCase = mock<IHueLightUseCase>(),
         hueRuleUseCase = mock<IHueRuleUseCase>(),
         hueSmartScheduler = { scheduler }

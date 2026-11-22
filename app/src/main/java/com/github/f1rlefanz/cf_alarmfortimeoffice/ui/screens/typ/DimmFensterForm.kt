@@ -21,7 +21,8 @@ import java.util.Locale
  * DIE ABBILDUNG IST TOTAL ([deute]): jedes `DimWindow` ergibt eine Form oder [DimFensterAnsicht.NichtDarstellbar].
  * Was die Form NICHT ausdrueckt (Nachlauf, „Hell ab“, Blockpositionen, unbenutzte Versaetze, die
  * Kennung `startNurAmWecktag` ausserhalb von „Nacht davor“), bleibt beim Schreiben ueber [zuFenster] mit
- * `basis` erhalten - die Form besitzt nur die Felder, die sie zeigt.
+ * `basis` erhalten - die Form besitzt nur die Felder, die sie zeigt. Das Feld `startAmVorabend` (#227)
+ * besitzt sie ganz: jedes „Wann“ schreibt es, nur „Nacht davor“ mit Von >= Bis setzt es.
  */
 
 /** Wann ein Fenster liegt (Prototyp `bezug`). */
@@ -74,7 +75,11 @@ enum class NichtDarstellbarGrund {
     /** „Nach dem Dienst“ mit Versatz ≠ 0: die Seite sagte „ab Dienstende“, das Fenster beginnt aber spaeter/frueher. */
     VERSATZ,
 
-    /** Start „Weckzeit-Uhrzeit“ mit einer Kennung, die „Von“ und „Bis“ nicht vorhersagen (siehe [kodiere]). */
+    /**
+     * `startNurAmWecktag` und `startAmVorabend` stehen in einer Kombination mit Anker und Von/Bis, die [kodiere]
+     * nie schriebe (z. B. das Vorabend-Feld bei Von < Bis, wo der Resolver es ignoriert, oder ein Weckzeit-Start
+     * bei Von >= Bis) - siehe [kodiere]. Nie „Abend danach“, denn der haette das Feld beim Schreiben verloren.
+     */
     KENNUNG
 }
 
@@ -108,28 +113,45 @@ object DimFensterAbbildung {
         )
 
         fun nicht(grund: NichtDarstellbarGrund) = DimFensterAnsicht.NichtDarstellbar(grund, f.staerke)
+        val vonNachBis = vonNichtVorBis(w.startClockMinutes, w.endClockMinutes)
         return when (w.startAnchor) {
+            // Ohne das Feld ist es die Nacht NACH dem Tag. Mit Feld nur genau die Kodierung der Nacht davor
+            // (Von >= Bis, Kennung aus); jede andere Kombination mit Feld - auch das wirkungslose Feld bei
+            // Von < Bis - ist nie „Abend danach“, denn diese Seite haette es beim Schreiben wieder abgeraeumt.
             DimAnchor.CLOCK -> when (w.endAnchor) {
-                DimAnchor.CLOCK -> form(DimWann.ABEND_DANACH, beimWecker = false, von = w.startClockMinutes)
-                DimAnchor.ALARM_SONST_CLOCK -> form(DimWann.ABEND_DANACH, beimWecker = true, von = w.startClockMinutes)
+                DimAnchor.CLOCK, DimAnchor.ALARM_SONST_CLOCK -> {
+                    val beimWecker = w.endAnchor == DimAnchor.ALARM_SONST_CLOCK
+                    when {
+                        !w.startAmVorabend -> form(DimWann.ABEND_DANACH, beimWecker, von = w.startClockMinutes)
+                        vonNachBis && !w.startNurAmWecktag -> form(DimWann.NACHT_DAVOR, beimWecker, von = w.startClockMinutes)
+                        else -> nicht(NichtDarstellbarGrund.KENNUNG)
+                    }
+                }
+
                 DimAnchor.ALARM, DimAnchor.SHIFT_END -> nicht(NichtDarstellbarGrund.ANKER)
             }
 
+            // Der Weckzeit-Start traegt nur noch „Nacht davor“ mit Von < Bis (E14); bei Von >= Bis ist er
+            // kein „Wann“ der Seite mehr.
             DimAnchor.ALARM_SONST_CLOCK -> when (w.endAnchor) {
                 DimAnchor.CLOCK, DimAnchor.ALARM_SONST_CLOCK ->
-                    if (w.startNurAmWecktag != gleicherTag(w.startClockMinutes, w.endClockMinutes)) {
-                        nicht(NichtDarstellbarGrund.KENNUNG)
-                    } else {
+                    if (!vonNachBis && w.startNurAmWecktag && !w.startAmVorabend) {
                         form(DimWann.NACHT_DAVOR, beimWecker = w.endAnchor == DimAnchor.ALARM_SONST_CLOCK, von = w.startClockMinutes)
+                    } else {
+                        nicht(NichtDarstellbarGrund.KENNUNG)
                     }
 
                 DimAnchor.ALARM, DimAnchor.SHIFT_END -> nicht(NichtDarstellbarGrund.ANKER)
             }
 
+            // Erst der Versatz, dann das Feld: ein Fenster mit beidem sagt dem Nutzer zuerst, dass es
+            // nicht „ab Dienstende“ beginnt.
             DimAnchor.SHIFT_END -> when (w.endAnchor) {
-                DimAnchor.CLOCK ->
-                    if (w.startOffsetMinutes != 0) nicht(NichtDarstellbarGrund.VERSATZ)
-                    else form(DimWann.NACH_DEM_DIENST, beimWecker = false, von = null)
+                DimAnchor.CLOCK -> when {
+                    w.startOffsetMinutes != 0 -> nicht(NichtDarstellbarGrund.VERSATZ)
+                    w.startAmVorabend -> nicht(NichtDarstellbarGrund.KENNUNG)
+                    else -> form(DimWann.NACH_DEM_DIENST, beimWecker = false, von = null)
+                }
 
                 DimAnchor.ALARM_SONST_CLOCK, DimAnchor.ALARM, DimAnchor.SHIFT_END -> nicht(NichtDarstellbarGrund.ANKER)
             }
@@ -163,32 +185,30 @@ object DimFensterAbbildung {
      * DIE EINE STELLE, an der „Wann“ zu Ankern wird - gemessen gegen `DimWindowResolver.buildRuleSpans`
      * (Test `DimmFensterFormTest`, je Wann an Dienst-, Frei-, Ruf- und Tag ohne Eintrag):
      *
-     * - **Abend danach** = Start CLOCK, Ende CLOCK (oder `ALARM_SONST_CLOCK` mit „beim Wecker“). Beide Paare
-     *   loest der Resolver als „die Nacht DIESES Kalendertags“ auf: Von am Tag selbst, Bis am Folgetag, wenn
-     *   es nicht nach Von liegt. Braucht keinen Kalendereintrag - auch „Ohne Kalendereintrag“ hat sie.
+     * - **Abend danach** = Start CLOCK, Ende CLOCK (oder `ALARM_SONST_CLOCK` mit „beim Wecker“), Feld
+     *   `startAmVorabend` aus. Beide Paare loest der Resolver als „die Nacht DIESES Kalendertags“ auf: Von am
+     *   Tag selbst, Bis am Folgetag, wenn es nicht nach Von liegt. Braucht keinen Kalendereintrag.
      * - **Nach dem Dienst** = Start `SHIFT_END` (Versatz 0), Ende CLOCK. Braucht ein Dienstende.
-     * - **Nacht davor** = Start `ALARM_SONST_CLOCK`, Ende CLOCK (oder `ALARM_SONST_CLOCK` mit „beim Wecker“),
-     *   dazu `startNurAmWecktag = Von < Bis`. Gemessen die EINZIGE Kodierung, die zugleich: (1) bei Von >= Bis
-     *   am Vorabend beginnt - NUR, WENN DIE WECKZEIT VOR Von LIEGT (offene Grenze, siehe unten), (2) „spaetestens Bis“ haelt (Wecker 10:00, Bis 07:00 -> Ende 07:00), (3) bei
-     *   Von < Bis (z. B. Vorschlaf 16:00 bis 19:30) am Tag SELBST beginnt und bei einem Wecker davor entfaellt
-     *   statt 21,5 h ab dem Vortag zu dimmen (E14, #151), und (4) vom „Abend danach“ unterscheidbar bleibt
-     *   (Rundreise). `CLOCK -> ALARM` ignoriert Bis; `CLOCK -> CLOCK/ALARM_SONST_CLOCK` beginnt immer am Tag
-     *   selbst. Braucht einen Kalendereintrag mit Weckzeit - ohne gibt es kein „Aufstehen“.
+     * - **Nacht davor** hat ZWEI Kodierungen, je nachdem, ob „Von“ vor „Bis“ liegt:
+     *   - **Von >= Bis** (auch Von == Bis, wie `st >= en` im Prototyp): Start CLOCK, Ende CLOCK (oder
+     *     `ALARM_SONST_CLOCK` mit „beim Wecker“), `startAmVorabend = true` (Resolver-Feld aus #227),
+     *     `startNurAmWecktag = false`. Das Fenster des Tages D laeuft von Von an D-1 bis Bis an D - rein nach
+     *     dem Kalender, unabhaengig von der Weckzeit und auch ohne Kalendereintrag (Betreuer-Entscheidung #215).
+     *     Mit „beim Wecker“ endet es an der fruehesten Weckzeit dazwischen, spaetestens um Bis.
+     *   - **Von < Bis** (Vorschlaf der Nachtdienst-Vorlage, z. B. 16:00 bis 19:30; E14, #151): Start
+     *     `ALARM_SONST_CLOCK` mit `startNurAmWecktag = true`, Feld aus. Es beginnt am Tag SELBST und entfaellt bei
+     *     einem Wecker davor, statt 21,5 h ab dem Vortag zu dimmen. Braucht einen Kalendereintrag mit Weckzeit -
+     *     ohne gibt es kein „Aufstehen“.
      *
-     *   OFFENE GRENZE (Befund des unabhaengigen Pruefers, Betreuer-Frage in #215): der Resolver rollt den
-     *   Start nur dann auf den Vortag zurueck, wenn Von NACH der Weckzeit liegt (`clockAtOrBefore`). Bei
-     *   Von >= Bis und einer Weckzeit NACH Von (Nachtdienst, Wecker 19:30, Von 16:00, Bis 07:00) beginnt das
-     *   Fenster am Diensttag und laeuft ueber die ganze Nacht (960..1860 statt -480..420); mit „beim Wecker“
-     *   dimmt es nur den Nachmittag. Mit den heutigen Ankern nicht ausdrueckbar, Test
-     *   `nachtDavor_vorabendGiltNurWennDieWeckzeitVorVonLiegt_bekannteGrenze`.
+     *   ACHTUNG zur zweiten Kodierung, bewusst: `ALARM_SONST_CLOCK` ist laut `DimAnchor` „kein START-Anker“;
+     *   die Aufloesung behandelt ihn am Start wie CLOCK, aber ueber den Schichtpfad (`loeseSchichtFenster`)
+     *   statt ueber die Kalendernacht. Genau dieser Unterschied traegt hier. Wer die Aufloesung dort
+     *   aendert, bricht „Nacht davor“ mit Von < Bis - die Messungen in `DimmFensterFormTest` zeigen es.
      *
-     *   ACHTUNG, bewusst: `ALARM_SONST_CLOCK` ist laut `DimAnchor` „kein START-Anker“; die Aufloesung
-     *   behandelt ihn am Start wie CLOCK, aber ueber den Schichtpfad (`loeseSchichtFenster`) statt ueber die
-     *   Kalendernacht. Genau dieser Unterschied traegt hier. Wer die Aufloesung dort aendert, bricht „Nacht
-     *   davor“ - die Messungen in `DimmFensterFormTest` zeigen es.
-     *
-     * `startNurAmWecktag` ist die Kennung, die [deute] zur Gegenprobe braucht: bei Start `ALARM_SONST_CLOCK`
-     * ist sie durch Von und Bis festgelegt, ein Fenster mit abweichender Kennung bleibt [NichtDarstellbarGrund.KENNUNG].
+     * Das Feld `startAmVorabend` gehoert der Form GANZ: jedes „Wann“ schreibt es ausdruecklich (nur „Nacht
+     * davor“ mit Von >= Bis setzt es), sonst nahme ein Wechsel auf „Abend danach“ es aus der [basis] mit und
+     * dimmte in der Nacht davor. `startNurAmWecktag` gehoert ihr nur bei „Nacht davor“. [deute] liest beides
+     * als Gegenprobe: jede Kombination, die [kodiere] nicht schriebe, ist [NichtDarstellbarGrund.KENNUNG].
      */
     private fun kodiere(form: DimFensterForm, basis: DimWindow): DimWindow {
         val ende = if (form.beimWecker) DimAnchor.ALARM_SONST_CLOCK else DimAnchor.CLOCK
@@ -197,29 +217,44 @@ object DimFensterAbbildung {
                 startAnchor = DimAnchor.CLOCK,
                 startClockMinutes = form.vonMinuten!!,
                 endAnchor = ende,
-                endClockMinutes = form.bisMinuten
+                endClockMinutes = form.bisMinuten,
+                startAmVorabend = false
             )
 
-            DimWann.NACHT_DAVOR -> basis.copy(
-                startAnchor = DimAnchor.ALARM_SONST_CLOCK,
-                startClockMinutes = form.vonMinuten!!,
-                endAnchor = ende,
-                endClockMinutes = form.bisMinuten,
-                startNurAmWecktag = gleicherTag(form.vonMinuten, form.bisMinuten)
-            )
+            DimWann.NACHT_DAVOR ->
+                if (vonNichtVorBis(form.vonMinuten!!, form.bisMinuten)) {
+                    basis.copy(
+                        startAnchor = DimAnchor.CLOCK,
+                        startClockMinutes = form.vonMinuten,
+                        endAnchor = ende,
+                        endClockMinutes = form.bisMinuten,
+                        startNurAmWecktag = false,
+                        startAmVorabend = true
+                    )
+                } else {
+                    basis.copy(
+                        startAnchor = DimAnchor.ALARM_SONST_CLOCK,
+                        startClockMinutes = form.vonMinuten,
+                        endAnchor = ende,
+                        endClockMinutes = form.bisMinuten,
+                        startNurAmWecktag = true,
+                        startAmVorabend = false
+                    )
+                }
 
             DimWann.NACH_DEM_DIENST -> basis.copy(
                 startAnchor = DimAnchor.SHIFT_END,
                 // Die Seite sagt „ab Dienstende“; ein Versatz aus [basis] (Vorgabe -120!) machte das falsch.
                 startOffsetMinutes = 0,
                 endAnchor = DimAnchor.CLOCK,
-                endClockMinutes = form.bisMinuten
+                endClockMinutes = form.bisMinuten,
+                startAmVorabend = false
             )
         }
     }
 
-    /** „Von“ liegt vor „Bis“: das Fenster bleibt an EINEM Tag (statt ueber Mitternacht zu laufen). */
-    private fun gleicherTag(vonMinuten: Int, bisMinuten: Int): Boolean = vonMinuten < bisMinuten
+    /** „Von“ liegt NICHT vor „Bis“ (auch gleich): das Fenster reicht ueber Mitternacht - wie `st >= en` im Prototyp und `istNachtDavor` im Resolver. */
+    private fun vonNichtVorBis(vonMinuten: Int, bisMinuten: Int): Boolean = vonMinuten >= bisMinuten
 
     // ---------------------------------------------------------------------------------------------
     // Texte (Prototyp: fensterText, dimText, BEZ, bisHinweis, zeigeBeimWecker, zeile)

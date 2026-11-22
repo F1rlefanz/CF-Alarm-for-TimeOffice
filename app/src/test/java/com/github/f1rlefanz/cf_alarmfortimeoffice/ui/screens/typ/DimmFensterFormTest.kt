@@ -118,34 +118,47 @@ class DimmFensterFormTest {
     }
 
     /**
-     * BEKANNTE GRENZE, offen als Betreuer-Frage in #215 (Befund des unabhaengigen Pruefers): "Nacht davor"
-     * mit Von >= Bis liegt nur dann am Vorabend, wenn die Weckzeit VOR Von liegt - der Resolver rollt den
-     * Start (`clockAtOrBefore`) nur zurueck, wenn Von nach der Weckzeit liegt. Laut Prototyp (Zeile 904,
-     * `st >= en -> st -= 1440`) und Text ("Vom Vorabend ...") waere IMMER -480..420 richtig. Dieser Test
-     * haelt den IST-Zustand fest, damit er nicht unbemerkt bleibt und bei einer Resolver-Aenderung rot wird.
+     * "Nacht davor" mit Von >= Bis beginnt am Vorabend - UNABHAENGIG von der Weckzeit (Betreuer-Entscheidung
+     * in #215, Resolver-Feld `startAmVorabend` aus #227; Prototyp `Main.dc.html` Z. 904: `st >= en -> st -= 1440`
+     * rechnet rein nach dem Kalender). Vorher (bis #227) galt das nur, wenn die Weckzeit VOR Von lag: bei
+     * einem Nachtdienst-Wecker 19:30 und Von 16:00 dimmte das Fenster die Dienstnacht (960..1860) statt der
+     * Nacht davor (-480..420).
      */
     @Test
-    fun nachtDavor_vorabendGiltNurWennDieWeckzeitVorVonLiegt_bekannteGrenze() {
+    fun nachtDavor_beginntAmVorabend_unabhaengigVonDerWeckzeit() {
         val hart = fenster(form(DimWann.NACHT_DAVOR, von = uhr(16), bis = uhr(7)))
-        // Wecker 13:30 liegt VOR Von 16:00: Vorabend, wie der Text es sagt.
-        assertEquals(listOf(-480L..420L), lage(hart, Tag(wecker = uhr(13, 30), dienstende = 1320)))
-        // Wecker 19:30 liegt NACH Von 16:00 (Nachtdienst): der Start bleibt auf dem Diensttag, das
-        // Ende rollt auf den Folgetag - IST 960..1860 statt SOLL -480..420.
-        assertEquals(listOf(960L..1860L), lage(hart, nacht))
         val beimWecker = fenster(form(DimWann.NACHT_DAVOR, von = uhr(16), bis = uhr(7), beimWecker = true))
-        assertEquals(listOf(960L..1170L), lage(beimWecker, nacht))
-        // Dieselbe Grenze mit der Vorgabe von "+ Weiteres Fenster" (Prototyp: Nacht davor 22:00-07:00):
-        // Wecker 22:00 und 22:30 liegen nicht VOR Von - IST die ganze Dienstnacht 1320..1860.
+        // Wecker 13:30 liegt VOR Von 16:00, Wecker 19:30 (Nachtdienst) DANACH - beides dieselbe Nacht davor,
+        // auch mit "beim Wecker" an einem Einzeltag (die Weckzeit des Tages selbst liegt hinter dem Ende).
+        for (tag in listOf(Tag(wecker = uhr(13, 30), dienstende = 1320), nacht)) {
+            assertEquals(listOf(-480L..420L), lage(hart, tag))
+            assertEquals(listOf(-480L..420L), lage(beimWecker, tag))
+        }
+        // Die Vorgabe von "+ Weiteres Fenster" (Prototyp: Nacht davor 22:00-07:00): Wecker 22:00 und 22:30.
         val vorgabe = fenster(form(DimWann.NACHT_DAVOR, von = uhr(22), bis = uhr(7)))
-        assertEquals(listOf(1320L..1860L), lage(vorgabe, Tag(wecker = uhr(22), dienstende = 1860)))
-        assertEquals(listOf(1320L..1860L), lage(vorgabe, Tag(wecker = uhr(22, 30), dienstende = 1860)))
+        for (wecker in listOf(uhr(22), uhr(22, 30))) {
+            assertEquals(listOf(-120L..420L), lage(vorgabe, Tag(wecker = wecker, dienstende = 1860)))
+        }
+        // Von == Bis zaehlt wie im Prototyp (`st >= en`) als ueber Nacht: 24 h von D-1 bis D.
+        assertEquals(listOf(-1020L..420L), lage(fenster(form(DimWann.NACHT_DAVOR, uhr(7), uhr(7))), frueh))
     }
 
     @Test
-    fun nachtDavor_brauchtEinenKalendereintragMitWeckzeit() {
-        // Ohne Eintrag gibt es kein "Aufstehen an diesem Tag": kein Fenster, statt eines geratenen.
+    fun nachtDavor_vonNachBis_brauchtKeinenKalendereintrag_vonVorBis_schon() {
+        // Von >= Bis: die Nacht davor folgt allein dem Kalender - auch ohne Eintrag (#227, wie im Prototyp).
         for (beimWecker in listOf(false, true)) {
-            assertEquals(emptyList<LongRange>(), lage(fenster(form(DimWann.NACHT_DAVOR, uhr(20), uhr(7), beimWecker)), ohne))
+            assertEquals(
+                listOf(-240L..420L),
+                lage(fenster(form(DimWann.NACHT_DAVOR, uhr(20), uhr(7), beimWecker)), ohne)
+            )
+        }
+        // Von < Bis (Vorschlaf-Form, Von 16:00): ohne Eintrag gibt es kein "Aufstehen an diesem Tag" -
+        // kein Fenster, statt eines geratenen.
+        for (beimWecker in listOf(false, true)) {
+            assertEquals(
+                emptyList<LongRange>(),
+                lage(fenster(form(DimWann.NACHT_DAVOR, uhr(16), uhr(19, 30), beimWecker)), ohne)
+            )
         }
     }
 
@@ -201,15 +214,15 @@ class DimmFensterFormTest {
 
     private val anker = DimAnchor.entries
 
-    /** Jede Anker-Kombination x Kennung x Versatz x (Von vor/nach Bis): 128 Fenster. */
+    /** Jede Anker-Kombination x beide Kennungen x Versatz x (Von vor/nach Bis) x Feld „Nacht davor“: 256 Fenster. */
     private fun alleFenster(): List<DimWindow> = buildList {
         for (start in anker) for (ende in anker) for (nur in listOf(false, true)) for (versatz in listOf(0, 60)) {
-            for ((von, bis) in listOf(uhr(20) to uhr(7), uhr(16) to uhr(19, 30))) {
+            for ((von, bis) in listOf(uhr(20) to uhr(7), uhr(16) to uhr(19, 30))) for (vorabend in listOf(false, true)) {
                 add(
                     DimWindow(
                         startAnchor = start, startClockMinutes = von, startOffsetMinutes = versatz,
                         endAnchor = ende, endClockMinutes = bis, endOffsetMinutes = versatz,
-                        startNurAmWecktag = nur
+                        startNurAmWecktag = nur, startAmVorabend = vorabend
                     )
                 )
             }
@@ -219,14 +232,87 @@ class DimmFensterFormTest {
     @Test
     fun abbildung_istTotal_jedesFensterIstFormOderAusdruecklichNichtDarstellbar() {
         val ergebnisse = alleFenster().map { deute(TypDimmFenster(it)) }
-        assertEquals(128, ergebnisse.size)
-        assertEquals("Form", 28, ergebnisse.count { it is DimFensterAnsicht.Darstellbar })
+        assertEquals(256, ergebnisse.size)
         fun grund(g: NichtDarstellbarGrund) = ergebnisse.count { it is DimFensterAnsicht.NichtDarstellbar && it.grund == g }
-        // ASC-Start mit falscher Kennung (2 Enden x 2 Kennungs-Fehlstellungen x 2 Versaetze).
-        assertEquals(8, grund(NichtDarstellbarGrund.KENNUNG))
-        // Nach dem Dienst mit Versatz 60 (2 Kennungen x 2 Von/Bis).
-        assertEquals(4, grund(NichtDarstellbarGrund.VERSATZ))
-        assertEquals(88, grund(NichtDarstellbarGrund.ANKER))
+        // Je Anker-Paar gibt es 16 Fenster (Kennung 2 x Versatz 2 x Von/Bis 2 x Feld 2). Handgerechnet:
+        //   CLOCK -> CLOCK und CLOCK -> ASC (je): 10 Formen = Abend danach ohne Feld (8) + Nacht davor
+        //     (Feld an, Von >= Bis, Kennung aus: 2 Versaetze); 6 KENNUNG (Feld ohne passendes Von/Bis/Kennung).
+        //   ASC -> CLOCK und ASC -> ASC (je): 2 Formen = Nacht davor mit Von < Bis (Kennung an, Feld aus,
+        //     2 Versaetze); 14 KENNUNG.
+        //   SHIFT_END -> CLOCK: 4 Formen (Versatz 0, Feld aus), 4 KENNUNG (Versatz 0, Feld an),
+        //     8 VERSATZ (Versatz 60; der Versatz wird zuerst geprueft).
+        //   alle uebrigen 11 Paare (CLOCK/ASC -> ALARM/SHIFT_END, SHIFT_END -> ASC/ALARM/SHIFT_END,
+        //     ALARM -> alle vier): 176 ANKER.
+        assertEquals("Form: 2 x 10 + 2 x 2 + 4", 28, ergebnisse.count { it is DimFensterAnsicht.Darstellbar })
+        assertEquals("KENNUNG: 2 x 6 + 2 x 14 + 4", 44, grund(NichtDarstellbarGrund.KENNUNG))
+        assertEquals(8, grund(NichtDarstellbarGrund.VERSATZ))
+        assertEquals(176, grund(NichtDarstellbarGrund.ANKER))
+    }
+
+    @Test
+    fun kodierung_vonNachBis_istDieKalenderNachtMitFeld_vonVorBis_dieWeckzeitKennung() {
+        // Von >= Bis: Start CLOCK, das Feld aus #227, KEINE Kennung „nur am Wecktag“. Auch Von == Bis.
+        for ((von, bis) in listOf(uhr(20) to uhr(7), uhr(7) to uhr(7))) {
+            for (beimWecker in listOf(false, true)) {
+                val w = zuFenster(form(DimWann.NACHT_DAVOR, von, bis, beimWecker))
+                assertEquals(DimAnchor.CLOCK, w.startAnchor)
+                assertTrue("startAmVorabend bei $von..$bis", w.startAmVorabend)
+                assertFalse("startNurAmWecktag bei $von..$bis", w.startNurAmWecktag)
+                assertEquals(if (beimWecker) DimAnchor.ALARM_SONST_CLOCK else DimAnchor.CLOCK, w.endAnchor)
+            }
+        }
+        // Von < Bis (E14): der Weckzeit-Start mit Kennung, ohne das Feld.
+        for (beimWecker in listOf(false, true)) {
+            val w = zuFenster(form(DimWann.NACHT_DAVOR, uhr(16), uhr(19, 30), beimWecker))
+            assertEquals(DimAnchor.ALARM_SONST_CLOCK, w.startAnchor)
+            assertTrue(w.startNurAmWecktag)
+            assertFalse(w.startAmVorabend)
+        }
+        // Die beiden anderen „Wann“ tragen das Feld nie - auch nicht aus der Basis.
+        val mitFeld = DimWindow(startAmVorabend = true)
+        assertFalse(zuFenster(form(DimWann.ABEND_DANACH, uhr(22), uhr(7)), mitFeld).startAmVorabend)
+        assertFalse(zuFenster(form(DimWann.NACH_DEM_DIENST, null, uhr(14)), mitFeld).startAmVorabend)
+    }
+
+    @Test
+    fun einClockStartMitFeld_istNieAbendDanach() {
+        fun clock(von: Int, bis: Int, nur: Boolean, vorabend: Boolean, ende: DimAnchor) = TypDimmFenster(
+            DimWindow(
+                startAnchor = DimAnchor.CLOCK, startClockMinutes = von, endAnchor = ende, endClockMinutes = bis,
+                startNurAmWecktag = nur, startAmVorabend = vorabend
+            )
+        )
+        fun wann(f: TypDimmFenster) = (deute(f) as DimFensterAnsicht.Darstellbar).form.wann
+        for (ende in listOf(DimAnchor.CLOCK, DimAnchor.ALARM_SONST_CLOCK)) {
+            // Von >= Bis, Kennung aus: mit Feld die Nacht davor, ohne Feld der Abend danach.
+            assertEquals(DimWann.NACHT_DAVOR, wann(clock(uhr(22), uhr(7), nur = false, vorabend = true, ende)))
+            assertEquals(DimWann.ABEND_DANACH, wann(clock(uhr(22), uhr(7), nur = false, vorabend = false, ende)))
+            // Das Feld bei Von < Bis wirkt im Resolver nicht (#227), und eine gesetzte Kennung gehoert nicht
+            // zur Nacht davor: dafuer gibt es keine Form - nie wird daraus „Abend danach“.
+            for (f in listOf(
+                clock(uhr(16), uhr(19, 30), nur = false, vorabend = true, ende),
+                clock(uhr(22), uhr(7), nur = true, vorabend = true, ende)
+            )) assertEquals(DimFensterAnsicht.NichtDarstellbar(NichtDarstellbarGrund.KENNUNG, f.staerke), deute(f))
+        }
+    }
+
+    @Test
+    fun einWannWechsel_nimmtDasFeldNichtMit_inBeideRichtungen() {
+        val abend = TypDimmFenster(zuFenster(form(DimWann.ABEND_DANACH, uhr(22), uhr(7))), staerke = 55)
+        val davor = DimFensterAbbildung.mitForm(abend, form(DimWann.NACHT_DAVOR, uhr(22), uhr(7)))
+        assertTrue(davor.fenster.startAmVorabend)
+        // Zurueck: das Feld bleibt NICHT haengen - sonst dimmte „Abend danach“ in der Nacht davor.
+        val wieder = DimFensterAbbildung.mitForm(davor, form(DimWann.ABEND_DANACH, uhr(22), uhr(7)))
+        assertFalse(wieder.fenster.startAmVorabend)
+        for (tag in listOf(frueh, nacht, ohne)) {
+            assertEquals(listOf(-120L..420L), lage(davor.fenster, tag))
+            assertEquals(listOf(1320L..1860L), lage(wieder.fenster, tag))
+        }
+        // Von < Bis und zurueck: die Kennung folgt Von/Bis, nicht der Reihenfolge der Klicks.
+        val vorschlaf = DimFensterAbbildung.mitForm(davor, form(DimWann.NACHT_DAVOR, uhr(16), uhr(19, 30)))
+        assertTrue(vorschlaf.fenster.startNurAmWecktag && !vorschlaf.fenster.startAmVorabend)
+        val zurueck = DimFensterAbbildung.mitForm(vorschlaf, form(DimWann.NACHT_DAVOR, uhr(22), uhr(7)))
+        assertEquals(davor.fenster, zurueck.fenster)
     }
 
     @Test
@@ -247,7 +333,7 @@ class DimmFensterFormTest {
         // Ein Basisfenster mit ganz anderen Ankern und Kennungen: die Form darf von ihnen nichts mitnehmen.
         val schmutzig = DimWindow(
             startAnchor = DimAnchor.ALARM, startOffsetMinutes = -90, endAnchor = DimAnchor.SHIFT_END,
-            endOffsetMinutes = 45, startNurAmWecktag = true
+            endOffsetMinutes = 45, startNurAmWecktag = true, startAmVorabend = true
         )
         val vonWerte = listOf(0, uhr(7), uhr(16), uhr(20), 1439)
         val bisWerte = listOf(0, uhr(7), uhr(19, 30), 1439)

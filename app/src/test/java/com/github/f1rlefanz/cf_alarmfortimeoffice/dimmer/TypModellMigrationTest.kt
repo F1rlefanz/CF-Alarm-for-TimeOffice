@@ -182,21 +182,28 @@ class TypModellMigrationTest {
         assertEquals("ein migriertes Geraet meldet nie einen Fehler", TypModellMigration.Stand.Erledigt, TypModellMigration.stand.value)
     }
 
+    /**
+     * Festlegung #216: nie ueber eine leere oder die Standard-Konfiguration. `getCurrentShiftConfig()`
+     * liefert die Standard-Konfiguration auch, wenn `shift_prefs` vor der Entsperrung gelesen wurde -
+     * darueber geschrieben waere die echte Konfiguration weg. Die Karte nur, wenn etwas liegen bleibt.
+     */
     @Test
-    fun `nie gespeicherte Standard-Konfiguration wird migriert, eine ohne jeden Typ nicht und ohne Fehlerkarte`() = runTest {
-        // getCurrentShiftConfig() liefert bei "noch nie konfiguriert" die Standard-Konfiguration als
-        // ERFOLG (ShiftConfigRepository, NotConfigured) - das ist kein Lesefehler. Wer die Standard-
-        // Typen nutzt und Dimm-Regeln hat, muss sie nach dem Umbau am Typ wiederfinden.
-        val store = bestandsgeraet()
-        val standard = SchichtSpeicher(ShiftConfig.getDefaultConfig())
-        assertTrue(migration(store, standard).migriereEinmalig())
-        assertEquals(listOf(erwartet(store, ShiftConfig.getDefaultConfig())), standard.gespeichert)
+    fun `Standard- oder leere Konfiguration - nichts geschrieben, Karte nur wenn der Altbestand etwas traegt`() = runTest {
+        val mitRegel = bestandsgeraet()
+        for (konfig in listOf(ShiftConfig.getDefaultConfig(), ShiftConfig(definitions = emptyList()))) {
+            TypModellMigration.standZuruecksetzen()
+            val schicht = SchichtSpeicher(konfig)
+            assertFalse(migration(mitRegel, schicht).migriereEinmalig())
+            assertTrue(schicht.gespeichert.isEmpty())
+            assertFehler(TypModellMigration.Grund.KEINE_EIGENEN_SCHICHTTYPEN)
+        }
 
         TypModellMigration.standZuruecksetzen()
-        val leer = SchichtSpeicher(ShiftConfig(definitions = emptyList()))
-        assertFalse(migration(store, leer).migriereEinmalig())
-        assertTrue(leer.gespeichert.isEmpty())
-        assertEquals(TypModellMigration.Stand.Offen, TypModellMigration.stand.value)
+        val ohneAltbestand = SpeicherStore(mutablePreferencesOf().apply { this[KEY_DIMMER_MARKER] = DimmerModellMigration.STAND })
+        val frisch = SchichtSpeicher(ShiftConfig.getDefaultConfig())
+        assertFalse(migration(ohneAltbestand, frisch).migriereEinmalig())
+        assertTrue(frisch.gespeichert.isEmpty())
+        assertEquals("frische Installation: keine Karte", TypModellMigration.Stand.Offen, TypModellMigration.stand.value)
     }
 
     // --- Die Tore: jedes schreibt nichts und setzt keine Stufe ------------------------------------

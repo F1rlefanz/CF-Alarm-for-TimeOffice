@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.intPreferencesKey
 import com.github.f1rlefanz.cf_alarmfortimeoffice.di.qualifiers.MainDataStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndPrefs
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IAlarmRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IShiftUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
@@ -50,6 +51,12 @@ import javax.inject.Singleton
  * 6. Altbestand STRIKT lesbar ([DimRuleRepository.regelnOderFehler],
  *    [DimOverlayPrefs.dimmenAnOderFehler], [DndPrefs.altbestandOderFehler]) - die Anzeige-Flows
  *    daneben degradieren auf leer bzw. aus, und das darf nie Schreibwahrheit werden.
+ * 7. Die Konfiguration ist weder LEER noch die STANDARD-Konfiguration (Festlegung #216).
+ *    `getCurrentShiftConfig()` liefert die Standard-Konfiguration auch dann als Erfolg, wenn
+ *    `shift_prefs` in diesem Prozess vor der Entsperrung gelesen wurde (`ShiftConfigRepository`,
+ *    "noch nie konfiguriert" fuer die restliche Prozesslaufzeit) - darueber geschrieben, waere die
+ *    echte Konfiguration weg. Preis: wer die unveraenderten Standard-Typen nutzt, wird erst
+ *    migriert, sobald er einen Typ speichert; traegt sein Altbestand etwas, sagt es die Karte.
  *
  * KOPIEREN STATT VERSCHIEBEN: am Altbestand wird nichts geschrieben. Geschrieben werden nur die
  * neuen Felder und die Stufe, in EINEM Vorgang ueber [IShiftUseCase.saveShiftConfig] (der UseCase,
@@ -103,7 +110,8 @@ class TypModellMigration @Inject constructor(
         DIMMER_UMSTELLUNG_AUSSTEHEND("Die vorherige Umstellung des Dimmers ist noch nicht abgeschlossen."),
         RUFBEREITSCHAFT_AUSSTEHEND("Die Übernahme der Rufbereitschaft ist noch nicht abgeschlossen."),
         ALTBESTAND_NICHT_LESBAR("Die bisherigen Einstellungen für Dimmen und „Nicht stören“ ließen sich nicht lesen."),
-        SPEICHERN_FEHLGESCHLAGEN("Die Schichttypen ließen sich nicht speichern.")
+        SPEICHERN_FEHLGESCHLAGEN("Die Schichttypen ließen sich nicht speichern."),
+        KEINE_EIGENEN_SCHICHTTYPEN("Die App hat keine eigenen Schichttypen gefunden.")
     }
 
     companion object {
@@ -203,10 +211,17 @@ class TypModellMigration @Inject constructor(
             _stand.value = Stand.Erledigt
             return false
         }
-        if (config.definitions.isEmpty()) {
-            // SPEC 4 / #216: nie ueber eine LEERE Konfiguration. Kein Fehlerzustand - ohne Typen
-            // gibt es nichts, woran Einstellungen haengen koennten; der naechste Anlass prueft neu.
-            Logger.w(LogTags.DIMMER, "Typ-Modellmigration verschoben - Konfiguration ohne einen einzigen Typ")
+        // Tor 7 - siehe Klassen-KDoc. Eine Karte nur, wenn dabei wirklich etwas liegen bleibt:
+        // eine frische Installation (keine Regel, DND aus) hat nichts zu melden.
+        if (config.definitions.isEmpty() || config == ShiftConfig.getDefaultConfig()) {
+            val traegtEtwas = regeln.isNotEmpty() || dnd.folgtDimmer || dnd.waehrendDienst
+            Logger.w(
+                LogTags.DIMMER,
+                "Typ-Modellmigration verschoben - keine eigene Schicht-Konfiguration " +
+                    "(${config.definitions.size} Typ(en)), Altbestand " +
+                    (if (traegtEtwas) "traegt Einstellungen" else "leer") + " - nichts geschrieben"
+            )
+            if (traegtEtwas) throw Abbruch(Grund.KEINE_EIGENEN_SCHICHTTYPEN)
             return false
         }
 

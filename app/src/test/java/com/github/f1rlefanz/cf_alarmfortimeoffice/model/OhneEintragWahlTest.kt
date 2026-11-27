@@ -1,6 +1,8 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.model
 
 import com.github.f1rlefanz.cf_alarmfortimeoffice.di.state.CalendarStateHolder
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimAnchor
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimWindow
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.ZeitkettenArmierer
 import com.github.f1rlefanz.cf_alarmfortimeoffice.error.ErrorHandler
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.tageOhneEintrag
@@ -195,6 +197,60 @@ class OhneEintragWahlTest {
         assertEquals("verhält sich wie Typ + (+) · kein Wecker", OhneEintragTexte.kurzform(config(wie = "+")))
         assertEquals("verhält sich wie Typ Z (Z) · kein Wecker", OhneEintragTexte.kurzform(config(wie = "Z")))
         assertEquals("verhält sich wie Typ K (K) · kein Wecker", OhneEintragTexte.kurzform(config(wie = "K")))
+    }
+
+    // Umbau #223 (bewusste Verhaltensaenderung, Betreuer-Entscheidung in #220): bei „Eigene Einstellungen“
+    // nennt die Zeile auch die Dimm-Kurzform der eigenen Fenster - im Wortlaut der Typ-Zeilen, ohne Wecker.
+
+    private fun nachtDavor(beimWecker: Boolean) = TypDimmFenster(
+        fenster = DimWindow(
+            startAnchor = DimAnchor.CLOCK,
+            startClockMinutes = 22 * 60,
+            endAnchor = if (beimWecker) DimAnchor.ALARM_SONST_CLOCK else DimAnchor.CLOCK,
+            endClockMinutes = 7 * 60,
+            startAmVorabend = true
+        )
+    )
+
+    private fun mitEigenen(an: Boolean = true, vararg fenster: TypDimmFenster, wie: String? = null) =
+        config(wie = wie).copy(
+            ohneKalendereintrag = OhneEintragEinstellungen(dimmen = TypDimmen(an = an).mitFenster(fenster.toList()))
+        )
+
+    @Test
+    fun `bei Eigenen Einstellungen nennt die Zeile die Dimm-Fenster - ohne Wecker`() {
+        assertEquals(
+            "kein Wecker · dimmt 22:00–07:00",
+            OhneEintragTexte.kurzform(mitEigenen(fenster = arrayOf(nachtDavor(beimWecker = false))))
+        )
+        assertEquals(
+            "auch ein gespeichertes „bis Wecker“ nennt hier die Uhrzeit",
+            "kein Wecker · dimmt 22:00–07:00",
+            OhneEintragTexte.kurzform(mitEigenen(fenster = arrayOf(nachtDavor(beimWecker = true))))
+        )
+        assertEquals(
+            "kein Wecker · 2 Dimm-Fenster",
+            OhneEintragTexte.kurzform(
+                mitEigenen(fenster = arrayOf(nachtDavor(beimWecker = false), nachtDavor(beimWecker = true)))
+            )
+        )
+    }
+
+    @Test
+    fun `ausgeschaltetes Dimmen steht in der Zeile, ohne Fenster steht nichts`() {
+        assertEquals(
+            "kein Wecker · Dimmen aus",
+            OhneEintragTexte.kurzform(mitEigenen(an = false, fenster = arrayOf(nachtDavor(beimWecker = false))))
+        )
+        assertEquals("kein Wecker", OhneEintragTexte.kurzform(mitEigenen()))
+    }
+
+    @Test
+    fun `bei wie Typ stehen die eigenen Fenster der festen Zeile nicht in der Zeile`() {
+        assertEquals(
+            "verhält sich wie Typ F (F)",
+            OhneEintragTexte.kurzform(mitEigenen(fenster = arrayOf(nachtDavor(beimWecker = false)), wie = "F"))
+        )
     }
 
     // ---- Der Schreibweg im ViewModel ----------------------------------------------------------

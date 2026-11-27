@@ -14,6 +14,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueSchedule
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.repository.interfaces.IHueConfigRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.HueRuleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.CalendarEvent
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.OhneEintragEinstellungen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.OhneEintragWahl
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.SchichttypEinordnen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
@@ -94,8 +95,20 @@ data class ShiftUiState(
      * gerade nicht erreichbar ist (Karte "Naechste Schicht"). `null` = nicht lesbar oder noch nicht
      * gelesen; die Karte zeigt dann den bisherigen Hinweis. Daraus entsteht nie ein Wecker.
      */
-    val letzterSchichtStand: LetzterSchichtStand? = null
-)
+    val letzterSchichtStand: LetzterSchichtStand? = null,
+    /**
+     * Was die Seite „Ohne Kalendereintrag“ zuletzt beauftragt hat und was noch gespeichert wird - sonst
+     * `null`. Gelesen wird ueber [ohneEintragStand].
+     */
+    val ohneEintragBeauftragt: ShiftConfig? = null
+) {
+    /**
+     * Der Stand der festen Zeile: der beauftragte, solange er gespeichert wird, sonst der gespeicherte. Die
+     * Seite zeigt ihn, und die naechste Aenderung rechnet auf ihm - sie hat keinen Entwurf, und
+     * [currentShiftConfig] zieht erst nach dem Speichern nach.
+     */
+    val ohneEintragStand: ShiftConfig? get() = ohneEintragBeauftragt ?: currentShiftConfig
+}
 
 /**
  * ShiftViewModel - liest Kalender-Events aus dem CalendarStateHolder, nicht vom CalendarViewModel.
@@ -543,11 +556,11 @@ class ShiftViewModel @Inject constructor(
      * ein Tag ganz ohne Kalendereintrag verhalten soll, `null` = „Eigene Einstellungen“. Die Entscheidung
      * (was zur Wahl steht, was nichts aendert) liegt in [OhneEintragWahl.waehle].
      *
-     * Geht - wie jeder Schreibweg - ueber [updateShiftConfig]; der Alarm-Sync dahinter stellt den Wecker
-     * an den leeren Tagen bzw. raeumt ihn ab (`AlarmUseCase`, #175).
+     * Geht - wie jeder Schreibweg - ueber [updateShiftConfig] ([schreibeOhneEintrag]); der Alarm-Sync
+     * dahinter stellt den Wecker an den leeren Tagen bzw. raeumt ihn ab (`AlarmUseCase`, #175).
      */
     fun waehleOhneEintrag(typId: String?) {
-        val config = _uiState.value.currentShiftConfig
+        val config = _uiState.value.ohneEintragStand
         if (config == null) {
             Logger.w(LogTags.SHIFT_CONFIG, "⚠️ OHNE-EINTRAG-WAHL: keine Konfiguration geladen - abgebrochen")
             return
@@ -565,7 +578,38 @@ class ShiftViewModel @Inject constructor(
             "✅ OHNE-EINTRAG-WAHL: Tage ohne Eintrag verhalten sich jetzt " +
                 (OhneEintragWahl.gewaehlterTyp(updated)?.let { "wie '${it.name}'" } ?: "nach eigenen Einstellungen")
         )
-        updateShiftConfig(updated)
+        schreibeOhneEintrag(updated)
+    }
+
+    /**
+     * Die eigenen Dimm- und „Nicht stoeren“-Einstellungen der festen Zeile (Umbau #223): [aenderung] formt
+     * den zuletzt beauftragten Stand um, geschrieben wird SOFORT wie bei der Wahl - die Seite hat keinen
+     * Entwurf. Definitionen und Wahl bleiben. Was nichts aendert, schreibt nicht (kein Alarm-Sync je Tipp).
+     *
+     * Das Armieren beider Zeitketten haengt am selben Weg wie beim Speichern eines Typs: nach dem Sync,
+     * ueber [NacharmierBedarf] (`TypDimmQuelle.dimmenOderNichtStoerenGeaendert` vergleicht die feste Zeile).
+     */
+    fun aendereOhneEintrag(aenderung: (OhneEintragEinstellungen) -> OhneEintragEinstellungen) {
+        val config = _uiState.value.ohneEintragStand
+        if (config == null) {
+            Logger.w(LogTags.SHIFT_CONFIG, "⚠️ OHNE-EINTRAG-EINSTELLUNGEN: keine Konfiguration geladen - abgebrochen")
+            return
+        }
+        val eigene = aenderung(config.ohneKalendereintrag)
+        if (eigene == config.ohneKalendereintrag) return
+        schreibeOhneEintrag(config.copy(ohneKalendereintrag = eigene))
+    }
+
+    /**
+     * Der Schreibweg der Seite „Ohne Kalendereintrag“: merkt [neu] als beauftragt vor
+     * ([ShiftUiState.ohneEintragStand]), damit eine zweite Aenderung vor dem Ende des Speicherns darauf
+     * aufbaut statt die erste zu ueberschreiben. Verglichen wird beim Armieren gegen den Vorgaenger, nicht
+     * gegen den gespeicherten Stand: stellt die zweite Aenderung ihn wieder her, armiert sie sonst nicht.
+     */
+    private fun schreibeOhneEintrag(neu: ShiftConfig) {
+        val vorgaenger = _uiState.value.ohneEintragStand
+        _uiState.value = _uiState.value.copy(ohneEintragBeauftragt = neu)
+        speichereShiftConfig(neu, vorgaenger)
     }
 
     /**
@@ -591,12 +635,15 @@ class ShiftViewModel @Inject constructor(
         updateShiftConfig(OhneEintragWahl.ohneTyp(config, definition))
     }
 
-    fun updateShiftConfig(config: ShiftConfig) {
+    fun updateShiftConfig(config: ShiftConfig) = speichereShiftConfig(config, vorgaenger = null)
+
+    /** [vorgaenger]: der noch nicht gespeicherte Stand, auf dem [config] aufbaut (`null` = der gespeicherte). */
+    private fun speichereShiftConfig(config: ShiftConfig, vorgaenger: ShiftConfig?) {
         viewModelScope.launch {
             // Der Stand VOR dem Schreiben - die einzige Gelegenheit, eine Umbenennung ueberhaupt
             // zu erkennen (die Definition behaelt ihre id, nur der Name aendert sich). Muss vor
-            // jedem Schreiben an `_uiState` gelesen werden. Siehe [zieheRegelmusterNach].
-            val vorherigeConfig = _uiState.value.currentShiftConfig
+            // jedem Schreiben von `currentShiftConfig` gelesen werden. Siehe [zieheRegelmusterNach].
+            val vorherigeConfig = vorgaenger ?: _uiState.value.currentShiftConfig
 
             // VOR dem Write vormerken, nicht danach - siehe [selfWrittenConfig]. Die
             // DataStore-Emission kann den Beobachter erreichen, BEVOR `saveShiftConfig()`
@@ -619,7 +666,9 @@ class ShiftViewModel @Inject constructor(
                 .onSuccess {
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
-                        currentShiftConfig = config
+                        currentShiftConfig = config,
+                        // Nur der EIGENE Auftrag faellt weg; ein juengerer steht noch aus.
+                        ohneEintragBeauftragt = _uiState.value.ohneEintragBeauftragt?.takeUnless { it === config }
                     )
 
                     // VOR der Erkennung und vor dem Alarm-Sync: beides fuehrt (ueber ShiftSpanStore
@@ -673,7 +722,9 @@ class ShiftViewModel @Inject constructor(
                     selfWrittenConfig = null
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
-                        error = errorHandler.getErrorMessage(error)
+                        error = errorHandler.getErrorMessage(error),
+                        // Die Seite zeigt dann wieder, was gespeichert ist.
+                        ohneEintragBeauftragt = _uiState.value.ohneEintragBeauftragt?.takeUnless { it === config }
                     )
                 }
         }

@@ -213,9 +213,9 @@ private val EntwurfSaver: Saver<TypEntwurf, Any> = Saver(
  * Die Typ-Seite (Umbau, SPEC 3.3): ein Schichttyp als eigener Bildschirm statt des Dialogs.
  * Oben die Karte „Typ“ ([TypAbschnitt]: Name, Muster, Kategorie), darunter der Sonderfall-Kasten
  * ([SonderfallKasten], nur Rufbereitschaft, Krank, Ignorieren) und die Karte „Wecker“
- * ([WeckerAbschnitt], nicht bei Krank und Ignorieren); zwischen „Typ“ und Sonderfall-Kasten steht die
- * Tagesleiste „So läuft ein Tag“ ([TagesleisteKarte], nicht bei Ignorieren). Dimmen, DND und Licht kommen mit
- * eigenen Paketen.
+ * ([WeckerAbschnitt], nicht bei Krank und Ignorieren) mit der Karte „Bildschirm dimmen“ darunter
+ * ([DimmenAbschnitt], an denselben Typen); zwischen „Typ“ und Sonderfall-Kasten steht die Tagesleiste
+ * „So läuft ein Tag“ ([TagesleisteKarte], nicht bei Ignorieren). DND und Licht kommen mit eigenen Paketen.
  *
  * ENTWURF STATT SOFORT-SCHREIBEN (bewusste Abweichung vom Prototyp, der keinen Speichern-Knopf
  * hat): `updateShiftConfig()` speichert und stoesst den Alarm-Sync an - je Tastendruck im Namen
@@ -475,6 +475,15 @@ private fun TypSeiteFormular(
                 }
                 if (WeckerAbschnittLogik.zeigtWeckerKarte(entwurf.kategorie)) {
                     item(key = "wecker") { WeckerAbschnitt(entwurf = entwurf, aendere = aendere) }
+                }
+                if (DimmenAbschnittLogik.zeigtAbschnitt(entwurf.kategorie)) {
+                    item(key = "dimmen") {
+                        DimmenAbschnitt(
+                            entwurf = entwurf,
+                            giltOhneEintrag = DimmenAbschnittLogik.giltOhneEintrag(config, definition.id),
+                            aendere = aendere
+                        )
+                    }
                 }
             }
 

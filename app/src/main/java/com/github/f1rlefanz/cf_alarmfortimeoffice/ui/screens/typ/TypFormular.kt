@@ -2,8 +2,12 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.typ
 
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftKategorie
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.TypDimmFenster
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.TypDimmen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.AlarmConstants
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.DateTimeFormats
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -22,7 +26,9 @@ internal data class TypEntwurf(
     val isEnabled: Boolean,
     val isSilent: Boolean,
     val weckerAn: Boolean,
-    val kategorie: ShiftKategorie
+    val kategorie: ShiftKategorie,
+    /** Der Dimm-Teil (#221). `null` = dieser Entwurf traegt keinen: beim Speichern gilt der gespeicherte Stand. */
+    val dimmen: DimmenEntwurf? = null
 ) {
     val isSickDay: Boolean get() = kategorie == ShiftKategorie.KRANK
 
@@ -66,12 +72,18 @@ internal data class TypEntwurf(
             weckerAn = weckerAn,
             isSilent = isSilent,
             kategorie = kategorie
-        )
+        ).let { typ -> dimmen?.let { typ.copy(dimmen = it.anwenden(typ.dimmen)) } ?: typ }
     }
 
-    /** Fuer `rememberSaveable`: nur Typen, die ein Bundle kennt (Text, Wahrheitswert, Liste). */
+    /**
+     * Fuer `rememberSaveable`: nur Typen, die ein Bundle kennt (Text, Wahrheitswert, Liste). Der Dimm-Teil
+     * reist als JSON an achter Stelle (die Fenster sind keine Bundle-Typen); ohne ihn endet die Liste nach sieben.
+     */
     fun alsSpeicherListe(): List<Any> =
-        listOf(name, ArrayList(muster), weckzeitText, isEnabled, isSilent, weckerAn, kategorie.schluessel)
+        listOfNotNull(
+            name, ArrayList(muster), weckzeitText, isEnabled, isSilent, weckerAn, kategorie.schluessel,
+            dimmen?.let { ENTWURF_JSON.encodeToString(DimmenEntwurf.serializer(), it) }
+        )
 
     companion object {
         /** Der Ausgangsstand des Formulars: der Typ, wie er ist, oder die Vorgaben einer Neuanlage. */
@@ -93,7 +105,8 @@ internal data class TypEntwurf(
             weckerAn = ausgang?.weckerAn ?: true,
             // Die Kategorie ersetzt die Schalter „Krankmeldung“ und „Rufbereitschaft“ (Umbau E1).
             // Beim Speichern setzt `mitKategorie` beide Flags mit - die lesen alle heutigen Verbraucher.
-            kategorie = ausgang?.kategorie ?: ShiftKategorie.DIENST
+            kategorie = ausgang?.kategorie ?: ShiftKategorie.DIENST,
+            dimmen = DimmenEntwurf.aus(ausgang?.dimmen ?: TypDimmen())
         )
 
         /** Gegenstueck zu [alsSpeicherListe]; `null` bei einem Stand, den es nicht lesen kann. */
@@ -105,13 +118,42 @@ internal data class TypEntwurf(
                 isEnabled = liste[3] as Boolean,
                 isSilent = liste[4] as Boolean,
                 weckerAn = liste[5] as Boolean,
-                kategorie = ShiftKategorie.vonSchluessel(liste[6] as String) ?: ShiftKategorie.DIENST
+                kategorie = ShiftKategorie.vonSchluessel(liste[6] as String) ?: ShiftKategorie.DIENST,
+                // Fehlt das Element, gilt der gespeicherte Stand. Ist es da, aber unlesbar, faellt der ganze Entwurf
+                // weg (die Seite oeffnet wieder mit dem gespeicherten Typ) - nie ein Entwurf ohne Fenster.
+                dimmen = liste.getOrNull(7)?.let { ENTWURF_JSON.decodeFromString(DimmenEntwurf.serializer(), it as String) }
             )
         }.getOrNull()
     }
 }
 
 private val ZEIT_ANZEIGE: DateTimeFormatter = DateTimeFormatter.ofPattern(DateTimeFormats.TIME_ONLY)
+
+/** `encodeDefaults`, damit ein Fenster nach dem Zurueckholen Feld fuer Feld dasselbe ist. */
+private val ENTWURF_JSON = Json { encodeDefaults = true }
+
+/**
+ * Der Dimm-Teil des Entwurfs: genau das, was die Typ-Seite zeigt und aendert - „Dimmen an diesem Tag“
+ * ([TypDimmen.an]) und die deutbaren Fenster. Farbwaerme und undeutbare Fenster gehoeren nicht dazu; sie bleiben
+ * am gespeicherten Typ ([anwenden]).
+ */
+@Serializable
+internal data class DimmenEntwurf(val an: Boolean, val fenster: List<TypDimmFenster>) {
+
+    /**
+     * [gespeichert] mit diesem Stand. Neu kodiert werden die Fenster nur, wenn sie sich unterscheiden
+     * ([TypDimmen.mitFenster] haengt undeutbare wieder an): ein Speichern, das nur Name oder Weckzeit aendert,
+     * laesst das gespeicherte Dimmen Zeichen fuer Zeichen stehen.
+     */
+    fun anwenden(gespeichert: TypDimmen): TypDimmen {
+        val mitSchalter = gespeichert.copy(an = an)
+        return if (fenster == gespeichert.fenster) mitSchalter else mitSchalter.mitFenster(fenster)
+    }
+
+    companion object {
+        fun aus(dimmen: TypDimmen): DimmenEntwurf = DimmenEntwurf(dimmen.an, dimmen.fenster)
+    }
+}
 
 /**
  * Was der Schicht-Editor beim Speichern aus seinem Formular macht - ohne Compose, damit ein Test

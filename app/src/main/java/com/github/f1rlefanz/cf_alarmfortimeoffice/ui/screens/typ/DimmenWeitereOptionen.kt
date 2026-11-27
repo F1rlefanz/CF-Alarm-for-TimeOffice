@@ -1,6 +1,7 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.typ
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -17,6 +18,7 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
@@ -30,6 +32,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -38,6 +41,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -48,6 +52,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.DialogWindowProvider
+import androidx.core.view.WindowCompat
 import com.github.f1rlefanz.cf_alarmfortimeoffice.R
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimAnchor
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimOverlayPrefs
@@ -232,8 +238,11 @@ internal fun WeitereOptionenBlatt(
 ) {
     Dialog(
         onDismissRequest = onSchliessen,
-        properties = DialogProperties(usePlatformDefaultWidth = false)
+        // Ohne `decorFitsSystemWindows` liegen Status- und Navigationsleiste grau abgedunkelt neben dem Blatt;
+        // die Raender uebernehmen `Scaffold` und Titelleiste.
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
     ) {
+        SystemleistenPassendZumThema()
         Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             Scaffold(
                 topBar = { SimpleBackTopAppBar(title = WeitereOptionenTexte.TITEL, onNavigateBack = onSchliessen) }
@@ -300,6 +309,20 @@ internal fun WeitereOptionenBlatt(
                     }
                 }
             }
+        }
+    }
+}
+
+/** Die Symbole der Systemleisten im Dialogfenster: dunkel auf hellem Grund, hell im Dunkelmodus. */
+@Composable
+private fun SystemleistenPassendZumThema() {
+    val view = LocalView.current
+    val hell = !isSystemInDarkTheme()
+    SideEffect {
+        val fenster = (view.parent as? DialogWindowProvider)?.window ?: return@SideEffect
+        WindowCompat.getInsetsController(fenster, view).apply {
+            isAppearanceLightStatusBars = hell
+            isAppearanceLightNavigationBars = hell
         }
     }
 }
@@ -574,7 +597,11 @@ private fun AnkerKnopf(gewaehlt: Boolean, label: String, onClick: () -> Unit) {
     if (gewaehlt) {
         Button(onClick = onClick) { Text(label) }
     } else {
-        OutlinedButton(onClick = onClick) { Text(label) }
+        // Schrift in Textfarbe: in der Vorgabefarbe saehe die nicht gewaehlte Wahl gesperrt aus.
+        OutlinedButton(
+            onClick = onClick,
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurface)
+        ) { Text(label) }
     }
 }
 
@@ -590,7 +617,16 @@ private fun UhrzeitFeld(minutes: Int, onClick: () -> Unit) {
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         Nebentext(stringResource(R.string.dimmer_clock_time))
-        ZeitKnopf(minutes, onClick)
+        // Ein Wert, kein gesperrter Knopf (wie in der Karte „Bildschirm dimmen“).
+        ZeitKnopf(
+            minuten = minutes,
+            onClick = onClick,
+            textStyle = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.ExtraBold),
+            colors = ButtonDefaults.outlinedButtonColors(
+                containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                contentColor = MaterialTheme.colorScheme.onSurface
+            )
+        )
     }
 }
 

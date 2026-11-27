@@ -248,6 +248,27 @@ function StarteClaude([string]$goal, [string]$model, [int]$cap, [string]$cwd, [s
     # Live mitlesen: Get-Content ..Projektdateien\umbau\logs\<paket>.log -Wait
     Anhaengen $live "$(Get-Date -Format s)  Start $logName ($model, Cap $cap)"
     $ergebnis = $null; $reset = $null; $rest = New-Object System.Collections.Generic.List[string]
+    # Leerlauf-Waechter: Ein Lauf, der sein Ergebnis gemeldet hat und KEINE offene Hintergrundaufgabe
+    # mehr hat, blieb trotzdem haengen (22.11.2026, #219: alle 30 task_started hatten ihre
+    # task_notification, der Prozess wartete ~45 min). Bleibt er danach 3 min still, wird claude beendet.
+    # Offene Aufgaben (Pruef-Agenten) halten ihn weiter am Leben - dafuer gilt die 45-min-Decke oben.
+    $zustand = Join-Path $Logs "$logName.zustand"
+    $offen = New-Object System.Collections.Generic.HashSet[string]
+    $fertigGemeldet = $false
+    Set-Content -Path $zustand -Value 'laeuft' -Encoding ASCII
+    $waechter = Start-Job -ArgumentList $zustand, $PID -ScriptBlock {
+        param($datei, $eltern)
+        while (Test-Path $datei) {
+            Start-Sleep -Seconds 30
+            $z = Get-Content $datei -ErrorAction SilentlyContinue
+            if ($z -ne 'still') { continue }
+            $alter = ((Get-Date) - (Get-Item $datei).LastWriteTime).TotalSeconds
+            if ($alter -lt 180) { continue }
+            Get-CimInstance Win32_Process -Filter "ParentProcessId = $eltern AND Name = 'claude.exe'" |
+                ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+            Set-Content -Path $datei -Value 'beendet' -Encoding ASCII
+        }
+    }
     try {
         # Der Auftrag per Standardeingabe, NICHT als Argument: PowerShell 5.1 zerlegt ein Argument mit
         # Anfuehrungszeichen in mehrere (16.10.2026: '"Schichttyp als Zentrale"' im Ziel, dahinter
@@ -260,14 +281,26 @@ function StarteClaude([string]$goal, [string]$model, [int]$cap, [string]$cwd, [s
             if ($z.StartsWith('{')) {
                 try {
                     $e = $z | ConvertFrom-Json
-                    if ($e.type -eq 'result') { $ergebnis = $z }
+                    if ($e.type -eq 'result') { $ergebnis = $z; $fertigGemeldet = $true }
+                    if ($e.type -eq 'system' -and $e.subtype -eq 'task_started') { [void]$offen.Add("$($e.task_id)") }
+                    if ($e.type -eq 'system' -and $e.subtype -eq 'task_notification') { [void]$offen.Remove("$($e.task_id)") }
                     if ($e.type -eq 'rate_limit_event' -and $e.rate_limit_info.status -eq 'rejected') { $reset = $e.rate_limit_info.resetsAt }
                     if ($e.type -eq 'rate_limit_event' -and $e.rate_limit_info.unifiedWindows.seven_day) { $script:Woche = $e.rate_limit_info.unifiedWindows.seven_day }
                 } catch {}
             }
             $rest.Add($z); if ($rest.Count -gt 40) { $rest.RemoveAt(0) }
+            # Jede Zeile setzt die Uhr des Waechters zurueck; 'still' nur nach Ergebnis ohne offene Aufgabe.
+            $neu = if ($fertigGemeldet -and $offen.Count -eq 0) { 'still' } else { 'laeuft' }
+            Set-Content -Path $zustand -Value $neu -Encoding ASCII
         }
-    } finally { Pop-Location }
+    } finally {
+        Pop-Location
+        if ((Get-Content $zustand -ErrorAction SilentlyContinue) -eq 'beendet') {
+            Anhaengen $live "$(Get-Date -Format s)  Leerlauf nach dem Ergebnis - claude beendet (Waechter)"
+        }
+        Remove-Item $zustand -ErrorAction SilentlyContinue
+        Stop-Job $waechter -ErrorAction SilentlyContinue; Remove-Job $waechter -Force -ErrorAction SilentlyContinue
+    }
     # Das Ergebnis-Objekt (wie frueher mit --output-format json); fehlt es (Absturz), die letzten Zeilen.
     $text = if ($ergebnis) { $ergebnis } else { $rest -join "`n" }
     if ($reset) { $text = "LIMIT_RESET=$reset`n$text" }

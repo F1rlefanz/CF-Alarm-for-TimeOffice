@@ -41,6 +41,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftKategorie
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.TypDimmen
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.TypNichtStoeren
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.TagesleisteQuellen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.CompactButton
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.KnopfZeile
@@ -153,6 +154,21 @@ internal object TypSeiteEntwurf {
     }
 
     /**
+     * [nachgezogen] fuer „Nicht stoeren“ (#222): die Typ-Migration schreibt auch diese Schalter. Jedes Feld
+     * folgt fuer sich ([NichtStoerenEntwurf.nachgezogen]).
+     */
+    fun nachgezogenNichtStoeren(
+        ausgang: TypEntwurf,
+        entwurf: TypEntwurf,
+        gespeichert: TypNichtStoeren
+    ): Pair<TypEntwurf, TypEntwurf> {
+        val neu = NichtStoerenEntwurf.aus(gespeichert)
+        val vorher = ausgang.nichtStoeren ?: neu
+        return ausgang.copy(nichtStoeren = neu) to
+            entwurf.copy(nichtStoeren = entwurf.nichtStoeren?.nachgezogen(vorher, neu) ?: neu)
+    }
+
+    /**
      * Die Konfiguration mit dem gespeicherten Entwurf - oder `null`, wenn [definitionId] nicht darin
      * steht oder das Formular nicht speicherbar ist. Das ist der Schreibweg des Dialogs, 1:1
      * umgezogen (`config.copy(definitions = definitions.map { … })`): nur der Typ mit dieser id wird
@@ -227,9 +243,10 @@ private val EntwurfSaver: Saver<TypEntwurf, Any> = Saver(
  * Die Typ-Seite (Umbau, SPEC 3.3): ein Schichttyp als eigener Bildschirm statt des Dialogs.
  * Oben die Karte „Typ“ ([TypAbschnitt]: Name, Muster, Kategorie), darunter der Sonderfall-Kasten
  * ([SonderfallKasten], nur Rufbereitschaft, Krank, Ignorieren) und die Karte „Wecker“
- * ([WeckerAbschnitt], nicht bei Krank und Ignorieren) mit der Karte „Bildschirm dimmen“ darunter
- * ([DimmenAbschnitt], an denselben Typen); zwischen „Typ“ und Sonderfall-Kasten steht die Tagesleiste
- * „So läuft ein Tag“ ([TagesleisteKarte], nicht bei Ignorieren). DND und Licht kommen mit eigenen Paketen.
+ * ([WeckerAbschnitt], nicht bei Krank und Ignorieren) mit den Karten „Bildschirm dimmen“
+ * ([DimmenAbschnitt]) und „Nicht stören“ ([NichtStoerenAbschnitt]) darunter, an denselben Typen; zwischen
+ * „Typ“ und Sonderfall-Kasten steht die Tagesleiste „So läuft ein Tag“ ([TagesleisteKarte], nicht bei
+ * Ignorieren). Licht kommt mit einem eigenen Paket.
  *
  * ENTWURF STATT SOFORT-SCHREIBEN (bewusste Abweichung vom Prototyp, der keinen Speichern-Knopf
  * hat): `updateShiftConfig()` speichert und stoesst den Alarm-Sync an - je Tastendruck im Namen
@@ -373,12 +390,14 @@ private fun TypSeiteFormular(
     // Der Ausgangsstand wird beim Oeffnen eingefroren und reist mit: jede Config-Emission (auch
     // die eigene nach dem Speichern, auch fremde Schreiber) liefert ein neues ShiftDefinition-
     // Objekt und darf den Entwurf nicht zuruecksetzen - deshalb KEIN Schluessel auf `definition`.
-    // Einzige Ausnahme ist der Dimm-Teil, den die Typ-Migration unter der Seite schreiben kann
+    // Ausnahme sind Dimmen und „Nicht stoeren“, die die Typ-Migration unter der Seite schreiben kann
     // (siehe `TypSeiteEntwurf.nachgezogen`, auch nach dem Prozesstod).
     var ausgang by rememberSaveable(stateSaver = EntwurfSaver) { mutableStateOf(TypEntwurf.aus(definition)) }
     var entwurf by rememberSaveable(stateSaver = EntwurfSaver) { mutableStateOf(ausgang) }
-    LaunchedEffect(definition.dimmen) {
-        val (neuerAusgang, neuerEntwurf) = TypSeiteEntwurf.nachgezogen(ausgang, entwurf, definition.dimmen)
+    LaunchedEffect(definition.dimmen, definition.nichtStoeren) {
+        val (ausgangMitDimmen, entwurfMitDimmen) = TypSeiteEntwurf.nachgezogen(ausgang, entwurf, definition.dimmen)
+        val (neuerAusgang, neuerEntwurf) =
+            TypSeiteEntwurf.nachgezogenNichtStoeren(ausgangMitDimmen, entwurfMitDimmen, definition.nichtStoeren)
         ausgang = neuerAusgang
         entwurf = neuerEntwurf
     }
@@ -503,6 +522,20 @@ private fun TypSeiteFormular(
                             entwurf = entwurf,
                             giltOhneEintrag = DimmenAbschnittLogik.giltOhneEintrag(config, definition.id),
                             aendere = aendere
+                        )
+                    }
+                }
+                // Jeder Entwurf der Seite traegt den Teil (`TypEntwurf.aus`); ohne ihn gibt es nichts zu bearbeiten.
+                val nichtStoeren = entwurf.nichtStoeren
+                if (nichtStoeren != null && NichtStoerenAbschnittLogik.zeigtAbschnitt(entwurf.kategorie)) {
+                    item(key = "nichtstoeren") {
+                        NichtStoerenAbschnitt(
+                            werte = nichtStoeren,
+                            kategorie = entwurf.kategorie,
+                            dimmen = entwurf.dimmen,
+                            aendere = { aenderung ->
+                                aendere { e -> e.nichtStoeren?.let { e.copy(nichtStoeren = aenderung(it)) } ?: e }
+                            }
                         )
                     }
                 }

@@ -14,7 +14,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.Card
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -40,8 +39,6 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.R
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.SimpleBackTopAppBar
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.SwitchRow
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.hilfe.HilfeThema
-import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.dimmer.fmtClock
-import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.dimmer.pickTime
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.DndPermissionHelper
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.DndViewModel
 
@@ -208,41 +205,23 @@ fun DndSettingsScreen(
                                 style = MaterialTheme.typography.titleMedium
                             )
                             Text(
-                                text = "An Rufbereitschafts-Tagen endet Nicht stören schon vor der regulären Zeit – du bist ab dem Cutoff erreichbar.",
+                                text = "An Rufbereitschafts-Tagen endet „Nicht stören“ spätestens zur Uhrzeit " +
+                                    "aus „Endet spätestens um“ – ab dann bist du erreichbar. Die Uhrzeit stellst " +
+                                    "du je Typ auf der Seite des Schichttyps unter „Nicht stören“ ein.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                            // Rufbereitschaft legt der Schicht-Editor fest (ShiftDefinition.isOnCall) - hier nur Auskunft.
+                            // Rufbereitschaft ist eine Kategorie des Schichttyps (ShiftDefinition.isOnCall) - hier nur Auskunft.
                             Text(
                                 text = if (state.onCallShifts.isEmpty()) {
-                                    "Noch keine Schicht als Rufbereitschaft markiert. Das legst du " +
-                                        "im Schicht-Editor fest (Schalter „Rufbereitschaft“ an der " +
-                                        "jeweiligen Schicht)."
+                                    "Noch kein Schichttyp hat die Kategorie „Rufbereitschaft“. Die Kategorie " +
+                                        "wählst du auf der Seite des Schichttyps."
                                 } else {
-                                    "Als Rufbereitschaft markiert: " +
-                                        state.onCallShifts.sorted().joinToString(", ") +
-                                        " – änderbar im Schicht-Editor."
+                                    "Typen der Kategorie „Rufbereitschaft“: " +
+                                        state.onCallShifts.sorted().joinToString(", ")
                                 },
                                 style = MaterialTheme.typography.bodyMedium
                             )
-                            if (state.onCallShifts.isNotEmpty()) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(
-                                        text = "Cutoff:",
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        modifier = Modifier.padding(end = 8.dp)
-                                    )
-                                    OutlinedButton(
-                                        onClick = {
-                                            pickTime(context, state.onCallCutoffMinutes) {
-                                                viewModel.setOnCallCutoffMinutes(it)
-                                            }
-                                        }
-                                    ) {
-                                        Text(fmtClock(state.onCallCutoffMinutes))
-                                    }
-                                }
-                            }
                         }
                     }
                 }

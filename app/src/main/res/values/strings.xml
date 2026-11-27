@@ -136,7 +136,7 @@
 
     <!-- DND: konfigurierbare Policy (was genau stummgeschaltet wird) -->
     <string name="dnd_policy_title">Was wird stummgeschaltet?</string>
-    <string name="dnd_policy_hint">Eingeschaltet = bleibt stumm, für alle Typen. Dein eigener Wecker klingelt immer, unabhängig von diesen Einstellungen.</string>
+    <string name="dnd_policy_hint">Eingeschaltet = bleibt stumm, für alle Typen – nur ein „durchlassen“-Schalter lässt durch. Dein eigener Wecker klingelt immer, unabhängig von diesen Einstellungen.</string>
     <string name="dnd_policy_calls">Anrufe</string>
     <string name="dnd_policy_repeat_callers">Wiederholte Anrufer durchlassen</string>
     <string name="dnd_policy_repeat_callers_hint">Ein zweiter Anruf derselben Person kurz nacheinander gilt als dringend und klingelt trotzdem – für Erreichbarkeit im Notfall.</string>

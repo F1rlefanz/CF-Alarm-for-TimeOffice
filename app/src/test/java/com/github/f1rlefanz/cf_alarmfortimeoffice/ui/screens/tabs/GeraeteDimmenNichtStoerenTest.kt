@@ -6,6 +6,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
 
 /**
  * Die Texte der Geraete-Einstellungen (#225).
@@ -75,6 +76,18 @@ class GeraeteDimmenNichtStoerenTest {
             "Wiederholte Anrufer, System-Töne, Wecker, Medien – gilt für alle Typen",
             GeraeteTexte.werDurchkommt(DndPrefs.Policy())
         )
+    }
+
+    @Test
+    fun `der Hinweis ueber den Schaltern nimmt den Durchlassen-Schalter aus`() {
+        // „Eingeschaltet = bleibt stumm“ gilt fuer „Wiederholte Anrufer durchlassen“ gerade nicht.
+        val zeilen = listOf(File("app/src/main/res/values/strings.xml"), File("src/main/res/values/strings.xml"))
+            .firstOrNull { it.isFile }?.readLines() ?: error("strings.xml nicht gefunden")
+        fun text(name: String) = zeilen.single { it.contains("name=\"$name\"") }
+
+        assertTrue(text("dnd_policy_repeat_callers").contains("durchlassen<"))
+        val hinweis = text("dnd_policy_hint")
+        assertTrue(hinweis, hinweis.contains("„durchlassen“"))
     }
 
     @Test

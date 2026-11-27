@@ -261,6 +261,13 @@ internal object DimmenTexte {
 
     fun entfernen(nummer: Int): String = "Fenster $nummer entfernen"
 
+    /** Unter einem Fenster ohne „Wann“ - nur, wo die Zeile „Weitere Optionen“ darunter steht. */
+    const val EIGENE_ZEITEN_HINWEIS = "Start und Ende stellst du unter „${WeitereOptionenTexte.TITEL}“ ein."
+
+    /** „bis zu“: die Uhrzeit-Grenze und „bis es hell ist“ kuerzen den Nachlauf. */
+    fun nachlauf(minuten: Int): String =
+        "Nach dem Wecker dimmt es noch bis zu $minuten ${if (minuten == 1) "Minute" else "Minuten"} weiter."
+
     /** Der Chip eines Blocktags; `null` = alle. */
     fun blockTag(position: Blockposition?): String = when (position) {
         null -> "Alle"

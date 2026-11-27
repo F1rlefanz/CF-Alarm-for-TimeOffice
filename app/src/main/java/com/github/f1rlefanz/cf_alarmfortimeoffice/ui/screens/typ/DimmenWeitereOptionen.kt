@@ -6,6 +6,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -251,6 +253,9 @@ internal fun WeitereOptionenBlatt(
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(padding)
+                        // Das Dialogfenster reicht bis unter die Tastatur: ohne den Rand laege ein unteres Feld dahinter.
+                        .consumeWindowInsets(padding)
+                        .imePadding()
                         .padding(horizontal = SpacingConstants.PADDING_SCREEN_HORIZONTAL),
                     contentPadding = PaddingValues(vertical = SpacingConstants.SPACING_LARGE),
                     verticalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_LARGE)

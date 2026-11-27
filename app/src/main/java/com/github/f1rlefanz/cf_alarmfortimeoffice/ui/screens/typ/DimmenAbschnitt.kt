@@ -46,7 +46,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.Blockposition
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimAnchor
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimOverlayPrefs
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimWindowResolver
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.OhneEintragWahl
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftKategorie
@@ -139,6 +141,23 @@ internal object DimmenAbschnittLogik {
         }
 
     /**
+     * Was die Karte zu dem sagt, was unter „Weitere Optionen“ eingestellt ist (#224): ein Fenster ohne „Wann“ wird
+     * dort bearbeitet (nur mit der Zeile dorthin, [mitBlatt]), und ein Nachlauf laesst es ueber die Weckzeit
+     * hinaus dimmen, obwohl Titel und Schalter „bis Wecker“ sagen.
+     */
+    fun blattHinweis(f: TypDimmFenster, mitBlatt: Boolean): String? {
+        if (DimFensterAbbildung.deute(f) is DimFensterAnsicht.NichtDarstellbar) {
+            return DimmenTexte.EIGENE_ZEITEN_HINWEIS.takeIf { mitBlatt }
+        }
+        val minuten = f.fenster.weckzeitNachlaufMinuten.coerceIn(0, DimWindowResolver.NACHLAUF_MAX_MINUTEN)
+        return if (f.fenster.endAnchor == DimAnchor.ALARM_SONST_CLOCK && minuten > 0) {
+            DimmenTexte.nachlauf(minuten)
+        } else {
+            null
+        }
+    }
+
+    /**
      * „Mit %“: ganze Zahlen bis zur Grenze des Reglers im Regel-Editor ([DimOverlayPrefs.STRENGTH_MAX]).
      * Liefert den Feldtext und den zu uebernehmenden Wert (`null` = leeres Feld, nichts uebernehmen) - oder `null`,
      * wenn die Eingabe gar nicht angenommen wird.
@@ -227,6 +246,7 @@ internal fun DimmenAbschnitt(
                     weckerAn = entwurf.weckerAn,
                     mitBlocktagen = DimmenAbschnittLogik.zeigtBlocktage(entwurf.kategorie),
                     giltOhneEintrag = giltOhneEintrag,
+                    mitBlatt = onWeitereOptionen != null,
                     aendere = { aenderung -> aendereDimmen { DimmenAbschnittLogik.fensterAendern(it, index, aenderung) } },
                     entferne = { aendereDimmen { DimmenAbschnittLogik.fensterEntfernen(it, index) } }
                 )
@@ -297,6 +317,7 @@ private fun FensterBlock(
     weckerAn: Boolean,
     mitBlocktagen: Boolean,
     giltOhneEintrag: Boolean,
+    mitBlatt: Boolean,
     aendere: ((TypDimmFenster) -> TypDimmFenster) -> Unit,
     entferne: () -> Unit
 ) {
@@ -325,7 +346,14 @@ private fun FensterBlock(
             }
         }
 
-        val form = (ansicht as? DimFensterAnsicht.Darstellbar)?.form ?: return@Column
+        val blattHinweis = DimmenAbschnittLogik.blattHinweis(fenster, mitBlatt)
+        val form = (ansicht as? DimFensterAnsicht.Darstellbar)?.form
+        if (form == null) {
+            if (blattHinweis != null) {
+                Text(blattHinweis, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = blass)
+            }
+            return@Column
+        }
 
         Text(DimmenTexte.WANN, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = blass)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -376,6 +404,9 @@ private fun FensterBlock(
                 Text(DimmenTexte.BEIM_WECKER, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f).then(blass))
                 Switch(checked = form.beimWecker, onCheckedChange = null, enabled = an)
             }
+        }
+        if (blattHinweis != null) {
+            Text(blattHinweis, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = blass)
         }
         DimmenAbschnittLogik.ohneEintragHinweis(form, giltOhneEintrag)?.let { hinweis ->
             Text(hinweis, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = blass)

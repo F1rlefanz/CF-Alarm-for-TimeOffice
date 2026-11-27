@@ -21,7 +21,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
@@ -510,7 +512,9 @@ fun ShiftConfigScreen(
             onDismissRequest = { showResetConfirmation = false },
             title = { Text("Auf Standardwerte zurücksetzen?") },
             text = {
-                Text(ShiftConfigTexte.RESET_RUECKFRAGE)
+                // Scrollbar: bei 320 dp und Schrift 1,3 passt die Rueckfrage nicht in den Dialog, und das
+                // Ende der Warnung („Das lässt sich nicht rückgängig machen.“) waere sonst abgeschnitten.
+                Text(ShiftConfigTexte.RESET_RUECKFRAGE, modifier = Modifier.verticalScroll(rememberScrollState()))
             },
             confirmButton = {
                 TextButton(

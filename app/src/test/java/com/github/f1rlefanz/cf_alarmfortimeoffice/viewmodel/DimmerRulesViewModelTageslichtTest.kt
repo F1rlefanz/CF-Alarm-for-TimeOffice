@@ -5,8 +5,6 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimOverlayPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimRuleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimScheduleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimWindow
-import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.HellZeitpunkt
-import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.TageslichtEnde
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.ZeitkettenArmierer
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmInfo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
@@ -44,24 +42,15 @@ import org.mockito.kotlin.mock
 import org.mockito.kotlin.stub
 import org.mockito.kotlin.whenever
 import java.time.LocalDate
-import java.time.LocalDateTime
 import java.time.ZoneId
 
 /**
- * Die Beispielzeile unter „Nachlauf nur, solange es dunkel ist" (#140): „Nächster Wecker … →
- * gedimmt bis …". Sie rechnet ueber DIESELBE Funktion wie die Fensteraufloesung
- * (`DimWindowResolver.nachlaufEnde`) - eine zweite Rechnung im Editor koennte etwas anderes
- * versprechen, als der Dimmer dann tut.
+ * Der Regel-Editor laedt Ort und Weckzeiten fuer die Beispielzeile unter „Nachlauf nur, solange es
+ * dunkel ist" (#140). Die Rechnung selbst ist mit #224 nach `viewmodel.nachlaufBeispiel` umgezogen;
+ * ihre Faelle stehen in `DimmenWeitereOptionenTest`.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class DimmerRulesViewModelTageslichtTest {
-
-    private val zone = ZoneId.of("Europe/Berlin")
-    private val tag = LocalDate.parse("2026-10-15")
-    private val jetzt = t(LocalDate.parse("2026-10-14"), "20:00")
-
-    private fun t(datum: LocalDate, uhrzeit: String): Long =
-        LocalDateTime.parse("${datum}T$uhrzeit").atZone(zone).toInstant().toEpochMilli()
 
     private fun fenster(hellAb: HellAb = HellAb.SONNENAUFGANG, nachlauf: Int = 60, schranke: Int = 8 * 60) = DimWindow(
         startAnchor = DimAnchor.CLOCK,
@@ -71,69 +60,6 @@ class DimmerRulesViewModelTageslichtTest {
         weckzeitNachlaufMinuten = nachlauf,
         nachlaufBisHell = hellAb
     )
-
-    private val hell0731: HellZeitpunkt = { d, wahl -> if (wahl == HellAb.IMMER) null else t(d, "07:31") }
-
-    private fun beispiel(w: DimWindow, wecker: List<Long>, hell: HellZeitpunkt = hell0731) =
-        DimmerRulesViewModel.nachlaufBeispiel(w, hell, wecker, jetzt, zone)
-
-    @Test
-    fun `voller Nachlauf - Sonnenaufgang ist erst danach`() {
-        val b = beispiel(fenster(), listOf(t(tag, "05:30")))!!
-        assertEquals(t(tag, "05:30"), b.weckzeit)
-        assertEquals(t(tag, "06:30"), b.ende)
-        assertNull(b.grund)
-        assertEquals(t(tag, "07:31"), b.hellZeitpunkt)
-        assertEquals(DimmerRulesViewModel.BeispielGrund.NACHLAUF_VOLL, b.grundArt)
-        assertEquals(60, b.nachlaufMin)
-    }
-
-    @Test
-    fun `Sonnenaufgang im Nachlauf - gedimmt bis Sonnenaufgang`() {
-        val b = beispiel(fenster(), listOf(t(tag, "07:00")))!!
-        assertEquals(t(tag, "07:31"), b.ende)
-        assertEquals(TageslichtEnde(HellAb.SONNENAUFGANG, t(tag, "07:31"), vorWeckzeit = false), b.grund)
-        assertEquals(DimmerRulesViewModel.BeispielGrund.HELL, b.grundArt)
-    }
-
-    @Test
-    fun `schon hell beim Wecken - Ende an der Weckzeit`() {
-        val b = beispiel(fenster(), listOf(t(tag, "07:40")))!!
-        assertEquals(t(tag, "07:40"), b.ende)
-        assertEquals(DimmerRulesViewModel.BeispielGrund.WECKZEIT, b.grundArt)
-    }
-
-    @Test
-    fun `kappt die Uhrzeit-Schranke den Nachlauf, behauptet die Zeile keine vollen Minuten`() {
-        val b = beispiel(fenster(schranke = 7 * 60 + 45), listOf(t(tag, "07:20")), { d, _ -> t(d, "07:50") })!!
-        assertEquals(t(tag, "07:45"), b.ende)
-        assertNull(b.grundArt)
-    }
-
-    @Test
-    fun `der naechste Wecker, den das Fenster faengt - verstrichene und spaete zaehlen nicht`() {
-        val vorbei = t(LocalDate.parse("2026-10-14"), "05:30") // vor jetzt
-        val abends = t(LocalDate.parse("2026-10-14"), "21:00") // nach der Schranke, vor dem Start
-        val morgen = t(tag, "06:00")
-        val b = beispiel(fenster(), listOf(abends, vorbei, morgen))!!
-        assertEquals(morgen, b.weckzeit)
-    }
-
-    @Test
-    fun `kein Beispiel ohne passenden Wecker, ohne Nachlauf oder bei IMMER`() {
-        assertNull(beispiel(fenster(), emptyList()))
-        assertNull(beispiel(fenster(), listOf(t(tag, "12:30")))) // nach der Schranke
-        assertNull(beispiel(fenster(nachlauf = 0), listOf(t(tag, "06:00"))))
-        assertNull(beispiel(fenster(hellAb = HellAb.IMMER), listOf(t(tag, "06:00"))))
-    }
-
-    @Test
-    fun `ohne Ereignis an dem Tag gilt der volle Nachlauf, ohne Begruendung mit einer Uhrzeit`() {
-        val b = beispiel(fenster(), listOf(t(tag, "07:00")), { _, _ -> null })!!
-        assertEquals(t(tag, "08:00"), b.ende)
-        assertNull(b.hellZeitpunkt)
-        assertNull(b.grundArt)
-    }
 
     // ------------------------------------------------------------------ das ViewModel selbst
 

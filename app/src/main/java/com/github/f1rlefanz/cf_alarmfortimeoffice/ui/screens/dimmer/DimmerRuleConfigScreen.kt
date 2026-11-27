@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material3.Button
@@ -41,32 +40,26 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.github.f1rlefanz.cf_alarmfortimeoffice.R
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.Blockposition
-import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimAnchor
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimOverlayPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimRule
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimWindow
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimWindowResolver
-import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.HellAb
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.SimpleBackTopAppBar
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.hilfe.HilfeThema
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.typ.AnkerEditor
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.typ.OffsetField
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.typ.WeitereOptionenLogik
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.typ.nachlaufBeispielText
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tageslicht.NachlaufBisHellWahl
-import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.DateTimeFormats
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.DimmerRulesViewModel
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
-import java.time.Instant
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
-import java.util.Locale
 
 @Composable
 fun DimmerRuleConfigScreen(
@@ -77,7 +70,6 @@ fun DimmerRuleConfigScreen(
     onOrtEinstellen: () -> Unit,
     viewModel: DimmerRulesViewModel = hiltViewModel()
 ) {
-    val context = LocalContext.current
     val shiftNames by viewModel.shiftNames.collectAsStateWithLifecycle()
     val ortBekannt by viewModel.ortBekannt.collectAsStateWithLifecycle()
     val tageslichtGeladen by viewModel.tageslichtGeladen.collectAsStateWithLifecycle()
@@ -231,8 +223,7 @@ fun DimmerRuleConfigScreen(
                     // waere "Folge gleicher Dienste" nicht erklaerbar - die Regel gilt ja an allen.
                     schichtbezogen = shiftPattern != DimRule.SHIFT_FREE && shiftPattern != DimRule.SHIFT_UNIVERSAL,
                     onChange = { windows[index] = it },
-                    onRemove = { windows.removeAt(index) },
-                    onPickTime = { current, cb -> pickTime(context, current, cb) }
+                    onRemove = { windows.removeAt(index) }
                 )
             }
 
@@ -343,93 +334,12 @@ private val FensterListeSaver = Saver<SnapshotStateList<DimWindow>, String>(
     }
 )
 
-// Locale.GERMAN bleibt zwingend: ohne das Argument haengt der Wochentagsname an der Systemsprache.
-private val BEISPIEL_TAG_ZEIT = DateTimeFormatter.ofPattern(DateTimeFormats.DAY_TIME, Locale.GERMAN)
-private val BEISPIEL_ZEIT = DateTimeFormatter.ofPattern(DateTimeFormats.TIME_ONLY, Locale.GERMAN)
-
-private fun fmt(epoch: Long, format: DateTimeFormatter): String =
-    Instant.ofEpochMilli(epoch).atZone(ZoneId.systemDefault()).format(format)
-
-/**
- * "Nächster Wecker Do 15.10. 05:30 → gedimmt bis 06:30 (volle 60 Minuten, Sonnenaufgang ist erst
- * um 07:31)". Die Begruendung entfaellt, wenn die Rechnung keine ehrliche hergibt (siehe
- * [DimmerRulesViewModel.NachlaufBeispiel.grundArt]).
- */
-@Composable
-private fun nachlaufBeispielText(b: DimmerRulesViewModel.NachlaufBeispiel?, hellAb: HellAb): String? {
-    if (b == null) return null
-    val basis = stringResource(
-        R.string.tageslicht_dimmer_beispiel,
-        fmt(b.weckzeit, BEISPIEL_TAG_ZEIT),
-        fmt(b.ende, BEISPIEL_ZEIT)
-    )
-    val ereignis = tageslichtEreignisName(hellAb)
-    val grund = when (b.grundArt) {
-        DimmerRulesViewModel.BeispielGrund.NACHLAUF_VOLL -> b.hellZeitpunkt?.let {
-            pluralStringResource(R.plurals.tageslicht_dimmer_grund_nachlauf, b.nachlaufMin, b.nachlaufMin, ereignis, fmt(it, BEISPIEL_ZEIT))
-        }
-        DimmerRulesViewModel.BeispielGrund.HELL -> b.grund?.let {
-            stringResource(R.string.tageslicht_dimmer_grund_hell, ereignis, fmt(it.hellZeitpunkt, BEISPIEL_ZEIT))
-        }
-        DimmerRulesViewModel.BeispielGrund.WECKZEIT -> b.grund?.let {
-            stringResource(R.string.tageslicht_dimmer_grund_weckzeit, ereignis, fmt(it.hellZeitpunkt, BEISPIEL_ZEIT))
-        }
-        null -> null
-    }
-    return if (grund == null) basis else "$basis ($grund)"
-}
-
-/** Welches Eingabefeld ein Fenster-Rand braucht - eine Uhrzeit oder einen Minuten-Offset. */
-internal enum class AnkerFeld { UHRZEIT, OFFSET }
-
-/**
- * Die Anker, die der Fenster-Editor am START anbietet.
- *
- * WARUM [DimAnchor.ALARM] HIER STEHEN MUSS: Seit dem Ein-Modell-Umbau ist ein Fenster
- * „Weckzeit −60 → Weckzeit" der einzige Weg zu einer Einschlafhilfe vor dem Dienst - die frühere
- * Wellness-Quelle gibt es nicht mehr. Genau das versprechen der Erklärtext im Dimmer-Tab
- * (`dimmer_rules_explain`) und die Modellmigration, die migrierten Nutzern ein solches Fenster
- * anlegt. Fehlte der Knopf, gäbe es die einzige Fähigkeit, die die entfallene Quelle ersetzen
- * soll, ohne Bedienelement - und ein migriertes Fenster wäre im Editor nicht einmal darstellbar.
- *
- * [DimAnchor.ALARM_SONST_CLOCK] fehlt bewusst: er ist ein reiner ENDE-Anker (siehe sein KDoc).
- */
-internal val START_ANKER = listOf(DimAnchor.CLOCK, DimAnchor.ALARM, DimAnchor.SHIFT_END)
-
-/** Die Anker, die der Editor am ENDE anbietet - hier sind alle vier sinnvoll. */
-internal val ENDE_ANKER =
-    listOf(DimAnchor.CLOCK, DimAnchor.ALARM, DimAnchor.SHIFT_END, DimAnchor.ALARM_SONST_CLOCK)
-
-/**
- * Das Eingabefeld zu einem START-Anker.
- *
- * DIE ZUORDNUNG IST EINE ZUSICHERUNG, KEIN LAYOUT-DETAIL: Bekäme ein weckzeit-relativer Start ein
- * UHRZEIT-Feld, zeigte der Editor den unbeteiligten Feld-Default (20:00) statt des echten Ankers,
- * und ein einziger Tipp darauf schriebe den Anker dauerhaft auf [DimAnchor.CLOCK] um - aus „zwei
- * Stunden vor dem Aufstehen" würde „jede Nacht ab 20:00", vor einem Spätdienst also ein Fenster
- * von 16,5 Stunden.
- */
-internal fun feldFuerStartAnker(anker: DimAnchor): AnkerFeld = when (anker) {
-    DimAnchor.ALARM, DimAnchor.SHIFT_END -> AnkerFeld.OFFSET
-    // ALARM_SONST_CLOCK ist am Start wie CLOCK (siehe DimWindowResolver.resolveShiftWindow) -
-    // eingeschleust werden kann er nur aus Daten, angeboten wird er hier nicht.
-    DimAnchor.CLOCK, DimAnchor.ALARM_SONST_CLOCK -> AnkerFeld.UHRZEIT
-}
-
 @Composable
 private fun blockpositionLabel(position: Blockposition): String = when (position) {
     Blockposition.ERSTER -> stringResource(R.string.dimmer_blockposition_erster)
     Blockposition.MITTLERER -> stringResource(R.string.dimmer_blockposition_mittlerer)
     Blockposition.LETZTER -> stringResource(R.string.dimmer_blockposition_letzter)
     Blockposition.EINZELNER -> stringResource(R.string.dimmer_blockposition_einzelner)
-}
-
-@Composable
-private fun ankerLabel(anker: DimAnchor): String = when (anker) {
-    DimAnchor.CLOCK -> stringResource(R.string.dimmer_end_clock)
-    DimAnchor.ALARM -> stringResource(R.string.dimmer_end_alarm)
-    DimAnchor.SHIFT_END -> stringResource(R.string.dimmer_anchor_shiftend)
-    DimAnchor.ALARM_SONST_CLOCK -> stringResource(R.string.dimmer_end_alarm_sonst_clock)
 }
 
 @Composable
@@ -440,8 +350,7 @@ private fun WindowEditor(
     onOrtEinstellen: () -> Unit,
     schichtbezogen: Boolean,
     onChange: (DimWindow) -> Unit,
-    onRemove: () -> Unit,
-    onPickTime: (Int, (Int) -> Unit) -> Unit
+    onRemove: () -> Unit
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
@@ -450,107 +359,29 @@ private fun WindowEditor(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            // Start – feste Uhrzeit (Vorabend), relativ zur Weckzeit (Einschlafhilfe) ODER
-            // relativ zum Schichtende (ND-Tagschlaf). Siehe [START_ANKER].
-            Text(stringResource(R.string.dimmer_window_start), style = MaterialTheme.typography.bodyMedium)
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                START_ANKER.forEach { anker ->
-                    AnchorButton(
-                        // ALARM_SONST_CLOCK loest am Start wie CLOCK auf - dann ist der
-                        // CLOCK-Knopf die ehrliche Anzeige. Sonst waere KEIN Knopf markiert.
-                        selected = window.startAnchor == anker ||
-                            (anker == DimAnchor.CLOCK && window.startAnchor == DimAnchor.ALARM_SONST_CLOCK),
-                        label = ankerLabel(anker)
-                    ) { onChange(window.copy(startAnchor = anker)) }
-                }
-            }
-            when (feldFuerStartAnker(window.startAnchor)) {
-                AnkerFeld.OFFSET -> OffsetField(
-                    value = window.startOffsetMinutes,
-                    label = stringResource(
-                        if (window.startAnchor == DimAnchor.ALARM) R.string.dimmer_start_offset
-                        else R.string.dimmer_shiftend_offset
+            AnkerEditor(window = window, onChange = { aenderung -> onChange(aenderung(window)) }) {
+                // Nachlauf nach der Weckzeit - eigenes Feld, nicht endOffsetMinutes (Begruendung
+                // an DimWindow.weckzeitNachlaufMinuten).
+                OffsetField(
+                    value = window.weckzeitNachlaufMinuten,
+                    label = stringResource(R.string.dimmer_end_nachlauf)
+                ) { onChange(WeitereOptionenLogik.nachlaufSetzen(window, it)) }
+                Text(
+                    text = stringResource(R.string.dimmer_end_nachlauf_hinweis, DimWindowResolver.NACHLAUF_MAX_MINUTEN),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                // #140: nur mit Nachlauf - ohne gibt es nichts zu kuerzen. Ein auf 0
+                // gesetzter Nachlauf laesst die Wahl im Fenster stehen; sie wirkt dann nicht
+                // (Resolver: Nachlauf 0 kehrt vor jeder Tageslicht-Frage zurueck).
+                if (window.weckzeitNachlaufMinuten > 0) {
+                    NachlaufBisHellWahl(
+                        wahl = window.nachlaufBisHell,
+                        onWahl = { onChange(window.copy(nachlaufBisHell = it)) },
+                        ohneOrt = ohneOrt,
+                        beispiel = beispiel,
+                        onOrtEinstellen = onOrtEinstellen
                     )
-                ) { onChange(window.copy(startOffsetMinutes = it)) }
-
-                // Der Anker wird hier mitgeschrieben, damit ein aus Daten eingeschleustes
-                // ALARM_SONST_CLOCK beim ersten Anfassen normalisiert wird - fuer die beiden
-                // OFFSET-Anker ist dieser Zweig unerreichbar, sie verlieren ihn also nicht.
-                AnkerFeld.UHRZEIT -> ClockField(minutes = window.startClockMinutes) {
-                    onPickTime(window.startClockMinutes) {
-                        onChange(window.copy(startAnchor = DimAnchor.CLOCK, startClockMinutes = it))
-                    }
-                }
-            }
-
-            // Ende – feste Uhrzeit, zur Weckzeit, „Weckzeit, spätestens" ODER relativ zum Schichtende
-            Text(stringResource(R.string.dimmer_window_end), style = MaterialTheme.typography.bodyMedium)
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ENDE_ANKER.forEach { anker ->
-                    AnchorButton(
-                        selected = window.endAnchor == anker,
-                        label = ankerLabel(anker)
-                    ) { onChange(window.copy(endAnchor = anker)) }
-                }
-            }
-            when (window.endAnchor) {
-                DimAnchor.CLOCK -> ClockField(minutes = window.endClockMinutes) {
-                    onPickTime(window.endClockMinutes) { onChange(window.copy(endClockMinutes = it)) }
-                }
-
-                DimAnchor.ALARM -> OffsetField(
-                    value = window.endOffsetMinutes,
-                    label = stringResource(R.string.dimmer_end_offset)
-                ) { onChange(window.copy(endOffsetMinutes = it)) }
-
-                DimAnchor.SHIFT_END -> OffsetField(
-                    value = window.endOffsetMinutes,
-                    label = stringResource(R.string.dimmer_shiftend_offset)
-                ) { onChange(window.copy(endOffsetMinutes = it)) }
-
-                // Derselbe Uhrzeit-Waehler wie bei CLOCK - die Uhrzeit ist hier die SPAETESTE
-                // Moeglichkeit, nicht das feste Ende. Ohne den erklaerenden Satz daneben ist der
-                // Unterschied zu "Feste Uhrzeit" am Knopf allein nicht zu erkennen, und genau
-                // dieses Missverstaendnis war der Ausloeser des Ankers.
-                DimAnchor.ALARM_SONST_CLOCK -> {
-                    ClockField(minutes = window.endClockMinutes) {
-                        onPickTime(window.endClockMinutes) { onChange(window.copy(endClockMinutes = it)) }
-                    }
-                    Text(
-                        text = stringResource(R.string.dimmer_end_alarm_sonst_clock_hinweis),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    // Nachlauf nach der Weckzeit - eigenes Feld, nicht endOffsetMinutes (Begruendung
-                    // an DimWindow.weckzeitNachlaufMinuten). Geklemmt wie im Resolver, damit das
-                    // Feld nie einen Wert zeigt, der anders wirkt als angezeigt.
-                    OffsetField(
-                        value = window.weckzeitNachlaufMinuten,
-                        label = stringResource(R.string.dimmer_end_nachlauf)
-                    ) {
-                        onChange(
-                            window.copy(
-                                weckzeitNachlaufMinuten = it.coerceIn(0, DimWindowResolver.NACHLAUF_MAX_MINUTEN)
-                            )
-                        )
-                    }
-                    Text(
-                        text = stringResource(R.string.dimmer_end_nachlauf_hinweis, DimWindowResolver.NACHLAUF_MAX_MINUTEN),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    // #140: nur mit Nachlauf - ohne gibt es nichts zu kuerzen. Ein auf 0
-                    // gesetzter Nachlauf laesst die Wahl im Fenster stehen; sie wirkt dann nicht
-                    // (Resolver: Nachlauf 0 kehrt vor jeder Tageslicht-Frage zurueck).
-                    if (window.weckzeitNachlaufMinuten > 0) {
-                        NachlaufBisHellWahl(
-                            wahl = window.nachlaufBisHell,
-                            onWahl = { onChange(window.copy(nachlaufBisHell = it)) },
-                            ohneOrt = ohneOrt,
-                            beispiel = beispiel,
-                            onOrtEinstellen = onOrtEinstellen
-                        )
-                    }
                 }
             }
 
@@ -584,49 +415,3 @@ private fun WindowEditor(
         }
     }
 }
-
-@Composable
-private fun AnchorButton(selected: Boolean, label: String, onClick: () -> Unit) {
-    if (selected) {
-        Button(onClick = onClick) { Text(label) }
-    } else {
-        OutlinedButton(onClick = onClick) { Text(label) }
-    }
-}
-
-/**
- * Beschrifteter Zeit-Picker für „Feste Uhrzeit". Das Label bindet den Wert sichtbar an die Auswahl
- * (analog zum [OffsetField] der anderen Anker) — sonst wirkte der nackte Uhrzeit-Button auf schmalen
- * Displays losgelöst und schien zum darüberliegenden Anker-Knopf zu gehören.
- */
-@Composable
-private fun ClockField(minutes: Int, onClick: () -> Unit) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        Text(
-            text = stringResource(R.string.dimmer_clock_time),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        ZeitKnopf(minutes, onClick)
-    }
-}
-
-/** Zahlenfeld für einen Minuten-Offset (nach Wecker bzw. nach Schichtende). */
-@Composable
-private fun OffsetField(value: Int, label: String, onChange: (Int) -> Unit) {
-    var text by remember(value) { mutableStateOf(value.toString()) }
-    OutlinedTextField(
-        value = text,
-        onValueChange = { v ->
-            text = v
-            v.toIntOrNull()?.let(onChange)
-        },
-        label = { Text(label) },
-        singleLine = true,
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-    )
-}
-

@@ -15,6 +15,7 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -45,7 +46,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.Blockposition
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimAnchor
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimOverlayPrefs
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimWindowResolver
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.OhneEintragWahl
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftKategorie
@@ -138,6 +141,22 @@ internal object DimmenAbschnittLogik {
         }
 
     /**
+     * Was die Karte zu dem sagt, was unter „Weitere Optionen“ eingestellt ist (#224): ein Fenster ohne „Wann“ wird
+     * dort bearbeitet, und ein Nachlauf laesst es ueber die Weckzeit hinaus dimmen, obwohl Titel bzw. Schalter
+     * das nicht sagen. Nur mit der Zeile dorthin ([mitBlatt]); die feste Zeile bekommt sie erst mit #238.
+     */
+    fun blattHinweis(f: TypDimmFenster, mitBlatt: Boolean, weckerAn: Boolean): String? {
+        if (!mitBlatt) return null
+        if (DimFensterAbbildung.deute(f) is DimFensterAnsicht.NichtDarstellbar) return DimmenTexte.EIGENE_ZEITEN_HINWEIS
+        val minuten = f.fenster.weckzeitNachlaufMinuten.coerceIn(0, DimWindowResolver.NACHLAUF_MAX_MINUTEN)
+        return if (f.fenster.endAnchor == DimAnchor.ALARM_SONST_CLOCK && minuten > 0) {
+            DimmenTexte.nachlauf(minuten, weckerAn)
+        } else {
+            null
+        }
+    }
+
+    /**
      * „Mit %“: ganze Zahlen bis zur Grenze des Reglers im Regel-Editor ([DimOverlayPrefs.STRENGTH_MAX]).
      * Liefert den Feldtext und den zu uebernehmenden Wert (`null` = leeres Feld, nichts uebernehmen) - oder `null`,
      * wenn die Eingabe gar nicht angenommen wird.
@@ -156,12 +175,16 @@ internal object DimmenAbschnittLogik {
  * am Ende „+ Weiteres Fenster“. Ein Fenster, das die Form nicht ausdrueckt, steht nur mit seiner Kurzform da.
  * Ausgeschaltet bleiben die Fenster sichtbar, aber ausgegraut und gesperrt. Zustandslos - der Entwurf gehoert der
  * Seite. Nur fuer Typen mit Abschnitt ([DimmenAbschnittLogik.zeigtAbschnitt]).
+ *
+ * @param onWeitereOptionen oeffnet das Blatt „Weitere Optionen“ ([WeitereOptionenBlatt]); `null` = keine Zeile
+ *   (die feste Zeile „Ohne Kalendereintrag“).
  */
 @Composable
 internal fun DimmenAbschnitt(
     entwurf: TypEntwurf,
     giltOhneEintrag: Boolean,
-    aendere: ((TypEntwurf) -> TypEntwurf) -> Unit
+    aendere: ((TypEntwurf) -> TypEntwurf) -> Unit,
+    onWeitereOptionen: (() -> Unit)? = null
 ) {
     // Jeder Entwurf der Seite traegt den Dimm-Teil (`TypEntwurf.aus`); ohne ihn gibt es nichts zu bearbeiten.
     val dimmen = entwurf.dimmen ?: return
@@ -222,6 +245,7 @@ internal fun DimmenAbschnitt(
                     weckerAn = entwurf.weckerAn,
                     mitBlocktagen = DimmenAbschnittLogik.zeigtBlocktage(entwurf.kategorie),
                     giltOhneEintrag = giltOhneEintrag,
+                    mitBlatt = onWeitereOptionen != null,
                     aendere = { aenderung -> aendereDimmen { DimmenAbschnittLogik.fensterAendern(it, index, aenderung) } },
                     entferne = { aendereDimmen { DimmenAbschnittLogik.fensterEntfernen(it, index) } }
                 )
@@ -242,7 +266,43 @@ internal fun DimmenAbschnitt(
                     .heightIn(min = 48.dp)
                     .padding(horizontal = SpacingConstants.SPACING_LARGE, vertical = SpacingConstants.SPACING_MEDIUM)
             )
+
+            if (onWeitereOptionen != null) {
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                WeitereOptionenZeile(an = dimmen.an, onClick = onWeitereOptionen)
+            }
         }
+    }
+}
+
+/** Die Zeile zum Blatt „Weitere Optionen“ (Prototyp `zumDimmen`) - gesperrt, solange das Dimmen aus ist. */
+@Composable
+private fun WeitereOptionenZeile(an: Boolean, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(enabled = an, role = Role.Button, onClick = onClick)
+            .alpha(if (an) 1f else AUSGEGRAUT_ALPHA)
+            .heightIn(min = 48.dp)
+            .padding(horizontal = SpacingConstants.SPACING_LARGE, vertical = SpacingConstants.SPACING_MEDIUM),
+        horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_MEDIUM),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                WeitereOptionenTexte.TITEL,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.secondary
+            )
+            Text(
+                WeitereOptionenTexte.UNTERZEILE,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        // dekorativ: die Zeile selbst ist der Knopf und nennt ihr Ziel.
+        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null)
     }
 }
 
@@ -256,6 +316,7 @@ private fun FensterBlock(
     weckerAn: Boolean,
     mitBlocktagen: Boolean,
     giltOhneEintrag: Boolean,
+    mitBlatt: Boolean,
     aendere: ((TypDimmFenster) -> TypDimmFenster) -> Unit,
     entferne: () -> Unit
 ) {
@@ -284,7 +345,14 @@ private fun FensterBlock(
             }
         }
 
-        val form = (ansicht as? DimFensterAnsicht.Darstellbar)?.form ?: return@Column
+        val blattHinweis = DimmenAbschnittLogik.blattHinweis(fenster, mitBlatt, weckerAn)
+        val form = (ansicht as? DimFensterAnsicht.Darstellbar)?.form
+        if (form == null) {
+            if (blattHinweis != null) {
+                Text(blattHinweis, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = blass)
+            }
+            return@Column
+        }
 
         Text(DimmenTexte.WANN, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = blass)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -336,26 +404,41 @@ private fun FensterBlock(
                 Switch(checked = form.beimWecker, onCheckedChange = null, enabled = an)
             }
         }
+        if (blattHinweis != null) {
+            Text(blattHinweis, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = blass)
+        }
         DimmenAbschnittLogik.ohneEintragHinweis(form, giltOhneEintrag)?.let { hinweis ->
             Text(hinweis, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = blass)
         }
 
         if (mitBlocktagen) {
-            Text(DimmenTexte.BLOCKTAGE, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = blass)
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                DimmenAbschnittLogik.CHIPS.forEach { chip ->
-                    WahlChip(
-                        text = DimmenTexte.blockTag(chip),
-                        gewaehlt = DimmenAbschnittLogik.chipAn(fenster.fenster.blockPositionen, chip),
-                        an = an
-                    ) {
-                        aendere { f ->
-                            val neu = DimmenAbschnittLogik.blockTageWaehlen(f.fenster.blockPositionen, chip)
-                            f.copy(fenster = f.fenster.copy(blockPositionen = neu))
-                        }
-                    }
+            BlockTageWahl(gewaehlt = fenster.fenster.blockPositionen, an = an) { chip ->
+                aendere { f ->
+                    val neu = DimmenAbschnittLogik.blockTageWaehlen(f.fenster.blockPositionen, chip)
+                    f.copy(fenster = f.fenster.copy(blockPositionen = neu))
                 }
             }
+        }
+    }
+}
+
+/** Die Blocktage eines Fensters: Titel und Chips ([DimmenAbschnittLogik.CHIPS]). */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+internal fun BlockTageWahl(gewaehlt: Set<Blockposition>, an: Boolean, onChip: (Blockposition?) -> Unit) {
+    Text(
+        DimmenTexte.BLOCKTAGE,
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.alpha(if (an) 1f else AUSGEGRAUT_ALPHA)
+    )
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        DimmenAbschnittLogik.CHIPS.forEach { chip ->
+            WahlChip(
+                text = DimmenTexte.blockTag(chip),
+                gewaehlt = DimmenAbschnittLogik.chipAn(gewaehlt, chip),
+                an = an
+            ) { onChip(chip) }
         }
     }
 }
@@ -412,7 +495,7 @@ private fun ZeitZeile(titel: String, hinweis: String?, minuten: Int, an: Boolean
 
 /** „Mit %“: eine Zahl bis zur Grenze des Reglers; ein leeres Feld uebernimmt nichts und fuellt sich beim Verlassen wieder. */
 @Composable
-private fun ProzentZeile(prozent: Int, an: Boolean, onProzent: (Int) -> Unit) {
+internal fun ProzentZeile(prozent: Int, an: Boolean, onProzent: (Int) -> Unit) {
     var text by remember(prozent) { mutableStateOf(prozent.toString()) }
     Row(
         modifier = Modifier.fillMaxWidth(),

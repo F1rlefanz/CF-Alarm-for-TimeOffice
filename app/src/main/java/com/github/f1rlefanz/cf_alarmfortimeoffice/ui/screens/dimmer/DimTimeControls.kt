@@ -2,10 +2,13 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.dimmer
 
 import android.app.TimePickerDialog
 import android.content.Context
+import androidx.compose.material3.ButtonColors
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.text.TextStyle
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.Blockposition
 
@@ -35,9 +38,11 @@ internal fun ZeitKnopf(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
-    textStyle: TextStyle = TextStyle.Default
+    textStyle: TextStyle = TextStyle.Default,
+    shape: Shape = ButtonDefaults.outlinedShape,
+    colors: ButtonColors = ButtonDefaults.outlinedButtonColors()
 ) {
-    OutlinedButton(onClick = onClick, modifier = modifier, enabled = enabled) {
+    OutlinedButton(onClick = onClick, modifier = modifier, enabled = enabled, shape = shape, colors = colors) {
         Text(fmtClock(minuten), style = textStyle)
     }
 }

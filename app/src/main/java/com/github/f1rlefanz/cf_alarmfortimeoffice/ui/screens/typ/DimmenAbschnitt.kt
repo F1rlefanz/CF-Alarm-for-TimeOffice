@@ -12,9 +12,11 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
@@ -53,7 +55,6 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.dimmer.BLOCKPOSITIO
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.dimmer.ZeitKnopf
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.dimmer.blockpositionUmschalten
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.dimmer.pickTime
-import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.BrandRedLightMode
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
 
 /**
@@ -371,7 +372,8 @@ private fun WahlChip(text: String, gewaehlt: Boolean, an: Boolean, onClick: () -
         border = FilterChipDefaults.filterChipBorder(
             enabled = an,
             selected = gewaehlt,
-            selectedBorderColor = BrandRedLightMode
+            selectedBorderColor = MaterialTheme.colorScheme.primary,
+            selectedBorderWidth = 2.dp
         )
     )
 }
@@ -393,11 +395,17 @@ private fun ZeitZeile(titel: String, hinweis: String?, minuten: Int, an: Boolean
                 Text(hinweis, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
+        // Prototyp `.zeitfeld`: helle Flaeche, fette Schrift in Textfarbe - ohne sie saehe der Knopf gesperrt aus.
         ZeitKnopf(
             minuten = imTag,
             onClick = { pickTime(context, imTag, onNeu) },
             enabled = an,
-            textStyle = MaterialTheme.typography.titleMedium
+            textStyle = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.ExtraBold),
+            shape = FELD_FORM,
+            colors = ButtonDefaults.outlinedButtonColors(
+                containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                contentColor = MaterialTheme.colorScheme.onSurface
+            )
         )
     }
 }
@@ -426,7 +434,8 @@ private fun ProzentZeile(prozent: Int, an: Boolean, onProzent: (Int) -> Unit) {
             modifier = Modifier
                 .width(PROZENTFELD_BREITE)
                 .onFocusChanged { if (!it.isFocused && text.isEmpty()) text = prozent.toString() },
-            textStyle = MaterialTheme.typography.titleMedium,
+            textStyle = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.ExtraBold),
+            shape = FELD_FORM,
             singleLine = true,
             enabled = an,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
@@ -439,3 +448,6 @@ private const val AUSGEGRAUT_ALPHA = 0.6f
 
 /** Breit genug fuer drei Ziffern in Schrift 1,3. */
 private val PROZENTFELD_BREITE = 96.dp
+
+/** Die Ecken der Eingabefelder eines Fensters (Prototyp `.zeitfeld`). */
+private val FELD_FORM = RoundedCornerShape(12.dp)

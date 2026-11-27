@@ -15,6 +15,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.LichtQuelle
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.Quelle
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.Spur
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.TagesleisteQuellen
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.wirksameDienstzeit
 import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -319,14 +320,14 @@ class TypEntwurfNichtStoerenTest {
         )
     )
 
-    private fun leiste(entwurf: TypEntwurf, name: String, config: ShiftConfig) = TagesleisteKarteLogik.rechne(
-        entwurf, name,
-        NichtStoerenAbschnittLogik.leistenQuellen(quellen(config, name), name, entwurf.nichtStoeren),
-        Blockposition.EINZELNER, jetzt, zone
-    ).leiste
-
-    private fun dndBalken(entwurf: TypEntwurf, name: String, config: ShiftConfig) =
-        leiste(entwurf, name, config).balken.filter { it.spur == Spur.NICHT_STOEREN }.map { it.vonMin to it.bisMin }
+    /** Die Balken der Spur „Nicht stören“; [gespeicherterName] `null` = Neuanlage. */
+    private fun dndBalken(
+        entwurf: TypEntwurf,
+        gespeicherterName: String?,
+        config: ShiftConfig,
+        quellen: TagesleisteQuellen = quellen(config, "F")
+    ) = TagesleisteKarteLogik.rechne(entwurf, gespeicherterName, quellen, Blockposition.EINZELNER, jetzt, zone)
+        .leiste.balken.filter { it.spur == Spur.NICHT_STOEREN }.map { it.vonMin to it.bisMin }
 
     @Test
     fun `die Leiste zeigt Nicht stoeren aus dem Entwurf, bevor gespeichert ist`() {
@@ -378,13 +379,8 @@ class TypEntwurfNichtStoerenTest {
             alarmTriggerTime = LocalDateTime.of(2026, 11, 10, 14, 0).toInstant(zone).toEpochMilli()
         )
 
-        fun balken(e: TypEntwurf) = TagesleisteKarteLogik.rechne(
-            e, "AD",
-            NichtStoerenAbschnittLogik.leistenQuellen(
-                quellen(config, "AD").copy(spannen = Quelle.Bekannt(listOf(spanne))), "AD", e.nichtStoeren
-            ),
-            Blockposition.EINZELNER, jetzt, zone
-        ).leiste.balken.filter { it.spur == Spur.NICHT_STOEREN }.map { it.vonMin to it.bisMin }
+        fun balken(e: TypEntwurf) =
+            dndBalken(e, "AD", config, quellen(config, "AD").copy(spannen = Quelle.Bekannt(listOf(spanne))))
 
         // Gespeichert „Endet spaetestens um“ 05:00 (Folgetag = Minute 2100), im Entwurf auf 06:00 (2160).
         assertEquals(listOf(1680 to 2100), balken(entwurf))
@@ -392,18 +388,24 @@ class TypEntwurfNichtStoerenTest {
     }
 
     @Test
-    fun `die Quellen bleiben, wo es nichts zu ersetzen gibt`() {
-        val gespeichert = typ()
-        val quellen = quellen(ShiftConfig(definitions = listOf(gespeichert)), "F")
-        val entwurf = NichtStoerenEntwurf(true, true, 300)
+    fun `die Neuanlage zeigt Nicht stoeren aus dem Entwurf`() {
+        // Der Typ steht noch nicht in der Konfiguration: „Nicht stören“ gibt es nur im Entwurf.
+        val config = ShiftConfig(definitions = listOf(typ()))
+        fun balken(e: TypEntwurf) = dndBalken(e, null, config)
 
-        assertNull(NichtStoerenAbschnittLogik.leistenQuellen(null, "F", entwurf))
-        // Neuanlage: der Typ steht nicht in der Konfiguration.
-        assertEquals(quellen, NichtStoerenAbschnittLogik.leistenQuellen(quellen, null, entwurf))
-        assertEquals(quellen, NichtStoerenAbschnittLogik.leistenQuellen(quellen, "F", null))
-        assertEquals(quellen, NichtStoerenAbschnittLogik.leistenQuellen(quellen, "Gibt es nicht", entwurf))
-        val unlesbar = quellen.copy(typen = Quelle.Unbekannt)
-        assertEquals(unlesbar, NichtStoerenAbschnittLogik.leistenQuellen(unlesbar, "F", entwurf))
+        // „Solange gedimmt wird“ mit „Nacht davor“: 22:00 am Vortag (Minute 240) bis zum Wecker 04:30 (Minute 630).
+        val dienst = TypEntwurf.aus(typ(name = "N")).copy(dimmen = DimmenEntwurf(an = true, fenster = listOf(nachtDavor)))
+        assertEquals(emptyList<Pair<Int, Int>>(), balken(dienst))
+        assertEquals(listOf(240 to 630), balken(dienst.mitNichtStoeren { it.copy(solangeGedimmt = true) }))
+
+        // „Während des Kalendereintrags“: ohne Spanne rechnet die Leiste Urlaub und Frei ganztägig. Ein neuer
+        // Dienst-Typ hat dagegen noch keine Dienstzeit, dort gibt es keinen Balken.
+        listOf(ShiftKategorie.URLAUB, ShiftKategorie.FREI).forEach { kategorie ->
+            val ganztag = wirksameDienstzeit(kategorie, null)!!
+            val entwurf = TypEntwurf.aus(typ(kategorie = kategorie, name = "U"))
+                .mitNichtStoeren { it.copy(waehrendEintrag = true) }
+            assertEquals(kategorie.name, listOf(ganztag.beginnMin to ganztag.endeMin), balken(entwurf))
+        }
     }
 
     @Test
@@ -413,12 +415,19 @@ class TypEntwurfNichtStoerenTest {
         val config = ShiftConfig(definitions = listOf(f, s), ohneKalendereintragWie = f.id)
         val entwurf = NichtStoerenEntwurf(true, true, 300)
 
-        val ersetzt = NichtStoerenAbschnittLogik.leistenQuellen(quellen(config, "F"), "f", entwurf)!!
-        val neu = (ersetzt.typen as Quelle.Bekannt).wert
+        // Der Typ wird nach dem GESPEICHERTEN Namen gesucht, Gross/Klein egal.
+        val eigener = TagesleisteKarteLogik.einstellungenAus(config, "f", null, entwurf)
+        assertEquals(entwurf, NichtStoerenEntwurf.aus(eigener.nichtStoeren))
+        assertTrue(eigener.freierTag.nichtStoerenSolangeGedimmt)
 
-        assertEquals(entwurf, NichtStoerenEntwurf.aus(neu.definitions[0].nichtStoeren))
-        assertEquals(s, neu.definitions[1])
-        val einstellungen = TagesleisteKarteLogik.einstellungenAus(neu, "F", null)
-        assertTrue(einstellungen.freierTag.nichtStoerenSolangeGedimmt)
+        // Der Entwurf eines anderen Typs gilt nur dort: die feste Zeile „wie F“ bleibt beim Gespeicherten von F.
+        val anderer = TagesleisteKarteLogik.einstellungenAus(config, "S", null, entwurf)
+        assertEquals(entwurf, NichtStoerenEntwurf.aus(anderer.nichtStoeren))
+        assertFalse(anderer.freierTag.nichtStoerenSolangeGedimmt)
+
+        // Ohne den Teil im Entwurf gilt das Gespeicherte.
+        val ohne = TagesleisteKarteLogik.einstellungenAus(config, "F", null)
+        assertEquals(f.nichtStoeren, ohne.nichtStoeren)
+        assertFalse(ohne.freierTag.nichtStoerenSolangeGedimmt)
     }
 }

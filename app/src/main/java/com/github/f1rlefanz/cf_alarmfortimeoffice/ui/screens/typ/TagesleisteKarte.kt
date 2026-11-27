@@ -198,15 +198,27 @@ internal object TagesleisteKarteLogik {
     /**
      * Die Einstellungen, aus denen die Leiste rechnet: die des GESPEICHERTEN Typs (nach Namen, Gross/Klein
      * egal - wie die Laufzeit einen Schichtnamen auf seinen Typ abbildet), bei der Neuanlage die Vorgaben
-     * eines neuen Typs. Das Dimmen kommt aus dem ENTWURF ([dimmenEntwurf], `null` = er traegt keins) - auch
-     * an der festen Zeile, wenn sie „wie <dieser Typ>“ ist, denn nach dem Speichern gilt es dort ebenso.
+     * eines neuen Typs. Dimmen und „Nicht stören“ kommen aus dem ENTWURF ([dimmenEntwurf] und
+     * [nichtStoerenEntwurf], `null` = er traegt den Teil nicht) - auch an der festen Zeile, wenn sie
+     * „wie <dieser Typ>“ ist, denn nach dem Speichern gilt beides dort ebenso.
      */
-    fun einstellungenAus(config: ShiftConfig, gespeicherterName: String?, dimmenEntwurf: DimmenEntwurf?): TypLeistenEinstellungen {
+    fun einstellungenAus(
+        config: ShiftConfig,
+        gespeicherterName: String?,
+        dimmenEntwurf: DimmenEntwurf?,
+        nichtStoerenEntwurf: NichtStoerenEntwurf? = null
+    ): TypLeistenEinstellungen {
         val typ = gespeicherterName?.let { name -> config.definitions.firstOrNull { it.name.equals(name, ignoreCase = true) } }
-        val gespeichert = typ?.dimmen ?: TypDimmen()
-        val dimmen = dimmenEntwurf?.anwenden(gespeichert) ?: gespeichert
-        val mitEntwurf = config.copy(definitions = config.definitions.map { if (it.id == typ?.id) it.copy(dimmen = dimmen) else it })
-        return TypLeistenEinstellungen(dimmen, typ?.nichtStoeren ?: TypNichtStoeren(), freierTagAus(mitEntwurf))
+        val dimmenGespeichert = typ?.dimmen ?: TypDimmen()
+        val dimmen = dimmenEntwurf?.anwenden(dimmenGespeichert) ?: dimmenGespeichert
+        val nichtStoerenGespeichert = typ?.nichtStoeren ?: TypNichtStoeren()
+        val nichtStoeren = nichtStoerenEntwurf?.anwenden(nichtStoerenGespeichert) ?: nichtStoerenGespeichert
+        val mitEntwurf = config.copy(
+            definitions = config.definitions.map {
+                if (it.id == typ?.id) it.copy(dimmen = dimmen, nichtStoeren = nichtStoeren) else it
+            }
+        )
+        return TypLeistenEinstellungen(dimmen, nichtStoeren, freierTagAus(mitEntwurf))
     }
 
     /**
@@ -245,7 +257,7 @@ internal object TagesleisteKarteLogik {
             ?: return TagesleisteAnzeige(gelesen = true, leiste = Tagesleiste.LEER, unbekannt = unbekannt, typNochNichtAngelegt = gespeicherterName == null)
 
         val typen = quellen.typen.wertOderNull()
-        val einstellungen = typen?.let { einstellungenAus(it, gespeicherterName, entwurf.dimmen) }
+        val einstellungen = typen?.let { einstellungenAus(it, gespeicherterName, entwurf.dimmen, entwurf.nichtStoeren) }
         val lichtQuelle = quellen.licht.wertOderNull()
         // Die Sonne von heute: der Mustertag hat kein Datum, die Tageslicht-Bedingung braucht aber eins.
         // Ohne Ort liefert `hellZeitpunkt` null, also keine Einschraenkung - wie zur Laufzeit.

@@ -36,8 +36,6 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.github.f1rlefanz.cf_alarmfortimeoffice.R
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftKategorie
-import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.Quelle
-import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.TagesleisteQuellen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.SwitchRow
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.dimmer.ZeitKnopf
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.dimmer.pickTime
@@ -89,28 +87,6 @@ internal object NichtStoerenAbschnittLogik {
      */
     fun gedimmtOhneWirkung(werte: NichtStoerenEntwurf, dimmen: DimmenEntwurf?): Boolean =
         werte.solangeGedimmt && dimmen != null && (!dimmen.an || dimmen.fenster.isEmpty())
-
-    /**
-     * Die Quellen der Tagesleiste, als waere der „Nicht stoeren“-Teil des Entwurfs schon gespeichert: die Karte
-     * rechnet ihn aus der Konfiguration (`TagesleisteKarteLogik.einstellungenAus`, auch fuer die feste Zeile, wenn
-     * sie „wie <dieser Typ>“ ist). Der Typ wird wie dort nach dem GESPEICHERTEN Namen gesucht. Unveraendert bleiben
-     * die Quellen, wo es nichts zu ersetzen gibt - auch bei der Neuanlage ([gespeicherterName] `null`): der Typ
-     * steht noch nicht in der Konfiguration.
-     */
-    fun leistenQuellen(
-        quellen: TagesleisteQuellen?,
-        gespeicherterName: String?,
-        entwurf: NichtStoerenEntwurf?
-    ): TagesleisteQuellen? {
-        if (quellen == null || gespeicherterName == null || entwurf == null) return quellen
-        val config = (quellen.typen as? Quelle.Bekannt)?.wert ?: return quellen
-        val typ = config.definitions.firstOrNull { it.name.equals(gespeicherterName, ignoreCase = true) }
-            ?: return quellen
-        val definitionen = config.definitions.map {
-            if (it.id == typ.id) it.copy(nichtStoeren = entwurf.anwenden(it.nichtStoeren)) else it
-        }
-        return quellen.copy(typen = Quelle.Bekannt(config.copy(definitions = definitionen)))
-    }
 }
 
 /**

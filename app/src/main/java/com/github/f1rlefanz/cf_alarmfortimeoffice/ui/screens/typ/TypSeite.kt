@@ -451,9 +451,7 @@ private fun TypSeiteFormular(
     val wirksamePosition = TagesleisteKarteLogik.wirksameBlockposition(entwurf.kategorie, gewaehlt)
     val gespeicherterName = if (neu) null else definition.name
     val anzeige = remember(entwurf, quellen, wirksamePosition, gespeicherterName) {
-        // „Nicht stoeren“ liest die Karte aus den Quellen: dort steht dafuer der Entwurf dieses Typs.
-        val mitEntwurf = NichtStoerenAbschnittLogik.leistenQuellen(quellen, gespeicherterName, entwurf.nichtStoeren)
-        TagesleisteKarteLogik.rechne(entwurf, gespeicherterName, mitEntwurf, wirksamePosition, jetztMs, zone)
+        TagesleisteKarteLogik.rechne(entwurf, gespeicherterName, quellen, wirksamePosition, jetztMs, zone)
     }
 
     Scaffold(

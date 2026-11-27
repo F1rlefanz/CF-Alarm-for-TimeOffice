@@ -24,12 +24,9 @@
     <string name="dim_accessibility_desc">Legt eine abdunkelnde Schicht über den Bildschirm, um dich vor Schichtbeginn zum Herunterfahren zu bringen. Der Dienst liest keine Bildschirminhalte und wertet keine Eingaben aus – er dient ausschließlich der Verdunkelung.</string>
 
     <!-- Dimmer-Tab -->
-    <string name="dimmer_intro">Dunkelt den Bildschirm zu deinen Zeiten ab – damit du leichter herunterfährst. Alles läuft über Regeln: eine Regel legt fest, an welchen Tagen sie gilt, welche Zeitfenster sie dimmt und wie dunkel und warm es dabei wird.</string>
-    <string name="dimmer_enabled">Dimmen</string>
-    <string name="dimmer_enabled_hint">Hauptschalter für die Bildschirm-Verdunkelung. Ist er aus, dimmt nichts – auch keine Regel.</string>
-    <string name="dimmer_rules_explain">Ohne Regel wird nie gedimmt. Jede Nacht dimmst du z. B. mit einer Regel für „Alle Tage (Universal)“ und einem Fenster von 22:00 bis „Weckzeit, spätestens“ 07:00. Eine Einschlafhilfe nur vor der Schicht ist ein Fenster von 60 Minuten vor der Weckzeit bis zur Weckzeit. Eine Regel ohne Fenster nimmt ihre Tage vom Dimmen aus.</string>
+    <string name="dimmer_intro">Wann gedimmt wird, stellst du am Schichttyp ein. Bedienungshilfe, Farbwärme und Vorschau findest du in den Einstellungen unter „Bildschirm dimmen“.</string>
     <string name="dimmer_manage_rules">Regeln verwalten</string>
-    <string name="dimmer_preview_timeline_hint">Zeigt, wann in den nächsten Tagen tatsächlich gedimmt wird – so siehst du, ob deine Regeln greifen.</string>
+    <string name="dimmer_preview_timeline_hint">Zeigt, wann in den nächsten Tagen tatsächlich gedimmt wird.</string>
     <string name="dimmer_preview_timeline">Vorschau (nächste Tage)</string>
 
     <!-- Dimmer-Vorschau-Zeitleiste -->
@@ -95,7 +92,7 @@
     <string name="dimmer_end_alarm_sonst_clock">Weckzeit, spätestens</string>
     <string name="dimmer_end_alarm_sonst_clock_hinweis">Endet an deiner Weckzeit (plus die Minuten danach) — spätestens aber zur eingestellten Uhrzeit. Liegt in diesem Fenster kein Wecker, endet es zur Uhrzeit.</string>
     <string name="dimmer_end_nachlauf">Minuten nach dem Wecken</string>
-    <string name="dimmer_end_nachlauf_hinweis">So lange bleibt es nach dem Wecken noch gedimmt, 0 bis %1$d Minuten. Das gilt nur, wenn der Wecker vor der eingestellten Uhrzeit klingelt – bei einer Regel für alle Tage also an frühen Weckmorgen, nicht an Tagen mit späterem oder ohne Wecker. Mit „Schlaf-Fenster folgt dem Dimmer“ endet „Nicht stören“ trotzdem an der Weckzeit.</string>
+    <string name="dimmer_end_nachlauf_hinweis">So lange bleibt es nach dem Wecken noch gedimmt, 0 bis %1$d Minuten. Das gilt nur, wenn der Wecker vor der eingestellten Uhrzeit klingelt – bei einer Regel für alle Tage also an frühen Weckmorgen, nicht an Tagen mit späterem oder ohne Wecker. Mit „Solange gedimmt wird“ endet „Nicht stören“ trotzdem an der Weckzeit.</string>
     <string name="dimmer_start_offset">Minuten zur Weckzeit (−60 = eine Stunde davor)</string>
     <string name="dimmer_end_offset">Minuten nach Wecker</string>
     <string name="dimmer_shiftend_offset">Minuten nach Schichtende</string>
@@ -128,12 +125,7 @@
 
     <!-- DND-Einstellungen (Nicht stören automatisch schaltbar) -->
     <string name="dnd_header">Nicht stören</string>
-    <string name="dnd_intro">Schaltet Android\'s "Nicht stören"-Modus automatisch nach Schicht – dein Wecker klingelt trotzdem, er umgeht Nicht-stören immer.</string>
-    <string name="dnd_follow_dimmer">Schlaf-Fenster folgt dem Dimmer</string>
-    <string name="dnd_follow_dimmer_hint">Nicht stören ist an, während der Schicht-Dimmer dimmt – die Zeiten kommen aus deiner Dimmer-Konfiguration. Nur die Minuten, die der Dimmer nach dem Wecken noch dimmt, macht es nicht mit: ab der Weckzeit bist du erreichbar.</string>
-    <string name="dnd_during_shift">Während der Dienstzeit</string>
-    <string name="dnd_during_shift_hint">Nicht stören ist an von Schichtbeginn bis Schichtende (laut Kalender-Termin, nicht der Weckzeit).</string>
-    <string name="dnd_during_shift_exceptions">Ausnahmen (kein Nicht-stören während des Diensts)</string>
+    <string name="dnd_intro">Hier gibst du der App den Zugriff und legst fest, wer trotzdem durchkommt – für alle Typen. Wann „Nicht stören“ an ist, stellst du am Schichttyp ein. Dein Wecker klingelt trotzdem, er umgeht „Nicht stören“ immer.</string>
     <string name="dnd_permission_required">Benachrichtigungszugriff erforderlich</string>
     <string name="dnd_permission_hint">Android verlangt eine einmalige Freigabe, damit die App Nicht-stören steuern darf. Suche in der folgenden Liste nach "CFAlarm" – ein direkter Sprung zur App ist bei dieser Android-Einstellung leider nicht möglich.</string>
     <string name="dnd_permission_grant">Freigabe erteilen</string>
@@ -144,7 +136,7 @@
 
     <!-- DND: konfigurierbare Policy (was genau stummgeschaltet wird) -->
     <string name="dnd_policy_title">Was wird stummgeschaltet?</string>
-    <string name="dnd_policy_hint">Gilt für beide Auslöser oben. Dein eigener Wecker klingelt immer, unabhängig von diesen Einstellungen.</string>
+    <string name="dnd_policy_hint">Eingeschaltet = bleibt stumm, für alle Typen. Dein eigener Wecker klingelt immer, unabhängig von diesen Einstellungen.</string>
     <string name="dnd_policy_calls">Anrufe</string>
     <string name="dnd_policy_repeat_callers">Wiederholte Anrufer durchlassen</string>
     <string name="dnd_policy_repeat_callers_hint">Ein zweiter Anruf derselben Person kurz nacheinander gilt als dringend und klingelt trotzdem – für Erreichbarkeit im Notfall.</string>
@@ -447,8 +439,8 @@
     </plurals>
 
     <!-- Tageslicht (#140): Ort, Sonnenzeiten, "nur solange es dunkel ist" -->
-    <string name="tageslicht_ort_titel">Ort für Tageslicht</string>
-    <string name="tageslicht_ort_karte_text">Damit Dimmer und Hue wissen, wann es bei dir hell wird</string>
+    <string name="tageslicht_ort_titel">Standort</string>
+    <string name="tageslicht_ort_karte_text">Für „bis es hell ist“ und Sonnenaufgang</string>
     <string name="tageslicht_ort_intro">Dimmer und Hue-Regeln können sich danach richten, ob es morgens beim Wecken draußen schon hell ist. Dafür braucht die App deinen ungefähren Ort. Er bleibt auf dem Gerät, die Sonnenzeiten rechnet die App selbst aus.</string>
     <string name="tageslicht_aktuell">Wird gerade genutzt</string>
     <string name="tageslicht_aktiv">genutzt</string>

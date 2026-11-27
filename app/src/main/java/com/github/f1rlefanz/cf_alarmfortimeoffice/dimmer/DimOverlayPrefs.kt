@@ -253,6 +253,13 @@ class DimOverlayPrefs @Inject constructor(
     suspend fun setDimEnabled(v: Boolean) = dataStore.edit { it[KEY_DIM_ON] = v }
 
     /**
+     * Die Farbwaerme fuer Typen ohne eigene Waerme (`TypDimmen.farbwaerme == null`, #225) - und der
+     * Rueckfall des Renderzustands. Der Aufrufer ruft direkt danach [DimScheduleUseCase.enable]:
+     * ein laufendes Fenster rechnet sonst erst am naechsten Tick mit dem neuen Wert.
+     */
+    suspend fun setWarmth(v: Int) = dataStore.edit { it[KEY_WARMTH] = v.coerceIn(0, WARMTH_MAX) }
+
+    /**
      * Setzt An/Aus UND die Render-Farbe (Intensität/Wärme des gerade aktiven Fensters). Der Scheduler
      * ruft das mit den Werten der aktiven Spanne; die globalen [strength]/[warmth] bleiben unberührt
      * (sie sind Renderzustand-Fallback + Editor-Default). Für Vorschau: mit den globalen Werten aufrufen.

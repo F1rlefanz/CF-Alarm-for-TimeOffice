@@ -29,6 +29,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -802,16 +803,11 @@ internal fun DimmerAccessibilityCard(
     var lage by remember { mutableStateOf(DimAccessibilityService.lage(context)) }
     val isActive = lage == DimDiagnostik.DienstLage.VERBUNDEN
     val eingeschaltetNichtVerbunden = lage == DimDiagnostik.DienstLage.EINGESCHALTET_NICHT_VERBUNDEN
-    // Dieselbe Beschriftung auf Karte und Offenlegung: im Fall "an, aber nicht verbunden" gibt es
-    // nichts zu AKTIVIEREN, der Nutzer soll aus- und wieder einschalten.
-    val oeffnenText = stringResource(
-        if (eingeschaltetNichtVerbunden) R.string.dimmer_open_accessibility_neu_verbinden
-        else R.string.dimmer_open_accessibility
-    )
     // rememberSaveable: eine Drehung darf die Offenlegung nicht wegnehmen — sie ist der einzige
     // Weg zum Aktivieren, und ein erneuter Einstieg aus der Benachrichtigung kommt nach der
     // Drehung bewusst nicht noch einmal (siehe MainActivity.onCreate).
-    var showDisclosure by rememberSaveable { mutableStateOf(false) }
+    val offenlegung = rememberSaveable { mutableStateOf(false) }
+    var showDisclosure by offenlegung
 
     // Der Nutzer hat die Benachrichtigung angetippt, um zu aktivieren - dann steht hier die
     // Pflicht-Offenlegung, und ihr Knopf oeffnet die Bedienungshilfen-Einstellungen. Die Seite
@@ -824,24 +820,7 @@ internal fun DimmerAccessibilityCard(
 
     BeiJedemResume { lage = DimAccessibilityService.lage(context) }
 
-    if (showDisclosure) {
-        AlertDialog(
-            onDismissRequest = { showDisclosure = false },
-            title = { Text(stringResource(R.string.dimmer_disclosure_title)) },
-            text = { Text(stringResource(R.string.dimmer_disclosure_body)) },
-            confirmButton = {
-                TextButton(onClick = {
-                    showDisclosure = false
-                    openAccessibilitySettings(context)
-                }) { Text(oeffnenText) }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDisclosure = false }) {
-                    Text(stringResource(R.string.dimmer_disclosure_understood))
-                }
-            }
-        )
-    }
+    BedienungshilfeOffenlegung(offenlegung, eingeschaltetNichtVerbunden)
 
     Card(
         modifier = modifier.fillMaxWidth(),
@@ -915,7 +894,7 @@ internal fun DimmerAccessibilityCard(
                     Spacer(Modifier.height(SpacingConstants.SPACING_SMALL))
                     SettingsLinkButton(
                         onClick = { showDisclosure = true },
-                        text = oeffnenText
+                        text = oeffnenText(eingeschaltetNichtVerbunden)
                     )
                     MehrDazuKnopf(HilfeThema.PROBLEME_DIMMER)
                 }
@@ -923,6 +902,52 @@ internal fun DimmerAccessibilityCard(
         }
     }
 }
+
+/**
+ * Die Play-Pflicht-Offenlegung vor den Bedienungshilfen - die EINE Fassung, gerufen von
+ * [DimmerAccessibilityCard] und der Zeile „Bedienungshilfe“ in den Einstellungen (#225). Nur ihr
+ * Bestaetigen fuehrt weiter ([openAccessibilitySettings]); beide Knoepfe schliessen.
+ *
+ * @param offen Sichtbarkeit: der Aufrufer oeffnet (und haelt den Zustand `rememberSaveable`), der
+ *   Dialog schliesst sich selbst.
+ * @param eingeschaltetNichtVerbunden Der Schalter steht schon auf „An“: es gibt nichts zu
+ *   aktivieren, der Knopf heisst dann anders.
+ */
+@Composable
+internal fun BedienungshilfeOffenlegung(
+    offen: MutableState<Boolean>,
+    eingeschaltetNichtVerbunden: Boolean
+) {
+    var showDisclosure by offen
+    if (!showDisclosure) return
+    val context = LocalContext.current
+    AlertDialog(
+        onDismissRequest = { showDisclosure = false },
+        title = { Text(stringResource(R.string.dimmer_disclosure_title)) },
+        text = { Text(stringResource(R.string.dimmer_disclosure_body)) },
+        confirmButton = {
+            TextButton(onClick = {
+                showDisclosure = false
+                openAccessibilitySettings(context)
+            }) { Text(oeffnenText(eingeschaltetNichtVerbunden)) }
+        },
+        dismissButton = {
+            TextButton(onClick = { showDisclosure = false }) {
+                Text(stringResource(R.string.dimmer_disclosure_understood))
+            }
+        }
+    )
+}
+
+/**
+ * Dieselbe Beschriftung auf Karte und Offenlegung: im Fall "an, aber nicht verbunden" gibt es
+ * nichts zu AKTIVIEREN, der Nutzer soll aus- und wieder einschalten.
+ */
+@Composable
+private fun oeffnenText(eingeschaltetNichtVerbunden: Boolean): String = stringResource(
+    if (eingeschaltetNichtVerbunden) R.string.dimmer_open_accessibility_neu_verbinden
+    else R.string.dimmer_open_accessibility
+)
 
 /**
  * Freigabe-Status fuer die DND-Steuerung (ACCESS_NOTIFICATION_POLICY). Nur ab API 30 - siehe

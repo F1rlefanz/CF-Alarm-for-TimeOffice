@@ -40,6 +40,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftKategorie
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.TypDimmen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.TagesleisteQuellen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.CompactButton
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.KnopfZeile
@@ -137,6 +138,19 @@ internal object TypSeiteEntwurf {
 
     /** Wurde im Formular etwas geaendert? Mass ist der Stand beim Oeffnen, nicht der gespeicherte. */
     fun hatAenderungen(ausgang: TypEntwurf, entwurf: TypEntwurf): Boolean = ausgang != entwurf
+
+    /**
+     * Ausgangsstand und Entwurf, nachdem sich das gespeicherte Dimmen unter der offenen Seite geaendert hat: die
+     * Typ-Migration laeuft bei jedem `MainActivity.onCreate` (auch beim Drehen) und in der Wartung. Unberuehrtes
+     * folgt dem Gespeicherten ([DimmenEntwurf.nachgezogen]) - sonst zeigte die Karte den Stand vom Oeffnen, und
+     * „Speichern“ schriebe ihn ueber die eben migrierten Fenster (#221). Ohne Aenderung am Gespeicherten bleibt
+     * beides gleich.
+     */
+    fun nachgezogen(ausgang: TypEntwurf, entwurf: TypEntwurf, gespeichert: TypDimmen): Pair<TypEntwurf, TypEntwurf> {
+        val neu = DimmenEntwurf.aus(gespeichert)
+        val vorher = ausgang.dimmen ?: neu
+        return ausgang.copy(dimmen = neu) to entwurf.copy(dimmen = entwurf.dimmen?.nachgezogen(vorher, neu) ?: neu)
+    }
 
     /**
      * Die Konfiguration mit dem gespeicherten Entwurf - oder `null`, wenn [definitionId] nicht darin
@@ -359,8 +373,15 @@ private fun TypSeiteFormular(
     // Der Ausgangsstand wird beim Oeffnen eingefroren und reist mit: jede Config-Emission (auch
     // die eigene nach dem Speichern, auch fremde Schreiber) liefert ein neues ShiftDefinition-
     // Objekt und darf den Entwurf nicht zuruecksetzen - deshalb KEIN Schluessel auf `definition`.
-    val ausgang = rememberSaveable(saver = EntwurfSaver) { TypEntwurf.aus(definition) }
+    // Einzige Ausnahme ist der Dimm-Teil, den die Typ-Migration unter der Seite schreiben kann
+    // (siehe `TypSeiteEntwurf.nachgezogen`, auch nach dem Prozesstod).
+    var ausgang by rememberSaveable(stateSaver = EntwurfSaver) { mutableStateOf(TypEntwurf.aus(definition)) }
     var entwurf by rememberSaveable(stateSaver = EntwurfSaver) { mutableStateOf(ausgang) }
+    LaunchedEffect(definition.dimmen) {
+        val (neuerAusgang, neuerEntwurf) = TypSeiteEntwurf.nachgezogen(ausgang, entwurf, definition.dimmen)
+        ausgang = neuerAusgang
+        entwurf = neuerEntwurf
+    }
     var rueckfrageOffen by rememberSaveable { mutableStateOf(false) }
     // Wohin „Verwerfen“ fuehrt: zur Liste (Zurueck) oder in den Bereich „Wecker“ (Link der Tagesleiste).
     var rueckfrageZurWoche by rememberSaveable { mutableStateOf(false) }

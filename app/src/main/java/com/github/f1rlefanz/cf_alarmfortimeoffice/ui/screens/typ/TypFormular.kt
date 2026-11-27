@@ -150,6 +150,15 @@ internal data class DimmenEntwurf(val an: Boolean, val fenster: List<TypDimmFens
         return if (fenster == gespeichert.fenster) mitSchalter else mitSchalter.mitFenster(fenster)
     }
 
+    /**
+     * Dieser Stand, nachdem sich das Gespeicherte von [vorher] auf [neu] geaendert hat: was gegenueber [vorher]
+     * unberuehrt ist (Schalter und Fenster je fuer sich), folgt [neu]; selbst Geaendertes bleibt.
+     */
+    fun nachgezogen(vorher: DimmenEntwurf, neu: DimmenEntwurf): DimmenEntwurf = DimmenEntwurf(
+        an = if (an == vorher.an) neu.an else an,
+        fenster = if (fenster == vorher.fenster) neu.fenster else fenster
+    )
+
     companion object {
         fun aus(dimmen: TypDimmen): DimmenEntwurf = DimmenEntwurf(dimmen.an, dimmen.fenster)
     }

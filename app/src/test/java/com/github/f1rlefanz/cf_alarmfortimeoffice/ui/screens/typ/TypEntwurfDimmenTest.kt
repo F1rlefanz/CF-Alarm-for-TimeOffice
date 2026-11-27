@@ -187,6 +187,54 @@ class TypEntwurfDimmenTest {
         assertEquals(1, geschrieben.single().definitions.single().dimmen.fenster.size)
     }
 
+    // ── Das Gespeicherte aendert sich unter der offenen Seite (Typ-Migration) ───────────────
+
+    @Test
+    fun `schreibt die Migration waehrend die Seite offen ist, behaelt Speichern ihre Fenster`() {
+        val beimOeffnen = typ(TypDimmen())
+        val ausgang = TypEntwurf.aus(beimOeffnen)
+        val entwurf = ausgang.copy(weckzeitText = "05:00")
+        // `MainActivity.onCreate` (Drehen, Dunkelmodus) oder die Wartung hat inzwischen migriert.
+        val jetzt = beimOeffnen.copy(dimmen = mitFenstern(nachtDavor, an = false))
+        val geschrieben = mutableListOf<ShiftConfig>()
+
+        val (_, nachgezogen) = TypSeiteEntwurf.nachgezogen(ausgang, entwurf, jetzt.dimmen)
+        TypSeiteSpeicherung { geschrieben += it }
+            .speichere(ShiftConfig(definitions = listOf(jetzt)), jetzt.id, nachgezogen)
+
+        val gespeichert = geschrieben.single().definitions.single()
+        assertEquals(jetzt.dimmen, gespeichert.dimmen)
+        assertEquals(LocalTime.of(5, 0), gespeichert.alarmTime)
+    }
+
+    @Test
+    fun `eine unberuehrte Seite zeigt den nachgezogenen Stand und gilt nicht als geaendert`() {
+        val ausgang = TypEntwurf.aus(typ(TypDimmen()))
+        val migriert = mitFenstern(nachtDavor)
+
+        val (neuerAusgang, entwurf) = TypSeiteEntwurf.nachgezogen(ausgang, ausgang, migriert)
+
+        assertEquals(DimmenEntwurf(true, listOf(nachtDavor)), entwurf.dimmen)
+        assertFalse(TypSeiteEntwurf.hatAenderungen(neuerAusgang, entwurf))
+    }
+
+    @Test
+    fun `selbst Geaendertes bleibt beim Nachziehen - Schalter und Fenster je fuer sich`() {
+        val ausgang = TypEntwurf.aus(typ(TypDimmen()))
+
+        // Nur den Schalter angefasst: die migrierten Fenster kommen dazu, der Schalter bleibt aus.
+        val nurSchalter = ausgang.copy(dimmen = ausgang.dimmen!!.copy(an = false))
+        val (a, e) = TypSeiteEntwurf.nachgezogen(ausgang, nurSchalter, mitFenstern(nachtDavor))
+        assertEquals(DimmenEntwurf(false, listOf(nachtDavor)), e.dimmen)
+        assertTrue(TypSeiteEntwurf.hatAenderungen(a, e))
+
+        // Nur die Fenster angefasst: sie bleiben, der migrierte Schalter kommt mit.
+        val eigenes = DimmenAbschnittLogik.neuesFenster(weckerAn = true)
+        val nurFenster = ausgang.copy(dimmen = ausgang.dimmen!!.copy(fenster = listOf(eigenes)))
+        val (_, f) = TypSeiteEntwurf.nachgezogen(ausgang, nurFenster, mitFenstern(nachtDavor, an = false))
+        assertEquals(DimmenEntwurf(false, listOf(eigenes)), f.dimmen)
+    }
+
     @Test
     fun `auch die Neuanlage nimmt die Fenster mit`() {
         val vorlage = ShiftEditFormular.leererTyp { "neu" }

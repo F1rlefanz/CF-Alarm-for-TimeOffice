@@ -115,7 +115,7 @@ fun SettingsTabContent(
             )
             HorizontalDivider()
             GeraeteZeile(
-                titel = "Schichttypen verwalten",
+                titel = "Schichttypen einrichten",
                 text = "Wecker, Dimmen und „Nicht stören“ pro Typ",
                 onClick = onShowShiftConfig
             )

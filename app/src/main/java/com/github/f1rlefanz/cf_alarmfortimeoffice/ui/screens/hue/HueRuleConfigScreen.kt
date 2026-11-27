@@ -82,7 +82,7 @@ fun HueRuleConfigScreen(
     shiftViewModel: ShiftViewModel,
     onNavigateBack: () -> Unit,
     onSaveComplete: () -> Unit,
-    // Fuehrt zum Bildschirm "Ort für Tageslicht" (#140).
+    // Fuehrt zum Bildschirm "Standort" (#140).
     onOrtAendern: () -> Unit,
     modifier: Modifier = Modifier
 ) {

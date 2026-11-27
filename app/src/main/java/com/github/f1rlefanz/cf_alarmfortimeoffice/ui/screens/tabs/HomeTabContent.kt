@@ -189,7 +189,7 @@ internal const val KALENDER_NICHT_GEFUNDEN_TEXT: String =
  * Schicht", damit ein kuenftiger Umzug des Knopfs nicht einen davon vergisst (genau das waere bei
  * #139 sonst passiert: zwei Texte, ein Ort).
  */
-internal const val SCHICHTTYPEN_ORT: String = "in den Einstellungen unter „Schichttypen verwalten“"
+internal const val SCHICHTTYPEN_ORT: String = "in den Einstellungen unter „Schichttypen einrichten“"
 
 /**
  * PURE, TESTBAR: Formuliert Grund + Handlungsschritt.
@@ -264,7 +264,7 @@ internal fun noShiftExplanation(
                 "System-Status unter \"Debug-Informationen\" auf \"Logs an Entwickler senden\" " +
                 "tippen. Die Konfiguration liegt gesichert vor und wird NICHT überschrieben."
         NoShiftReason.NO_SHIFT_TYPES ->
-            // Seit #139 liegt "Schichttypen verwalten" in den Einstellungen (neben "Kalender
+            // Seit #139 liegt "Schichttypen einrichten" in den Einstellungen (neben "Kalender
             // auswählen"), nicht mehr im Wecker-Bereich - der Satz nennt den Ort, an dem der
             // Knopf WIRKLICH steht, wortgleich mit ShiftSelectorDialog.
             "Keine aktiven Schichttypen — lege sie $SCHICHTTYPEN_ORT an."

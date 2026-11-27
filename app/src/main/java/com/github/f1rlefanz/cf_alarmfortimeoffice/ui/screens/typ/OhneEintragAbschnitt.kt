@@ -26,11 +26,16 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.OhneEintragEinstellungen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.OhneEintragWahl
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftKategorie
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.TypDimmen
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.TypNichtStoeren
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.CompactOutlinedButton
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.KnopfZeile
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.TypListeTexte
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.StatusTon
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.tonPaar
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
@@ -41,19 +46,24 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.titel
 /**
  * Die Texte der festen Zeile „Ohne Kalendereintrag“ und ihrer Wahl (Prototyp `typ.fest`,
  * `BILDSCHIRME.md` B3o). Pflichttexte wortgleich zur Vorlage; was die Vorlage fuer die spaeteren
- * Etappen verspricht, steht hier nur, soweit es heute stimmt - in Etappe 2 richtet sich an diesen
- * Tagen nur der WECKER nach dem Typ (Dimmen, „Nicht stoeren“ und Licht kommen am Typ spaeter).
+ * Etappen verspricht, steht hier nur, soweit es heute stimmt - Wecker, Dimmen und „Nicht stoeren“
+ * richten sich nach der Wahl, Licht haengt bis Etappe 4 noch an Regeln statt am Typ.
  */
 object OhneEintragTexte {
     const val TITEL = "Ohne Kalendereintrag"
+
+    // Freigegebene Tage (SPEC 4): der Satz nennt NUR Dimmen und „Nicht stoeren“. Einen Wecker „wie <Typ>“
+    // bekommt ein freigegebener Tag nicht (`tageOhneEintrag` laesst ihn aus).
     const val ERKLAERUNG =
         "Feste Zeile: gilt für jeden Tag, an dem im Kalender gar nichts steht – etwa wenn kein „+“ " +
-            "eingetragen wurde oder der Dienstplan noch nicht veröffentlicht ist. Steht in der ganzen " +
-            "Kalender-Vorausschau kein einziger Termin, stellt die App vorsichtshalber keinen Wecker."
+            "eingetragen wurde oder der Dienstplan noch nicht veröffentlicht ist. Beim Dimmen und bei " +
+            "„Nicht stören“ verhalten sich freigegebene Tage („Dienst fällt aus“, Krank) genauso. Steht " +
+            "in der ganzen Kalender-Vorausschau kein einziger Termin, stellt die App vorsichtshalber " +
+            "keinen Wecker."
     const val WAHL_TITEL = "Tage ohne Eintrag verhalten sich"
     const val EIGENE_EINSTELLUNGEN = "Eigene Einstellungen"
 
-    /** Die Vorlage sagt hier „Wecker, Dimmen usw. direkt hier einstellen“ - eine Oberflaeche, die es noch nicht gibt. */
+    /** Die Vorlage sagt hier „Wecker, Dimmen usw. direkt hier einstellen“ - einen Wecker gibt es hier nicht. */
     const val EIGENE_EINSTELLUNGEN_BESCHREIBUNG = "Kein Wecker an diesen Tagen."
 
     const val KEIN_WECKER = "kein Wecker"
@@ -66,26 +76,42 @@ object OhneEintragTexte {
     fun wieLabel(typ: ShiftDefinition): String = "Wie ${typ.name} (${typ.listenCode()})"
 
     /**
-     * Die Zeile unter der Beschriftung: die Kategorie (Prototyp) und - weil die Wahl in Etappe 2 nur
-     * den Wecker bewirkt - ob der Typ ueberhaupt einen stellt ([OhneEintragWahl.weckt]).
+     * Die Zeile unter der Beschriftung: die Kategorie (Prototyp) und - weil man es der Kategorie nicht
+     * ansieht - ob der Typ ueberhaupt einen Wecker stellt ([OhneEintragWahl.weckt]).
      */
     fun beschreibung(typ: ShiftDefinition): String =
         "Kategorie ${typ.kategorie.titel()}" + if (OhneEintragWahl.weckt(typ)) "" else " · $KEIN_WECKER"
 
     /**
      * Die Kurzform der festen Zeile in der Typ-Liste (Prototyp `zeile`): „verhält sich wie <Name>
-     * (<Code>)“, solange eine Wahl steht, sonst „kein Wecker“ - der Zustand „Eigene Einstellungen“ in
-     * Etappe 2. Stellt der gewaehlte Typ keinen Wecker, steht das dabei: die Zeile sagt, was an einem
-     * leeren Tag geschieht, nicht nur, wohin sie verweist.
+     * (<Code>)“, solange eine Wahl steht. Stellt der gewaehlte Typ keinen Wecker, steht das dabei: die
+     * Zeile sagt, was an einem leeren Tag geschieht, nicht nur, wohin sie verweist. Bei „Eigene
+     * Einstellungen“: „kein Wecker“ und die Dimm-Kurzform der eigenen Fenster ([eigeneDimmKurzform]),
+     * etwa „kein Wecker · dimmt 22:00–07:00“.
      */
     fun kurzform(config: ShiftConfig): String {
-        val typ = OhneEintragWahl.gewaehlterTyp(config) ?: return SchichttypBlock.FesteZeile.kurzform
+        val typ = OhneEintragWahl.gewaehlterTyp(config)
+            ?: return listOfNotNull(
+                SchichttypBlock.FesteZeile.kurzform,
+                eigeneDimmKurzform(config.ohneKalendereintrag.dimmen)
+            ).joinToString(" · ")
         return "verhält sich wie ${typ.name} (${typ.listenCode()})" +
             if (OhneEintragWahl.weckt(typ)) "" else " · $KEIN_WECKER"
     }
 
-    /** Der Kasten unter der Wahl, solange ein Typ gewaehlt ist (Prototyp `wieAktiv`). */
-    fun richtetSichNach(typName: String): String = "Der Wecker richtet sich dann nach dem Typ „$typName“."
+    /**
+     * Wortlaut wie in den Typ-Zeilen (`dimmKurzform` in `ShiftConfigScreen.kt`): „Dimmen aus“ bei
+     * `an = false`, `null` ohne wirksames Fenster. Ohne Wecker gerechnet - an diesen Tagen gibt es
+     * keinen eigenen, ein Fenster steht deshalb mit seiner Uhrzeit da, nie mit „Wecker“. Mit
+     * geschuetzten Leerzeichen wie dort: umbrochen wird nur hinter dem Trenner (320 dp).
+     */
+    private fun eigeneDimmKurzform(dimmen: TypDimmen): String? =
+        (if (!dimmen.an) TypListeTexte.DIMMEN_AUS else DimFensterAbbildung.kurzform(dimmen, weckerAn = false))
+            ?.replace(' ', ' ')
+
+    /** Der Kasten unter der Wahl, solange ein Typ gewaehlt ist (Prototyp `wieAktiv`; Licht erst ab Etappe 4). */
+    fun richtetSichNach(typName: String): String =
+        "Wecker, Dimmen und „Nicht stören“ kommen dann vom Typ „$typName“."
 
     fun oeffnen(typName: String): String = "„$typName“ öffnen"
 }
@@ -99,10 +125,11 @@ internal data class WahlZeile(
 )
 
 /**
- * Die Rechnung der Wahl, ohne Compose (Umbau #191): welche Zeilen es gibt, welcher Typ „<Name> öffnen“
- * bekommt, und dass ein Tipp genau EINMAL schreibt. Geschrieben wird nie hier, sondern ueber den
- * uebergebenen `ShiftViewModel.waehleOhneEintrag` - der entscheidet ([OhneEintragWahl.waehle]), ob sich
- * ueberhaupt etwas aendert.
+ * Die Rechnung der Seite, ohne Compose (Umbau #191, #223): welche Zeilen die Wahl hat, welcher Typ
+ * „<Name> öffnen“ bekommt, dass ein Tipp genau EINMAL schreibt - und was die wiederverwendeten Karten
+ * „Bildschirm dimmen“ und „Nicht stören“ von der festen Zeile bekommen und zurueckgeben. Geschrieben
+ * wird nie hier, sondern ueber `ShiftViewModel.waehleOhneEintrag` (der entscheidet,
+ * [OhneEintragWahl.waehle], ob sich ueberhaupt etwas aendert) bzw. `ShiftViewModel.aendereOhneEintrag`.
  */
 internal object OhneEintragAbschnittLogik {
 
@@ -134,21 +161,97 @@ internal object OhneEintragAbschnittLogik {
 
     /** Ein Tipp auf [zeile]: ein einziger Aufruf von [waehle] mit ihrem Typ - sofort, ohne Entwurf. */
     fun tippe(zeile: WahlZeile, waehle: (typId: String?) -> Unit) = waehle(zeile.typId)
+
+    /**
+     * Die eigenen Karten „Bildschirm dimmen“ und „Nicht stören“ gibt es nur bei „Eigene Einstellungen“
+     * (Prototyp `zeigeTag`); bei „wie <Typ>“ gilt der Typ. Ein Verweis ins Leere ist „Eigene
+     * Einstellungen“ - wie in der Wahl darueber und zur Laufzeit (`TypDimmQuelle`).
+     */
+    fun zeigtEigeneEinstellungen(config: ShiftConfig): Boolean = OhneEintragWahl.gewaehlterTyp(config) == null
+
+    /**
+     * Was die Karte „Bildschirm dimmen“ von der festen Zeile bekommt. Sie liest nur Dimmen, Wecker und
+     * Kategorie: ohne Wecker fehlt „Schon beim Wecker enden“ (an diesen Tagen gibt es keinen eigenen),
+     * eine Kategorie ohne Dienstblock laesst die Blocktage weg. Ein gespeichertes „bis Wecker“ bleibt
+     * dabei stehen - die Karte schreibt nur, was sie zeigt.
+     */
+    fun dimmEntwurf(eigene: OhneEintragEinstellungen): TypEntwurf = TypEntwurf(
+        name = OhneEintragTexte.TITEL,
+        muster = emptyList(),
+        weckzeitText = "",
+        isEnabled = true,
+        isSilent = false,
+        weckerAn = false,
+        kategorie = ShiftKategorie.FREI,
+        dimmen = DimmenEntwurf.aus(eigene.dimmen)
+    )
+
+    /**
+     * [eigene] nach einer Aenderung der Karte „Bildschirm dimmen“. Ueber [DimmenEntwurf.anwenden] auf
+     * dem Gespeicherten: Farbwaerme und undeutbare Fenster bleiben.
+     */
+    fun nachDimmAenderung(
+        eigene: OhneEintragEinstellungen,
+        aenderung: (TypEntwurf) -> TypEntwurf
+    ): OhneEintragEinstellungen {
+        val neu = aenderung(dimmEntwurf(eigene)).dimmen ?: return eigene
+        return eigene.copy(dimmen = neu.anwenden(eigene.dimmen))
+    }
+
+    /** Was die Karte „Nicht stören“ zeigt; „Während des Kalendereintrags“ gibt es an der festen Zeile nicht. */
+    fun dndWerte(eigene: OhneEintragEinstellungen): NichtStoerenEntwurf =
+        NichtStoerenEntwurf.aus(TypNichtStoeren(solangeGedimmt = eigene.nichtStoerenSolangeGedimmt))
+
+    /** [eigene] nach einer Aenderung der Karte „Nicht stören“: gespeichert wird nur „Solange gedimmt wird“. */
+    fun nachDndAenderung(
+        eigene: OhneEintragEinstellungen,
+        aenderung: (NichtStoerenEntwurf) -> NichtStoerenEntwurf
+    ): OhneEintragEinstellungen =
+        eigene.copy(nichtStoerenSolangeGedimmt = aenderung(dndWerte(eigene)).solangeGedimmt)
 }
 
 /**
  * Der Inhalt der Seite „Ohne Kalendereintrag“ (SPEC 3.3 Punkt 2, Prototyp `typ.fest`, B3o): die Karte
- * „Typ“ mit dem Namen und der Erklaerung, die Karte „Tage ohne Eintrag verhalten sich“ mit der Wahl und -
- * solange ein Typ gewaehlt ist - der Kasten mit „<Name> öffnen“. Eine Wahl wirkt SOFORT ([onWaehle] schreibt);
- * die Seite hat deshalb weder Entwurf noch „Speichern“. Zustandslos: [config] kommt von der Seite.
+ * „Typ“ mit dem Namen und der Erklaerung, die Karte „Tage ohne Eintrag verhalten sich“ mit der Wahl und
+ * darunter - bei „Eigene Einstellungen“ die Karten „Bildschirm dimmen“ ([DimmenAbschnitt]) und „Nicht
+ * stören“ ([NichtStoerenAbschnitt]), bei „wie <Typ>“ der Kasten mit „<Name> öffnen“. Jede Aenderung wirkt
+ * SOFORT ([onWaehle] bzw. [onAendere] schreiben); die Seite hat deshalb weder Entwurf noch „Speichern“.
+ * Zustandslos: [config] kommt von der Seite.
+ *
+ * [onAendere] bekommt eine UMFORMUNG der eigenen Einstellungen, keinen fertigen Wert: angewandt wird sie
+ * auf den zuletzt beauftragten Stand, auch wenn der noch gespeichert wird.
  */
 internal fun LazyListScope.ohneEintragAbschnitt(
     config: ShiftConfig,
     onWaehle: (typId: String?) -> Unit,
+    onAendere: ((OhneEintragEinstellungen) -> OhneEintragEinstellungen) -> Unit,
     onTypOeffnen: (ShiftDefinition) -> Unit
 ) {
     item(key = "ohne-eintrag-typ") { TypKarte() }
     item(key = "ohne-eintrag-wahl") { WahlKarte(OhneEintragAbschnittLogik.zeilen(config), onWaehle) }
+    if (OhneEintragAbschnittLogik.zeigtEigeneEinstellungen(config)) {
+        val eigene = config.ohneKalendereintrag
+        item(key = "ohne-eintrag-dimmen") {
+            DimmenAbschnitt(
+                entwurf = OhneEintragAbschnittLogik.dimmEntwurf(eigene),
+                giltOhneEintrag = true,
+                aendere = { aenderung ->
+                    onAendere { OhneEintragAbschnittLogik.nachDimmAenderung(it, aenderung) }
+                }
+            )
+        }
+        item(key = "ohne-eintrag-nichtstoeren") {
+            NichtStoerenAbschnitt(
+                werte = OhneEintragAbschnittLogik.dndWerte(eigene),
+                // `null` = die feste Zeile: „Während des Kalendereintrags“ steht gesperrt da.
+                kategorie = null,
+                dimmen = DimmenEntwurf.aus(eigene.dimmen),
+                aendere = { aenderung ->
+                    onAendere { OhneEintragAbschnittLogik.nachDndAenderung(it, aenderung) }
+                }
+            )
+        }
+    }
     OhneEintragAbschnittLogik.oeffnenZiel(config)?.let { typ ->
         item(key = "ohne-eintrag-richtet-sich-nach") { RichtetSichNach(typ, onOeffnen = { onTypOeffnen(typ) }) }
     }

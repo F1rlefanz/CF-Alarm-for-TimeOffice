@@ -318,16 +318,18 @@ fun TypSeite(
 }
 
 /**
- * Die Typ-Seite der festen Zeile „Ohne Kalendereintrag“ (Umbau #191, SPEC E5 und 3.3 Punkt 2, Prototyp
- * `typ.fest`): Erklaerung, die Wahl „Tage ohne Eintrag verhalten sich“ und - bei gewaehltem Typ - „<Name>
- * öffnen“ ([ohneEintragAbschnitt]). Sie ersetzt den Dialog der Etappe 1.
+ * Die Typ-Seite der festen Zeile „Ohne Kalendereintrag“ (Umbau #191 und #223, SPEC E5 und 3.3 Punkt 2,
+ * Prototyp `typ.fest`): Erklaerung, die Wahl „Tage ohne Eintrag verhalten sich“ und darunter - bei „Eigene
+ * Einstellungen“ die Karten „Bildschirm dimmen“ und „Nicht stören“, bei gewaehltem Typ „<Name> öffnen“
+ * ([ohneEintragAbschnitt]). Sie ersetzt den Dialog der Etappe 1.
  *
  * KEIN ENTWURF, KEIN „Speichern“ (Festlegung des Betreuers, einzige Ausnahme vom Entwurf mit Speichern):
- * ein Tipp auf eine Wahl ist eine abgeschlossene Handlung und schreibt sofort ueber
- * `ShiftViewModel.waehleOhneEintrag()`. Deshalb gibt es auch keinen `BackHandler` hier - Zurueck gehoert
- * dem in `MainScreen` und fuehrt ueber `navigateBackFrom` in die Typ-Liste. In Etappe 2 hat die feste Seite
- * weder Tagesleiste noch Wecker-Abschnitt: „Eigene Einstellungen“ heisst kein Wecker, „Wie <Typ>“ verweist
- * auf den Typ.
+ * ein Tipp auf eine Wahl oder eine Aenderung an einer Karte ist eine abgeschlossene Handlung und schreibt
+ * sofort ueber `ShiftViewModel.waehleOhneEintrag()` bzw. `aendereOhneEintrag()` (danach werden Dimmer- und
+ * DND-Kette armiert). Gezeigt wird [ShiftUiState.ohneEintragStand], der zuletzt beauftragte Stand. Deshalb
+ * gibt es auch keinen `BackHandler` hier - Zurueck gehoert dem in `MainScreen` und fuehrt ueber
+ * `navigateBackFrom` in die Typ-Liste. Die feste Seite hat weder Tagesleiste noch Wecker-Abschnitt: an
+ * Tagen ohne Eintrag stellt „Eigene Einstellungen“ keinen Wecker, „Wie <Typ>“ verweist auf den Typ.
  *
  * Ein Typ, der verschwindet, waehrend die Seite offen ist, muss hier nichts behandeln: die Wahl liest
  * [OhneEintragWahl.gewaehlterTyp], ein Verweis ins Leere ist „Eigene Einstellungen“.
@@ -342,7 +344,8 @@ fun OhneEintragSeite(
     onTypOeffnen: (typId: String) -> Unit
 ) {
     val shiftState by shiftViewModel.uiState.collectAsStateWithLifecycle()
-    val config = shiftState.currentShiftConfig
+    // Nicht `currentShiftConfig`: das zieht erst nach dem Speichern nach, und die Karten schreiben sofort.
+    val config = shiftState.ohneEintragStand
 
     Scaffold(
         topBar = {
@@ -367,6 +370,7 @@ fun OhneEintragSeite(
                 ohneEintragAbschnitt(
                     config = config,
                     onWaehle = shiftViewModel::waehleOhneEintrag,
+                    onAendere = shiftViewModel::aendereOhneEintrag,
                     onTypOeffnen = { typ -> onTypOeffnen(typ.id) }
                 )
             }

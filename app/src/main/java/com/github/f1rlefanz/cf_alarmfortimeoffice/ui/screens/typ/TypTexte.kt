@@ -78,7 +78,8 @@ object ShiftDefinitionTexte {
             "CF-Alarm fragt den Kalender dann stündlich ab statt alle 6 Stunden, damit ein " +
             "nachgetragener Dienst noch rechtzeitig einen Wecker bekommt – Google Kalender und " +
             "TimeOffice melden Änderungen nicht von selbst. Außerdem endet „Nicht stören“ an " +
-            "diesen Tagen zur Rufbereitschafts-Uhrzeit (einstellbar unter „Nicht stören“)."
+            "diesen Tagen spätestens zu der Uhrzeit, die bei „Nicht stören“ unter " +
+            "„Endet spätestens um“ steht."
 
     // Umbau E1: die Kurzbeschreibungen der Kategorien (Prototyp, `KAT` in Main.dc.html). Ohne `else`:
     // eine achte Kategorie muss hier bewusst beschrieben werden. Der Name der Kategorie kommt aus
@@ -266,5 +267,38 @@ internal object DimmenTexte {
         Blockposition.MITTLERER -> "Mittlere"
         Blockposition.LETZTER -> "Letzter"
         Blockposition.EINZELNER -> "Einzeln"
+    }
+}
+
+/**
+ * Nutzertexte der Karte „Nicht stören“ (#222, SPEC E7, Prototyp `zeigeTyp`). Titel und Untertitel stehen wie
+ * im Prototyp (Festlegung in #222). Die Texte zum fehlenden Zugriff teilt sich die Karte mit der DND-Seite
+ * (`R.string.dnd_*`); die zwei Saetze, die sagen, dass hier etwas nicht wirkt, stehen nicht im Prototyp.
+ */
+internal object NichtStoerenTexte {
+    const val TITEL = "Nicht stören"
+    const val GEDIMMT_TITEL = "Solange gedimmt wird"
+    const val GEDIMMT_HINWEIS = "In jedem Dimm-Fenster oben – endet mit dem Wecker"
+    const val EINTRAG_TITEL = "Während des Kalendereintrags"
+    const val CUTOFF_TITEL = "Endet spätestens um"
+    const val CUTOFF_HINWEIS = "Damit du für einen Einsatz erreichbar bist."
+
+    /** Unter den Texten zum fehlenden Zugriff: ein Schalter ohne Wirkung steht nicht still an. */
+    const val OHNE_ZUGRIFF = "Bis dahin wirkt nichts auf dieser Karte."
+
+    /** Unter „Solange gedimmt wird“, wenn der Schalter an ist, der Typ aber nie dimmt. */
+    const val GEDIMMT_OHNE_FENSTER =
+        "Dieser Typ hat kein eingeschaltetes Dimm-Fenster – so bewirkt „$GEDIMMT_TITEL“ nichts."
+
+    /**
+     * Der Text unter „Während des Kalendereintrags“ je Kategorie (Prototyp `dndEintragText`); `null` = die
+     * feste Zeile „Ohne Kalendereintrag“. Ohne `else`: eine achte Kategorie muss hier bewusst eingeordnet werden.
+     */
+    fun eintragText(kategorie: ShiftKategorie?): String = when (kategorie) {
+        null -> "Gibt es hier nicht – an diesen Tagen steht nichts im Kalender."
+        ShiftKategorie.DIENST, ShiftKategorie.RUFBEREITSCHAFT, ShiftKategorie.IGNORIEREN ->
+            "Von Beginn bis Ende laut Kalender – z. B. während des Nachtdienstes."
+        ShiftKategorie.FREI, ShiftKategorie.URLAUB, ShiftKategorie.FORTBILDUNG, ShiftKategorie.KRANK ->
+            "Bei ganztägigen Einträgen: den ganzen Tag."
     }
 }

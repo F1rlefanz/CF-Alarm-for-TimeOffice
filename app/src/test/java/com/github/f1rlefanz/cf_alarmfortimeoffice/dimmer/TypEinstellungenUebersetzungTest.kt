@@ -2,9 +2,11 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer
 
 import com.github.f1rlefanz.cf_alarmfortimeoffice.backup.ConfigBackup
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.TypEinstellungenUebersetzung.Altbestand
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.OhneEintragEinstellungen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftKategorie
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.TypDimmFenster
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.TypDimmen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.TypNichtStoeren
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.HellAb
@@ -340,6 +342,110 @@ class TypEinstellungenUebersetzungTest {
         assertEquals(fenster, neu.typ("Nachtschicht").dimmen.fenster.map { it.fenster })
         assertEquals(listOf(81, 81), neu.typ("Nachtschicht").dimmen.fenster.map { it.staerke })
         pruefeNurNeueFelderGeaendert(v.config, neu)
+    }
+
+    // --- Vor der Migration gespeicherte Einstellungen (#234) ------------------------------------
+
+    private val eigenesFenster = TypDimmFenster(
+        fenster = DimWindow(startClockMinutes = 20 * 60, endAnchor = DimAnchor.ALARM),
+        staerke = 25
+    )
+
+    /** Weicht in jedem Feld vom Standard UND von der Uebersetzung ab (aus, eigenes Fenster, Waerme). */
+    private val eigenesDimmen = TypDimmen(an = false, farbwaerme = 5).mitFenster(listOf(eigenesFenster))
+
+    /**
+     * #234: Die Koernung ist das Einstellungs-Objekt. Was vom Standard abweicht, bleibt ganz stehen
+     * (auch an Krank), obwohl der Altbestand etwas anderes sagt (passende Regeln, beide DND-Schalter
+     * an, Cutoff 05:30); jedes andere Objekt wird uebersetzt wie ohne die gespeicherten Werte.
+     */
+    @Test
+    fun `gespeicherte Einstellungen bleiben ganz stehen, die uebrigen Typen werden uebersetzt`() {
+        val v = nachgebaut()
+        val alt = v.alt.copy(dimmenAn = true, dndSolangeGedimmt = true, dndWaehrendEintrag = true, dndAusnahmen = emptySet())
+        val krank = v.config.definitions.single { it.kategorie == ShiftKategorie.KRANK }.name
+        val eigenesDnd = TypNichtStoeren(waehrendEintrag = true)
+        val eigenerCutoff = TypNichtStoeren(endetSpaetestensGespeichert = 6 * 60)
+        val gespeichert = v.config.copy(
+            definitions = v.config.definitions.map { typ ->
+                when (typ.name) {
+                    "Nachtschicht", krank -> typ.copy(dimmen = eigenesDimmen)
+                    "Morgendienst" -> typ.copy(nichtStoeren = eigenesDnd)
+                    "Abrufdienst" -> typ.copy(nichtStoeren = eigenerCutoff)
+                    else -> typ
+                }
+            },
+            ohneKalendereintrag = OhneEintragEinstellungen(dimmen = eigenesDimmen)
+        )
+
+        val neu = TypEinstellungenUebersetzung.uebersetze(gespeichert, alt, auswahl)
+        val ohne = TypEinstellungenUebersetzung.uebersetze(v.config, alt, auswahl)
+
+        assertEquals(TypEinstellungenUebersetzung.MODELL_STUFE, neu.modellStufe)
+        assertEquals(eigenesDimmen, neu.typ("Nachtschicht").dimmen)
+        assertEquals("Krank wie jeder Typ", eigenesDimmen, neu.typ(krank).dimmen)
+        assertEquals(eigenesDnd, neu.typ("Morgendienst").nichtStoeren)
+        assertEquals("Ruf-Typ: Cutoff und Schalter bleiben", eigenerCutoff, neu.typ("Abrufdienst").nichtStoeren)
+        assertEquals(360, neu.typ("Abrufdienst").nichtStoeren.endetSpaetestensMinuten)
+        assertEquals(eigenesDimmen, neu.ohneKalendereintrag.dimmen)
+        // Das jeweils andere Objekt derselben Typen und alle uebrigen Typen: uebersetzt.
+        assertEquals(ohne.typ("Nachtschicht").nichtStoeren, neu.typ("Nachtschicht").nichtStoeren)
+        assertEquals(ohne.typ("Morgendienst").dimmen, neu.typ("Morgendienst").dimmen)
+        assertEquals(ohne.typ("Abrufdienst").dimmen, neu.typ("Abrufdienst").dimmen)
+        assertTrue("feste Zeile: Schalter uebersetzt", neu.ohneKalendereintrag.nichtStoerenSolangeGedimmt)
+        val unberuehrt = setOf("Nachtschicht", krank, "Morgendienst", "Abrufdienst")
+        val uebrige = neu.definitions.filter { it.name !in unberuehrt }
+        assertTrue("die Vorlage hat weitere Typen", uebrige.isNotEmpty())
+        for (typ in uebrige) assertEquals(typ.name, ohne.typ(typ.name), typ)
+        assertTrue("Gegenprobe: uebersetzt wurde wirklich", ohne.typ("Nachtschicht").dimmen.fenster.size == 3)
+    }
+
+    /** #234: „Solange gedimmt“ der festen Zeile bleibt, wenn es an ist; ihr Dimmen wird trotzdem uebersetzt. */
+    @Test
+    fun `feste Zeile mit Solange gedimmt behaelt den Schalter, ihr unberuehrtes Dimmen wird uebersetzt`() {
+        val v = nachgebaut()
+        val alt = v.alt.copy(dimmenAn = false, dndSolangeGedimmt = false)
+        val gespeichert = v.config.copy(ohneKalendereintrag = OhneEintragEinstellungen(nichtStoerenSolangeGedimmt = true))
+
+        val neu = TypEinstellungenUebersetzung.uebersetze(gespeichert, alt, auswahl)
+
+        assertTrue(neu.ohneKalendereintrag.nichtStoerenSolangeGedimmt)
+        assertEquals(
+            TypEinstellungenUebersetzung.uebersetze(v.config, alt, auswahl).ohneKalendereintrag.dimmen,
+            neu.ohneKalendereintrag.dimmen
+        )
+        assertEquals("aus bleibt aus", false, neu.ohneKalendereintrag.dimmen.an)
+        assertEquals(1, neu.ohneKalendereintrag.dimmen.fenster.size)
+    }
+
+    /**
+     * #234: Leer heisst keine Regel (auch keine deaktivierte), beide DND-Schalter aus, Cutoff 05:00.
+     * Dann setzt die Uebersetzung nur die Stufe - kein `an = false` aus dem fehlenden `dim_enabled`.
+     */
+    @Test
+    fun `leerer Altbestand setzt nur die Stufe, eine deaktivierte Regel oder ein eigener Cutoff nicht`() {
+        val v = nachgebaut()
+        val leer = Altbestand(
+            regeln = emptyList(), dimmenAn = false, dndSolangeGedimmt = false, dndWaehrendEintrag = false,
+            dndAusnahmen = setOf("Teildienst"), rufCutoffMinuten = STANDARD_CUTOFF
+        )
+        val mitGespeichertem = v.config.copy(ohneKalendereintrag = OhneEintragEinstellungen(dimmen = eigenesDimmen))
+
+        for (config in listOf(v.config, mitGespeichertem)) {
+            assertEquals(
+                config.copy(modellStufe = TypEinstellungenUebersetzung.MODELL_STUFE),
+                TypEinstellungenUebersetzung.uebersetze(config, leer, auswahl)
+            )
+        }
+
+        val deaktiviert = leer.copy(regeln = listOf(v.alt.regeln.first().copy(enabled = false)))
+        val mitDeaktivierter = TypEinstellungenUebersetzung.uebersetze(v.config, deaktiviert, auswahl)
+        assertTrue(
+            "deaktivierte Regel: uebersetzt, aus bleibt aus",
+            (mitDeaktivierter.definitions.map { it.dimmen } + mitDeaktivierter.ohneKalendereintrag.dimmen).none { it.an }
+        )
+        val mitCutoff = TypEinstellungenUebersetzung.uebersetze(v.config, leer.copy(rufCutoffMinuten = 6 * 60), auswahl)
+        assertEquals("ein eigener Cutoff geht nicht verloren", 360, mitCutoff.typ("Abrufdienst").nichtStoeren.endetSpaetestensMinuten)
     }
 
     // --- Idempotenz --------------------------------------------------------------------------

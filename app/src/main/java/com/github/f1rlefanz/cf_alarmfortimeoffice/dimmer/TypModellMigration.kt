@@ -57,6 +57,9 @@ import javax.inject.Singleton
  *    "noch nie konfiguriert" fuer die restliche Prozesslaufzeit) - darueber geschrieben, waere die
  *    echte Konfiguration weg. Preis: wer die unveraenderten Standard-Typen nutzt, wird erst
  *    migriert, sobald er einen Typ speichert; traegt sein Altbestand etwas, sagt es die Karte.
+ *    Was er dabei schon am Typ gespeichert hat (die Typ-Seite speichert auch auf Stufe 0), bleibt
+ *    stehen: die Uebersetzung nimmt nur Einstellungs-Objekte, die noch dem Standard entsprechen,
+ *    und bei leerem Altbestand setzt sie nur die Stufe (#234, [TypEinstellungenUebersetzung]).
  *
  * KOPIEREN STATT VERSCHIEBEN: am Altbestand wird nichts geschrieben. Geschrieben werden nur die
  * neuen Felder und die Stufe, in EINEM Vorgang ueber [IShiftUseCase.saveShiftConfig] (der UseCase,
@@ -67,7 +70,12 @@ import javax.inject.Singleton
  * so erhalten. Offen bleibt das kurze Stueck zwischen diesem letzten Lesen und dem Schreiben:
  * `saveShiftConfig` schreibt die ganze Konfiguration, einen atomaren Lese-Schreib-Weg hat das
  * Repository nicht. Schreibt umgekehrt ein Bildschirm mit einem Stand VOR der Migration zurueck,
- * faellt die Stufe auf 0 und der naechste Anlass migriert erneut - die Nutzeraenderung bleibt.
+ * faellt die Stufe auf 0 und der naechste Anlass migriert erneut. Die Nutzeraenderung bleibt dabei,
+ * weil die Uebersetzung jedes Einstellungs-Objekt (Dimmen, „Nicht stoeren“ je Typ; Dimmen und
+ * „Solange gedimmt wird“ der festen Zeile) stehen laesst, das vom Standard abweicht (#234) - bis
+ * #234 ersetzte sie es durch den Altbestand, und diese Zusage galt nicht. Restfall: eine Eingabe,
+ * die genau dem Standard entspricht (etwa „Dimmen an“ ohne Fenster), gilt als unberuehrt und wird
+ * aus dem Altbestand uebersetzt.
  *
  * FAIL-SAFE: Scheitert ein Tor, wird nichts geschrieben, die Stufe bleibt ungesetzt, es gibt ein
  * WARN im Release-Log, [stand] meldet den Grund (Karte im System-Status), und der naechste Anlass
@@ -231,8 +239,13 @@ class TypModellMigration @Inject constructor(
         _stand.value = Stand.Erledigt
         Logger.business(
             LogTags.DIMMER,
-            "🔁 Typ-Modellmigration: ${config.definitions.size} Typ(en) und die feste Zeile uebernommen " +
-                "(${regeln.size} Regel(n), Dimmen ${if (dimmenAn) "an" else "aus"}) - Altbestand unveraendert"
+            if (alt.istLeer) {
+                "🔁 Typ-Modellmigration: Altbestand leer - nur die Stufe gesetzt, ${config.definitions.size} Typ(en) unveraendert"
+            } else {
+                "🔁 Typ-Modellmigration: ${config.definitions.size} Typ(en) und die feste Zeile uebernommen " +
+                    "(${regeln.size} Regel(n), Dimmen ${if (dimmenAn) "an" else "aus"}; vorher Gespeichertes bleibt) " +
+                    "- Altbestand unveraendert"
+            }
         )
         // Nach Erfolg beide Ketten neu armieren (#216). Wirft nicht, faengt selbst.
         armierer.armiere(ANLASS)

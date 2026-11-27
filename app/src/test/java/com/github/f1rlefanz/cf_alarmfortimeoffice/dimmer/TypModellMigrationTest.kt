@@ -16,6 +16,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.scheduling.HueSmartSchedul
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.CalendarEvent
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.TypDimmFenster
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IAlarmRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.RufbereitschaftMigration
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftMatch
@@ -324,6 +325,45 @@ class TypModellMigrationTest {
 
         assertEquals(LocalTime.of(4, 44), schicht.konfig.definitions.single().alarmTime)
         assertEquals(erwartet(store, geaendert), schicht.konfig)
+    }
+
+    // --- Vor der Migration am Typ gespeichert (#234) ---------------------------------------------
+
+    /**
+     * #234 (Befund aus #221): frische Installation, Stufe 0, Standard-Typen. Auf der Typ-Seite wird
+     * ein Fenster gespeichert (`config.copy`, die Stufe bleibt 0) - die Konfiguration weicht jetzt
+     * vom Standard ab, Tor 7 greift nicht mehr. Der Altbestand ist leer (keine Regel, beide
+     * DND-Schalter aus, `dim_enabled` fehlt und liest sich als aus): die Migration darf das Fenster
+     * nicht durch den Altbestand ersetzen und keinem Typ ein `an = false` geben - nur die Stufe setzen.
+     */
+    @Test
+    fun `frische Installation - am Typ gespeichertes Fenster bleibt, leerer Altbestand setzt nur die Stufe`() = runTest {
+        val standard = ShiftConfig.getDefaultConfig()
+        assertTrue("die Standard-Konfiguration hat Typen", standard.definitions.isNotEmpty())
+        val fenster = TypDimmFenster(
+            fenster = DimWindow(startAnchor = DimAnchor.CLOCK, startClockMinutes = 22 * 60, endAnchor = DimAnchor.ALARM),
+            staerke = 40
+        )
+        val gespeichert = standard.copy(
+            definitions = standard.definitions.mapIndexed { i, typ ->
+                if (i == 0) typ.copy(dimmen = typ.dimmen.mitFenster(listOf(fenster))) else typ
+            }
+        )
+        assertEquals(0, gespeichert.modellStufe)
+        val store = SpeicherStore(mutablePreferencesOf().apply { this[KEY_DIMMER_MARKER] = DimmerModellMigration.STAND })
+        val schicht = SchichtSpeicher(gespeichert)
+
+        assertTrue("Tor 7 greift nicht mehr - die Migration schreibt", migration(store, schicht).migriereEinmalig())
+
+        val typ = schicht.konfig.definitions.first()
+        assertEquals("das gespeicherte Fenster bleibt", listOf(fenster), typ.dimmen.fenster)
+        assertTrue("an bleibt an", typ.dimmen.an)
+        assertEquals(TypEinstellungenUebersetzung.MODELL_STUFE, schicht.konfig.modellStufe)
+        assertEquals(
+            "ausser der Stufe aendert sich nichts, auch an den unberuehrten Typen",
+            gespeichert.copy(modellStufe = TypEinstellungenUebersetzung.MODELL_STUFE),
+            schicht.konfig
+        )
     }
 
     // --- Import --------------------------------------------------------------------------------

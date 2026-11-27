@@ -8,18 +8,22 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Gegenpruefung Etappe 1: die Texte rund um die Schichttyp-Liste sagen nur zu, was in Etappe 1
- * wirklich gilt, und nennen Schalter mit ihrer heutigen Beschriftung.
+ * Gegenpruefung Etappe 1, seit #220 mitgefuehrt: die Texte rund um die Schichttyp-Liste sagen nur zu,
+ * was wirklich gilt, und nennen Schalter mit ihrer heutigen Beschriftung.
  */
 class SchichttypTexteTest {
 
-    /** Der Editor bietet in Etappe 1 nur den Wecker; Dimmen, DND und Licht kommen mit Etappe 3/4. */
+    /**
+     * Seit Etappe 3 (#220) stehen Dimmen und „Nicht stören“ am Typ, der Hinweis nennt sie (SPEC 3.2);
+     * Licht kommt erst mit Etappe 4 und wird bis dahin nicht versprochen. Bewusste Verhaltensaenderung
+     * gegenueber dem Stand von Etappe 1 („verspricht am Typ nur den Wecker“) - kein Kerntest.
+     */
     @Test
-    fun `Der Einordnen-Hinweis verspricht am Typ nur den Wecker`() {
+    fun `Der Einordnen-Hinweis verspricht am Typ Wecker, Dimmen und Nicht stoeren, noch kein Licht`() {
         val text = EinordnenTexte.KATEGORIE_HINWEIS
         assertTrue(text, text.startsWith("Die Kategorie sortiert nur."))
-        assertTrue(text, text.contains("Wecker"))
-        listOf("Dimmen", "Nicht stören", "Licht").forEach { assertFalse("$it: $text", text.contains(it)) }
+        listOf("Wecker", "Dimmen", "„Nicht stören“").forEach { assertTrue("$it: $text", text.contains(it)) }
+        assertFalse("Licht kommt erst mit Etappe 4: $text", text.contains("Licht"))
     }
 
     /**
@@ -47,5 +51,10 @@ class SchichttypTexteTest {
         assertTrue(reset, reset.contains("„${ShiftDefinitionTexte.WECKER_AN_TITEL}“"))
         assertTrue(reset, reset.contains("Kategorien"))
         assertTrue(reset, reset.contains("„${OhneEintragTexte.TITEL}“"))
+        // Der Reset verliert BEIDES an der festen Zeile: die Wahl („wie <Typ>“, `getDefaultConfig()` setzt
+        // keinen Verweis) UND ihre eigenen Dimm-/DND-Einstellungen (Pruefer-Befund zu #220).
+        assertTrue(reset, reset.contains("die Wahl und die eigenen Einstellungen bei „${OhneEintragTexte.TITEL}“"))
+        assertTrue(reset, reset.contains("Dimm-Fenster"))
+        assertTrue(reset, reset.contains("„Nicht stören“-Schalter"))
     }
 }

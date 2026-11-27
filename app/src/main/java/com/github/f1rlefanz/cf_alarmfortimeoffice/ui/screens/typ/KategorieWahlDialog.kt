@@ -51,8 +51,8 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.titel
 
 /**
  * Die Texte der Kategorie-Wahl fuer einen BESTEHENDEN Typ (Prototyp `katWahlIntro`, `neuCode` leer).
- * Der Fuss ist der von [EinordnenTexte.KATEGORIE_HINWEIS]: er nennt bis Etappe 3/4 nur Wecker und
- * Weckzeit, weil Dimmen, „Nicht stören“ und Licht erst dann am Typ stehen.
+ * Der Fuss ist der von [EinordnenTexte.KATEGORIE_HINWEIS]: er nennt Wecker, Dimmen und „Nicht stören“,
+ * nicht aber Licht - das steht erst mit Etappe 4 am Typ.
  */
 internal object KategorieWahlTexte {
     const val TITEL = "Kategorie"

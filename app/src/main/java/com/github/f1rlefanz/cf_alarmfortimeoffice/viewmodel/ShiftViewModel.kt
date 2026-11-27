@@ -1,5 +1,14 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel
 
+import java.time.ZoneId
+import java.time.LocalDate
+import java.time.Instant
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.HellAb
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.TageslichtEnde
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.HellZeitpunkt
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimWindowResolver
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimWindow
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimAnchor
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.github.f1rlefanz.cf_alarmfortimeoffice.di.state.CalendarStateHolder
@@ -110,6 +119,106 @@ data class ShiftUiState(
     val ohneEintragStand: ShiftConfig? get() = ohneEintragBeauftragt ?: currentShiftConfig
 }
 
+/** Was das Blatt „Weitere Optionen“ der Typ-Seite aus dem Bestand braucht (#224). */
+data class WeitereOptionenStand(
+    /** Die Farbwaerme aus den Einstellungen (`dim_warmth`), die ein Typ ohne eigenen Wert benutzt. */
+    val vorgabeWaerme: Int,
+    /** Die aktiven Weckzeiten fuer die Beispielzeile zum Nachlauf. */
+    val weckzeiten: List<Long>
+)
+
+/** Welche der drei Begruendungen (`tageslicht_dimmer_grund_*`) die Beispielzeile traegt. */
+enum class BeispielGrund {
+    /** Der Nachlauf laeuft voll, es wird erst danach hell. */
+    NACHLAUF_VOLL,
+
+    /** Es wird im Nachlauf hell, dort endet das Fenster. */
+    HELL,
+
+    /** Es war schon vor dem Wecken hell - Ende an der Weckzeit. */
+    WECKZEIT
+}
+
+/**
+ * Die Rechnung hinter "Nächster Wecker [weckzeit] → gedimmt bis [ende]". [grund] ist derselbe
+ * Wert, den die Vorschau zeigt; [hellZeitpunkt] fehlt nur, wenn es an dem Tag kein solches
+ * Ereignis gibt.
+ */
+data class NachlaufBeispiel(
+    val weckzeit: Long,
+    val ende: Long,
+    val grund: TageslichtEnde?,
+    val nachlaufMin: Int,
+    val hellZeitpunkt: Long?
+) {
+    /**
+     * `null` = keine Begruendung zeigen. Insbesondere dann, wenn die Uhrzeit-Schranke den
+     * Nachlauf gekappt hat: "volle 60 Minuten" waere dort gelogen.
+     */
+    val grundArt: BeispielGrund?
+        get() = when {
+            grund?.vorWeckzeit == true -> BeispielGrund.WECKZEIT
+            grund != null -> BeispielGrund.HELL
+            hellZeitpunkt != null && ende == weckzeit + nachlaufMin * 60_000L -> BeispielGrund.NACHLAUF_VOLL
+            else -> null
+        }
+}
+
+/**
+ * Die Beispielzeile zum Tageslicht-Nachlauf (#140) - ueber [DimWindowResolver.nachlaufEnde], also
+ * DIESELBE Formel wie die Wirkung.
+ *
+ * Gewaehlt wird die frueheste aktive Weckzeit nach [jetzt], die dieses Fenster faengt. Das
+ * laesst sich nur fuer einen CLOCK-Start allein aus dem Fenster beantworten (die Nacht
+ * beginnt am letzten Start vor dem Wecker und endet an der naechsten Schranke danach); fuer
+ * ALARM-/SHIFT_END-Starts haengt es an der Schicht - dort lieber kein Beispiel als ein
+ * falsches. `null` auch ohne passenden Wecker, ohne Nachlauf und bei [HellAb.IMMER].
+ */
+fun nachlaufBeispiel(
+    w: DimWindow,
+    hell: HellZeitpunkt,
+    weckzeiten: List<Long>,
+    jetzt: Long,
+    zone: ZoneId
+): NachlaufBeispiel? {
+    if (w.endAnchor != DimAnchor.ALARM_SONST_CLOCK) return null
+    if (w.weckzeitNachlaufMinuten <= 0 || w.nachlaufBisHell == HellAb.IMMER) return null
+    if (w.startAnchor != DimAnchor.CLOCK) return null
+    val weckzeit = weckzeiten.sorted().firstOrNull { it > jetzt && clockFensterFaengt(w, it, zone) }
+        ?: return null
+    val ende = DimWindowResolver.nachlaufEnde(
+        weckzeit, w.endClockMinutes, w.weckzeitNachlaufMinuten, w.nachlaufBisHell, zone, hell
+    )
+    val tag = Instant.ofEpochMilli(weckzeit).atZone(zone).toLocalDate()
+    return NachlaufBeispiel(
+        weckzeit = weckzeit,
+        ende = ende.zeit,
+        grund = ende.tageslicht,
+        nachlaufMin = w.weckzeitNachlaufMinuten.coerceIn(0, DimWindowResolver.NACHLAUF_MAX_MINUTEN),
+        hellZeitpunkt = hell(tag, w.nachlaufBisHell)
+    )
+}
+
+/**
+ * Faengt ein Fenster mit CLOCK-Start die [weckzeit]? Start = die letzte Start-Uhrzeit ECHT
+ * vor dem Wecker, Schranke = die erste Ende-Uhrzeit ECHT nach dem Start - dieselben
+ * Vergleiche wie in der Fensteraufloesung (Wanduhrzeit auf Kalendertagen, keine 24-h-Millis).
+ */
+private fun clockFensterFaengt(w: DimWindow, weckzeit: Long, zone: ZoneId): Boolean {
+    fun wand(d: LocalDate, minuten: Int) =
+        d.atStartOfDay().plusMinutes(minuten.toLong()).atZone(zone).toInstant().toEpochMilli()
+    val tag = Instant.ofEpochMilli(weckzeit).atZone(zone).toLocalDate()
+    val start = wand(tag, w.startClockMinutes).let { if (it >= weckzeit) wand(tag.minusDays(1), w.startClockMinutes) else it }
+    val startTag = Instant.ofEpochMilli(start).atZone(zone).toLocalDate()
+    var schranke = wand(startTag, w.endClockMinutes)
+    var d = startTag
+    while (schranke <= start) {
+        d = d.plusDays(1)
+        schranke = wand(d, w.endClockMinutes)
+    }
+    return weckzeit < schranke
+}
+
 /**
  * ShiftViewModel - liest Kalender-Events aus dem CalendarStateHolder, nicht vom CalendarViewModel.
  */
@@ -167,9 +276,8 @@ class ShiftViewModel @Inject constructor(
      */
     private val shiftSpanStore: dagger.Lazy<ShiftSpanStore>,
     /**
-     * Ohne Leser seit #219 (den Hauptschalter `dim_enabled` gibt es nicht mehr). Der Parameter bleibt
-     * vorerst, weil `ShiftViewModelSyncGateTest` (Kerntest) ihn beim Namen nennt - Entfernen hiesse, den
-     * Kerntest zu aendern; er faellt mit dem Altbestand in Etappe 9 weg.
+     * Nur LESEND, fuer die Vorgabe-Farbwaerme in [weitereOptionenStand] (#224); den Hauptschalter `dim_enabled`
+     * liest seit #219 niemand mehr. `dagger.Lazy` wie oben: angefasst erst, wenn das Blatt offen ist.
      */
     private val dimOverlayPrefs: dagger.Lazy<DimOverlayPrefs>,
     /**
@@ -291,6 +399,23 @@ class ShiftViewModel @Inject constructor(
     ) { typen, licht, spannen, tageslicht ->
         TagesleisteQuellen(typen, licht, spannen, tageslicht)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /**
+     * Vorgabe-Farbwaerme und aktive Weckzeiten fuer das Blatt „Weitere Optionen“ der Typ-Seite (#224). Kalt:
+     * gelesen wird erst, solange das Blatt offen ist. Ein unlesbarer Alarm-Bestand heisst nur „kein Beispiel“ -
+     * nie eine erfundene Weckzeit.
+     */
+    fun weitereOptionenStand(): Flow<WeitereOptionenStand> = flow {
+        val weckzeiten = alarmUseCase.getAllAlarms().getOrNull()
+            ?.filter { it.isActive }
+            ?.map { it.triggerTime }
+            .orEmpty()
+        emitAll(dimOverlayPrefs.get().warmth.map { WeitereOptionenStand(it, weckzeiten) })
+    }.catch { e ->
+        if (e is CancellationException) throw e
+        // Reine Anzeige: ohne Stand zeigt das Blatt weder „Zurzeit …“ noch ein Beispiel.
+        Logger.w(LogTags.SHIFT, "Weitere Optionen: Vorgabe oder Weckzeiten nicht lesbar", e)
+    }
 
     init {
         loadShiftConfig()

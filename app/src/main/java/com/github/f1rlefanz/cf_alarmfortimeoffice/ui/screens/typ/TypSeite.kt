@@ -54,7 +54,9 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.ShiftViewModel
+import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.WeitereOptionenStand
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.titel
+import kotlinx.coroutines.flow.Flow
 import java.time.ZoneId
 
 /** Nutzertexte der Typ-Seite, als Konstanten (ein Test haelt sie fest). */
@@ -310,6 +312,7 @@ fun TypSeite(
         neu = neu,
         fundCode = fundCode,
         quellen = quellen,
+        weitereStand = shiftViewModel::weitereOptionenStand,
         schreibe = shiftViewModel::updateShiftConfig,
         legeAusCodeAn = shiftViewModel::legeTypAusCodeAn,
         onZurueck = onZurueck,
@@ -386,6 +389,7 @@ private fun TypSeiteFormular(
     neu: Boolean,
     fundCode: String?,
     quellen: TagesleisteQuellen?,
+    weitereStand: () -> Flow<WeitereOptionenStand>,
     schreibe: (ShiftConfig) -> Unit,
     legeAusCodeAn: (String, ShiftDefinition) -> Unit,
     onZurueck: () -> Unit,
@@ -415,6 +419,8 @@ private fun TypSeiteFormular(
     // sie ueberstehen so Drehen, Dunkelmodus und das Scrollen der Liste (die Karte ist ein Listenelement).
     var neuesMuster by rememberSaveable { mutableStateOf("") }
     var kategorieWahlOffen by rememberSaveable { mutableStateOf(false) }
+    // Das Blatt „Weitere Optionen“: `null` = zu, sonst die Fenster, die beim Oeffnen den Anker-Editor bekamen.
+    var weitereOptionen by rememberSaveable { mutableStateOf<ArrayList<Int>?>(null) }
     val speicherung = remember { TypSeiteSpeicherung(schreibe) }
     val aendere: ((TypEntwurf) -> TypEntwurf) -> Unit = { aenderung -> entwurf = aenderung(entwurf) }
 
@@ -525,7 +531,10 @@ private fun TypSeiteFormular(
                         DimmenAbschnitt(
                             entwurf = entwurf,
                             giltOhneEintrag = DimmenAbschnittLogik.giltOhneEintrag(config, definition.id),
-                            aendere = aendere
+                            aendere = aendere,
+                            onWeitereOptionen = {
+                                weitereOptionen = entwurf.dimmen?.let { ArrayList(WeitereOptionenLogik.ohneForm(it)) }
+                            }
                         )
                     }
                 }
@@ -579,6 +588,25 @@ private fun TypSeiteFormular(
                 )
             }
         }
+    }
+
+    // Das Blatt arbeitet auf demselben Entwurf wie die Karte; sein Stand wird erst gelesen, solange es offen ist.
+    val dimmen = entwurf.dimmen
+    val ankerBeimOeffnen = weitereOptionen
+    if (ankerBeimOeffnen != null && dimmen != null) {
+        val stand by remember { weitereStand() }.collectAsStateWithLifecycle(initialValue = null)
+        WeitereOptionenBlatt(
+            dimmen = dimmen,
+            weckerAn = entwurf.weckerAn,
+            mitBlocktagen = DimmenAbschnittLogik.zeigtBlocktage(entwurf.kategorie),
+            gespeicherteWaerme = definition.dimmen.farbwaerme,
+            stand = stand,
+            tageslicht = quellen?.tageslicht,
+            speicherKnopf = if (neu) TypSeiteTexte.ERSTELLEN else TypSeiteTexte.SPEICHERN,
+            ankerBeimOeffnen = ankerBeimOeffnen,
+            aendere = { aenderung -> aendere { e -> e.dimmen?.let { e.copy(dimmen = aenderung(it)) } ?: e } },
+            onSchliessen = { weitereOptionen = null }
+        )
     }
 
     if (kategorieWahlOffen) {

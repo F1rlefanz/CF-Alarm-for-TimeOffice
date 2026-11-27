@@ -1,5 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.typ
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimOverlayPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftKategorie
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.TypDimmFenster
@@ -145,31 +146,44 @@ private val ZEIT_ANZEIGE: DateTimeFormatter = DateTimeFormatter.ofPattern(DateTi
 /** `encodeDefaults`, damit ein Fenster nach dem Zurueckholen Feld fuer Feld dasselbe ist. */
 private val ENTWURF_JSON = Json { encodeDefaults = true }
 
+/** Die Wahl der Farbwaerme im Blatt „Weitere Optionen“ (#224): [eigene] `null` = „wie in den Einstellungen“. */
+@Serializable
+internal data class FarbwaermeWahl(val eigene: Int?)
+
 /**
  * Der Dimm-Teil des Entwurfs: genau das, was die Typ-Seite zeigt und aendert - „Dimmen an diesem Tag“
- * ([TypDimmen.an]) und die deutbaren Fenster. Farbwaerme und undeutbare Fenster gehoeren nicht dazu; sie bleiben
- * am gespeicherten Typ ([anwenden]).
+ * ([TypDimmen.an]), die deutbaren Fenster und die Farbwaerme aus „Weitere Optionen“. [farbwaerme] `null` =
+ * unberuehrt, dann gilt die gespeicherte. Undeutbare Fenster gehoeren nicht dazu; sie bleiben am gespeicherten
+ * Typ ([anwenden]).
  */
 @Serializable
-internal data class DimmenEntwurf(val an: Boolean, val fenster: List<TypDimmFenster>) {
+internal data class DimmenEntwurf(
+    val an: Boolean,
+    val fenster: List<TypDimmFenster>,
+    val farbwaerme: FarbwaermeWahl? = null
+) {
 
     /**
      * [gespeichert] mit diesem Stand. Neu kodiert werden die Fenster nur, wenn sie sich unterscheiden
      * ([TypDimmen.mitFenster] haengt undeutbare wieder an): ein Speichern, das nur Name oder Weckzeit aendert,
-     * laesst das gespeicherte Dimmen Zeichen fuer Zeichen stehen.
+     * laesst das gespeicherte Dimmen Zeichen fuer Zeichen stehen. Die Farbwaerme wird nur geschrieben, wenn das
+     * Blatt sie geaendert hat.
      */
     fun anwenden(gespeichert: TypDimmen): TypDimmen {
         val mitSchalter = gespeichert.copy(an = an)
-        return if (fenster == gespeichert.fenster) mitSchalter else mitSchalter.mitFenster(fenster)
+        val mitFenstern = if (fenster == gespeichert.fenster) mitSchalter else mitSchalter.mitFenster(fenster)
+        val wahl = farbwaerme ?: return mitFenstern
+        return mitFenstern.copy(farbwaerme = wahl.eigene?.coerceIn(0, DimOverlayPrefs.WARMTH_MAX))
     }
 
     /**
      * Dieser Stand, nachdem sich das Gespeicherte von [vorher] auf [neu] geaendert hat: was gegenueber [vorher]
-     * unberuehrt ist (Schalter und Fenster je fuer sich), folgt [neu]; selbst Geaendertes bleibt.
+     * unberuehrt ist (Schalter, Fenster und Farbwaerme je fuer sich), folgt [neu]; selbst Geaendertes bleibt.
      */
     fun nachgezogen(vorher: DimmenEntwurf, neu: DimmenEntwurf): DimmenEntwurf = DimmenEntwurf(
         an = if (an == vorher.an) neu.an else an,
-        fenster = if (fenster == vorher.fenster) neu.fenster else fenster
+        fenster = if (fenster == vorher.fenster) neu.fenster else fenster,
+        farbwaerme = if (farbwaerme == vorher.farbwaerme) neu.farbwaerme else farbwaerme
     )
 
     companion object {

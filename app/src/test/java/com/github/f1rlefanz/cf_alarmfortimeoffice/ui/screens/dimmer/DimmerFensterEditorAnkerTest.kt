@@ -3,6 +3,10 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.dimmer
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimAnchor
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimRule
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimmerModellMigration
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.typ.AnkerFeld
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.typ.ENDE_ANKER
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.typ.START_ANKER
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.typ.feldFuerStartAnker
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test

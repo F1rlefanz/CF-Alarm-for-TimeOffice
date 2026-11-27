@@ -2,6 +2,7 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.typ
 
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.Blockposition
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimOverlayPrefs
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimWindowResolver
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftKategorie
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.istZeichenmuster
 
@@ -268,6 +269,56 @@ internal object DimmenTexte {
         Blockposition.LETZTER -> "Letzter"
         Blockposition.EINZELNER -> "Einzeln"
     }
+}
+
+/**
+ * Nutzertexte des Blatts „Weitere Optionen“ der Karte „Bildschirm dimmen“ (#224). Aus dem Prototyp (`zeigeDimmen`)
+ * stehen nur Titel, Unterzeile und „Nachlauf bis es hell ist“; die Texte des Anker-Editors und der Beispielzeile
+ * teilt sich das Blatt mit dem Regel-Editor (`R.string.dimmer_*`, `R.string.tageslicht_*`).
+ */
+internal object WeitereOptionenTexte {
+    const val TITEL = "Weitere Optionen"
+    const val UNTERZEILE = "Nachlauf bis es hell ist, Dimmen ein paar Minuten nach dem Wecker"
+
+    /** Das Blatt speichert nicht selbst; [knopf] ist der Knopf der Typ-Seite, der es tut. */
+    fun speicherHinweis(knopf: String): String = "Gespeichert wird erst mit „$knopf“ auf der Typ-Seite."
+
+    const val WAERME_TITEL = "Farbwärme"
+    const val WAERME_WIE_EINSTELLUNGEN = "Wie in den Einstellungen"
+    const val WAERME_EIGENE = "Eigener Wert"
+    fun prozent(wert: Int): String = "$wert %"
+    fun waermeZurzeit(wert: Int): String = "Zurzeit ${prozent(wert)}"
+
+    const val NACH_DEM_WECKER = "Dimmen nach dem Wecker"
+
+    /** Die Grenze steht da, weil das Feld eine groessere Zahl auf sie zuruecksetzt. */
+    val NACH_DEM_WECKER_HINWEIS =
+        "Minuten, 0 bis ${DimWindowResolver.NACHLAUF_MAX_MINUTEN} – höchstens bis zur Uhrzeit, zu der das Fenster " +
+            "spätestens endet. „${NichtStoerenTexte.TITEL}“ endet trotzdem an der Weckzeit."
+
+    const val NACHLAUF_HELL_TITEL = "Nachlauf bis es hell ist"
+
+    /**
+     * Ohne Ort: der Satz des Regel-Editors ([ohneOrtSatz]) und der Weg zum Ort. [kartenTitel] ist die Ueberschrift
+     * der Karte in den Einstellungen (dieselbe String-Ressource, nie ein Abschreiben).
+     */
+    fun ohneOrt(ohneOrtSatz: String, kartenTitel: String): String =
+        "$ohneOrtSatz Den Ort stellst du unter „Einstellungen“ → „$kartenTitel“ ein."
+
+    const val BEIM_WECKER_AUS =
+        "„$NACH_DEM_WECKER“ gibt es, wenn das Fenster schon beim Wecker endet. Schalte dafür auf der Typ-Seite " +
+            "„${DimmenTexte.BEIM_WECKER}“ ein."
+    const val KEIN_NACHLAUF = "Dieses Fenster endet nicht am Wecker – hier gibt es kein „$NACH_DEM_WECKER“."
+    const val OHNE_EIGENEN_WECKER =
+        "Dieser Typ stellt keinen Wecker. Nach dem Wecker dimmt dieses Fenster nur, wenn währenddessen ein anderer " +
+            "Wecker klingelt."
+
+    /** Ueber dem Anker-Editor eines Fensters, das nicht in „Wann“ passt. */
+    const val OHNE_WANN = "Dieses Fenster passt nicht in „${DimmenTexte.WANN}“. Start und Ende stellst du hier ein."
+
+    const val KEIN_FENSTER =
+        "Dieser Typ hat kein Fenster. „$NACH_DEM_WECKER“ gibt es je Fenster – lege auf der Typ-Seite mit " +
+            "„${DimmenTexte.FENSTER_DAZU}“ eines an."
 }
 
 /**

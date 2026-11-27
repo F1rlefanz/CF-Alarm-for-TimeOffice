@@ -278,7 +278,7 @@ object DimWindowResolver {
 
     /**
      * Ende eines „Weckzeit, spätestens"-Fensters für eine BEKANNTE [weckzeit] - für die
-     * Beispielzeile im Editor (`DimmerRulesViewModel.nachlaufBeispiel`), damit sie über DIESELBE
+     * Beispielzeile im Editor (`nachlaufBeispiel` in `ShiftViewModel.kt`), damit sie über DIESELBE
      * Rechnung läuft wie die Wirkung und keine zweite Wahrheit aufmacht.
      *
      * Die Schranke ist die erste Uhrzeit [endClockMinutes] ECHT nach der Weckzeit - für eine

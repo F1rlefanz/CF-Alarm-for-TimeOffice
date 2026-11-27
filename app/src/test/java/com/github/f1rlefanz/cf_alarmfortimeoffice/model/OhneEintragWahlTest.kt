@@ -202,6 +202,8 @@ class OhneEintragWahlTest {
     // Umbau #223 (bewusste Verhaltensaenderung, Betreuer-Entscheidung in #220): bei „Eigene Einstellungen“
     // nennt die Zeile auch die Dimm-Kurzform der eigenen Fenster - im Wortlaut der Typ-Zeilen, ohne Wecker.
 
+    // Der Dimm-Teil traegt geschuetzte Leerzeichen wie die Typ-Zeilen: umbrochen wird nur hinter dem Trenner.
+
     private fun nachtDavor(beimWecker: Boolean) = TypDimmFenster(
         fenster = DimWindow(
             startAnchor = DimAnchor.CLOCK,
@@ -220,16 +222,16 @@ class OhneEintragWahlTest {
     @Test
     fun `bei Eigenen Einstellungen nennt die Zeile die Dimm-Fenster - ohne Wecker`() {
         assertEquals(
-            "kein Wecker · dimmt 22:00–07:00",
+            "kein Wecker · dimmt\u00A022:00–07:00",
             OhneEintragTexte.kurzform(mitEigenen(fenster = arrayOf(nachtDavor(beimWecker = false))))
         )
         assertEquals(
             "auch ein gespeichertes „bis Wecker“ nennt hier die Uhrzeit",
-            "kein Wecker · dimmt 22:00–07:00",
+            "kein Wecker · dimmt\u00A022:00–07:00",
             OhneEintragTexte.kurzform(mitEigenen(fenster = arrayOf(nachtDavor(beimWecker = true))))
         )
         assertEquals(
-            "kein Wecker · 2 Dimm-Fenster",
+            "kein Wecker · 2\u00A0Dimm-Fenster",
             OhneEintragTexte.kurzform(
                 mitEigenen(fenster = arrayOf(nachtDavor(beimWecker = false), nachtDavor(beimWecker = true)))
             )
@@ -239,7 +241,7 @@ class OhneEintragWahlTest {
     @Test
     fun `ausgeschaltetes Dimmen steht in der Zeile, ohne Fenster steht nichts`() {
         assertEquals(
-            "kein Wecker · Dimmen aus",
+            "kein Wecker · Dimmen\u00A0aus",
             OhneEintragTexte.kurzform(mitEigenen(an = false, fenster = arrayOf(nachtDavor(beimWecker = false))))
         )
         assertEquals("kein Wecker", OhneEintragTexte.kurzform(mitEigenen()))

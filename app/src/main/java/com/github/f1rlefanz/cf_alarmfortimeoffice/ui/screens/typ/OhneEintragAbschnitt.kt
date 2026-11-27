@@ -102,10 +102,12 @@ object OhneEintragTexte {
     /**
      * Wortlaut wie in den Typ-Zeilen (`dimmKurzform` in `ShiftConfigScreen.kt`): „Dimmen aus“ bei
      * `an = false`, `null` ohne wirksames Fenster. Ohne Wecker gerechnet - an diesen Tagen gibt es
-     * keinen eigenen, ein Fenster steht deshalb mit seiner Uhrzeit da, nie mit „Wecker“.
+     * keinen eigenen, ein Fenster steht deshalb mit seiner Uhrzeit da, nie mit „Wecker“. Mit
+     * geschuetzten Leerzeichen wie dort: umbrochen wird nur hinter dem Trenner (320 dp).
      */
     private fun eigeneDimmKurzform(dimmen: TypDimmen): String? =
-        if (!dimmen.an) TypListeTexte.DIMMEN_AUS else DimFensterAbbildung.kurzform(dimmen, weckerAn = false)
+        (if (!dimmen.an) TypListeTexte.DIMMEN_AUS else DimFensterAbbildung.kurzform(dimmen, weckerAn = false))
+            ?.replace(' ', ' ')
 
     /** Der Kasten unter der Wahl, solange ein Typ gewaehlt ist (Prototyp `wieAktiv`; Licht erst ab Etappe 4). */
     fun richtetSichNach(typName: String): String =

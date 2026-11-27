@@ -18,6 +18,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IShiftUseCa
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.ShiftViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -36,6 +37,7 @@ import org.mockito.kotlin.anyOrNull
 import org.mockito.kotlin.argumentCaptor
 import org.mockito.kotlin.atLeast
 import org.mockito.kotlin.doReturn
+import org.mockito.kotlin.doSuspendableAnswer
 import org.mockito.kotlin.eq
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.never
@@ -185,12 +187,19 @@ class OhneEintragEinstellungenTest {
 
     private class Aufbau(val vm: ShiftViewModel, val shiftUseCase: IShiftUseCase, val armierer: ZeitkettenArmierer)
 
+    private val speicherdauerMs = 50L
+
     private fun aufbauen(config: ShiftConfig, speichern: Result<Unit> = Result.success(Unit)): Aufbau {
         val shiftUseCase = mock<IShiftUseCase>()
         shiftUseCase.stub {
             on { shiftConfig } doReturn flowOf(config)
             on { getCurrentShiftConfig() } doReturn Result.success(config)
-            on { saveShiftConfig(any()) } doReturn speichern
+            // Wie DataStore: das Speichern unterbricht. Ohne Unterbrechung waere der erste Auftrag fertig,
+            // bevor der zweite beginnt - und die Faelle „vor dem Speichern“ pruefte keiner.
+            on { saveShiftConfig(any()) } doSuspendableAnswer {
+                delay(speicherdauerMs)
+                speichern
+            }
             on { recognizeShiftsInEvents(any()) } doReturn Result.success(emptyList())
         }
         val alarmUseCase = mock<IAlarmUseCase>()

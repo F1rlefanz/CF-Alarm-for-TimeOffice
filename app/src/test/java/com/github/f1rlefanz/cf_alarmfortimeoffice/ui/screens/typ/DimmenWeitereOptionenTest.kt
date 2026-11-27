@@ -263,21 +263,24 @@ class DimmenWeitereOptionenTest {
     fun `die Karte nennt den Nachlauf und sagt, wo ein Fenster ohne Wann bearbeitet wird`() {
         fun mitNachlauf(minuten: Int) = nachtDavor.copy(fenster = WeitereOptionenLogik.nachlaufSetzen(nachtDavor.fenster, minuten))
 
-        assertNull(DimmenAbschnittLogik.blattHinweis(mitNachlauf(0), mitBlatt = true))
+        fun hinweis(f: TypDimmFenster, mitBlatt: Boolean = true, weckerAn: Boolean = true) =
+            DimmenAbschnittLogik.blattHinweis(f, mitBlatt, weckerAn)
+
+        assertNull(hinweis(mitNachlauf(0)))
+        assertEquals("Nach dem Wecker dimmt es noch bis zu 30 Minuten weiter.", hinweis(mitNachlauf(30)))
+        assertEquals("Nach dem Wecker dimmt es noch bis zu 1 Minute weiter.", hinweis(mitNachlauf(1)))
+        // Ein Typ ohne Wecker verspricht keinen eigenen.
         assertEquals(
-            "Nach dem Wecker dimmt es noch bis zu 30 Minuten weiter.",
-            DimmenAbschnittLogik.blattHinweis(mitNachlauf(30), mitBlatt = true)
-        )
-        assertEquals(
-            "Nach dem Wecker dimmt es noch bis zu 1 Minute weiter.",
-            DimmenAbschnittLogik.blattHinweis(mitNachlauf(1), mitBlatt = false)
+            "Klingelt in diesem Fenster ein anderer Wecker, dimmt es danach noch bis zu 30 Minuten weiter.",
+            hinweis(mitNachlauf(30), weckerAn = false)
         )
         // Ohne Weckzeit-Ende wirkt der gespeicherte Nachlauf nicht - dann sagt die Karte nichts davon.
         val feste = mitNachlauf(30).let { it.copy(fenster = it.fenster.copy(endAnchor = DimAnchor.CLOCK)) }
-        assertNull(DimmenAbschnittLogik.blattHinweis(feste, mitBlatt = true))
-        assertEquals(DimmenTexte.EIGENE_ZEITEN_HINWEIS, DimmenAbschnittLogik.blattHinweis(ohneForm, mitBlatt = true))
-        // Die feste Zeile hat die Zeile „Weitere Optionen“ nicht und darf nicht auf sie verweisen.
-        assertNull(DimmenAbschnittLogik.blattHinweis(ohneForm, mitBlatt = false))
+        assertNull(hinweis(feste))
+        assertEquals(DimmenTexte.EIGENE_ZEITEN_HINWEIS, hinweis(ohneForm))
+        // Die feste Zeile hat die Zeile „Weitere Optionen“ nicht: ihre Karte bleibt, wie sie war (#238).
+        assertNull(hinweis(ohneForm, mitBlatt = false))
+        assertNull(hinweis(mitNachlauf(30), mitBlatt = false))
     }
 
     // ── Beispielzeile zum Tageslicht (umgezogen aus DimmerRulesViewModelTageslichtTest) ─────

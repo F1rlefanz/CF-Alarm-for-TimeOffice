@@ -264,9 +264,18 @@ internal object DimmenTexte {
     /** Unter einem Fenster ohne „Wann“ - nur, wo die Zeile „Weitere Optionen“ darunter steht. */
     const val EIGENE_ZEITEN_HINWEIS = "Start und Ende stellst du unter „${WeitereOptionenTexte.TITEL}“ ein."
 
-    /** „bis zu“: die Uhrzeit-Grenze und „bis es hell ist“ kuerzen den Nachlauf. */
-    fun nachlauf(minuten: Int): String =
-        "Nach dem Wecker dimmt es noch bis zu $minuten ${if (minuten == 1) "Minute" else "Minuten"} weiter."
+    /**
+     * „bis zu“: die Uhrzeit-Grenze und „bis es hell ist“ kuerzen den Nachlauf. Ein Typ ohne Wecker ([weckerAn]
+     * `false`) braucht dafuer einen anderen Wecker im Fenster - dasselbe sagt das Blatt.
+     */
+    fun nachlauf(minuten: Int, weckerAn: Boolean): String {
+        val dauer = "bis zu $minuten ${if (minuten == 1) "Minute" else "Minuten"}"
+        return if (weckerAn) {
+            "Nach dem Wecker dimmt es noch $dauer weiter."
+        } else {
+            "Klingelt in diesem Fenster ein anderer Wecker, dimmt es danach noch $dauer weiter."
+        }
+    }
 
     /** Der Chip eines Blocktags; `null` = alle. */
     fun blockTag(position: Blockposition?): String = when (position) {

@@ -142,16 +142,15 @@ internal object DimmenAbschnittLogik {
 
     /**
      * Was die Karte zu dem sagt, was unter „Weitere Optionen“ eingestellt ist (#224): ein Fenster ohne „Wann“ wird
-     * dort bearbeitet (nur mit der Zeile dorthin, [mitBlatt]), und ein Nachlauf laesst es ueber die Weckzeit
-     * hinaus dimmen, obwohl Titel und Schalter „bis Wecker“ sagen.
+     * dort bearbeitet, und ein Nachlauf laesst es ueber die Weckzeit hinaus dimmen, obwohl Titel bzw. Schalter
+     * das nicht sagen. Nur mit der Zeile dorthin ([mitBlatt]); die feste Zeile bekommt sie erst mit #238.
      */
-    fun blattHinweis(f: TypDimmFenster, mitBlatt: Boolean): String? {
-        if (DimFensterAbbildung.deute(f) is DimFensterAnsicht.NichtDarstellbar) {
-            return DimmenTexte.EIGENE_ZEITEN_HINWEIS.takeIf { mitBlatt }
-        }
+    fun blattHinweis(f: TypDimmFenster, mitBlatt: Boolean, weckerAn: Boolean): String? {
+        if (!mitBlatt) return null
+        if (DimFensterAbbildung.deute(f) is DimFensterAnsicht.NichtDarstellbar) return DimmenTexte.EIGENE_ZEITEN_HINWEIS
         val minuten = f.fenster.weckzeitNachlaufMinuten.coerceIn(0, DimWindowResolver.NACHLAUF_MAX_MINUTEN)
         return if (f.fenster.endAnchor == DimAnchor.ALARM_SONST_CLOCK && minuten > 0) {
-            DimmenTexte.nachlauf(minuten)
+            DimmenTexte.nachlauf(minuten, weckerAn)
         } else {
             null
         }
@@ -346,7 +345,7 @@ private fun FensterBlock(
             }
         }
 
-        val blattHinweis = DimmenAbschnittLogik.blattHinweis(fenster, mitBlatt)
+        val blattHinweis = DimmenAbschnittLogik.blattHinweis(fenster, mitBlatt, weckerAn)
         val form = (ansicht as? DimFensterAnsicht.Darstellbar)?.form
         if (form == null) {
             if (blattHinweis != null) {

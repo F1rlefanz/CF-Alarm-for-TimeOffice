@@ -77,9 +77,8 @@ import kotlin.math.roundToInt
 internal object TagesleisteTexte {
     const val ZEITRAUM = "Von 18 Uhr am Vortag bis 18 Uhr am Folgetag."
 
-    // Der Satz des Prototyps heisst „Ändere unten etwas“. In Etappe 2 ist darunter nur der Wecker
-    // einstellbar (Festlegung des Betreuers), also nennt der Satz den Wecker - und steht nur dort, wo
-    // die Karte „Wecker“ darunter wirklich steht.
+    // Der Satz des Prototyps heisst „Ändere unten etwas“; die App nennt den Wecker (Festlegung des
+    // Betreuers in Etappe 2). Er steht nur dort, wo die Karte „Wecker“ darunter wirklich steht.
     const val RECHNET_MIT = "Ändere unten den Wecker – die Leiste rechnet sofort mit."
     const val WIRD_GELESEN = "Die Leiste wird gelesen …"
     const val LINK = "Im Bereich „Wecker“ über die ganze Woche ansehen"
@@ -199,21 +198,24 @@ internal object TagesleisteKarteLogik {
     /**
      * Die Einstellungen, aus denen die Leiste rechnet: die des GESPEICHERTEN Typs (nach Namen, Gross/Klein
      * egal - wie die Laufzeit einen Schichtnamen auf seinen Typ abbildet), bei der Neuanlage die Vorgaben
-     * eines neuen Typs. Die Typ-Seite uebergibt hier spaeter den ungespeicherten Entwurf (Paket G); der
-     * Adapter nimmt sie ohnehin als Parameter.
+     * eines neuen Typs. Das Dimmen kommt aus dem ENTWURF ([dimmenEntwurf], `null` = er traegt keins) - auch
+     * an der festen Zeile, wenn sie „wie <dieser Typ>“ ist, denn nach dem Speichern gilt es dort ebenso.
      */
-    fun einstellungenAus(config: ShiftConfig, gespeicherterName: String?): TypLeistenEinstellungen {
+    fun einstellungenAus(config: ShiftConfig, gespeicherterName: String?, dimmenEntwurf: DimmenEntwurf?): TypLeistenEinstellungen {
         val typ = gespeicherterName?.let { name -> config.definitions.firstOrNull { it.name.equals(name, ignoreCase = true) } }
-        return TypLeistenEinstellungen(typ?.dimmen ?: TypDimmen(), typ?.nichtStoeren ?: TypNichtStoeren(), freierTagAus(config))
+        val gespeichert = typ?.dimmen ?: TypDimmen()
+        val dimmen = dimmenEntwurf?.anwenden(gespeichert) ?: gespeichert
+        val mitEntwurf = config.copy(definitions = config.definitions.map { if (it.id == typ?.id) it.copy(dimmen = dimmen) else it })
+        return TypLeistenEinstellungen(dimmen, typ?.nichtStoeren ?: TypNichtStoeren(), freierTagAus(mitEntwurf))
     }
 
     /**
      * Rechnet die Leiste.
      *
      * @param gespeicherterName der Name des Typs, wie er in der Konfiguration steht; `null` bei der
-     *   Neuanlage. Dimm-Regeln, Hue-Regeln und Schichtspannen haengen alle am GESPEICHERTEN Namen: mit
-     *   dem Entwurfsnamen verschwaenden Dimmen und Licht, sobald jemand ein Zeichen im Namen aendert.
-     *   Ein Typ, der noch nicht angelegt ist, hat auch keine Spanne.
+     *   Neuanlage. Die gespeicherten Einstellungen, Hue-Regeln und Schichtspannen haengen alle am
+     *   GESPEICHERTEN Namen: mit dem Entwurfsnamen verschwaende das Licht, sobald jemand ein Zeichen im
+     *   Namen aendert. Ein Typ, der noch nicht angelegt ist, hat auch keine Spanne.
      * @param quellen `null` = noch nicht gelesen ([TagesleisteAnzeige.WIRD_GELESEN]). Ein ausgeschalteter
      *   Typ braucht keine Quelle: er wird nicht erkannt, also gibt es nichts zu rechnen.
      */
@@ -243,7 +245,7 @@ internal object TagesleisteKarteLogik {
             ?: return TagesleisteAnzeige(gelesen = true, leiste = Tagesleiste.LEER, unbekannt = unbekannt, typNochNichtAngelegt = gespeicherterName == null)
 
         val typen = quellen.typen.wertOderNull()
-        val einstellungen = typen?.let { einstellungenAus(it, gespeicherterName) }
+        val einstellungen = typen?.let { einstellungenAus(it, gespeicherterName, entwurf.dimmen) }
         val lichtQuelle = quellen.licht.wertOderNull()
         // Die Sonne von heute: der Mustertag hat kein Datum, die Tageslicht-Bedingung braucht aber eins.
         // Ohne Ort liefert `hellZeitpunkt` null, also keine Einschraenkung - wie zur Laufzeit.

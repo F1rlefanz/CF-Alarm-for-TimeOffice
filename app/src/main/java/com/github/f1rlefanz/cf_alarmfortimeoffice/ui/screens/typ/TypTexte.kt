@@ -1,5 +1,7 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.typ
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.Blockposition
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimOverlayPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftKategorie
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.istZeichenmuster
 
@@ -226,4 +228,43 @@ object ShiftDefinitionTexte {
             "Möglichkeit auf den neuen Namen umgestellt. Klappt das nicht – etwa weil der neue " +
             "Name schon vergeben ist –, sagt die App es dir; dann wählst du die Schicht in der " +
             "betroffenen Regel neu aus."
+}
+
+/**
+ * Nutzertexte der Karte „Bildschirm dimmen“ (#221, Prototyp `zeigeTyp`). „Wann“ samt Erklaerung und „Bis“-Hinweis
+ * stehen an [DimWann]. „Dimmen an diesem Tag“ und seine Hinweise stehen nicht im Prototyp (Festlegung in #221).
+ */
+internal object DimmenTexte {
+    const val TITEL = "Bildschirm dimmen"
+    const val AN_TITEL = "Dimmen an diesem Tag"
+    const val AN_HINWEIS = "Die App dimmt nur in den Fenstern dieses Typs."
+    const val AUS_HINWEIS = "Aus – kein Fenster dieses Typs dimmt."
+    const val KEIN_FENSTER = "An diesen Tagen wird nicht gedimmt."
+    const val WANN = "Wann"
+    const val VON = "Von"
+    const val BIS = "Bis"
+    const val MIT = "Mit %"
+
+    /** Die Grenze steht da, weil das Feld eine groessere Zahl auf sie zuruecksetzt. */
+    val MIT_HINWEIS = "0 bis ${DimOverlayPrefs.STRENGTH_MAX}"
+    const val DIENSTENDE = "Dienstende"
+    const val BEIM_WECKER = "Schon beim Wecker enden"
+    const val BLOCKTAGE = "Gilt an diesen Tagen eines Blocks"
+    const val FENSTER_DAZU = "+ Weiteres Fenster"
+
+    /** Statt „Vom Vorabend …“, wenn „Nacht davor“ mit „Von“ vor „Bis“ am Tag selbst liegt (E14). */
+    const val NACHT_DAVOR_AM_TAG_SELBST =
+        "Am Tag selbst, weil „$VON“ vor „$BIS“ liegt. Liegt die Weckzeit vor „$VON“, entfällt das Fenster."
+    const val NICHT_OHNE_EINTRAG = "An Tagen ohne Kalendereintrag gibt es dieses Fenster nicht."
+
+    fun entfernen(nummer: Int): String = "Fenster $nummer entfernen"
+
+    /** Der Chip eines Blocktags; `null` = alle. */
+    fun blockTag(position: Blockposition?): String = when (position) {
+        null -> "Alle"
+        Blockposition.ERSTER -> "Erster"
+        Blockposition.MITTLERER -> "Mittlere"
+        Blockposition.LETZTER -> "Letzter"
+        Blockposition.EINZELNER -> "Einzeln"
+    }
 }

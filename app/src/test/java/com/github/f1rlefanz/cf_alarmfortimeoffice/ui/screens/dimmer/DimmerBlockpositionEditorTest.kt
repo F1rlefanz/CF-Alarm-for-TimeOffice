@@ -1,16 +1,15 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.dimmer
 
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.Blockposition
-import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.DimmerRulesViewModel
-import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.DimmerRulesViewModel.SchnellstartVorlage
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.typ.DimmenAbschnittLogik
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Der Fenster-Editor muss JEDE Blockposition anbieten, die das Modell kennt - dieselbe
- * Zusicherung wie fuer die Anker (`DimmerFensterEditorAnkerTest`): eine Position, die die
- * Nachtdienst-Vorlage setzt und der Editor nicht zeigt, waere dort nicht abwaehlbar.
+ * Die Auswahl der Blockpositionen (`DimTimeControls.kt`, seit #221 vom Regel-Editor und vom Abschnitt
+ * „Bildschirm dimmen“ der Typ-Seite geteilt) muss JEDE Blockposition anbieten, die das Modell kennt - dieselbe
+ * Zusicherung wie fuer die Anker (`DimmerFensterEditorAnkerTest`): eine Position, die ein gespeichertes Fenster
+ * traegt und die Auswahl nicht zeigt, waere dort nicht abwaehlbar.
  */
 class DimmerBlockpositionEditorTest {
 
@@ -21,12 +20,8 @@ class DimmerBlockpositionEditorTest {
     }
 
     @Test
-    fun `jedes Fenster der Nachtdienst-Vorlage ist im Editor bedienbar`() {
-        val regel = DimmerRulesViewModel.baueVorlagenRegel(SchnellstartVorlage.NACHTDIENST_RHYTHMUS, "x", "ND")!!
-        regel.windows.forEach { w ->
-            assertTrue(w.blockPositionen.isNotEmpty())
-            assertTrue(w.blockPositionen.all { it in BLOCKPOSITIONEN })
-        }
+    fun `die Typ-Seite bietet Alle und danach jede Blockposition an`() {
+        assertEquals(listOf<Blockposition?>(null) + BLOCKPOSITIONEN, DimmenAbschnittLogik.CHIPS)
     }
 
     @Test

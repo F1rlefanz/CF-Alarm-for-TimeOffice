@@ -416,28 +416,6 @@ internal fun feldFuerStartAnker(anker: DimAnchor): AnkerFeld = when (anker) {
     DimAnchor.CLOCK, DimAnchor.ALARM_SONST_CLOCK -> AnkerFeld.UHRZEIT
 }
 
-/**
- * Reihenfolge der Blockpositions-Chips im Editor - alle vier, in der Reihenfolge einer Dienstfolge.
- * Als Konstante neben dem Composable, damit ein Test sie gegen das Modell halten kann: eine Position,
- * die das Modell kennt und der Editor nicht anbietet, waere aus einer Vorlage eingeschleust nicht
- * mehr abwaehlbar.
- */
-internal val BLOCKPOSITIONEN = listOf(
-    Blockposition.ERSTER, Blockposition.MITTLERER, Blockposition.LETZTER, Blockposition.EINZELNER
-)
-
-/**
- * Ein Chip-Tipp schaltet EINE Position um - und laesst das letzte Haekchen stehen. Ein Fenster
- * ohne jede Position gaelte nirgends und stuende trotzdem in der Regel; wer das Fenster nicht
- * will, entfernt es. Reine Funktion, damit die Regel testbar ist.
- */
-internal fun blockpositionUmschalten(aktuell: Set<Blockposition>, position: Blockposition): Set<Blockposition> =
-    if (position in aktuell) {
-        if (aktuell.size == 1) aktuell else aktuell - position
-    } else {
-        aktuell + position
-    }
-
 @Composable
 private fun blockpositionLabel(position: Blockposition): String = when (position) {
     Blockposition.ERSTER -> stringResource(R.string.dimmer_blockposition_erster)
@@ -632,7 +610,7 @@ private fun ClockField(minutes: Int, onClick: () -> Unit) {
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        OutlinedButton(onClick = onClick) { Text(fmtClock(minutes)) }
+        ZeitKnopf(minutes, onClick)
     }
 }
 

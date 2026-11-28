@@ -354,7 +354,7 @@ class NavigationViewModelTest {
         assertEquals(NavigationState.UnusedAppRestrictions(MainTab.HOME), vm.navigationState.value)
     }
 
-    // ---- Rueckweg aus den Regel-Editoren: navigateBackFrom / navigateBackToMain ---------
+    // ---- Rueckweg aus dem Regel-Editor: navigateBackFrom / navigateBackToMain ----------
 
     @Test
     fun `Hue-Regel ueber die Liste geoeffnet fuehrt zurueck zur Liste`() {
@@ -374,30 +374,12 @@ class NavigationViewModelTest {
     }
 
     @Test
-    fun `Dimmer-Regel ueber die Liste geoeffnet fuehrt zurueck zur Liste`() {
-        val vm = newViewModel()
-        vm.navigateToDimmerRuleConfig(ruleId = "d1", fromTab = MainTab.DIMMER, cameFromSettingsList = true)
-        vm.navigateBackFrom(vm.navigationState.value)
-        assertEquals(NavigationState.DimmerSettings(MainTab.DIMMER), vm.navigationState.value)
-    }
-
-    @Test
-    fun `Dimmer-Regel ohne Listen-Pfad fuehrt zurueck zum Tab`() {
-        val vm = newViewModel()
-        vm.navigateToDimmerRuleConfig(fromTab = MainTab.DIMMER, cameFromSettingsList = false)
-        vm.navigateBackFrom(vm.navigationState.value)
-        assertEquals(NavigationState.MainContent(MainTab.DIMMER), vm.navigationState.value)
-    }
-
-    @Test
-    fun `navigateBackToMain loest den Rueckweg der Regel-Editoren genauso auf wie navigateBackFrom`() {
+    fun `navigateBackToMain loest den Rueckweg des Regel-Editors genauso auf wie navigateBackFrom`() {
         // Eine Aufloesung, zwei Eingaenge: System-Zurueck und die Screen-Lambdas duerfen fuer
         // denselben Einstiegspfad nie verschiedene Ziele kennen.
         val faelle = listOf(
             NavigationState.HueRuleConfig("r1", MainTab.HUE, cameFromSettingsList = true),
-            NavigationState.HueRuleConfig(null, MainTab.HUE, cameFromSettingsList = false),
-            NavigationState.DimmerRuleConfig("d1", MainTab.DIMMER, cameFromSettingsList = true),
-            NavigationState.DimmerRuleConfig(null, MainTab.DIMMER, cameFromSettingsList = false)
+            NavigationState.HueRuleConfig(null, MainTab.HUE, cameFromSettingsList = false)
         )
         for (fall in faelle) {
             val ueberUebergebenen = newViewModel()
@@ -405,13 +387,7 @@ class NavigationViewModelTest {
             val erwartet = ueberUebergebenen.navigationState.value
 
             val vm = newViewModel()
-            when (fall) {
-                is NavigationState.HueRuleConfig ->
-                    vm.navigateToHueRuleConfig(fall.ruleId, fall.returnToTab, fall.cameFromSettingsList)
-                is NavigationState.DimmerRuleConfig ->
-                    vm.navigateToDimmerRuleConfig(fall.ruleId, fall.returnToTab, fall.cameFromSettingsList)
-                else -> error("unerwarteter Fall $fall")
-            }
+            vm.navigateToHueRuleConfig(fall.ruleId, fall.returnToTab, fall.cameFromSettingsList)
             vm.navigateBackToMain()
             assertEquals("Rueckweg aus $fall", erwartet, vm.navigationState.value)
         }

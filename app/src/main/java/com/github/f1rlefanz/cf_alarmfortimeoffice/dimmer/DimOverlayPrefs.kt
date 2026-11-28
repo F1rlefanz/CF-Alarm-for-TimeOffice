@@ -11,6 +11,7 @@ import androidx.datastore.preferences.core.longPreferencesKey
 import com.github.f1rlefanz.cf_alarmfortimeoffice.di.qualifiers.MainDataStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
@@ -118,7 +119,7 @@ class DimOverlayPrefs @Inject constructor(
     // DimNotificationService's Aktions-Handler (Heller/Dunkler/Pause) UND DimScheduleUseCase.
     // applyCurrentState()'s eigenes Stale-Clearing lesen beide overrideNow() und schreiben ggf.
     // zurueck, aber aus unabhaengigen, potenziell gleichzeitig laufenden Kontexten (Tick-Alarm,
-    // 6h-Wartung, Boot, jeder DimmerViewModel-Setter, Notification-Button-Tap). Ein rein lokaler
+    // 6h-Wartung, Boot, jeder Einstellungs-Setter, Notification-Button-Tap). Ein rein lokaler
     // Mutex in einem der Aufrufer schuetzt nur gegen sich selbst, nicht gegen die anderen - dieser
     // Singleton ist der einzige Ort, an dem ALLE Aufrufer tatsaechlich dieselbe Instanz teilen.
     private val overrideMutex = Mutex()
@@ -228,6 +229,21 @@ class DimOverlayPrefs @Inject constructor(
         it[KEY_CORRECTION_NOTIFICATION_ENABLED] ?: false
     }
 
+    /**
+     * STRIKTE Lese-Stelle fuer die Typ-Modellmigration (#216): `dim_enabled`, ohne den Umweg ueber
+     * [safeData]. Der degradiert einen Lesefehler auf "aus" - fuer den Dimmer die richtige
+     * Richtung, fuer die Migration nicht: die schriebe "aus" an jeden Typ und setzte ihre Stufe,
+     * ein eingeschalteter Dimmer bliebe nach dem Umbau dauerhaft aus. Hier kommt der Fehler
+     * (Store unlesbar, falsch typisierter Wert) als `Result.failure` an; [toggles] bleibt, wie es ist.
+     */
+    suspend fun dimmenAnOderFehler(): Result<Boolean> = try {
+        Result.success(dataStore.data.first()[KEY_DIM_ON] ?: false)
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Result.failure(e)
+    }
+
     suspend fun togglesNow(): Toggles = toggles.first()
     suspend fun strengthNow(): Int = strength.first()
     suspend fun warmthNow(): Int = warmth.first()
@@ -235,6 +251,13 @@ class DimOverlayPrefs @Inject constructor(
     suspend fun correctionNotificationEnabledNow(): Boolean = correctionNotificationEnabled.first()
 
     suspend fun setDimEnabled(v: Boolean) = dataStore.edit { it[KEY_DIM_ON] = v }
+
+    /**
+     * Die Farbwaerme fuer Typen ohne eigene Waerme (`TypDimmen.farbwaerme == null`, #225) - und der
+     * Rueckfall des Renderzustands. Der Aufrufer ruft direkt danach [DimScheduleUseCase.enable]:
+     * ein laufendes Fenster rechnet sonst erst am naechsten Tick mit dem neuen Wert.
+     */
+    suspend fun setWarmth(v: Int) = dataStore.edit { it[KEY_WARMTH] = v.coerceIn(0, WARMTH_MAX) }
 
     /**
      * Setzt An/Aus UND die Render-Farbe (Intensität/Wärme des gerade aktiven Fensters). Der Scheduler

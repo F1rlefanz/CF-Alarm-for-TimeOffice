@@ -2,7 +2,6 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel
 
 import com.github.f1rlefanz.cf_alarmfortimeoffice.di.state.CalendarStateHolder
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimOverlayPrefs
-import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimRule
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimRuleRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimRuleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimWindow
@@ -17,6 +16,9 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.HueRuleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftKategorie
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.TypDimmFenster
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.TypDimmen
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.TypNichtStoeren
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpanStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.HellAb
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
@@ -48,11 +50,9 @@ import java.time.LocalTime
 /**
  * Die Statuszeile "Dimmen: … · Licht: … · Nicht stören: …" je Schicht (Issue #70).
  *
- * Geprueft wird jede Zeile der Falltabellen aus dem Umsetzungsplan - und zwar ueber DIESELBEN
- * Funktionen wie zur Laufzeit: die Dimm-Auswahl kommt aus einem echten
- * [DimRuleUseCase.findRuleForShift], die Hue-Auswahl aus `passtAufSchicht`, der DND-Abgleich ist
- * exakt wie im `DndShiftSpanResolver`. Eine Zeile, die anders zaehlt als die Wirkung, luegt genau
- * dann, wenn man sie braucht.
+ * Seit #219 liest die Zeile Dimmen und "Nicht stoeren" AM TYP (`ShiftDefinition.dimmen`,
+ * `.nichtStoeren`) - dort, wo auch die Laufzeit liest; die Hue-Auswahl kommt weiter aus `passtAufSchicht`.
+ * Eine Zeile, die anders zaehlt als die Wirkung, luegt genau dann, wenn man sie braucht.
  */
 @OptIn(ExperimentalCoroutinesApi::class) // Dispatchers.setMain/resetMain, advanceUntilIdle
 class SchichtFolgenTest {
@@ -61,8 +61,6 @@ class SchichtFolgenTest {
     private val NBSP: Char = Char(0x00A0)
 
     // --- Bausteine -------------------------------------------------------------------------
-
-    private val auswahl = DimRuleUseCase(mock<DimRuleRepository>())
 
     private fun def(
         name: String = "AD1",
@@ -79,36 +77,31 @@ class SchichtFolgenTest {
         isOnCall = onCall
     )
 
-    private fun dimRegel(
-        id: String,
-        muster: String,
-        aktiv: Boolean = true,
-        fenster: List<DimWindow> = listOf(DimWindow())
-    ) = DimRule(id = id, name = "Regel $id", shiftPattern = muster, enabled = aktiv, windows = fenster)
+    private val nachtFenster = TypDimmFenster(DimWindow(), staerke = 55)
+
+    private fun dimmenMit(vararg fenster: TypDimmFenster, an: Boolean = true): TypDimmen =
+        TypDimmen(an = an).mitFenster(fenster.toList())
 
     private fun hueRegel(id: String, muster: String, aktiv: Boolean = true, hellAb: HellAb = HellAb.IMMER): HueSchedule =
         HueScheduleRule(id = id, name = "Hue $id", shiftPattern = muster, enabled = aktiv, timeRanges = emptyList(), hellAb = hellAb)
 
-    private val dndAus = DndPrefs.Toggles(followDimmerEnabled = false, duringShiftEnabled = false)
+    private fun nd(solange: Boolean = false, waehrend: Boolean = false) =
+        TypNichtStoeren(solangeGedimmt = solange, waehrendEintrag = waehrend)
 
-    /** Baut die Folgen mit neutralen Defaults fuer die jeweils nicht betrachteten Bereiche. */
+    /**
+     * Baut die Folgen mit neutralen Defaults fuer die jeweils nicht betrachteten Bereiche. Dimmen und
+     * "Nicht stoeren" stehen am Typ: [dimmen] und [dnd] ueberschreiben dessen Einstellungen.
+     */
     private fun folgen(
         definition: ShiftDefinition = def(),
-        dimAn: Boolean = true,
-        dimRegeln: List<DimRule> = emptyList(),
+        dimmen: TypDimmen = definition.dimmen,
         hueRegeln: Result<List<HueSchedule>> = Result.success(emptyList()),
         hueKonfiguriert: Boolean = true,
-        dnd: DndPrefs.Toggles = dndAus,
-        ausgenommen: Set<String> = emptySet()
+        dnd: TypNichtStoeren = definition.nichtStoeren
     ): SchichtFolgen = ermittleSchichtFolgen(
-        definition = definition,
-        dimAn = dimAn,
-        dimRegeln = dimRegeln,
-        ruleForShift = { name -> auswahl.findRuleForShift(name, dimRegeln) },
+        definition = definition.copy(dimmen = dimmen, nichtStoeren = dnd),
         hueRegeln = hueRegeln,
-        hueKonfiguriert = hueKonfiguriert,
-        dndToggles = dnd,
-        dndAusgenommen = ausgenommen
+        hueKonfiguriert = hueKonfiguriert
     )
 
     /** Der Text mit normalen Leerzeichen - die geschuetzten prueft ein eigener Test. */
@@ -122,79 +115,33 @@ class SchichtFolgenTest {
     // --- Dimmen ----------------------------------------------------------------------------
 
     @Test
-    fun `Dimmen - Hauptschalter aus heisst aus, auch mit eigener Regel`() {
-        val f = folgen(dimAn = false, dimRegeln = listOf(dimRegel("r1", "AD1")))
+    fun `Dimmen - Dimmen an diesem Tag aus heisst aus, auch mit Fenstern`() {
+        val f = folgen(dimmen = dimmenMit(nachtFenster, an = false))
+        assertEquals(DimmStatus.Aus, f.dimmen)
         assertEquals("Dimmen: aus", dimmen(f))
     }
 
     @Test
-    fun `Dimmen - keine passende Regel heisst keine`() {
-        val f = folgen(dimRegeln = listOf(dimRegel("r1", "Frühdienst"), dimRegel("r2", DimRule.SHIFT_FREE)))
+    fun `Dimmen - ohne Fenster heisst keine, der Typ dimmt nicht`() {
+        val f = folgen(dimmen = dimmenMit())
+        assertEquals(DimmStatus.Keine, f.dimmen)
         assertEquals("Dimmen: keine", dimmen(f))
     }
 
     @Test
-    fun `Dimmen - nur UNIVERSAL greift heisst allgemeine Regel`() {
-        val f = folgen(dimRegeln = listOf(dimRegel("u", DimRule.SHIFT_UNIVERSAL)))
-        assertEquals("Dimmen: allgemeine Regel", dimmen(f))
+    fun `Dimmen - Fenster am Typ werden gezaehlt, ohne Wort Regel`() {
+        assertEquals("Dimmen: 1 Fenster", dimmen(folgen(dimmen = dimmenMit(nachtFenster))))
+        val zwei = folgen(dimmen = dimmenMit(nachtFenster, nachtFenster.copy(staerke = 30)))
+        assertEquals(DimmStatus.Wirksam(DimmArt.EIGENE, ohneWirkung = 0, fenster = 2), zwei.dimmen)
+        assertEquals("Dimmen: 2 Fenster", dimmen(zwei))
     }
 
     @Test
-    fun `Dimmen - eigene Regel mit leerer Fensterliste heisst unterdrueckt`() {
-        val f = folgen(
-            dimRegeln = listOf(
-                dimRegel("u", DimRule.SHIFT_UNIVERSAL),
-                dimRegel("r1", "AD1", fenster = emptyList())
-            )
-        )
-        assertEquals("Dimmen: unterdrückt", dimmen(f))
+    fun `Dimmen - Umbenennen kostet nichts, die Zeile haengt nicht am Namen`() {
+        val vorher = def("AD1").copy(dimmen = dimmenMit(nachtFenster))
+        val nachher = vorher.copy(name = "AD1 neu")
+        assertEquals(folgen(definition = vorher).dimmen, folgen(definition = nachher).dimmen)
     }
-
-    @Test
-    fun `Dimmen - auch eine UNIVERSAL-Regel ohne Fenster unterdrueckt`() {
-        // regelFuerTag Schritt 1 fragt nur nach der leeren Fensterliste, nicht nach dem Muster.
-        val f = folgen(dimRegeln = listOf(dimRegel("u", DimRule.SHIFT_UNIVERSAL, fenster = emptyList())))
-        assertEquals("Dimmen: unterdrückt", dimmen(f))
-    }
-
-    @Test
-    fun `Dimmen - eigene Regel mit Fenstern verdraengt UNIVERSAL`() {
-        val f = folgen(
-            dimRegeln = listOf(dimRegel("u", DimRule.SHIFT_UNIVERSAL), dimRegel("r1", "AD1"))
-        )
-        assertEquals("Dimmen: eigene Regel", dimmen(f))
-    }
-
-    @Test
-    fun `Dimmen - Name wird wie zur Laufzeit ohne Gross-Kleinschreibung verglichen`() {
-        val f = folgen(dimRegeln = listOf(dimRegel("r1", "ad1")))
-        assertEquals("Dimmen: eigene Regel", dimmen(f))
-    }
-
-    @Test
-    fun `Dimmen - weitere aktive Regel auf denselben Namen ist ohne Wirkung`() {
-        val f = folgen(
-            dimRegeln = listOf(
-                dimRegel("r1", "AD1"),
-                dimRegel("r2", "ad1"),
-                dimRegel("r3", "AD1", aktiv = false), // deaktiviert: zaehlt nicht
-                dimRegel("u", DimRule.SHIFT_UNIVERSAL) // Sondermuster: zaehlt nie
-            )
-        )
-        assertEquals("Dimmen: eigene Regel (+1 ohne Wirkung)", dimmen(f))
-        assertEquals(DimmStatus.Wirksam(DimmArt.EIGENE, ohneWirkung = 1), f.dimmen)
-    }
-
-    @Test
-    fun `Dimmen - es wirkt die ERSTE Regel, die zweite gilt als ohne Wirkung`() {
-        // Die erste hat keine Fenster -> unterdrueckt; die zweite (mit Fenstern) waere tot.
-        val f = folgen(
-            dimRegeln = listOf(dimRegel("r1", "AD1", fenster = emptyList()), dimRegel("r2", "AD1"))
-        )
-        assertEquals("Dimmen: unterdrückt (+1 ohne Wirkung)", dimmen(f))
-    }
-
-    // --- Licht -----------------------------------------------------------------------------
 
     @Test
     fun `Licht - Lesefehler heisst nicht lesbar, nie keine`() {
@@ -277,79 +224,41 @@ class SchichtFolgenTest {
     // --- DND -------------------------------------------------------------------------------
 
     @Test
-    fun `DND - beide Quellen aus heisst aus, auch bei Rufbereitschaft`() {
-        val f = folgen(definition = def(onCall = true), ausgenommen = setOf("AD1"))
+    fun `DND - beide Schalter aus heisst aus, auch bei Rufbereitschaft`() {
+        val f = folgen(definition = def(onCall = true))
         assertEquals("Nicht stören: aus", dnd(f))
         assertFalse(f.dnd.rufbereitschaft)
     }
 
     @Test
-    fun `DND - nur Dienstzeit, nicht ausgenommen`() {
-        val f = folgen(dnd = DndPrefs.Toggles(followDimmerEnabled = false, duringShiftEnabled = true))
+    fun `DND - nur waehrend des Kalendereintrags`() {
+        val f = folgen(dnd = nd(waehrend = true))
         assertEquals("Nicht stören: Dienstzeit", dnd(f))
     }
 
     @Test
-    fun `DND - nur Dienstzeit, ausgenommen`() {
-        val f = folgen(
-            dnd = DndPrefs.Toggles(followDimmerEnabled = false, duringShiftEnabled = true),
-            ausgenommen = setOf("AD1")
-        )
-        assertEquals("Nicht stören: ausgenommen", dnd(f))
+    fun `DND - nur solange gedimmt wird`() {
+        assertEquals("Nicht stören: nach Dimmer", dnd(folgen(dnd = nd(solange = true))))
     }
 
     @Test
-    fun `DND - Ausnahme wird EXAKT abgeglichen wie im Resolver`() {
-        val f = folgen(
-            dnd = DndPrefs.Toggles(followDimmerEnabled = false, duringShiftEnabled = true),
-            ausgenommen = setOf("ad1")
-        )
-        assertEquals("Nicht stören: Dienstzeit", dnd(f))
-    }
-
-    @Test
-    fun `DND - nur folgt Dimmer, die Ausnahme wirkt darauf nicht`() {
-        val toggles = DndPrefs.Toggles(followDimmerEnabled = true, duringShiftEnabled = false)
-        assertEquals("Nicht stören: nach Dimmer", dnd(folgen(dnd = toggles)))
-        assertEquals("Nicht stören: nach Dimmer", dnd(folgen(dnd = toggles, ausgenommen = setOf("AD1"))))
-    }
-
-    @Test
-    fun `DND - beide an ergibt die Kombination`() {
-        val f = folgen(dnd = DndPrefs.Toggles(followDimmerEnabled = true, duringShiftEnabled = true))
+    fun `DND - beide an ergibt die Kombination, ohne Ausnahme-Zusatz`() {
+        val f = folgen(dnd = nd(solange = true, waehrend = true))
         assertEquals("Nicht stören: Dienstzeit + nach Dimmer", dnd(f))
+        assertFalse(f.lesbar().contains("ausgenommen"))
     }
 
     @Test
-    fun `DND - beide an, Dienstzeit ausgenommen`() {
-        val f = folgen(
-            dnd = DndPrefs.Toggles(followDimmerEnabled = true, duringShiftEnabled = true),
-            ausgenommen = setOf("AD1")
-        )
-        assertEquals("Nicht stören: nach Dimmer (Dienstzeit ausgenommen)", dnd(f))
-    }
-
-    @Test
-    fun `DND - Rufbereitschaft nur mit mindestens einer Quelle`() {
+    fun `DND - Rufbereitschaft nur mit mindestens einem Schalter, die Kategorie traegt sie`() {
         val oc = def(onCall = true)
+        assertEquals("Nicht stören: Dienstzeit, Rufbereitschaft", dnd(folgen(definition = oc, dnd = nd(waehrend = true))))
+        assertEquals("Nicht stören: nach Dimmer, Rufbereitschaft", dnd(folgen(definition = oc, dnd = nd(solange = true))))
         assertEquals(
-            "Nicht stören: Dienstzeit, Rufbereitschaft",
-            dnd(folgen(definition = oc, dnd = DndPrefs.Toggles(followDimmerEnabled = false, duringShiftEnabled = true)))
+            "Nicht stören: Dienstzeit + nach Dimmer, Rufbereitschaft",
+            dnd(folgen(definition = oc, dnd = nd(solange = true, waehrend = true)))
         )
-        assertEquals(
-            "Nicht stören: nach Dimmer, Rufbereitschaft",
-            dnd(folgen(definition = oc, dnd = DndPrefs.Toggles(followDimmerEnabled = true, duringShiftEnabled = false)))
-        )
-        assertEquals(
-            "Nicht stören: nach Dimmer (Dienstzeit ausgenommen), Rufbereitschaft",
-            dnd(
-                folgen(
-                    definition = oc,
-                    dnd = DndPrefs.Toggles(followDimmerEnabled = true, duringShiftEnabled = true),
-                    ausgenommen = setOf("AD1")
-                )
-            )
-        )
+        // Ein Typ, der nicht Rufbereitschaft ist, bekommt den Zusatz nie.
+        assertFalse(folgen(definition = def(), dnd = nd(waehrend = true)).dnd.rufbereitschaft)
     }
 
     // --- Text und Umbruch ------------------------------------------------------------------
@@ -357,26 +266,25 @@ class SchichtFolgenTest {
     @Test
     fun `ganze Zeile in der Reihenfolge Dimmen, Licht, DND`() {
         val f = folgen(
-            dimRegeln = listOf(dimRegel("r1", "AD1")),
+            dimmen = dimmenMit(nachtFenster),
             hueRegeln = Result.success(listOf(hueRegel("h1", "ALL"))),
-            dnd = DndPrefs.Toggles(followDimmerEnabled = false, duringShiftEnabled = true)
+            dnd = nd(waehrend = true)
         )
-        assertEquals("Dimmen: eigene Regel · Licht: allgemeine Regel · Nicht stören: Dienstzeit", f.lesbar())
+        assertEquals("Dimmen: 1 Fenster · Licht: allgemeine Regel · Nicht stören: Dienstzeit", f.lesbar())
     }
 
     @Test
-    fun `umbrochen wird nur hinter dem Trenner und vor den Zusaetzen`() {
+    fun `umbrochen wird nur hinter dem Trenner und dem Komma vor Rufbereitschaft`() {
         val f = folgen(
             definition = def(onCall = true),
-            dimRegeln = listOf(dimRegel("r1", "AD1"), dimRegel("r2", "AD1")),
+            dimmen = dimmenMit(nachtFenster, nachtFenster.copy(staerke = 30)),
             hueRegeln = Result.success(listOf(hueRegel("h1", "AD1"), hueRegel("h2", "ALL"))),
-            dnd = DndPrefs.Toggles(followDimmerEnabled = true, duringShiftEnabled = true)
+            dnd = nd(solange = true, waehrend = true)
         )
         val text = f.alsText()
         // Normale Leerzeichen gibt es genau an den erlaubten Bruchstellen.
         val erlaubt = listOf(
             "${NBSP}· Licht", "${NBSP}· Nicht", // hinter dem Trenner
-            "Regel (+1", // vor dem Dimm-Zusatz
             "Dimmer, Rufbereitschaft" // hinter dem Komma
         )
         val normaleLeerzeichen = text.count { it == ' ' }
@@ -388,24 +296,45 @@ class SchichtFolgenTest {
         assertFalse(text.contains(" ·"))
     }
 
-    // --- Kurzform der Zeile in der Schichttypen-Liste (Umbau Etappe 1, SPEC 3.1) ---------------
+    // --- Kurzform der Zeile in der Schichttypen-Liste (SPEC 3.1, E9; Etappe 3 #220) -------------
 
-    private fun kurz(definition: ShiftDefinition, f: SchichtFolgen? = folgen(definition = definition)): String? =
-        kurzform(definition, f)?.replace(NBSP, ' ')
+    /** [dimmKurz]: die Dimm-Kurzform, die die Liste aus der Definition bildet (`dimmKurzform`, `ui.`). */
+    private fun kurz(
+        definition: ShiftDefinition,
+        f: SchichtFolgen? = folgen(definition = definition),
+        dimmKurz: String? = null
+    ): String? = kurzform(definition, f, dimmKurz)?.replace(NBSP, ' ')
 
-    private val volleFolgen = "Dimmen: keine · Licht: keine · Nicht stören: aus"
+    private val ohneDimmen = "Licht: keine · Nicht stören: aus"
 
     @Test
-    fun `Kurzform - ein normaler Typ zeigt die heutige Statuszeile unveraendert`() {
-        assertEquals(volleFolgen, kurz(def()))
+    fun `Kurzform - ohne Dimm-Text beginnt die Zeile mit Licht, einen Abschnitt Dimmen gibt es nicht`() {
+        assertEquals(ohneDimmen, kurz(def()))
+    }
+
+    /**
+     * Bewusste Verhaltensaenderung (#220, Betreuer-Entscheidung): die Liste zeigt EINE Dimm-Angabe. Der
+     * Dimm-Text ersetzt „Dimmen: …“ an derselben Stelle, statt neben ihm zu stehen.
+     */
+    @Test
+    fun `Kurzform - der Dimm-Text steht an der Stelle von Dimmen, nie daneben`() {
+        val text = kurz(def(), dimmKurz = "dimmt 20:00–Wecker")!!
+        assertEquals("dimmt 20:00–Wecker · Licht: keine · Nicht stören: aus", text)
+        assertFalse("Dimmen: darf neben dem Dimm-Text nicht noch einmal stehen: $text", text.contains("Dimmen:"))
+        // Auch bei einem Typ MIT Fenstern in den Folgen: der Text kommt aus dem Parameter.
+        val mitFenster = folgen(dimmen = dimmenMit(nachtFenster))
+        assertEquals("Testvoraussetzung: die Statuszeile kennt das Fenster", "Dimmen: 1 Fenster", abschnitt(mitFenster, 0))
+        val zeile = kurz(def(), mitFenster, "dimmt 20:00–Wecker")!!
+        assertEquals("dimmt 20:00–Wecker · Licht: keine · Nicht stören: aus", zeile)
     }
 
     @Test
-    fun `Kurzform - Wecker aus heisst kein Wecker vor der Statuszeile`() {
+    fun `Kurzform - Wecker aus heisst kein Wecker vor den Abschnitten`() {
         // Ohne den Licht-Abschnitt: ohne Alarm laeuft keine Hue-Regel (siehe der Test darunter).
+        assertEquals("kein Wecker · Nicht stören: aus", kurz(def().copy(weckerAn = false)))
         assertEquals(
-            "kein Wecker · Dimmen: keine · Nicht stören: aus",
-            kurz(def().copy(weckerAn = false))
+            "kein Wecker · dimmt 20:00–07:00 · Nicht stören: aus",
+            kurz(def().copy(weckerAn = false), dimmKurz = "dimmt 20:00–07:00")
         )
     }
 
@@ -421,19 +350,21 @@ class SchichtFolgenTest {
 
         val text = kurz(ohneWecker, f)!!
         assertFalse("Ohne Alarm laeuft keine Hue-Regel: $text", text.contains("Licht"))
-        assertEquals("kein Wecker · Dimmen: keine · Nicht stören: aus", text)
+        assertEquals("kein Wecker · Nicht stören: aus", text)
         // Mit Wecker bleibt die Regel Teil der Zeile.
         assertTrue(kurz(def(), folgen(hueRegeln = regeln))!!.contains("Licht: 1 Regel + allgemeine"))
     }
 
     @Test
-    fun `Kurzform - Wecker aus ohne gelesene Folgen sagt trotzdem kein Wecker`() {
+    fun `Kurzform - Wecker aus ohne gelesene Folgen sagt trotzdem kein Wecker, mit Dimm-Text auch den`() {
         assertEquals("kein Wecker", kurz(def().copy(weckerAn = false), null))
+        assertEquals("kein Wecker · dimmt 20:00–07:00", kurz(def().copy(weckerAn = false), null, "dimmt 20:00–07:00"))
     }
 
     @Test
-    fun `Kurzform - ohne gelesene Folgen gibt es keine Kurzform, nie eine erfundene`() {
+    fun `Kurzform - ohne gelesene Folgen gibt es nur den Dimm-Text der Definition, nie ein erfundenes Licht`() {
         assertNull(kurz(def(), null))
+        assertEquals("dimmt 20:00–Wecker", kurz(def(), null, "dimmt 20:00–Wecker"))
     }
 
     @Test
@@ -454,13 +385,21 @@ class SchichtFolgenTest {
     fun `Kurzform - ausgeschaltet und Krank haben keine, ihre Statuszeile sagt es`() {
         assertNull(kurz(def(enabled = false), null))
         assertNull(kurz(def().mitKategorie(ShiftKategorie.KRANK), null))
+        // Auch dann, wenn jemand einen Dimm-Text uebergibt: die Liste verlaesst sich nicht darauf.
+        assertNull(kurz(def(enabled = false), null, "dimmt 20:00–Wecker"))
+        assertNull(kurz(def().mitKategorie(ShiftKategorie.KRANK), null, "dimmt 20:00–Wecker"))
     }
 
     @Test
     fun `Kurzform - nach dem Trenner darf umbrochen werden, kein Wort und kein Name zerfaellt`() {
-        val text = kurzform(def().copy(weckerAn = false), folgen())!!
+        val text = kurzform(def().copy(weckerAn = false), folgen(), "dimmt 20:00–07:00")!!
         assertTrue("kein${NBSP}Wecker" in text)
-        assertTrue("${NBSP}· Dimmen:" in text)
+        // Der Dimm-Text ist wie die Abschnitte geschuetzt: kein normales Leerzeichen mittendrin.
+        assertTrue("dimmt${NBSP}20:00–07:00" in text)
+        assertTrue("${NBSP}· dimmt" in text)
+        assertTrue("${NBSP}· Nicht" in text)
+        // Normale Leerzeichen gibt es genau HINTER den beiden Trennern.
+        assertEquals(text, 2, text.count { it == ' ' })
     }
 
     // --- ViewModel: deaktivierte Schicht, Lesen erst beim Abo --------------------------------
@@ -481,8 +420,10 @@ class SchichtFolgenTest {
     fun `ViewModel liest erst beim Abo und zeigt fuer deaktivierte Schicht und Krank-Typ keine Zeile`() =
         runTest(dispatcher) {
             // #142: ein Krankmeldungs-Typ spannt keine Schicht auf - keine Zeile ueber Dimmen/Licht/DND.
+            // Dimmen und "Nicht stoeren" liegen am Typ: die Zeile liest sie aus der Konfiguration.
+            val ad1 = def("AD1").copy(dimmen = dimmenMit(nachtFenster), nichtStoeren = nd(waehrend = true))
             val config = ShiftConfig(
-                definitions = listOf(def("AD1"), def("Frei", enabled = false), def("Krank").copy(isSickDay = true))
+                definitions = listOf(ad1, def("Frei", enabled = false), def("Krank").copy(isSickDay = true))
             )
             val shiftUseCase = mock<IShiftUseCase>()
             whenever(shiftUseCase.shiftConfig).thenReturn(flowOf(config))
@@ -491,16 +432,9 @@ class SchichtFolgenTest {
                 on { recognizeShiftsInEvents(any()) } doReturn Result.success(emptyList())
             }
 
-            val dimRepo = mock<DimRuleRepository>()
-            whenever(dimRepo.rules).thenReturn(flowOf(listOf(dimRegel("r1", "AD1"))))
-            val dimUseCase = DimRuleUseCase(dimRepo)
+            val dimUseCase = DimRuleUseCase(mock<DimRuleRepository>())
             val overlay = mock<DimOverlayPrefs>()
-            whenever(overlay.toggles).thenReturn(flowOf(DimOverlayPrefs.Toggles(dimEnabled = true)))
             val dnd = mock<DndPrefs>()
-            whenever(dnd.toggles).thenReturn(
-                flowOf(DndPrefs.Toggles(followDimmerEnabled = false, duringShiftEnabled = true))
-            )
-            whenever(dnd.shiftExcludedShifts).thenReturn(flowOf(emptySet()))
             val hue = mock<IHueConfigRepository>()
             whenever(hue.getConfiguration()).thenReturn(
                 flowOf(HueConfiguration(bridgeIp = "1.2.3.4", username = "u", isConfigured = true))
@@ -508,17 +442,18 @@ class SchichtFolgenTest {
             hue.stub { on { getScheduleRules() } doReturn Result.success(listOf(hueRegel("h1", "AD1"))) }
 
             var angefasst = 0
+            var regelnAngefasst = 0
             val vm = ShiftViewModel(
                 shiftUseCase = shiftUseCase,
                 alarmUseCase = mock<IAlarmUseCase>(),
                 calendarStateHolder = CalendarStateHolder(),
                 errorHandler = mock<ErrorHandler>(),
-                dimRuleUseCase = dagger.Lazy { angefasst++; dimUseCase },
+                dimRuleUseCase = dagger.Lazy { regelnAngefasst++; dimUseCase },
                 hueRuleUseCase = dagger.Lazy { error("Die Statuszeile darf den Hue-Graphen nicht bauen") },
                 armierer = mock<ZeitkettenArmierer>(),
-                dndPrefs = dagger.Lazy { angefasst++; dnd },
+                dndPrefs = dagger.Lazy { regelnAngefasst++; dnd },
                 shiftSpanStore = dagger.Lazy { mock<ShiftSpanStore>() },
-                dimOverlayPrefs = dagger.Lazy { angefasst++; overlay },
+                dimOverlayPrefs = dagger.Lazy { regelnAngefasst++; overlay },
                 hueConfigRepository = dagger.Lazy { angefasst++; hue }
             )
             advanceUntilIdle()
@@ -534,8 +469,9 @@ class SchichtFolgenTest {
             val zeilen = vm.schichtFolgen.value
             assertEquals(setOf("id-AD1"), zeilen.keys) // die deaktivierte Schicht und der Krank-Typ fehlen
             assertEquals(
-                "Dimmen: eigene Regel · Licht: 1 Regel · Nicht stören: Dienstzeit",
+                "Dimmen: 1 Fenster · Licht: 1 Regel · Nicht stören: Dienstzeit",
                 zeilen.getValue("id-AD1").lesbar()
             )
+            assertEquals("Dimm-Regeln, Dimm-Schalter und DND-Schalter werden nicht mehr gelesen", 0, regelnAngefasst)
         }
 }

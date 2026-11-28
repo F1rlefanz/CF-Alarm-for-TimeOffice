@@ -40,6 +40,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftKategorie
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.TypDimmen
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.TypNichtStoeren
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.TagesleisteQuellen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.CompactButton
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.KnopfZeile
@@ -52,7 +54,9 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.ShiftViewModel
+import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.WeitereOptionenStand
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.titel
+import kotlinx.coroutines.flow.Flow
 import java.time.ZoneId
 
 /** Nutzertexte der Typ-Seite, als Konstanten (ein Test haelt sie fest). */
@@ -139,6 +143,34 @@ internal object TypSeiteEntwurf {
     fun hatAenderungen(ausgang: TypEntwurf, entwurf: TypEntwurf): Boolean = ausgang != entwurf
 
     /**
+     * Ausgangsstand und Entwurf, nachdem sich das gespeicherte Dimmen unter der offenen Seite geaendert hat: die
+     * Typ-Migration laeuft bei jedem `MainActivity.onCreate` (auch beim Drehen) und in der Wartung. Unberuehrtes
+     * folgt dem Gespeicherten ([DimmenEntwurf.nachgezogen]) - sonst zeigte die Karte den Stand vom Oeffnen, und
+     * „Speichern“ schriebe ihn ueber die eben migrierten Fenster (#221). Ohne Aenderung am Gespeicherten bleibt
+     * beides gleich.
+     */
+    fun nachgezogen(ausgang: TypEntwurf, entwurf: TypEntwurf, gespeichert: TypDimmen): Pair<TypEntwurf, TypEntwurf> {
+        val neu = DimmenEntwurf.aus(gespeichert)
+        val vorher = ausgang.dimmen ?: neu
+        return ausgang.copy(dimmen = neu) to entwurf.copy(dimmen = entwurf.dimmen?.nachgezogen(vorher, neu) ?: neu)
+    }
+
+    /**
+     * [nachgezogen] fuer „Nicht stoeren“ (#222): die Typ-Migration schreibt auch diese Schalter. Jedes Feld
+     * folgt fuer sich ([NichtStoerenEntwurf.nachgezogen]).
+     */
+    fun nachgezogenNichtStoeren(
+        ausgang: TypEntwurf,
+        entwurf: TypEntwurf,
+        gespeichert: TypNichtStoeren
+    ): Pair<TypEntwurf, TypEntwurf> {
+        val neu = NichtStoerenEntwurf.aus(gespeichert)
+        val vorher = ausgang.nichtStoeren ?: neu
+        return ausgang.copy(nichtStoeren = neu) to
+            entwurf.copy(nichtStoeren = entwurf.nichtStoeren?.nachgezogen(vorher, neu) ?: neu)
+    }
+
+    /**
      * Die Konfiguration mit dem gespeicherten Entwurf - oder `null`, wenn [definitionId] nicht darin
      * steht oder das Formular nicht speicherbar ist. Das ist der Schreibweg des Dialogs, 1:1
      * umgezogen (`config.copy(definitions = definitions.map { … })`): nur der Typ mit dieser id wird
@@ -213,9 +245,10 @@ private val EntwurfSaver: Saver<TypEntwurf, Any> = Saver(
  * Die Typ-Seite (Umbau, SPEC 3.3): ein Schichttyp als eigener Bildschirm statt des Dialogs.
  * Oben die Karte „Typ“ ([TypAbschnitt]: Name, Muster, Kategorie), darunter der Sonderfall-Kasten
  * ([SonderfallKasten], nur Rufbereitschaft, Krank, Ignorieren) und die Karte „Wecker“
- * ([WeckerAbschnitt], nicht bei Krank und Ignorieren); zwischen „Typ“ und Sonderfall-Kasten steht die
- * Tagesleiste „So läuft ein Tag“ ([TagesleisteKarte], nicht bei Ignorieren). Dimmen, DND und Licht kommen mit
- * eigenen Paketen.
+ * ([WeckerAbschnitt], nicht bei Krank und Ignorieren) mit den Karten „Bildschirm dimmen“
+ * ([DimmenAbschnitt]) und „Nicht stören“ ([NichtStoerenAbschnitt]) darunter, an denselben Typen; zwischen
+ * „Typ“ und Sonderfall-Kasten steht die Tagesleiste „So läuft ein Tag“ ([TagesleisteKarte], nicht bei
+ * Ignorieren). Licht kommt mit einem eigenen Paket.
  *
  * ENTWURF STATT SOFORT-SCHREIBEN (bewusste Abweichung vom Prototyp, der keinen Speichern-Knopf
  * hat): `updateShiftConfig()` speichert und stoesst den Alarm-Sync an - je Tastendruck im Namen
@@ -279,6 +312,7 @@ fun TypSeite(
         neu = neu,
         fundCode = fundCode,
         quellen = quellen,
+        weitereStand = shiftViewModel::weitereOptionenStand,
         schreibe = shiftViewModel::updateShiftConfig,
         legeAusCodeAn = shiftViewModel::legeTypAusCodeAn,
         onZurueck = onZurueck,
@@ -287,16 +321,22 @@ fun TypSeite(
 }
 
 /**
- * Die Typ-Seite der festen Zeile „Ohne Kalendereintrag“ (Umbau #191, SPEC E5 und 3.3 Punkt 2, Prototyp
- * `typ.fest`): Erklaerung, die Wahl „Tage ohne Eintrag verhalten sich“ und - bei gewaehltem Typ - „<Name>
- * öffnen“ ([ohneEintragAbschnitt]). Sie ersetzt den Dialog der Etappe 1.
+ * Die Typ-Seite der festen Zeile „Ohne Kalendereintrag“ (Umbau #191 und #223, SPEC E5 und 3.3 Punkt 2,
+ * Prototyp `typ.fest`): Erklaerung, die Wahl „Tage ohne Eintrag verhalten sich“ und darunter - bei „Eigene
+ * Einstellungen“ die Karten „Bildschirm dimmen“ und „Nicht stören“, bei gewaehltem Typ „<Name> öffnen“
+ * ([ohneEintragAbschnitt]). Sie ersetzt den Dialog der Etappe 1.
  *
  * KEIN ENTWURF, KEIN „Speichern“ (Festlegung des Betreuers, einzige Ausnahme vom Entwurf mit Speichern):
- * ein Tipp auf eine Wahl ist eine abgeschlossene Handlung und schreibt sofort ueber
- * `ShiftViewModel.waehleOhneEintrag()`. Deshalb gibt es auch keinen `BackHandler` hier - Zurueck gehoert
- * dem in `MainScreen` und fuehrt ueber `navigateBackFrom` in die Typ-Liste. In Etappe 2 hat die feste Seite
- * weder Tagesleiste noch Wecker-Abschnitt: „Eigene Einstellungen“ heisst kein Wecker, „Wie <Typ>“ verweist
- * auf den Typ.
+ * ein Tipp auf eine Wahl oder eine Aenderung an einer Karte ist eine abgeschlossene Handlung und schreibt
+ * sofort ueber `ShiftViewModel.waehleOhneEintrag()` bzw. `aendereOhneEintrag()` (danach werden Dimmer- und
+ * DND-Kette armiert). Gezeigt wird [ShiftUiState.ohneEintragStand], der zuletzt beauftragte Stand. Deshalb
+ * gibt es auch keinen `BackHandler` hier - Zurueck gehoert dem in `MainScreen` und fuehrt ueber
+ * `navigateBackFrom` in die Typ-Liste. Die feste Seite hat weder Tagesleiste noch Wecker-Abschnitt: an
+ * Tagen ohne Eintrag stellt „Eigene Einstellungen“ keinen Wecker, „Wie <Typ>“ verweist auf den Typ.
+ *
+ * Aus der Karte „Bildschirm dimmen“ fuehrt „Weitere Optionen“ in dasselbe Blatt wie bei einem Typ
+ * ([OhneEintragWeitereOptionen], #238); auch dort schreibt jede Aenderung sofort, und Zurueck schliesst zuerst
+ * das Blatt (eigenes Fenster).
  *
  * Ein Typ, der verschwindet, waehrend die Seite offen ist, muss hier nichts behandeln: die Wahl liest
  * [OhneEintragWahl.gewaehlterTyp], ein Verweis ins Leere ist „Eigene Einstellungen“.
@@ -311,7 +351,12 @@ fun OhneEintragSeite(
     onTypOeffnen: (typId: String) -> Unit
 ) {
     val shiftState by shiftViewModel.uiState.collectAsStateWithLifecycle()
-    val config = shiftState.currentShiftConfig
+    // Nicht `currentShiftConfig`: das zieht erst nach dem Speichern nach, und die Karten schreiben sofort.
+    val config = shiftState.ohneEintragStand
+    // `null`, solange „wie <Typ>“ gilt oder nichts gelesen ist - dann gibt es kein Blatt.
+    val blatt = config?.let(OhneEintragAbschnittLogik::blattWerte)
+    // Das Blatt „Weitere Optionen“: `null` = zu, sonst die Fenster, die beim Oeffnen den Anker-Editor bekamen.
+    var weitereOptionen by rememberSaveable { mutableStateOf<ArrayList<Int>?>(null) }
 
     Scaffold(
         topBar = {
@@ -336,10 +381,29 @@ fun OhneEintragSeite(
                 ohneEintragAbschnitt(
                     config = config,
                     onWaehle = shiftViewModel::waehleOhneEintrag,
-                    onTypOeffnen = { typ -> onTypOeffnen(typ.id) }
+                    onAendere = shiftViewModel::aendereOhneEintrag,
+                    onTypOeffnen = { typ -> onTypOeffnen(typ.id) },
+                    onWeitereOptionen = {
+                        weitereOptionen = blatt?.let { ArrayList(WeitereOptionenLogik.ohneForm(it.dimmen)) }
+                    }
                 )
             }
         }
+    }
+
+    // Die Werte fuers Blatt wie auf der Typ-Seite; Vorgabe und Weckzeiten werden erst gelesen, wenn es offen ist.
+    val ankerBeimOeffnen = weitereOptionen
+    if (ankerBeimOeffnen != null && blatt != null) {
+        val stand by remember { shiftViewModel.weitereOptionenStand() }.collectAsStateWithLifecycle(initialValue = null)
+        val quellen by shiftViewModel.tagesleisteQuellen.collectAsStateWithLifecycle()
+        OhneEintragWeitereOptionen(
+            werte = blatt,
+            stand = stand,
+            tageslicht = quellen?.tageslicht,
+            ankerBeimOeffnen = ankerBeimOeffnen,
+            onAendere = shiftViewModel::aendereOhneEintrag,
+            onSchliessen = { weitereOptionen = null }
+        )
     }
 }
 
@@ -351,6 +415,7 @@ private fun TypSeiteFormular(
     neu: Boolean,
     fundCode: String?,
     quellen: TagesleisteQuellen?,
+    weitereStand: () -> Flow<WeitereOptionenStand>,
     schreibe: (ShiftConfig) -> Unit,
     legeAusCodeAn: (String, ShiftDefinition) -> Unit,
     onZurueck: () -> Unit,
@@ -359,8 +424,17 @@ private fun TypSeiteFormular(
     // Der Ausgangsstand wird beim Oeffnen eingefroren und reist mit: jede Config-Emission (auch
     // die eigene nach dem Speichern, auch fremde Schreiber) liefert ein neues ShiftDefinition-
     // Objekt und darf den Entwurf nicht zuruecksetzen - deshalb KEIN Schluessel auf `definition`.
-    val ausgang = rememberSaveable(saver = EntwurfSaver) { TypEntwurf.aus(definition) }
+    // Ausnahme sind Dimmen und „Nicht stoeren“, die die Typ-Migration unter der Seite schreiben kann
+    // (siehe `TypSeiteEntwurf.nachgezogen`, auch nach dem Prozesstod).
+    var ausgang by rememberSaveable(stateSaver = EntwurfSaver) { mutableStateOf(TypEntwurf.aus(definition)) }
     var entwurf by rememberSaveable(stateSaver = EntwurfSaver) { mutableStateOf(ausgang) }
+    LaunchedEffect(definition.dimmen, definition.nichtStoeren) {
+        val (ausgangMitDimmen, entwurfMitDimmen) = TypSeiteEntwurf.nachgezogen(ausgang, entwurf, definition.dimmen)
+        val (neuerAusgang, neuerEntwurf) =
+            TypSeiteEntwurf.nachgezogenNichtStoeren(ausgangMitDimmen, entwurfMitDimmen, definition.nichtStoeren)
+        ausgang = neuerAusgang
+        entwurf = neuerEntwurf
+    }
     var rueckfrageOffen by rememberSaveable { mutableStateOf(false) }
     // Wohin „Verwerfen“ fuehrt: zur Liste (Zurueck) oder in den Bereich „Wecker“ (Link der Tagesleiste).
     var rueckfrageZurWoche by rememberSaveable { mutableStateOf(false) }
@@ -371,6 +445,8 @@ private fun TypSeiteFormular(
     // sie ueberstehen so Drehen, Dunkelmodus und das Scrollen der Liste (die Karte ist ein Listenelement).
     var neuesMuster by rememberSaveable { mutableStateOf("") }
     var kategorieWahlOffen by rememberSaveable { mutableStateOf(false) }
+    // Das Blatt „Weitere Optionen“: `null` = zu, sonst die Fenster, die beim Oeffnen den Anker-Editor bekamen.
+    var weitereOptionen by rememberSaveable { mutableStateOf<ArrayList<Int>?>(null) }
     val speicherung = remember { TypSeiteSpeicherung(schreibe) }
     val aendere: ((TypEntwurf) -> TypEntwurf) -> Unit = { aenderung -> entwurf = aenderung(entwurf) }
 
@@ -476,6 +552,32 @@ private fun TypSeiteFormular(
                 if (WeckerAbschnittLogik.zeigtWeckerKarte(entwurf.kategorie)) {
                     item(key = "wecker") { WeckerAbschnitt(entwurf = entwurf, aendere = aendere) }
                 }
+                if (DimmenAbschnittLogik.zeigtAbschnitt(entwurf.kategorie)) {
+                    item(key = "dimmen") {
+                        DimmenAbschnitt(
+                            entwurf = entwurf,
+                            giltOhneEintrag = DimmenAbschnittLogik.giltOhneEintrag(config, definition.id),
+                            aendere = aendere,
+                            onWeitereOptionen = {
+                                weitereOptionen = entwurf.dimmen?.let { ArrayList(WeitereOptionenLogik.ohneForm(it)) }
+                            }
+                        )
+                    }
+                }
+                // Jeder Entwurf der Seite traegt den Teil (`TypEntwurf.aus`); ohne ihn gibt es nichts zu bearbeiten.
+                val nichtStoeren = entwurf.nichtStoeren
+                if (nichtStoeren != null && NichtStoerenAbschnittLogik.zeigtAbschnitt(entwurf.kategorie)) {
+                    item(key = "nichtstoeren") {
+                        NichtStoerenAbschnitt(
+                            werte = nichtStoeren,
+                            kategorie = entwurf.kategorie,
+                            dimmen = entwurf.dimmen,
+                            aendere = { aenderung ->
+                                aendere { e -> e.nichtStoeren?.let { e.copy(nichtStoeren = aenderung(it)) } ?: e }
+                            }
+                        )
+                    }
+                }
             }
 
             Spacer(modifier = Modifier.height(SpacingConstants.SPACING_SMALL))
@@ -512,6 +614,27 @@ private fun TypSeiteFormular(
                 )
             }
         }
+    }
+
+    // Das Blatt arbeitet auf demselben Entwurf wie die Karte; sein Stand wird erst gelesen, solange es offen ist.
+    val dimmen = entwurf.dimmen
+    val ankerBeimOeffnen = weitereOptionen
+    if (ankerBeimOeffnen != null && dimmen != null) {
+        val stand by remember { weitereStand() }.collectAsStateWithLifecycle(initialValue = null)
+        WeitereOptionenBlatt(
+            dimmen = dimmen,
+            weckerAn = entwurf.weckerAn,
+            mitBlocktagen = DimmenAbschnittLogik.zeigtBlocktage(entwurf.kategorie),
+            gespeicherteWaerme = definition.dimmen.farbwaerme,
+            stand = stand,
+            tageslicht = quellen?.tageslicht,
+            speicherHinweis = WeitereOptionenTexte.speicherHinweis(
+                if (neu) TypSeiteTexte.ERSTELLEN else TypSeiteTexte.SPEICHERN
+            ),
+            ankerBeimOeffnen = ankerBeimOeffnen,
+            aendere = { aenderung -> aendere { e -> e.dimmen?.let { e.copy(dimmen = aenderung(it)) } ?: e } },
+            onSchliessen = { weitereOptionen = null }
+        )
     }
 
     if (kategorieWahlOffen) {

@@ -1,8 +1,5 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel
 
-import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimRule
-import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.betrifftSchicht
-import com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueSchedule
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.HueRuleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.passtAufSchicht
@@ -14,20 +11,15 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.HellAb
  * Was eine Schicht AUSSERHALB des Weckers ausloest - rein lesend, fuer die Statuszeile
  * "Dimmen: … · Licht: … · Nicht stören: …" unter jeder Schichtkarte (Issue #70).
  *
- * WARUM ES DIE ZEILE GIBT: Dimmer-, Hue- und DND-Regeln binden ueber den Schichtnamen, werden aber
- * an drei anderen Stellen der App eingerichtet. Ob eine Schicht verwaist ist (keine Regel) oder
- * doppelt belegt (eine zweite Dimm-Regel, die nie wirkt), sah man bisher nur durch Abklappern
- * aller drei Screens.
- *
- * DIE EINE WAHRHEIT: Gezaehlt wird ueber DIESELBEN Funktionen wie zur Laufzeit -
- * `DimRuleUseCase.findRuleForShift` (genau EINE wirksame Dimm-Regel), [passtAufSchicht] (eigene
- * UND allgemeine Hue-Regeln feuern gemeinsam) und der exakte, Gross-/Kleinschreibung beachtende
- * Mengenabgleich von `DndShiftSpanResolver.buildShiftSpans`. Eine eigene Nachbildung waere eine
- * zweite Wahrheit, und die Zeile wuerde genau dann luegen, wenn sie gebraucht wird.
+ * DIE EINE WAHRHEIT: Dimmen und "Nicht stoeren" liest die Zeile seit #219 AM TYP
+ * (`ShiftDefinition.dimmen`, `ShiftDefinition.nichtStoeren`) - dort, wo auch Dimmer und DND zur Laufzeit
+ * lesen. Es gibt keine Regel und keinen globalen Schalter mehr, die verwaisen oder doppelt belegt sein
+ * koennten; Umbenennen kostet beides nichts (die Einstellungen reisen mit dem Typ), Loeschen nimmt sie
+ * mit. Hue-Regeln binden dagegen noch ueber den Schichtnamen ([passtAufSchicht], eigene UND allgemeine
+ * feuern gemeinsam) - bis Etappe 4.
  *
  * Bewusst NICHT in der Zeile: die Master-Pause (voruebergehend, steht an anderer Stelle - die
- * Zeile beschreibt die Konfiguration) und zwei Schichten am selben Tag (Konflikte zeigt die
- * Dimmer-Regelliste).
+ * Zeile beschreibt die Konfiguration) und zwei Schichten am selben Tag (die Zeile beschreibt EINEN Typ).
  */
 data class SchichtFolgen(
     val dimmen: DimmStatus,
@@ -36,31 +28,33 @@ data class SchichtFolgen(
 )
 
 sealed interface DimmStatus {
-    /** Der Dimmer-Hauptschalter (`dim_enabled`) ist aus - keine Regel wirkt. */
+    /** "Dimmen an diesem Tag" ([com.github.f1rlefanz.cf_alarmfortimeoffice.model.TypDimmen.an]) ist aus - kein Fenster wirkt. */
     data object Aus : DimmStatus
 
-    /** `findRuleForShift` liefert nichts: weder eine eigene noch eine allgemeine Regel. */
+    /** Dimmen ist an, aber der Typ hat kein (deutbares) Fenster: er dimmt nicht und unterdrueckt das Dimmen seines Tages. */
     data object Keine : DimmStatus
 
     /**
-     * Die eine wirksame Regel. [ohneWirkung] zaehlt weitere AKTIVE Regeln, die denselben Namen
-     * tragen, aber nie greifen, weil `findRuleForShift` die erste nimmt.
+     * Der Typ hat [fenster] wirksame Dimm-Fenster. [ohneWirkung] ist seit #219 immer 0 (am Typ gibt es
+     * keine zweite Regel, die nie greift) und bleibt nur, weil `WeckerTage.kt` und seine Tests die Form
+     * kennen - offen als Folge-Aufgabe des Umbaus.
      */
-    data class Wirksam(val art: DimmArt, val ohneWirkung: Int) : DimmStatus
+    data class Wirksam(val art: DimmArt, val ohneWirkung: Int, val fenster: Int = 1) : DimmStatus
 }
 
+/**
+ * Seit #219 erzeugt die Statuszeile nur noch [EIGENE]; [ALLGEMEINE] und [UNTERDRUECKT] stammen aus dem
+ * Regel-Modell (UNIVERSAL bzw. leere Fensterliste) und bleiben nur, weil `WeckerTage.kt` und seine Tests
+ * sie nennen.
+ */
 enum class DimmArt {
-    /** Eigene Regel mit Fenstern. */
+    /** Der Typ hat eigene Fenster. */
     EIGENE,
 
-    /** Nur die `SHIFT_UNIVERSAL`-Regel trifft. */
+    /** Frueher: nur die `SHIFT_UNIVERSAL`-Regel traf. Wird nicht mehr erzeugt. */
     ALLGEMEINE,
 
-    /**
-     * Die wirksame Regel hat eine LEERE Fensterliste: sie unterdrueckt das Dimmen an diesem Tag
-     * (`DimWindowResolver.regelFuerTag`, Schritt 1) - das gilt fuer eine eigene wie fuer eine
-     * allgemeine Regel gleichermassen.
-     */
+    /** Frueher: die wirksame Regel hatte eine leere Fensterliste. Am Typ ist das [DimmStatus.Keine]. */
     UNTERDRUECKT
 }
 
@@ -86,7 +80,11 @@ sealed interface LichtStatus {
     data class Regeln(val eigene: Int, val allgemeine: Int, val nurBeiDunkelheit: Int = 0) : LichtStatus
 }
 
-/** Die Dienstzeit-Quelle von "Nicht stoeren" aus Sicht EINER Schicht. */
+/**
+ * Die Quelle "Waehrend des Kalendereintrags" von "Nicht stoeren" aus Sicht EINES Typs. [AUSGENOMMEN]
+ * (frueher: die globale Ausnahmenliste) wird seit #219 nicht mehr erzeugt - der Schalter steht am Typ -
+ * und bleibt nur, weil `WeckerTage.kt` und seine Tests es nennen.
+ */
 enum class DienstzeitDnd { AUS, AN, AUSGENOMMEN }
 
 data class DndStatus(
@@ -102,51 +100,25 @@ data class DndStatus(
  * Leitet die [SchichtFolgen] einer Schichtdefinition ab. Rein, ohne Seiteneffekt, als JVM-Test
  * pruefbar.
  *
- * @param ruleForShift MUSS `DimRuleUseCase.findRuleForShift` sein (an [dimRegeln] gebunden) -
- *   dieselbe Auswahl wie bei Wirkung und Konfliktanzeige.
  * @param hueRegeln das Ergebnis von `IHueConfigRepository.getScheduleRules()`; ein Fehlschlag
  *   wird "nicht lesbar", nie "keine".
- * @param dndAusgenommen `DndPrefs.shiftExcludedShifts` - EXAKT abgeglichen, wie im Resolver.
  */
 internal fun ermittleSchichtFolgen(
     definition: ShiftDefinition,
-    dimAn: Boolean,
-    dimRegeln: List<DimRule>,
-    ruleForShift: (String) -> DimRule?,
     hueRegeln: Result<List<HueSchedule>>,
-    hueKonfiguriert: Boolean,
-    dndToggles: DndPrefs.Toggles,
-    dndAusgenommen: Set<String>
-): SchichtFolgen {
-    val name = definition.name
-    return SchichtFolgen(
-        dimmen = dimmStatus(name, dimAn, dimRegeln, ruleForShift),
-        licht = lichtStatus(definition, hueRegeln, hueKonfiguriert),
-        dnd = dndStatus(definition, dndToggles, dndAusgenommen)
-    )
-}
+    hueKonfiguriert: Boolean
+): SchichtFolgen = SchichtFolgen(
+    dimmen = dimmStatus(definition),
+    licht = lichtStatus(definition, hueRegeln, hueKonfiguriert),
+    dnd = dndStatus(definition)
+)
 
-private fun dimmStatus(
-    name: String,
-    dimAn: Boolean,
-    dimRegeln: List<DimRule>,
-    ruleForShift: (String) -> DimRule?
-): DimmStatus {
-    if (!dimAn) return DimmStatus.Aus
-    val wirksam = ruleForShift(name) ?: return DimmStatus.Keine
-    val istAllgemein = wirksam.shiftPattern == DimRule.SHIFT_UNIVERSAL
-    val art = when {
-        wirksam.windows.isEmpty() -> DimmArt.UNTERDRUECKT
-        istAllgemein -> DimmArt.ALLGEMEINE
-        else -> DimmArt.EIGENE
-    }
-    // Weitere AKTIVE Regeln auf denselben Namen - `betrifftSchicht` vergleicht wie
-    // `findRuleForShift` ohne Gross-/Kleinschreibung und laesst die Sondermuster aus. Ist die
-    // wirksame Regel allgemein, gibt es keine solche (sonst haette `findRuleForShift` sie genommen).
-    val ohneWirkung = dimRegeln.count { regel ->
-        regel.enabled && regel.id != wirksam.id && regel.betrifftSchicht(name)
-    }
-    return DimmStatus.Wirksam(art, ohneWirkung)
+/** Wirksam ist ein Fenster nur bei "Dimmen an" - wie `TypDimmQuelle`, das beides zur Laufzeit liest. */
+private fun dimmStatus(definition: ShiftDefinition): DimmStatus {
+    val dimmen = definition.dimmen
+    if (!dimmen.an) return DimmStatus.Aus
+    val fenster = dimmen.fenster.size
+    return if (fenster == 0) DimmStatus.Keine else DimmStatus.Wirksam(DimmArt.EIGENE, ohneWirkung = 0, fenster = fenster)
 }
 
 private fun lichtStatus(
@@ -175,23 +147,14 @@ private fun lichtStatus(
     )
 }
 
-private fun dndStatus(
-    definition: ShiftDefinition,
-    toggles: DndPrefs.Toggles,
-    ausgenommen: Set<String>
-): DndStatus {
-    val dienstzeit = when {
-        !toggles.duringShiftEnabled -> DienstzeitDnd.AUS
-        // EXAKT wie `DndShiftSpanResolver.buildShiftSpans` (`shiftName in excludedShifts`): die
-        // Ausnahme wirkt nur auf die Dienstzeit-Quelle, nie auf "folgt dem Dimmer".
-        definition.name in ausgenommen -> DienstzeitDnd.AUSGENOMMEN
-        else -> DienstzeitDnd.AN
-    }
-    val eineQuelleAn = toggles.duringShiftEnabled || toggles.followDimmerEnabled
+private fun dndStatus(definition: ShiftDefinition): DndStatus {
+    val schalter = definition.nichtStoeren
+    val eineQuelleAn = schalter.waehrendEintrag || schalter.solangeGedimmt
     return DndStatus(
-        dienstzeit = dienstzeit,
-        nachDimmer = toggles.followDimmerEnabled,
-        rufbereitschaft = definition.isOnCall && eineQuelleAn
+        dienstzeit = if (schalter.waehrendEintrag) DienstzeitDnd.AN else DienstzeitDnd.AUS,
+        nachDimmer = schalter.solangeGedimmt,
+        // Wie `DndTypSchalter.rufCutoffMinuten` zur Laufzeit: die KATEGORIE traegt den Cutoff.
+        rufbereitschaft = definition.kategorie == ShiftKategorie.RUFBEREITSCHAFT && eineQuelleAn
     )
 }
 
@@ -199,11 +162,11 @@ private fun dndStatus(
  * Die Statuszeile als Text.
  *
  * UMBRUCH (320 dp, siehe Skill cfalarm-ui-und-navigation): Innerhalb eines Abschnitts stehen
- * geschuetzte Leerzeichen, damit "Dimmen: eigene Regel" nie in "Dimmen:" / "eigene Regel"
+ * geschuetzte Leerzeichen, damit "Dimmen: 2 Fenster" nie in "Dimmen:" / "2 Fenster"
  * zerfaellt. Umbrochen wird regulaer nur HINTER einem " · " (davor steht ebenfalls ein
  * geschuetztes Leerzeichen, damit der Punkt nicht an den Zeilenanfang rutscht). Die einzigen
- * weiteren Bruchstellen liegen VOR den Zusaetzen "(+N ohne Wirkung)", "(N nur bei Dunkelheit)"
- * und "(Dienstzeit ausgenommen)" sowie HINTER dem Komma vor "Rufbereitschaft": ein Abschnitt mit Zusatz ist
+ * weiteren Bruchstellen liegen VOR dem Zusatz "(N nur bei Dunkelheit)" sowie HINTER dem Komma vor
+ * "Rufbereitschaft": ein Abschnitt mit Zusatz ist
  * laenger als eine Kartenzeile bei 320 dp, und ein durchgehend geschuetzter Abschnitt wuerde
  * dann mitten im Wort umbrechen.
  */
@@ -225,31 +188,48 @@ private fun SchichtFolgen.abschnitte(mitLicht: Boolean): String =
     ).joinToString(Texte.TRENNER)
 
 /**
- * Die Kurzform einer Zeile der Schichttypen-Liste (Umbau Etappe 1, SPEC 3.1) - `null`, wenn die
+ * Die Kurzform einer Zeile der Schichttypen-Liste (SPEC E9 / 3.1, Prototyp `zeile`) - `null`, wenn die
  * Zeile keine hat und ihre Statuszeile darueber schon alles sagt.
  *
- * In Etappe 1 ist sie die heutige Statuszeile ([alsText]) plus zwei Faelle, die die Statuszeile nicht
- * kennt: „kein Wecker“ (`weckerAn = false`, steht VOR der Statuszeile) und „wird übergangen“
- * (Ignorieren). Dimm-Kurzformen wie „dimmt 20:00–Wecker“ kommen erst mit Etappe 3. Bei „kein Wecker“ fehlt der Licht-Abschnitt
- * der Statuszeile ([alsTextOhneLicht]): ohne Alarm laeuft keine Hue-Regel.
+ * EINE Zeile, in dieser Reihenfolge, mit " · " verbunden: `[kein Wecker]` · `[dimmKurz]` · `Licht: …` ·
+ * `Nicht stören: …`. [dimmKurz] ersetzt hier den Abschnitt „Dimmen: …“ der Statuszeile ([alsText]) an
+ * derselben Stelle („dimmt 20:00–Wecker“ statt „Dimmen: 1 Fenster“); `null` heisst: kein Dimm-Abschnitt
+ * (kein Fenster, Krank, Ignorieren - die Liste ist kein Ort fuer „Nicht dimmen“). Der Text kommt aus
+ * der Definition, nicht aus [folgen] (`viewmodel/` importiert kein `ui.`; die Zeile der Liste ruft
+ * `listenKurzform` in `ShiftConfigScreen.kt`) und steht deshalb auch ohne gelesene Folgen.
+ * [alsText] bleibt fuer die Tagesliste unveraendert.
+ *
+ * Zwei Faelle kennt die Statuszeile nicht: „kein Wecker“ (`weckerAn = false`, steht VOR den Abschnitten)
+ * und „wird übergangen“ (Ignorieren). Bei „kein Wecker“ fehlt der Licht-Abschnitt: ohne Alarm laeuft keine
+ * Hue-Regel ([alsTextOhneLicht]).
  *
  * - **Ignorieren** zuerst: ein solcher Typ wirkt weder mit Wecker noch mit Dimmer, Licht oder DND,
  *   auch wenn das ViewModel ihm [SchichtFolgen] liefert (er passiert dort den Filter). Ein
  *   AUSGESCHALTETER Ignorieren-Typ uebergeht nichts - dann gibt es keine Kurzform.
  * - **Ausgeschaltet und Krank** haben keine: ihre Statuszeile sagt, was sie tun bzw. nicht tun.
- * - **`folgen == null`** heisst „noch nicht gelesen“ und bleibt `null` - eine Zeile „Dimmen: keine“
- *   waere eine erfundene Aussage.
+ * - **`folgen == null`** heisst „noch nicht gelesen“: Licht und „Nicht stören“ stehen dann nicht, eine
+ *   Zeile „Licht: keine“ waere eine erfundene Aussage. Uebrig bleibt, was die Definition allein sagt:
+ *   [dimmKurz] und „kein Wecker“ - oder `null`.
  */
-internal fun kurzform(definition: ShiftDefinition, folgen: SchichtFolgen?): String? {
+internal fun kurzform(definition: ShiftDefinition, folgen: SchichtFolgen?, dimmKurz: String?): String? {
     if (definition.kategorie == ShiftKategorie.IGNORIEREN) {
         return if (definition.isEnabled) schuetze(SchichttypTexte.WIRD_UEBERGANGEN) else null
     }
     if (!definition.isEnabled || definition.kategorie == ShiftKategorie.KRANK) return null
-    if (definition.weckerAn) return folgen?.alsText()
     // Geschuetzt wie die Abschnitte der Statuszeile: umbrochen wird nur HINTER dem Trenner.
-    val keinWecker = schuetze(SchichttypTexte.KEIN_WECKER)
-    return if (folgen == null) keinWecker else keinWecker + Texte.TRENNER + folgen.alsTextOhneLicht()
+    val keinWecker = if (definition.weckerAn) null else schuetze(SchichttypTexte.KEIN_WECKER)
+    val dimmen = dimmKurz?.let(::schuetze)
+    val rest = folgen?.kurzAbschnitte(dimmen, mitLicht = definition.weckerAn) ?: dimmen
+    return listOfNotNull(keinWecker, rest).joinToString(Texte.TRENNER).ifEmpty { null }
 }
+
+/** Wie [abschnitte], aber mit dem Dimm-Abschnitt der Liste ([dimmen], bereits geschuetzt) statt „Dimmen: …“. */
+private fun SchichtFolgen.kurzAbschnitte(dimmen: String?, mitLicht: Boolean): String =
+    listOfNotNull(
+        dimmen,
+        if (mitLicht) teil(Texte.LICHT, licht.teile()) else null,
+        teil(Texte.DND, dnd.teile())
+    ).joinToString(Texte.TRENNER)
 
 /**
  * Ein Abschnitt: Beschriftung + erstes Stueck geschuetzt, jedes weitere Stueck ebenfalls in sich
@@ -265,14 +245,9 @@ private fun DimmStatus.teile(): List<String> = when (this) {
     DimmStatus.Aus -> listOf(Texte.AUS)
     DimmStatus.Keine -> listOf(Texte.KEINE)
     is DimmStatus.Wirksam -> buildList {
-        add(
-            when (art) {
-                DimmArt.EIGENE -> Texte.EIGENE_REGEL
-                DimmArt.ALLGEMEINE -> Texte.ALLGEMEINE_REGEL
-                DimmArt.UNTERDRUECKT -> Texte.UNTERDRUECKT
-            }
-        )
-        if (ohneWirkung > 0) add("(+$ohneWirkung ohne Wirkung)")
+        // ALLGEMEINE und UNTERDRUECKT erzeugt die Ableitung nicht mehr (siehe DimmArt); beide waeren
+        // hier ein Typ ohne eigene Fenster.
+        add(if (art == DimmArt.EIGENE) fensterAnzahl(fenster) else Texte.KEINE)
     }
 }
 
@@ -297,14 +272,16 @@ private fun LichtStatus.teile(): List<String> = when (this) {
 
 private fun regelAnzahl(n: Int): String = if (n == 1) "1 Regel" else "$n Regeln"
 
+private fun fensterAnzahl(n: Int): String = if (n == 1) "1 Fenster" else "$n Fenster"
+
 private fun DndStatus.teile(): List<String> {
     if (aus) return listOf(Texte.AUS)
     val haupt = when (dienstzeit) {
         DienstzeitDnd.AUS -> listOf(Texte.NACH_DIMMER)
         DienstzeitDnd.AN ->
             if (nachDimmer) listOf("${Texte.DIENSTZEIT} + ${Texte.NACH_DIMMER}") else listOf(Texte.DIENSTZEIT)
-        DienstzeitDnd.AUSGENOMMEN ->
-            if (nachDimmer) listOf(Texte.NACH_DIMMER, "(Dienstzeit ausgenommen)") else listOf(Texte.AUSGENOMMEN)
+        // Wird seit #219 nicht mehr erzeugt (siehe DienstzeitDnd); wie "aus" gelesen.
+        DienstzeitDnd.AUSGENOMMEN -> if (nachDimmer) listOf(Texte.NACH_DIMMER) else listOf(Texte.AUS)
     }
     if (!rufbereitschaft) return haupt
     // Das Komma gehoert zum Vorgaenger, damit der Umbruch HINTER ihm liegt, nie davor.
@@ -325,9 +302,7 @@ private object Texte {
 
     const val AUS = "aus"
     const val KEINE = "keine"
-    const val EIGENE_REGEL = "eigene Regel"
     const val ALLGEMEINE_REGEL = "allgemeine Regel"
-    const val UNTERDRUECKT = "unterdrückt"
     const val NICHT_LESBAR = "nicht lesbar"
     const val STILLE_SCHICHT = "aus (stille Schicht)"
     const val KEINE_BRIDGE = "keine Bridge"
@@ -335,6 +310,5 @@ private object Texte {
     const val NUR_BEI_DUNKELHEIT = "nur bei Dunkelheit"
     const val DIENSTZEIT = "Dienstzeit"
     const val NACH_DIMMER = "nach Dimmer"
-    const val AUSGENOMMEN = "ausgenommen"
     const val RUFBEREITSCHAFT = "Rufbereitschaft"
 }

@@ -157,7 +157,7 @@ class NoShiftReasonTest {
 
     @Test
     fun `beide Schichttypen-Saetze nennen die Einstellungen als Ort - nicht mehr den Wecker-Bereich`() {
-        // Seit #139 steht "Schichttypen verwalten" in den Einstellungen. Ein Satz, der noch auf
+        // Seit #139 liegt die Zeile in den Einstellungen (seit #225 "Schichttypen einrichten"). Ein Satz, der noch auf
         // den Wecker-Bereich zeigt, schickt den Nutzer an eine Stelle, an der der Knopf fehlt.
         val texte = listOf(
             noShiftExplanation(NoShiftReason.NO_SHIFT_TYPES),
@@ -165,7 +165,7 @@ class NoShiftReasonTest {
         )
         for (text in texte) {
             assertTrue("Ort fehlt: $text", text.contains(SCHICHTTYPEN_ORT))
-            assertTrue("Knopfname fehlt: $text", text.contains("„Schichttypen verwalten“"))
+            assertTrue("Knopfname fehlt: $text", text.contains("„Schichttypen einrichten“"))
             assertTrue("Einstellungen fehlen: $text", text.contains("Einstellungen"))
             assertFalse("Alter Ort steht noch drin: $text", text.contains("„Wecker“"))
         }
@@ -176,7 +176,15 @@ class NoShiftReasonTest {
         // Der Leerzustand der Hue-Regel (hue_shift_none_body) war beim Umzug uebersehen worden.
         val datei = listOf(File("app/src/main/res/values/strings.xml"), File("src/main/res/values/strings.xml"))
             .firstOrNull { it.isFile } ?: error("strings.xml nicht gefunden")
-        datei.readLines().filter { it.contains("Schichttypen verwalten") }.forEach { zeile ->
+        val zeilen = datei.readLines()
+        val verweise = zeilen.filter { it.contains("Schichttypen einrichten") }
+        // Ohne diese beiden Zusicherungen waere die Schleife nach einer Umbenennung leer gruen.
+        assertTrue("Kein Verweis auf die Zeile gefunden", verweise.isNotEmpty())
+        assertFalse(
+            "Alter Knopfname steht noch in strings.xml",
+            zeilen.any { it.contains("Schichttypen verwalten") }
+        )
+        verweise.forEach { zeile ->
             assertTrue("Einstellungen fehlen: $zeile", zeile.contains("Einstellungen"))
             assertFalse("Alter Ort steht noch drin: $zeile", zeile.contains("„Wecker“"))
         }

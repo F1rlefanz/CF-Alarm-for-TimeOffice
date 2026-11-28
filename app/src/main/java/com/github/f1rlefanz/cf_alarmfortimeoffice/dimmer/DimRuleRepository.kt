@@ -7,6 +7,7 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import com.github.f1rlefanz.cf_alarmfortimeoffice.di.qualifiers.MainDataStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
@@ -93,6 +94,29 @@ class DimRuleRepository @Inject constructor(
 
     suspend fun getRules(): List<DimRule> = rules.first()
 
+    /**
+     * STRIKTE Lese-Stelle fuer die Typ-Modellmigration (#216) - das Gegenstueck zu [rules].
+     *
+     * [rules] degradiert jeden Fehler bewusst auf die leere Liste (diese Nacht kein Dimmen, die
+     * harmlose Richtung). Eine MIGRATION darf darauf nicht bauen: sie hielte einen unlesbaren
+     * Bestand fuer "keine Regeln", schriebe jeden Typ ohne Fenster und setzte ihre Stufe - die
+     * Regeln kaemen nie mehr an. Deshalb hier: ein Lesefehler des Stores oder ein Rohtext, den
+     * [strictJson] nicht deuten kann (auch ein unbekannter Anker), kommt als `Result.failure` an.
+     *
+     * Fehlender oder leerer Rohtext heisst "keine Regeln" - so behandelt ihn auch der Import
+     * (`ConfigBackupUseCase.structuralRejection`). `CancellationException` wird weitergeworfen.
+     */
+    suspend fun regelnOderFehler(): Result<List<DimRule>> = try {
+        val raw = dataStore.data.first()[KEY_RULES]
+        Result.success(
+            raw?.takeIf { it.isNotBlank() }?.let { strictJson.decodeFromString<List<DimRule>>(it) } ?: emptyList()
+        )
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Result.failure(e)
+    }
+
     // Kein oeffentliches saveRules(list) - Massen-Schreibpfade bauen auf editRules() auf.
 
     suspend fun upsert(rule: DimRule) = editRules("upsert(${rule.id})") { current ->
@@ -109,10 +133,9 @@ class DimRuleRepository @Inject constructor(
      * `HueConfigRepository.saveScheduleRule()`.
      *
      * Zwei Gründe, warum Lesen und Schreiben hier nicht getrennt sein dürfen:
-     * 1. Atomizität: Jede Nutzeraktion läuft in einer eigenen, unabgewarteten Coroutine
-     *    (`DimmerRulesViewModel`). Zwei getrennte Transaktionen (`getRules()` + Zurückschreiben der
-     *    Ganzliste) verlieren bei einem Doppel-Tap eine Änderung; DataStore serialisiert
-     *    `edit{}`-Blöcke selbst.
+     * 1. Atomizität: Die Schreiber laufen in eigenen, voneinander unabhängigen Coroutines. Zwei
+     *    getrennte Transaktionen (`getRules()` + Zurückschreiben der Ganzliste) verlieren bei
+     *    gleichzeitigen Aufrufen eine Änderung; DataStore serialisiert `edit{}`-Blöcke selbst.
      * 2. Datenverlust: Ein Dekodier-Fehler darf NICHT als leere Liste in den Schreibvorgang laufen –
      *    sonst löscht das nächste Speichern/Löschen alle übrigen Regeln endgültig (inklusive der
      *    bedeutungstragenden Nachtdienst-Ausnahme mit leerer Fensterliste). Deshalb bricht der Edit

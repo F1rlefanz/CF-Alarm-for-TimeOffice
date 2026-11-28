@@ -56,7 +56,6 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.navigation.MAIN_TAB_ZIELE
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.hilfe.HilfeKnopf
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.hilfe.NeuigkeitenNachUpdate
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.navigation.mainTabZiel
-import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.DimmerTabContent
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.HomeTabContent
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.HueTabContent
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.SettingsTabContent
@@ -104,8 +103,6 @@ fun MainContentScreen(
     onShowEventList: () -> Unit,
     onShowHueRuleConfig: () -> Unit,
     onShowHueSettings: () -> Unit,
-    onShowDimmerSettings: () -> Unit,
-    onShowDimmerPreview: () -> Unit,
     onShowDndSettings: () -> Unit,
     onShowOrtFuerTageslicht: () -> Unit
 ) {
@@ -418,9 +415,6 @@ fun MainContentScreen(
                         onNavigateToRuleConfig = onShowHueRuleConfig,
                         onNavigateToSettings = onShowHueSettings
                     )
-                }
-                MainTab.DIMMER -> {
-                    DimmerTabContent(onNavigateToRules = onShowDimmerSettings, onNavigateToPreview = onShowDimmerPreview)
                 }
             }
         }

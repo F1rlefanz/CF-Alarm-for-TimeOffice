@@ -15,19 +15,14 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
-import androidx.compose.material.icons.filled.CalendarMonth
-import androidx.compose.material.icons.filled.DoNotDisturbOn
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material.icons.filled.WbTwilight
-import androidx.compose.material.icons.filled.Work
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -45,7 +40,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -110,22 +104,22 @@ fun SettingsTabContent(
             )
         }
 
-        // Kalender-Einstellungen
-        WeiterKarte(
-            icon = Icons.Default.CalendarMonth,
-            titel = "Kalender auswählen",
-            text = "Wähle die Kalender für Schichterkennung",
-            onClick = onShowCalendarSelection
-        )
-
-        // Schichttypen (#139): gehoeren zur Konfiguration, nicht in den Wecker-Tab. Zurueck fuehrt
-        // ueber returnToTab (SETTINGS) wieder hierher.
-        WeiterKarte(
-            icon = Icons.Default.Work,
-            titel = "Schichttypen verwalten",
-            text = "Schichten anlegen, Muster und Weckzeiten festlegen",
-            onClick = onShowShiftConfig
-        )
+        // Gliederung nach SPEC 3.6: Kalender, Bildschirm dimmen, Nicht stören, Philips Hue,
+        // Tageslicht, Sonstiges. Schichttypen (#139) gehoeren zur Konfiguration, nicht in den
+        // Wecker-Tab; Zurueck fuehrt ueber returnToTab (SETTINGS) wieder hierher.
+        GeraeteKarte("Kalender") {
+            GeraeteZeile(
+                titel = "Kalender auswählen",
+                text = "Wähle die Kalender für Schichterkennung",
+                onClick = onShowCalendarSelection
+            )
+            HorizontalDivider()
+            GeraeteZeile(
+                titel = "Schichttypen einrichten",
+                text = "Wecker, Dimmen und „Nicht stören“ pro Typ",
+                onClick = onShowShiftConfig
+            )
+        }
 
         // Kalender-Vorausschau (#51) - nahe der Kalenderauswahl (dazwischen nur die
         // Schichttypen): alle drei bestimmen, WAS CF-Alarm aus dem Kalender liest und erkennt.
@@ -215,21 +209,32 @@ fun SettingsTabContent(
             }
         }
 
-        // Nicht stören (DND) - eigener, getrennter Bereich (nicht im Dimmer-Tab)
-        WeiterKarte(
-            icon = Icons.Default.DoNotDisturbOn,
-            titel = "Nicht stören",
-            text = "Schaltet Nicht-stören automatisch nach Schicht",
-            onClick = onShowDndSettings
-        )
+        // Geraete-Einstellungen beider Bereiche (#225); WANN etwas passiert, steht am Schichttyp.
+        DimmenGeraeteKarte()
+        NichtStoerenGeraeteKarte(onWerDurchkommt = onShowDndSettings)
+
+        // Reine Auskunft: Einrichten und Pruefen der Bridge liegen im Hue-Bereich des Menues.
+        GeraeteKarte("Philips Hue") {
+            GeraeteZeile(
+                titel = "Bridge",
+                text = "Einrichten und prüfen: im Menü unter „Philips Hue“"
+            )
+        }
 
         // Ort fuer Tageslicht (#140) - gemeinsam fuer Dimmer und Hue, deshalb in den
-        // Einstellungen; die beiden Regel-Editoren fuehren zusaetzlich direkt hierher.
-        WeiterKarte(
-            icon = Icons.Default.WbTwilight,
-            titel = stringResource(R.string.tageslicht_ort_titel),
-            text = stringResource(R.string.tageslicht_ort_karte_text),
-            onClick = onShowOrtFuerTageslicht
+        // Einstellungen; Typ-Seite und Regel-Editoren fuehren zusaetzlich direkt hierher.
+        GeraeteKarte("Tageslicht") {
+            GeraeteZeile(
+                titel = stringResource(R.string.tageslicht_ort_titel),
+                text = stringResource(R.string.tageslicht_ort_karte_text),
+                onClick = onShowOrtFuerTageslicht
+            )
+        }
+
+        Text(
+            "Sonstiges",
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold
         )
 
         // Benachrichtigungen (Schicht-Aenderung + Dimmer-Korrektur)
@@ -627,48 +632,6 @@ private fun ConfigBackupCard() {
                 TextButton(onClick = { viewModel.dismissResult() }) { Text("OK") }
             }
         )
-    }
-}
-
-/** Navigationskarte: Icon, Titel, Beschreibung und Weiter-Pfeil; die ganze Karte ist das Ziel. */
-@Composable
-internal fun WeiterKarte(icon: ImageVector, titel: String, text: String, onClick: () -> Unit) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        onClick = onClick
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(SpacingConstants.PADDING_CARD),
-            horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_LARGE),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                icon,
-                // dekorativ: der Titel daneben sagt es bereits
-                contentDescription = null,
-                modifier = Modifier.size(SpacingConstants.ICON_SIZE_STANDARD),
-                tint = MaterialTheme.colorScheme.primary
-            )
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    titel,
-                    style = MaterialTheme.typography.titleMedium
-                )
-                Text(
-                    text,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            Icon(
-                // dekorativ: reines Weiter-Zeichen, die ganze Karte ist das bedienbare
-                // Element und traegt ihre Beschriftung selbst
-                Icons.AutoMirrored.Default.KeyboardArrowRight,
-                contentDescription = null
-            )
-        }
     }
 }
 

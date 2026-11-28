@@ -2,7 +2,6 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.navigation
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccessAlarm
-import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lightbulb
@@ -12,7 +11,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.MainTab
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.hilfe.HilfeThema
 
 /**
- * Wie die sechs Hauptbereiche heissen und aussehen - an EINER Stelle.
+ * Wie die fuenf Hauptbereiche heissen und aussehen - an EINER Stelle.
  *
   * Ein Eintrag traegt Schubladen-Name UND Kopfzeilen-Titel, damit beides nicht auseinanderlaeuft -
   * Hergang navigation.md.
@@ -21,7 +20,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.hilfe.HilfeThema
  * Compose-Typ. `ImageVector` gehoert nicht in ein Paket, das auch von Hintergrundkomponenten
  * gelesen werden koennte - siehe die Regel "kein Hintergrund-Paket importiert `ui.`" in
  * CLAUDE.md, die auch in der Gegenrichtung sauber bleiben soll. [MainTab] selbst bleibt
- * deshalb, wo es ist: es ist das Rueckweg-Gedaechtnis von 13 `NavigationState`-Zustaenden
+ * deshalb, wo es ist: es ist das Rueckweg-Gedaechtnis von 12 `NavigationState`-Zustaenden
  * (`returnToTab`) und hat mit der Darstellung nichts zu tun.
  */
 data class MainTabZiel(
@@ -36,15 +35,14 @@ data class MainTabZiel(
 /**
  * Die Anzeigereihenfolge der Schublade.
  *
- * Sie ist bewusst NICHT die Enum-Reihenfolge: fachlich gehoeren Wecker, Dimmer und Hue
- * zusammen (das taegliche Geschehen), Status und Einstellungen ans Ende (Nachschlagen und
- * Einrichten). Das Enum umzusortieren waere die schlechtere Loesung - es wird an 13 Stellen
- * als `returnToTab` gehalten und geht die Darstellung nichts an.
+ * Sie ist bewusst NICHT die Enum-Reihenfolge: fachlich gehoeren Wecker und Hue zusammen (das
+ * taegliche Geschehen), Status und Einstellungen ans Ende (Nachschlagen und Einrichten). Das Enum
+ * umzusortieren waere die schlechtere Loesung - es wird in 12 Zustaenden als `returnToTab`
+ * gehalten und geht die Darstellung nichts an.
  */
 val MAIN_TAB_ZIELE: List<MainTabZiel> = listOf(
     MainTabZiel(MainTab.HOME, "Übersicht", Icons.Filled.Home, HilfeThema.ANLEITUNG),
     MainTabZiel(MainTab.WECKER, "Wecker", Icons.Filled.AccessAlarm, HilfeThema.ANLEITUNG_WECKER),
-    MainTabZiel(MainTab.DIMMER, "Schicht-Dimmer", Icons.Filled.DarkMode, HilfeThema.ANLEITUNG_DIMMER),
     MainTabZiel(MainTab.HUE, "Philips Hue", Icons.Filled.Lightbulb, HilfeThema.ANLEITUNG_HUE),
     MainTabZiel(MainTab.STATUS, "System-Status", Icons.Filled.Info, HilfeThema.PROBLEME),
     MainTabZiel(MainTab.SETTINGS, "Einstellungen", Icons.Filled.Settings, HilfeThema.ANLEITUNG)

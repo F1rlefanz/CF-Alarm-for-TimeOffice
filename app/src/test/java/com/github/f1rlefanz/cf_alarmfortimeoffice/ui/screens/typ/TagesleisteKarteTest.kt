@@ -4,23 +4,23 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.Blockposition
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimAnchor
-import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimRule
-import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimRuleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimWindow
-import com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.ActionType
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueLightAction
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueSchedule
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueTimeRange
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.TargetType
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.SchichttypEinordnen
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftKategorie
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.TypDimmFenster
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.TypDimmen
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.TypNichtStoeren
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpan
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.Balken
-import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.DimmerQuelle
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.Hinweis
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.LichtQuelle
-import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.NichtStoerenQuelle
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.Quelle
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.Spur
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.Tagesleiste
@@ -35,10 +35,10 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import org.mockito.kotlin.mock
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.LocalTime
 import java.time.ZoneId
 import java.time.ZoneOffset
 import kotlin.math.max
@@ -64,7 +64,6 @@ class TagesleisteKarteTest {
 
     private val fruehSpan = span("F", LocalDateTime.of(2026, 11, 10, 6, 0), LocalDateTime.of(2026, 11, 10, 14, 15))
 
-    private val keinDnd = DndPrefs.Toggles(followDimmerEnabled = false, duringShiftEnabled = false)
 
     private fun entwurf(
         name: String = "F",
@@ -80,10 +79,9 @@ class TagesleisteKarteTest {
 
     private fun quellen(
         spannen: Quelle<List<ShiftSpan>> = Quelle.Bekannt(listOf(fruehSpan)),
-        dimmer: Quelle<DimmerQuelle> = Quelle.Bekannt(DimmerQuelle(an = true, regeln = emptyList(), regelwahl = DimRuleUseCase(mock()))),
-        nichtStoeren: Quelle<NichtStoerenQuelle> = Quelle.Bekannt(NichtStoerenQuelle(keinDnd, emptySet(), 300)),
+        typen: Quelle<ShiftConfig> = konfig(),
         licht: Quelle<LichtQuelle> = Quelle.Bekannt(LichtQuelle(konfiguriert = false, regeln = emptyList(), vorlaufMinuten = { _, _, _, _ -> null }))
-    ) = TagesleisteQuellen(dimmer, nichtStoeren, licht, spannen)
+    ) = TagesleisteQuellen(typen, licht, spannen)
 
     private fun rechne(
         e: TypEntwurf = entwurf(),
@@ -97,13 +95,25 @@ class TagesleisteKarteTest {
         startAnchor = DimAnchor.CLOCK, startClockMinutes = 22 * 60, endAnchor = DimAnchor.ALARM, endOffsetMinutes = 0
     )
 
-    private fun dimQuelle(vararg fenster: DimWindow, name: String = "F") = Quelle.Bekannt(
-        DimmerQuelle(
-            an = true,
-            regeln = listOf(DimRule(id = "r-$name", name = name, shiftPattern = name, windows = fenster.toList(), strength = 55)),
-            regelwahl = DimRuleUseCase(mock())
+    /** Die gelesene Konfiguration: ein Typ [name] mit den Einstellungen, aus denen die Leiste rechnet. */
+    private fun konfig(
+        name: String = "F",
+        kategorie: ShiftKategorie = ShiftKategorie.DIENST,
+        dimmen: TypDimmen = TypDimmen(),
+        nichtStoeren: TypNichtStoeren = TypNichtStoeren()
+    ) = Quelle.Bekannt(
+        ShiftConfig(
+            definitions = listOf(
+                ShiftDefinition(
+                    id = "id-$name", name = name, keywords = listOf(name), alarmTime = LocalTime.of(4, 30),
+                    dimmen = dimmen, nichtStoeren = nichtStoeren
+                ).mitKategorie(kategorie)
+            )
         )
     )
+
+    private fun dimQuelle(vararg fenster: DimWindow, name: String = "F") =
+        konfig(name, dimmen = TypDimmen().mitFenster(fenster.map { TypDimmFenster(it, 55) }))
 
     private fun Tagesleiste.spur(spur: Spur) = balken.filter { it.spur == spur }
 
@@ -122,7 +132,7 @@ class TagesleisteKarteTest {
 
     @Test
     fun `eine geaenderte Weckzeit verschiebt auch das Ende des Dimmens beim Wecker`() {
-        val q = quellen(dimmer = dimQuelle(nachtDavor))
+        val q = quellen(typen = dimQuelle(nachtDavor))
 
         assertEquals(listOf(Balken(Spur.DIMMEN, 240, 630)), rechne(entwurf(weckzeit = "04:30"), q = q).leiste.spur(Spur.DIMMEN))
         assertEquals(listOf(Balken(Spur.DIMMEN, 240, 690)), rechne(entwurf(weckzeit = "05:30"), q = q).leiste.spur(Spur.DIMMEN))
@@ -164,7 +174,7 @@ class TagesleisteKarteTest {
 
     /** Alles, was auf die Leiste kaeme: Spanne, Dimm-Regel und Hue-Regel mit Bridge. */
     private fun vollBestueckt() = quellen(
-        dimmer = dimQuelle(nachtDavor),
+        typen = dimQuelle(nachtDavor),
         licht = Quelle.Bekannt(LichtQuelle(true, listOf(hueRegel())) { _, _, _, _ -> null })
     )
 
@@ -197,7 +207,7 @@ class TagesleisteKarteTest {
         assertAusgeschaltet(
             rechne(
                 entwurf(isEnabled = false),
-                q = TagesleisteQuellen(Quelle.Unbekannt, Quelle.Unbekannt, Quelle.Unbekannt, Quelle.Unbekannt)
+                q = TagesleisteQuellen(Quelle.Unbekannt, Quelle.Unbekannt, Quelle.Unbekannt)
             )
         )
     }
@@ -259,7 +269,7 @@ class TagesleisteKarteTest {
             weckzeitNachlaufMinuten = 60, nachlaufBisHell = HellAb.SONNENAUFGANG
         )
         val spanne = span("F", LocalDateTime.of(2026, 11, 10, 8, 0), LocalDateTime.of(2026, 11, 10, 16, 0))
-        val q = quellen(spannen = Quelle.Bekannt(listOf(spanne)), dimmer = dimQuelle(fenster))
+        val q = quellen(spannen = Quelle.Bekannt(listOf(spanne)), typen = dimQuelle(fenster))
 
         val ohneOrt = rechne(entwurf(weckzeit = "07:00"), q = q, position = Blockposition.MITTLERER).leiste.spur(Spur.DIMMEN)
         val mitOrt = rechne(entwurf(weckzeit = "07:00"), q = q.copy(tageslicht = berlin), position = Blockposition.MITTLERER)
@@ -299,20 +309,12 @@ class TagesleisteKarteTest {
     }
 
     @Test
-    fun `eine unlesbare Dimm-Quelle macht Dimmen und Nicht stoeren unbekannt`() {
-        val anzeige = rechne(q = quellen(dimmer = Quelle.Unbekannt))
+    fun `eine unlesbare Konfiguration macht Dimmen und Nicht stoeren unbekannt - nie kein Dimmen`() {
+        val anzeige = rechne(q = quellen(typen = Quelle.Unbekannt))
 
         assertEquals(listOf(Spur.DIMMEN, Spur.NICHT_STOEREN), anzeige.unbekannt)
         assertEquals(emptyList<Balken>(), anzeige.leiste.spur(Spur.DIMMEN) + anzeige.leiste.spur(Spur.NICHT_STOEREN))
         assertEquals(630, anzeige.leiste.weckpunkte.single().minute)
-    }
-
-    @Test
-    fun `eine unlesbare Nicht-stoeren-Quelle laesst Dimmen stehen`() {
-        val anzeige = rechne(q = quellen(dimmer = dimQuelle(nachtDavor), nichtStoeren = Quelle.Unbekannt))
-
-        assertEquals(listOf(Spur.NICHT_STOEREN), anzeige.unbekannt)
-        assertEquals(listOf(Balken(Spur.DIMMEN, 240, 630)), anzeige.leiste.spur(Spur.DIMMEN))
     }
 
     // ── Verdrahtung der Quellen ──────────────────────────────────────────────────────────────
@@ -340,23 +342,22 @@ class TagesleisteKarteTest {
     }
 
     @Test
-    fun `Nicht stoeren waehrend des Eintrags kommt aus den Schaltern der Quelle`() {
-        val an = quellen(nichtStoeren = Quelle.Bekannt(NichtStoerenQuelle(DndPrefs.Toggles(false, true), emptySet(), 300)))
+    fun `Nicht stoeren waehrend des Eintrags kommt aus dem Schalter des Typs`() {
+        val an = quellen(typen = konfig(nichtStoeren = TypNichtStoeren(waehrendEintrag = true)))
 
         assertEquals(listOf(Balken(Spur.NICHT_STOEREN, 360 + 360, 360 + 855)), rechne(q = an).leiste.spur(Spur.NICHT_STOEREN))
         assertEquals(emptyList<Balken>(), rechne(q = quellen()).leiste.spur(Spur.NICHT_STOEREN))
     }
 
     @Test
-    fun `der Ruf-Cutoff der Quelle kappt Nicht stoeren - nicht die Vorgabe 05 Uhr`() {
+    fun `Endet spaetestens um am Typ kappt Nicht stoeren - nicht die Vorgabe 05 Uhr`() {
         val ruf = span("AD", LocalDateTime.of(2026, 11, 10, 21, 0), LocalDateTime.of(2026, 11, 11, 7, 0))
-        val toggles = DndPrefs.Toggles(followDimmerEnabled = false, duringShiftEnabled = true)
         fun dnd(cutoffMinuten: Int) = rechne(
             e = entwurf(name = "AD", kategorie = ShiftKategorie.RUFBEREITSCHAFT, weckerAn = false),
             gespeichert = "AD",
             q = quellen(
                 spannen = Quelle.Bekannt(listOf(ruf)),
-                nichtStoeren = Quelle.Bekannt(NichtStoerenQuelle(toggles, emptySet(), cutoffMinuten))
+                typen = konfig("AD", ShiftKategorie.RUFBEREITSCHAFT, nichtStoeren = TypNichtStoeren(false, true, cutoffMinuten))
             )
         ).leiste.spur(Spur.NICHT_STOEREN)
 
@@ -430,7 +431,7 @@ class TagesleisteKarteTest {
     @Test
     fun `die gewaehlte Blockposition filtert die Dimm-Fenster`() {
         val nurAmErsten = nachtDavor.copy(blockPositionen = setOf(Blockposition.ERSTER))
-        val q = quellen(dimmer = dimQuelle(nurAmErsten))
+        val q = quellen(typen = dimQuelle(nurAmErsten))
 
         assertEquals(listOf(Balken(Spur.DIMMEN, 240, 630)), rechne(q = q, position = Blockposition.ERSTER).leiste.spur(Spur.DIMMEN))
         assertEquals(emptyList<Balken>(), rechne(q = q, position = Blockposition.MITTLERER).leiste.spur(Spur.DIMMEN))

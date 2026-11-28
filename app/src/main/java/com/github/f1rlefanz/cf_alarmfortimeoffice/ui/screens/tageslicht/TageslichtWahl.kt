@@ -37,41 +37,10 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.wecker.Etikett
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.wecker.InhaltUndBedienung
 
 /**
- * Dimm-Fenster "Weckzeit, spaetestens": bis wann der Nachlauf hoechstens laeuft (#140).
- *
- * Gleiche Knopf-Mechanik wie die Anker-Wahl im Fenster-Editor (gefuellt = gewaehlt), damit die
- * Auswahl im selben Fenster nicht anders aussieht als die Zeilen darueber. Wird nur gezeigt, wenn
- * der Nachlauf groesser als 0 ist - ohne Nachlauf gibt es nichts zu kuerzen.
- *
- * [beispiel] ist die fertige Zeile fuer den naechsten Wecker ("Nächster Wecker Do 05:15 → …");
- * `null`, wenn keiner im Fenster liegt.
- *
- * [ohneOrt] `null` = der Ort ist noch nicht geladen: dann steht unter der Wahl nichts - sonst
- * blitzte fuer einen Moment der rote Kein-Ort-Hinweis auf, der nicht stimmt.
- */
-@Composable
-fun NachlaufBisHellWahl(
-    wahl: HellAb,
-    onWahl: (HellAb) -> Unit,
-    ohneOrt: Boolean?,
-    beispiel: String?,
-    onOrtEinstellen: () -> Unit
-) = SpaetestensBeiHellWahl(
-    texte = SpaetestensTexte(
-        titel = R.string.tageslicht_dimmer_titel,
-        immer = R.string.tageslicht_wahl_immer,
-        daemmerung = R.string.tageslicht_dimmer_bis_daemmerung,
-        sonnenaufgang = R.string.tageslicht_dimmer_bis_sonnenaufgang,
-        hinweis = R.string.tageslicht_dimmer_hinweis,
-        ohneOrt = R.string.tageslicht_ohne_ort_dimmer
-    ),
-    wahl = wahl, onWahl = onWahl, ohneOrt = ohneOrt, beispiel = beispiel, onOrtEinstellen = onOrtEinstellen
-)
-
-/**
- * Hue-Auto-Aus "spaetestens, wenn es hell wird" (#143). Dieselbe Mechanik wie
- * [NachlaufBisHellWahl] - beide kuerzen eine Dauer auf den Hell-Zeitpunkt des Wecktags, und
- * dieselbe Frage soll an beiden Stellen gleich aussehen.
+ * Hue-Auto-Aus "spaetestens, wenn es hell wird" (#143): kuerzt eine Dauer auf den Hell-Zeitpunkt
+ * des Wecktags. Gefuellter Knopf = gewaehlt; der Hinweis zum fehlenden Ort erscheint erst, wenn der
+ * Ort geladen ist ([ohneOrt] `null` = noch nicht), sonst blitzte er kurz falsch auf. [beispiel] ist
+ * die fertige Zeile fuer den naechsten Wecker, `null`, wenn keiner im Fenster liegt.
  */
 @Composable
 fun AutoAusBisHellWahl(

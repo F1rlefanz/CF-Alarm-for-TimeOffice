@@ -1,9 +1,15 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.typ
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimOverlayPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftKategorie
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.TypDimmFenster
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.TypDimmen
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.TypNichtStoeren
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.AlarmConstants
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.DateTimeFormats
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -22,7 +28,11 @@ internal data class TypEntwurf(
     val isEnabled: Boolean,
     val isSilent: Boolean,
     val weckerAn: Boolean,
-    val kategorie: ShiftKategorie
+    val kategorie: ShiftKategorie,
+    /** Der Dimm-Teil (#221). `null` = dieser Entwurf traegt keinen: beim Speichern gilt der gespeicherte Stand. */
+    val dimmen: DimmenEntwurf? = null,
+    /** Der „Nicht stoeren“-Teil (#222); `null` wie bei [dimmen]. */
+    val nichtStoeren: NichtStoerenEntwurf? = null
 ) {
     val isSickDay: Boolean get() = kategorie == ShiftKategorie.KRANK
 
@@ -67,11 +77,23 @@ internal data class TypEntwurf(
             isSilent = isSilent,
             kategorie = kategorie
         )
+            .let { typ -> dimmen?.let { typ.copy(dimmen = it.anwenden(typ.dimmen)) } ?: typ }
+            .let { typ -> nichtStoeren?.let { typ.copy(nichtStoeren = it.anwenden(typ.nichtStoeren)) } ?: typ }
     }
 
-    /** Fuer `rememberSaveable`: nur Typen, die ein Bundle kennt (Text, Wahrheitswert, Liste). */
+    /**
+     * Fuer `rememberSaveable`: nur Typen, die ein Bundle kennt (Text, Wahrheitswert, Liste). Dimmen und
+     * „Nicht stoeren“ reisen zusammen als JSON an achter Stelle ([EntwurfTeile]; die Dimm-Fenster sind keine
+     * Bundle-Typen) - ein Element, dessen Teile einzeln fehlen duerfen, statt Stellen, die nachruecken.
+     * Ohne beide endet die Liste nach sieben.
+     */
     fun alsSpeicherListe(): List<Any> =
-        listOf(name, ArrayList(muster), weckzeitText, isEnabled, isSilent, weckerAn, kategorie.schluessel)
+        listOfNotNull(
+            name, ArrayList(muster), weckzeitText, isEnabled, isSilent, weckerAn, kategorie.schluessel,
+            EntwurfTeile(dimmen, nichtStoeren)
+                .takeIf { dimmen != null || nichtStoeren != null }
+                ?.let { ENTWURF_JSON.encodeToString(EntwurfTeile.serializer(), it) }
+        )
 
     companion object {
         /** Der Ausgangsstand des Formulars: der Typ, wie er ist, oder die Vorgaben einer Neuanlage. */
@@ -93,11 +115,17 @@ internal data class TypEntwurf(
             weckerAn = ausgang?.weckerAn ?: true,
             // Die Kategorie ersetzt die Schalter „Krankmeldung“ und „Rufbereitschaft“ (Umbau E1).
             // Beim Speichern setzt `mitKategorie` beide Flags mit - die lesen alle heutigen Verbraucher.
-            kategorie = ausgang?.kategorie ?: ShiftKategorie.DIENST
+            kategorie = ausgang?.kategorie ?: ShiftKategorie.DIENST,
+            dimmen = DimmenEntwurf.aus(ausgang?.dimmen ?: TypDimmen()),
+            nichtStoeren = NichtStoerenEntwurf.aus(ausgang?.nichtStoeren ?: TypNichtStoeren())
         )
 
         /** Gegenstueck zu [alsSpeicherListe]; `null` bei einem Stand, den es nicht lesen kann. */
         fun ausSpeicherListe(liste: List<Any?>): TypEntwurf? = runCatching {
+            // Fehlt das achte Element (oder ein Teil darin), gilt der gespeicherte Stand. Ist es da, aber
+            // unlesbar, faellt der ganze Entwurf weg (die Seite oeffnet wieder mit dem gespeicherten Typ) - nie
+            // ein Entwurf ohne Fenster oder mit ausgeschalteten Schaltern.
+            val teile = liste.getOrNull(7)?.let { ENTWURF_JSON.decodeFromString(EntwurfTeile.serializer(), it as String) }
             TypEntwurf(
                 name = liste[0] as String,
                 muster = (liste[1] as List<*>).map { it as String },
@@ -105,13 +133,114 @@ internal data class TypEntwurf(
                 isEnabled = liste[3] as Boolean,
                 isSilent = liste[4] as Boolean,
                 weckerAn = liste[5] as Boolean,
-                kategorie = ShiftKategorie.vonSchluessel(liste[6] as String) ?: ShiftKategorie.DIENST
+                kategorie = ShiftKategorie.vonSchluessel(liste[6] as String) ?: ShiftKategorie.DIENST,
+                dimmen = teile?.dimmen,
+                nichtStoeren = teile?.nichtStoeren
             )
         }.getOrNull()
     }
 }
 
 private val ZEIT_ANZEIGE: DateTimeFormatter = DateTimeFormatter.ofPattern(DateTimeFormats.TIME_ONLY)
+
+/** `encodeDefaults`, damit ein Fenster nach dem Zurueckholen Feld fuer Feld dasselbe ist. */
+private val ENTWURF_JSON = Json { encodeDefaults = true }
+
+/** Die Wahl der Farbwaerme im Blatt „Weitere Optionen“ (#224): [eigene] `null` = „wie in den Einstellungen“. */
+@Serializable
+internal data class FarbwaermeWahl(val eigene: Int?)
+
+/**
+ * Der Dimm-Teil des Entwurfs: genau das, was die Typ-Seite zeigt und aendert - „Dimmen an diesem Tag“
+ * ([TypDimmen.an]), die deutbaren Fenster und die Farbwaerme aus „Weitere Optionen“. [farbwaerme] `null` =
+ * unberuehrt, dann gilt die gespeicherte. Undeutbare Fenster gehoeren nicht dazu; sie bleiben am gespeicherten
+ * Typ ([anwenden]).
+ */
+@Serializable
+internal data class DimmenEntwurf(
+    val an: Boolean,
+    val fenster: List<TypDimmFenster>,
+    val farbwaerme: FarbwaermeWahl? = null
+) {
+
+    /**
+     * [gespeichert] mit diesem Stand. Neu kodiert werden die Fenster nur, wenn sie sich unterscheiden
+     * ([TypDimmen.mitFenster] haengt undeutbare wieder an): ein Speichern, das nur Name oder Weckzeit aendert,
+     * laesst das gespeicherte Dimmen Zeichen fuer Zeichen stehen. Die Farbwaerme wird nur geschrieben, wenn das
+     * Blatt sie geaendert hat.
+     */
+    fun anwenden(gespeichert: TypDimmen): TypDimmen {
+        val mitSchalter = gespeichert.copy(an = an)
+        val mitFenstern = if (fenster == gespeichert.fenster) mitSchalter else mitSchalter.mitFenster(fenster)
+        val wahl = farbwaerme ?: return mitFenstern
+        return mitFenstern.copy(farbwaerme = wahl.eigene?.coerceIn(0, DimOverlayPrefs.WARMTH_MAX))
+    }
+
+    /**
+     * Dieser Stand, nachdem sich das Gespeicherte von [vorher] auf [neu] geaendert hat: was gegenueber [vorher]
+     * unberuehrt ist (Schalter, Fenster und Farbwaerme je fuer sich), folgt [neu]; selbst Geaendertes bleibt.
+     */
+    fun nachgezogen(vorher: DimmenEntwurf, neu: DimmenEntwurf): DimmenEntwurf = DimmenEntwurf(
+        an = if (an == vorher.an) neu.an else an,
+        fenster = if (fenster == vorher.fenster) neu.fenster else fenster,
+        farbwaerme = if (farbwaerme == vorher.farbwaerme) neu.farbwaerme else farbwaerme
+    )
+
+    companion object {
+        fun aus(dimmen: TypDimmen): DimmenEntwurf = DimmenEntwurf(dimmen.an, dimmen.fenster)
+    }
+}
+
+/**
+ * Der „Nicht stoeren“-Teil des Entwurfs (#222): die beiden Schalter und „Endet spaetestens um“ (Minuten seit
+ * Mitternacht). Die Uhrzeit bleibt auch an Typen ohne diese Zeile im Entwurf (E2: ein Wechsel der Kategorie
+ * behaelt die Einstellungen).
+ */
+@Serializable
+internal data class NichtStoerenEntwurf(
+    val solangeGedimmt: Boolean,
+    val waehrendEintrag: Boolean,
+    val endetSpaetestensMinuten: Int
+) {
+
+    /**
+     * [gespeichert] mit diesem Stand. Die Uhrzeit wird nur geschrieben, wenn sie sich unterscheidet: so
+     * bleibt ein gespeicherter Wert ausserhalb des Tages (Import; die Klemme sitzt im Lesepfad) stehen,
+     * solange niemand eine Uhrzeit waehlt.
+     */
+    fun anwenden(gespeichert: TypNichtStoeren): TypNichtStoeren {
+        val mitSchaltern = gespeichert.copy(solangeGedimmt = solangeGedimmt, waehrendEintrag = waehrendEintrag)
+        return if (endetSpaetestensMinuten == gespeichert.endetSpaetestensMinuten) {
+            mitSchaltern
+        } else {
+            mitSchaltern.copy(endetSpaetestensGespeichert = endetSpaetestensMinuten)
+        }
+    }
+
+    /** Wie [DimmenEntwurf.nachgezogen]: was gegenueber [vorher] unberuehrt ist, folgt [neu] - jedes Feld fuer sich. */
+    fun nachgezogen(vorher: NichtStoerenEntwurf, neu: NichtStoerenEntwurf): NichtStoerenEntwurf = NichtStoerenEntwurf(
+        solangeGedimmt = if (solangeGedimmt == vorher.solangeGedimmt) neu.solangeGedimmt else solangeGedimmt,
+        waehrendEintrag = if (waehrendEintrag == vorher.waehrendEintrag) neu.waehrendEintrag else waehrendEintrag,
+        endetSpaetestensMinuten = if (endetSpaetestensMinuten == vorher.endetSpaetestensMinuten) {
+            neu.endetSpaetestensMinuten
+        } else {
+            endetSpaetestensMinuten
+        }
+    )
+
+    companion object {
+        fun aus(nichtStoeren: TypNichtStoeren): NichtStoerenEntwurf = NichtStoerenEntwurf(
+            nichtStoeren.solangeGedimmt, nichtStoeren.waehrendEintrag, nichtStoeren.endetSpaetestensMinuten
+        )
+    }
+}
+
+/** Die Teile des Entwurfs, die nur als JSON ins Bundle passen ([TypEntwurf.alsSpeicherListe]). */
+@Serializable
+private data class EntwurfTeile(
+    val dimmen: DimmenEntwurf? = null,
+    val nichtStoeren: NichtStoerenEntwurf? = null
+)
 
 /**
  * Was der Schicht-Editor beim Speichern aus seinem Formular macht - ohne Compose, damit ein Test

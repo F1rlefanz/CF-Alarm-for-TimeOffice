@@ -104,15 +104,16 @@ class DimDiagnostikTest {
 
     /**
      * Die Reihenfolge der Gates ist bedeutungstragend und muss der von `applyCurrentState()`
-     * entsprechen: Master-Pause schlaegt alles, dann der Hauptschalter, dann die Fensterlage.
+     * entsprechen: Master-Pause schlaegt alles, dann „kein Typ dimmt“ (seit #217 der Nachfolger
+     * des Hauptschalters), dann die Fensterlage.
      * Steht sie hier anders, meldet das Log einen Grund, der gar nicht der wirksame war.
      */
     @Test
     fun `Master-Pause schlaegt jeden anderen Grund`() {
         val grund = DimDiagnostik.abschaltGrund(
             masterPause = true,
-            dimEnabled = true,
-            regelnVorhanden = true,
+            dimmenEingerichtet = true,
+            typFensterVorhanden = true,
             fensterAktiv = false,
             overridePausiert = true
         )
@@ -121,11 +122,11 @@ class DimDiagnostikTest {
     }
 
     @Test
-    fun `ausgeschalteter Dimmer schlaegt die Fensterlage`() {
+    fun `kein Typ mit wirksamem Fenster schlaegt die Fensterlage`() {
         val grund = DimDiagnostik.abschaltGrund(
             masterPause = false,
-            dimEnabled = false,
-            regelnVorhanden = true,
+            dimmenEingerichtet = false,
+            typFensterVorhanden = true,
             fensterAktiv = false,
             overridePausiert = false
         )
@@ -137,8 +138,8 @@ class DimDiagnostikTest {
     fun `ein von Hand pausiertes Fenster wird als solches gemeldet`() {
         val grund = DimDiagnostik.abschaltGrund(
             masterPause = false,
-            dimEnabled = true,
-            regelnVorhanden = true,
+            dimmenEingerichtet = true,
+            typFensterVorhanden = true,
             fensterAktiv = true,
             overridePausiert = true
         )
@@ -147,11 +148,13 @@ class DimDiagnostikTest {
     }
 
     @Test
-    fun `ohne Regeln ist ein fehlendes Fenster der Normalfall`() {
+    fun `bei unlesbarer Grundlage ist ein fehlendes Fenster kein Verdachtsfall`() {
+        // Seit #217: `dimmenEingerichtet` ist bei unlesbarer Konfiguration `true` (unbekannt ist
+        // nicht „aus“), `typFensterVorhanden` aber `false` - der Lesefehler hat seine eigene WARN-Zeile.
         val grund = DimDiagnostik.abschaltGrund(
             masterPause = false,
-            dimEnabled = true,
-            regelnVorhanden = false,
+            dimmenEingerichtet = true,
+            typFensterVorhanden = false,
             fensterAktiv = false,
             overridePausiert = false
         )
@@ -160,22 +163,22 @@ class DimDiagnostikTest {
     }
 
     /**
-     * DER FALL, NACH DEM SPAETER GEFRAGT WIRD: Dimmer an, Regeln da — und trotzdem kein Fenster.
+     * DER FALL, NACH DEM SPAETER GEFRAGT WIRD: Fenster am Typ da — und trotzdem kein Fenster.
      * Das kann voellig richtig sein (Mittagszeit), ist aber auch die Signatur eines stillen
-     * Ausfalls: eine Regel, die nie greift, ein leerer Schichtspannen-Speicher, eine versehentlich
-     * geleerte Fensterliste.
+     * Ausfalls: ein Fenster, das nie greift, ein leerer Schichtspannen-Speicher, ein Schichtname,
+     * den kein Typ mehr traegt.
      */
     @Test
-    fun `Dimmer an plus Regeln aber kein Fenster ist der Verdachtsfall`() {
+    fun `Fenster am Typ aber kein laufendes Fenster ist der Verdachtsfall`() {
         val grund = DimDiagnostik.abschaltGrund(
             masterPause = false,
-            dimEnabled = true,
-            regelnVorhanden = true,
+            dimmenEingerichtet = true,
+            typFensterVorhanden = true,
             fensterAktiv = false,
             overridePausiert = false
         )
 
-        assertEquals(AbschaltGrund.KEIN_FENSTER_TROTZ_REGELN, grund)
+        assertEquals(AbschaltGrund.KEIN_FENSTER_TROTZ_TYP_FENSTERN, grund)
     }
 
     // ---------------------------------------------------------------- Log-Level
@@ -187,7 +190,7 @@ class DimDiagnostikTest {
      */
     @Test
     fun `nur der Verdachtsfall geht ins Release-Log`() {
-        assertTrue(DimDiagnostik.istVerdaechtig(AbschaltGrund.KEIN_FENSTER_TROTZ_REGELN))
+        assertTrue(DimDiagnostik.istVerdaechtig(AbschaltGrund.KEIN_FENSTER_TROTZ_TYP_FENSTERN))
 
         listOf(
             AbschaltGrund.MASTER_PAUSE,

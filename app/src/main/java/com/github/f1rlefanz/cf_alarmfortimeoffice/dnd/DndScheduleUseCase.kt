@@ -17,8 +17,14 @@ import androidx.annotation.VisibleForTesting
 import androidx.core.net.toUri
 import com.github.f1rlefanz.cf_alarmfortimeoffice.MainActivity
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimScheduleUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimWindowResolver
 import com.github.f1rlefanz.cf_alarmfortimeoffice.freietage.FreieTageStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPausePrefs
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.OhneEintragWahl
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftKategorie
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.TypNichtStoeren
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IShiftConfigRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpanStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.ExakteAlarme
@@ -32,25 +38,27 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Steuert die App-eigene [AutomaticZenRule] aus ZWEI unabhaengigen, per OR (Vereinigung) kombinierten
- * Fenster-Quellen, ueber EINEN rollenden exakten Alarm (Muster wie [DimScheduleUseCase]):
+ * Steuert die App-eigene [AutomaticZenRule] aus ZWEI Schaltern JE TYP (SPEC E7, seit #218), per OR
+ * (Vereinigung) kombiniert, ueber EINEN rollenden exakten Alarm (Muster wie [DimScheduleUseCase]).
+ * Einen globalen Schalter gibt es nicht mehr: `dnd_follow_dimmer_enabled`,
+ * `dnd_during_shift_enabled`, `dnd_shift_excluded_shifts` und `dnd_oncall_cutoff_min` werden nicht
+ * mehr gelesen (sie bleiben liegen - kopieren statt verschieben, SPEC 4).
  *
- *  1. "Folgt dem Dimmer" ([DndPrefs.Toggles.followDimmerEnabled]): liest
- *     [DimScheduleUseCase.previewTimelineWithStatus] direkt (Einbahnstrasse - der Dimmer bleibt
- *     unveraendert/unwissend von DND). Keine eigene Fenster-Definition, kein Drift-Risiko: es gibt
- *     nur eine Quelle der Wahrheit fuer "wann dimmt".
- *  2. "Waehrend der Dienstzeit" ([DndPrefs.Toggles.duringShiftEnabled]): die rohe Kalender-Event-Spanne
- *     jeder Schicht ([DndShiftSpanResolver]), abzueglich per Chip ausgeschlossener Schichten.
+ *  1. "Solange gedimmt wird" ([TypNichtStoeren.solangeGedimmt], an der festen Zeile
+ *     `OhneEintragEinstellungen.nichtStoerenSolangeGedimmt`): liest
+ *     [DimScheduleUseCase.previewTimelineWithStatus] direkt, gefiltert auf die Tage, deren Typ den
+ *     Schalter an hat (Einbahnstrasse - der Dimmer bleibt unwissend von DND). Keine eigene
+ *     Fenster-Definition, kein Drift-Risiko: es gibt nur eine Quelle der Wahrheit fuer "wann dimmt".
+ *  2. "Waehrend des Kalendereintrags" ([TypNichtStoeren.waehrendEintrag]): die rohe
+ *     Kalender-Event-Spanne jeder Schicht, deren Typ den Schalter an hat ([DndShiftSpanResolver]).
  *
  * DND ist binaer (an/aus) - anders als beim Dimmer gibt es kein "dunkelste gewinnt", die Vereinigung
  * beider Quellen reicht (irgendeine aktive Quelle => an).
  *
- * Rufbereitschaft (`ShiftDefinition.isOnCall` + [DndPrefs.onCallCutoffMinutes]) ist KEINE dritte
- * Fenster-Quelle mit eigener Policy, sondern klippt beide obigen Quellen als letzten Schritt auf
- * einen festen Cutoff am On-Call-Tag ([DndOnCallCutoffResolver.clip]) - dieselbe Zen-Regel gilt bis
- * dahin unveraendert weiter. WELCHE Schichten Rufbereitschaft sind, kommt aus der
- * Schicht-Konfiguration ([IShiftConfigRepository]), nicht aus einer eigenen DND-Liste - dieselbe
- * Quelle entscheidet auch ueber die stuendliche Kalender-Abfrage (`RufbereitschaftAbfrage`).
+ * Rufbereitschaft (Kategorie RUFBEREITSCHAFT + [TypNichtStoeren.endetSpaetestensMinuten]) ist KEINE
+ * dritte Fenster-Quelle mit eigener Policy, sondern kappt beide obigen Quellen als letzten Schritt
+ * am On-Call-Tag ([DndOnCallCutoffResolver.clip]) - an der Uhrzeit des EIGENEN Typs; dieselbe
+ * Zen-Regel gilt bis dahin unveraendert weiter.
  *
  * Nutzt bewusst eine selbst registrierte [AutomaticZenRule] statt rohem
  * `NotificationManager.setInterruptionFilter()`: die Regel ist fuer den Nutzer sichtbar unter
@@ -194,6 +202,7 @@ class DndScheduleUseCase @Inject constructor(
             protokolliereZustand(
                 aktivesFenster,
                 when {
+                    set.alarmReadFailed && set.fenster.isEmpty() -> DndDiagnostik.AusGrund.LESEFEHLER
                     !set.anySourceEnabled -> DndDiagnostik.AusGrund.KEINE_QUELLE
                     set.fenster.isEmpty() -> DndDiagnostik.AusGrund.KEIN_FENSTER_TROTZ_QUELLE
                     else -> DndDiagnostik.AusGrund.AUSSERHALB
@@ -261,85 +270,92 @@ class DndScheduleUseCase @Inject constructor(
     // --- Fenster-Berechnung ---
 
     private suspend fun computeWindows(): WindowSet {
-        val toggles = prefs.togglesNow()
-        // Fail-open in dieselbe Richtung wie frueher der `safeData`-Flow der DND-Prefs: ist die
-        // Schicht-Konfiguration gerade nicht lesbar, gibt es keinen Cutoff (DND laeuft bis zum
-        // regulaeren Ende). Das ist die stummere Richtung, deshalb WARN statt still.
-        val onCallShifts = shiftConfigRepository.getCurrentShiftConfig()
-            .map { config -> config.definitions.filter { it.isOnCall }.map { it.name }.toSet() }
-            .getOrElse { error ->
-                Logger.w(LogTags.DND, "Schicht-Konfiguration nicht lesbar - kein Rufbereitschaft-Cutoff in diesem Tick", error)
-                emptySet()
-            }
-        // Rufbereitschaft ist KEINE eigene Fenster-Quelle (sie klippt nur) - fuer den Keep-alive
-        // zaehlen daher nur die beiden echten Quellen.
-        val anySourceEnabled = toggles.followDimmerEnabled || toggles.duringShiftEnabled
-        if (!anySourceEnabled && onCallShifts.isEmpty()) {
+        // ZUERST und STRIKT die Schicht-Konfiguration: seit #218 stehen ALLE Schalter am Typ
+        // (SPEC E7), es gibt keinen globalen mehr. Ist sie nicht lesbar (vor der ersten Entsperrung
+        // verweigert das Repository den Read), weiss niemand, ob ein Schalter an ist: keine
+        // Ruhezeit, aber die Kette bestellt sich NICHT ab - `alarmReadFailed` plant den 15-min-Retry.
+        // Dieselbe Behandlung wie der Dimmer (#217). Ein Fehler darf nie zu "kein Schalter an"
+        // werden, sonst risse die Kette an einem voruebergehenden Lesefehler ab.
+        val config = shiftConfigRepository.getCurrentShiftConfig().getOrElse { e ->
+            Logger.w(LogTags.DND, "Schicht-Konfiguration nicht lesbar - keine Ruhezeit, Retry (${e.javaClass.simpleName})")
+            return WindowSet(emptyList(), alarmReadFailed = true, anySourceEnabled = true)
+        }
+        val schalter = DndTypSchalter(config)
+        // Kein Typ und nicht die feste Zeile hat einen der beiden Schalter an: nichts zu schalten,
+        // die Kette darf sich abbestellen (self-cleaning). Der Ruf-Cutoff allein loest nichts aus,
+        // er kappt nur. Jede Aenderung an einem Typ armiert neu (`ZeitkettenArmierer`).
+        if (!schalter.irgendeinSchalterAn) {
             return WindowSet(emptyList(), alarmReadFailed = false, anySourceEnabled = false)
         }
 
         val out = mutableListOf<DndFenster>()
         var alarmReadFailed = false
 
-        if (toggles.followDimmerEnabled) {
-            // previewTimelineWithStatus statt previewTimeline: der Dimmer liest den Alarm-Bestand
-            // INNERHALB seiner Fensterberechnung, und ein transienter Lesefehler kommt dort als
-            // LEERE Fensterliste heraus - von "heute gibt es kein Fenster" nicht zu unterscheiden.
-            // Ohne diesen Kanal blieb alarmReadFailed bei "nur Modus 1 aktiv" immer false (der
-            // eigene getAllAlarms()-Zweig unten wird dann gar nicht betreten): der Dimmer erholte
-            // sich planmaessig nach 15 Minuten und dimmte die Nacht, DND kam erst 6 Stunden spaeter
-            // wieder - also praktisch erst morgens.
+        if (schalter.irgendeinSolangeGedimmt) {
+            // "Solange gedimmt wird": die Dimm-Zeitleiste, gefiltert auf die Tage, deren Typ (bzw.
+            // die feste Zeile) den Schalter an hat - VOR dem Vereinen, im Dimmer (`nurTage`).
+            // Keine zweite Fensterlogik (Einbahnstrasse `dnd/` -> `dimmer/`).
+            // previewTimelineWithStatus statt previewTimeline: der Dimmer liest Konfiguration,
+            // Alarm-Bestand und Spannen INNERHALB seiner Fensterberechnung, und ein transienter
+            // Lesefehler kommt dort als LEERE Fensterliste heraus - von "heute gibt es kein Fenster"
+            // nicht zu unterscheiden. Ohne diesen Kanal plante DND den 6-h-Keep-alive statt des
+            // 15-min-Retry: der Dimmer dimmte die Nacht nach 15 Minuten, DND kam erst morgens.
             // OHNE den Nachlauf nach der Weckzeit (DimWindow.weckzeitNachlaufMinuten): der Bildschirm
             // darf nach dem Wecken noch gedimmt bleiben, "Nicht stoeren" endet aber an der Weckzeit -
             // wer gerade geweckt wurde, soll erreichbar sein (Nutzerentscheidung 13.10.2026).
-            val preview = dimSchedule.previewTimelineWithStatus(mitWeckzeitNachlauf = false)
+            val preview = dimSchedule.previewTimelineWithStatus(
+                mitWeckzeitNachlauf = false,
+                nurTage = schalter::solangeGedimmt
+            )
             out += preview.intervals.map { DndFenster(it.range, DndQuelle.FOLGT_DIMMER) }
             if (preview.alarmReadFailed) alarmReadFailed = true
         }
 
-        // Schichtspannen werden auch NUR fuer den On-Call-Cutoff geholt (unabhaengig von
-        // duringShiftEnabled) - der Cutoff klippt auch das "Folgt dem Dimmer"-Fenster.
+        // Schichtspannen werden auch NUR fuer den Ruf-Cutoff geholt (ohne jeden "Waehrend des
+        // Kalendereintrags") - der Cutoff kappt auch die Fenster von "Solange gedimmt wird".
         //
         // Quelle ist der ShiftSpanStore, nicht der Alarm-Bestand (der ueberlebt die Weckzeit nicht);
         // eine Spanne kennt bewusst kein `isActive` - der Dienst findet trotzdem statt.
-        val spans = if (toggles.duringShiftEnabled || onCallShifts.isNotEmpty()) {
+        val spans = if (schalter.irgendeinWaehrendEintrag || schalter.hatRufTyp) {
             shiftSpanStore.spansNow().getOrElse {
-                Logger.w(LogTags.DND, "Schichtspannen nicht lesbar - keine Dienstzeit-/On-Call-Fenster (fail-open)")
-                // Verhalten unveraendert (keine Dienstzeit-Fenster), aber der Lesefehler wird
-                // gemerkt: sonst wuerde ein einmaliger Fehler die ganze Tick-Kette abreissen.
-                // NUR wenn ueberhaupt eine Fenster-Quelle an ist - sind beide aus und es sind bloss
-                // On-Call-Schichten konfiguriert (die allein nichts ausloesen, sie klippen nur),
-                // haette ein Retry-Tick nichts zu tun und die Kette bliebe endlos am Leben.
-                if (anySourceEnabled) alarmReadFailed = true
+                Logger.w(LogTags.DND, "Schichtspannen nicht lesbar - keine Kalendereintrag-/Ruf-Fenster, Retry")
+                // Kein Fenster aus den Spannen, aber der Lesefehler wird gemerkt: sonst wuerde ein
+                // einmaliger Fehler die ganze Tick-Kette abreissen (15-min-Retry statt Keep-alive).
+                alarmReadFailed = true
                 emptyList()
             }.let { rohe ->
                 // FREIGEGEBENE TAGE: an einem freigegebenen Tag findet der Dienst nicht statt -
-                // also weder Dienstzeit-Fenster noch On-Call-Cutoff. Gefiltert wird an derselben
+                // also weder Kalendereintrag-Fenster noch Ruf-Cutoff. Gefiltert wird an derselben
                 // Stelle wie im Dimmer und mit derselben Funktion, damit ein Tag nicht in einem
-                // der beiden Features frei ist und im anderen nicht. Quelle 1 ("folgt dem Dimmer")
-                // liest ueber previewTimelineWithStatus() bereits die gefilterte Zeitleiste.
+                // der beiden Features frei ist und im anderen nicht. "Solange gedimmt wird" liest
+                // ueber previewTimelineWithStatus() bereits die gefilterte Zeitleiste.
                 FreieTageStore.filtereSpannen(rohe, freieTageStore.freieTageNow(), ZoneId.systemDefault())
             }
         } else {
             emptyList()
         }
 
-        if (toggles.duringShiftEnabled) {
-            val excluded = prefs.shiftExcludedShiftsNow()
+        if (schalter.irgendeinWaehrendEintrag) {
+            // "Waehrend des Kalendereintrags" am Typ ersetzt den globalen Schalter UND die
+            // Ausnahmenliste (`dnd_during_shift_enabled`, `dnd_shift_excluded_shifts` werden nicht
+            // mehr gelesen): eine Spanne zaehlt nur, wenn ihr Typ den Schalter an hat.
             val slots = spans.map {
                 DndShiftSpanResolver.AlarmSlot(it.shiftName, it.startTime, it.endTime)
             }
-            out += DndShiftSpanResolver.buildShiftSpans(slots, excluded)
+            out += DndShiftSpanResolver.buildShiftSpans(slots, schalter::waehrendEintrag)
                 .map { DndFenster(it, DndQuelle.DIENSTZEIT) }
         }
 
-        if (onCallShifts.isNotEmpty() && out.isNotEmpty()) {
-            val cutoffMinutes = prefs.onCallCutoffMinutesNow()
+        if (schalter.hatRufTyp && out.isNotEmpty()) {
+            // "Endet spaetestens um" JE Rufbereitschafts-Typ ersetzt `dnd_oncall_cutoff_min`. Jeder
+            // Cutoff kappt weiter JEDES Fenster beider Schalter, das ihn echt enthaelt - erst je
+            // Fenster kappen, dann (im Aktiv-Test) vereinen. Der Anker ist der Beginn der Spanne
+            // (`shiftStartTime`), nicht die Weckzeit.
             val cutoffSlots = spans.map {
                 DndOnCallCutoffResolver.AlarmSlot(it.shiftName, it.startTime)
             }
             val cutoffs = DndOnCallCutoffResolver.cutoffInstants(
-                cutoffSlots, onCallShifts, cutoffMinutes, ZoneId.systemDefault()
+                cutoffSlots, schalter::rufCutoffMinuten, ZoneId.systemDefault()
             )
             // clip() bildet 1:1 und reihenfolgetreu ab (es kuerzt, teilt nicht und fasst nicht
             // zusammen) - nur deshalb laesst sich die Herkunft per Index zurueckheften. Die
@@ -357,14 +373,14 @@ class DndScheduleUseCase @Inject constructor(
                 )
                 out
             }
-            return WindowSet(
-                mitHerkunft,
-                alarmReadFailed = alarmReadFailed,
-                anySourceEnabled = anySourceEnabled
-            )
+            return WindowSet(mitHerkunft, alarmReadFailed = alarmReadFailed, anySourceEnabled = true)
         }
-        return WindowSet(out, alarmReadFailed = alarmReadFailed, anySourceEnabled = anySourceEnabled)
+        return WindowSet(out, alarmReadFailed = alarmReadFailed, anySourceEnabled = true)
     }
+
+    /** Die Fenster eines Ticks samt Herkunft - nur fuer Tests (der Planer braucht AlarmManager). */
+    @VisibleForTesting
+    internal suspend fun fensterJetzt(): List<DndFenster> = computeWindows().fenster
 
     /** Naechster Tick-Zeitpunkt (`null` = Kette abbestellen). [VisibleForTesting], weil der
      *  eigentliche Planer darueber hinaus AlarmManager/PendingIntent braucht - beides in der
@@ -468,4 +484,55 @@ class DndScheduleUseCase @Inject constructor(
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
     }
+}
+
+/**
+ * Die Schalter von "Nicht stoeren" am Typ (#218, SPEC E7), aus EINEM Lesestand der Konfiguration.
+ *
+ * Ein Schichtname wird so auf seinen Typ abgebildet wie im Dimmer (`TypDimmQuelle.fuerSchicht`):
+ * der ERSTE Typ dieses Namens, Gross/Klein egal. Nur so gehoert "Solange gedimmt wird" zu demselben
+ * Typ, dessen Fenster der Dimmer an diesem Tag rechnet. Ein Name, den kein Typ traegt, hat keinen
+ * Schalter an.
+ *
+ * Die feste Zeile "Ohne Kalendereintrag" gilt an Tagen ohne Schichtspanne (frei, freigegeben). Steht
+ * sie auf "wie <Typ>", zaehlt dessen Schalter - aufgeloest wie die Typ-Seite
+ * ([OhneEintragWahl.gewaehlterTyp]) und wie die Dimm-Fenster dieser Tage; sonst ihr eigener.
+ * "Waehrend des Kalendereintrags" hat sie nicht: an diesen Tagen steht nichts im Kalender.
+ */
+internal class DndTypSchalter(config: ShiftConfig) {
+
+    private val typen: List<ShiftDefinition> = config.definitions
+
+    private val festeZeileSolangeGedimmt: Boolean =
+        OhneEintragWahl.gewaehlterTyp(config)?.nichtStoeren?.solangeGedimmt
+            ?: config.ohneKalendereintrag.nichtStoerenSolangeGedimmt
+
+    private fun typ(schicht: String): ShiftDefinition? =
+        typen.firstOrNull { it.name.equals(schicht, ignoreCase = true) }
+
+    /** Hat irgendein Typ oder die feste Zeile "Solange gedimmt wird" an? */
+    val irgendeinSolangeGedimmt: Boolean =
+        festeZeileSolangeGedimmt || typen.any { it.nichtStoeren.solangeGedimmt }
+
+    /** Hat irgendein Typ "Waehrend des Kalendereintrags" an? */
+    val irgendeinWaehrendEintrag: Boolean = typen.any { it.nichtStoeren.waehrendEintrag }
+
+    /** `anySourceEnabled` der Tick-Kette: irgendein Typ oder die feste Zeile hat einen der beiden Schalter an. */
+    val irgendeinSchalterAn: Boolean get() = irgendeinSolangeGedimmt || irgendeinWaehrendEintrag
+
+    /** Gibt es einen Rufbereitschafts-Typ (dann werden die Spannen fuer den Cutoff gebraucht)? */
+    val hatRufTyp: Boolean = typen.any { it.kategorie == ShiftKategorie.RUFBEREITSCHAFT }
+
+    /** Folgt "Nicht stoeren" an dem Tag dieser Herkunft dem Dimmer? */
+    fun solangeGedimmt(herkunft: DimWindowResolver.SpanHerkunft): Boolean = when (herkunft) {
+        is DimWindowResolver.SpanHerkunft.Schicht -> typ(herkunft.name)?.nichtStoeren?.solangeGedimmt == true
+        DimWindowResolver.SpanHerkunft.OhneSchicht -> festeZeileSolangeGedimmt
+    }
+
+    /** Hat der Typ dieser Schicht "Waehrend des Kalendereintrags" an? */
+    fun waehrendEintrag(schicht: String): Boolean = typ(schicht)?.nichtStoeren?.waehrendEintrag == true
+
+    /** "Endet spaetestens um" (Minuten) des Rufbereitschafts-Typs dieser Schicht; `null` = kein Ruf-Typ. */
+    fun rufCutoffMinuten(schicht: String): Int? =
+        typ(schicht)?.takeIf { it.kategorie == ShiftKategorie.RUFBEREITSCHAFT }?.nichtStoeren?.endetSpaetestensMinuten
 }

@@ -70,40 +70,26 @@ sealed class NavigationState {
     ) : NavigationState()
     data class HueSettings(val returnToTab: MainTab = MainTab.HUE) : NavigationState()
 
-    // Dimmer-Screens
-    data class DimmerSettings(val returnToTab: MainTab = MainTab.DIMMER) : NavigationState()
-    // Gleiches Muster wie HueRuleConfig.cameFromSettingsList - aktuell gibt es nur den Pfad ueber
-    // DimmerSettingsScreen, deshalb Default true, aber explizit gesetzt an der einzigen Aufrufstelle.
-    // sitzung: wie bei HueRuleConfig.
-    data class DimmerRuleConfig(
-        val ruleId: String? = null,
-        val returnToTab: MainTab = MainTab.DIMMER,
-        val cameFromSettingsList: Boolean = true,
-        val sitzung: Long = 0
-    ) : NavigationState()
-    data class DimmerPreview(val returnToTab: MainTab = MainTab.DIMMER) : NavigationState()
-
     // DND-Screen (kein eigener Bottom-Tab, erreichbar ueber Settings)
     data class DndSettings(val returnToTab: MainTab = MainTab.SETTINGS) : NavigationState()
 
-    /** Ort fuer Tageslicht - drei Einstiege (Einstellungen, Dimm-Fenster-Editor, Hue-Regel-Editor).
-     *  Der Rueckweg traegt den GENAUEN Herkunftszustand statt eines dritten Booleans (siehe
-     *  cameFromSettingsList): aus einem Editor fuehrt Zurueck in DENSELBEN Editor, samt
-     *  `sitzung` - nur so findet MainScreen dessen ungespeichertes Formular wieder. */
+    /** Ort fuer Tageslicht - zwei Einstiege (Einstellungen, Hue-Regel-Editor). Der Rueckweg traegt
+     *  den GENAUEN Herkunftszustand statt eines dritten Booleans (siehe cameFromSettingsList): aus
+     *  dem Editor fuehrt Zurueck in DENSELBEN Editor, samt `sitzung` - nur so findet MainScreen
+     *  dessen ungespeichertes Formular wieder. */
     data class OrtFuerTageslicht(
         val zurueckZu: NavigationState = MainContent(MainTab.SETTINGS)
     ) : NavigationState()
 }
 
 /**
- * Schluessel, unter dem MainScreen das Formular eines Regel-Editors im SaveableStateHolder
+ * Schluessel, unter dem MainScreen das Formular des Regel-Editors im SaveableStateHolder
  * ablegt - oder `null`, wenn [this] kein Editor ist. Der Ort-Bildschirm traegt den Schluessel
  * des Editors, aus dem er geoeffnet wurde: solange der Nutzer dort ist, gehoert das Formular
  * noch zur laufenden Bearbeitung.
  */
 fun NavigationState.editorFormularSchluessel(): String? = when (this) {
     is NavigationState.HueRuleConfig -> "hue-$sitzung"
-    is NavigationState.DimmerRuleConfig -> "dim-$sitzung"
     is NavigationState.OrtFuerTageslicht -> zurueckZu.editorFormularSchluessel()
     else -> null
 }
@@ -120,7 +106,7 @@ fun verworfenesEditorFormular(vorher: NavigationState?, jetzt: NavigationState):
 }
 
 enum class MainTab {
-    HOME, WECKER, STATUS, SETTINGS, HUE, DIMMER
+    HOME, WECKER, STATUS, SETTINGS, HUE
 }
 
 fun NavigationState.isMainContent(): Boolean = this is NavigationState.MainContent
@@ -163,15 +149,6 @@ sealed class NavigationAction {
         val cameFromSettingsList: Boolean = false
     ) : NavigationAction()
     data class NavigateToHueSettings(val fromTab: MainTab = MainTab.HUE) : NavigationAction()
-
-    // Dimmer Navigation Actions
-    data class NavigateToDimmerSettings(val fromTab: MainTab = MainTab.DIMMER) : NavigationAction()
-    data class NavigateToDimmerRuleConfig(
-        val ruleId: String? = null,
-        val fromTab: MainTab = MainTab.DIMMER,
-        val cameFromSettingsList: Boolean = true
-    ) : NavigationAction()
-    data class NavigateToDimmerPreview(val fromTab: MainTab = MainTab.DIMMER) : NavigationAction()
 
     // DND Navigation Action
     data class NavigateToDndSettings(val fromTab: MainTab = MainTab.SETTINGS) : NavigationAction()

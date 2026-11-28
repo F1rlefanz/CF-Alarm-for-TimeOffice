@@ -34,6 +34,7 @@ Aufruf:
     python tools/aufraeumen/pruefe_reste.py --basis <commit>   # Doku-Check gegen diese Basis
 """
 
+import bisect
 import os
 import re
 import subprocess
@@ -128,7 +129,18 @@ def pruefe_tote_importe(befunde):
 # ---------------------------------------------------------------------------------------------
 # 2. Verwaiste String-Ressourcen
 # ---------------------------------------------------------------------------------------------
+# Der Name steht in einer Vorausschau, damit kein Treffer den naechsten verschluckt.
+R_STRING_NAME = re.compile(r"\bR\.string\.(?=(\w+))")
+
+
 def pruefe_verwaiste_strings(befunde):
+    """EIN Index ueber alle `R.string`-Verweise statt einer Suche je Name.
+
+    HERGANG (28.11.2026, #236): Je String-Name lief ein eigener regulaerer Ausdruck ueber alle
+    Kotlin- und XML-Texte - bei 290 Namen 13,5 s von 76,6 s Gesamtlauf, waehrend die Schleuse das
+    Skript nach 60 s abbricht. Jetzt wird der Text einmal zerlegt (Vorbild:
+    `pruefe_ungenutzte_konstanten`): 0,2 s auf demselben Stand.
+    """
     roh = _lies(STRINGS)
     if not roh:
         return
@@ -144,10 +156,15 @@ def pruefe_verwaiste_strings(befunde):
                 verwender.append(_lies(pfad))
     alles = "\n".join(verwender)
 
+    ueber_r = set(R_STRING_NAME.findall(alles))
     for name in namen:
-        benutzt = re.search(r"\bR\.string\." + re.escape(name) + r"\b", alles) or \
-            ("@string/" + name) in alles
-        if not benutzt:
+        if re.fullmatch(r"\w+", name):
+            benutzt_r = name in ueber_r
+        else:
+            # Namen mit Punkt o. ae. fasst der Index nicht - fuer sie die woertliche Suche.
+            benutzt_r = re.search(r"\bR\.string\." + re.escape(name) + r"\b", alles)
+        # Bewusst ein Teilstring-Test: auch `@string/x_lang` haelt `x` am Leben.
+        if not (benutzt_r or ("@string/" + name) in alles):
             befunde.append(
                 "Verwaiste String-Ressource: {} - kein R.string- und kein @string-Verwender".format(name)
             )
@@ -180,6 +197,20 @@ HISTORISCH = re.compile(
 SYMBOL_DEFINITION = re.compile(
     r"^[-+]\s*(?:.*\b)?(?:fun|val|var|class|object|interface|enum class)\s+([A-Za-z_]\w*)"
 )
+
+# Der heutige Quelltext, einmal in zwei Namensmengen zerlegt. Der Name steht jeweils in einer
+# Vorausschau `(?=...)`, weil ein Treffer sonst den naechsten verschluckt: bei `val class Foo`
+# finge der erste nur `class`, und `Foo` gaelte faelschlich als verschwunden.
+DEKLARIERTER_NAME = re.compile(
+    r"\b(?:fun|val|var|class|object|interface)\s+(?=([A-Za-z_]\w*))"
+)
+# PARAMETERNAMEN ZAEHLEN MIT, und das ist kein Detail: Am 25.08.2026 entfernte ein
+# Durchgang das Feld `ShiftInfo.eventTitle` - und dieses Gatter meldete daraufhin zwei
+# Skill-Zeilen, die `matchesKeywords(eventTitle)` nennen. Diese Funktion gibt es
+# weiterhin; die Doku meinte ihren PARAMETER, nicht das geloeschte Feld. Ohne diese
+# Menge blockiert das Gatter eine voellig richtige Notiz und verlangt, sie
+# kaputtzumachen - der sichere Weg, ein Gatter unglaubwuerdig zu machen.
+PARAMETERNAME = re.compile(r"[(,](?=\s*(?:@\w+\s+)?([A-Za-z_]\w*)\s*:)")
 
 
 def _git(*args):
@@ -242,13 +273,22 @@ def im_nachtrag_dokumentiert(text, symbole):
         absatz = zeilen[start:ende]
         if not HISTORISCH.search("\n".join(absatz)):
             continue
-        for symbol in symbole:
-            if any(_als_symbol_genannt(z, symbol) for z in absatz):
-                gefunden.add(symbol)
+        for zeile in absatz:
+            gefunden |= _genannte_symbole(zeile).intersection(symbole)
     return gefunden
 
 
 def pruefe_doku_verweise(befunde, basis):
+    """Nachschlagen in Mengen statt einer Suche je entferntem Symbol.
+
+    HERGANG (28.11.2026, #236): Je entferntem Namen liefen zwei regulaere Ausdruecke ueber den
+    ganzen Quelltext. Mit jedem Umbau-Paket kamen Namen dazu: bei 625 entfernten
+    Deklarationszeilen 36,3 s von 76,6 s Gesamtlauf, und die Schleuse brach das Skript an ihrer
+    60-s-Grenze ab, obwohl nichts zu beheben war. Jetzt wird der Quelltext einmal in Deklarations-
+    und Parameternamen zerlegt und jede Doku-Zeile einmal in ihre genannten Symbole (Vorbild:
+    `pruefe_ungenutzte_konstanten`) - 0,5 s auf demselben Stand, und die Laufzeit haengt nicht
+    mehr an der Zahl der Symbole.
+    """
     if not basis:
         return
     code, diff = _git("diff", "-U0", basis + "..HEAD", "--", "app/src")
@@ -267,17 +307,11 @@ def pruefe_doku_verweise(befunde, basis):
 
     # Nur, was es HEUTE nirgends mehr im Quelltext gibt (umbenannt/verschoben zaehlt nicht).
     quelltext = "\n".join(_lies(p) for p in _kotlin_dateien())
-    verschwunden = {
-        s for s in entfernt
-        if not re.search(r"\b(?:fun|val|var|class|object|interface)\s+" + re.escape(s) + r"\b", quelltext)
-        # PARAMETERNAMEN ZAEHLEN MIT, und das ist kein Detail: Am 25.08.2026 entfernte ein
-        # Durchgang das Feld `ShiftInfo.eventTitle` - und dieses Gatter meldete daraufhin zwei
-        # Skill-Zeilen, die `matchesKeywords(eventTitle)` nennen. Diese Funktion gibt es
-        # weiterhin; die Doku meinte ihren PARAMETER, nicht das geloeschte Feld. Ohne diese
-        # Zeile blockiert das Gatter eine voellig richtige Notiz und verlangt, sie
-        # kaputtzumachen - der sichere Weg, ein Gatter unglaubwuerdig zu machen.
-        and not re.search(r"[(,]\s*(?:@\w+\s+)?" + re.escape(s) + r"\s*:", quelltext)
-    }
+    verschwunden = (
+        entfernt
+        - set(DEKLARIERTER_NAME.findall(quelltext))
+        - set(PARAMETERNAME.findall(quelltext))
+    )
     verschwunden -= im_nachtrag_dokumentiert(_lies(NACHTRAEGE), verschwunden)
     if not verschwunden:
         return
@@ -300,17 +334,16 @@ def pruefe_doku_verweise(befunde, basis):
                 if HISTORISCH.search("\n".join(zeilen[start:ende])):
                     continue
                 for nr in range(start, ende):
-                    for symbol in verschwunden:
-                        if _als_symbol_genannt(zeilen[nr], symbol):
-                            befunde.append(
-                                "Doku nennt entferntes Symbol `{}`: {}:{}".format(
-                                    symbol, _relativ(pfad), nr + 1
-                                )
+                    for symbol in _genannte_symbole(zeilen[nr]) & verschwunden:
+                        befunde.append(
+                            "Doku nennt entferntes Symbol `{}`: {}:{}".format(
+                                symbol, _relativ(pfad), nr + 1
                             )
+                        )
 
 
-def _als_symbol_genannt(zeile, symbol):
-    """Steht das Wort in einer Code-Spanne wirklich als SYMBOL - oder nur als Wort darin?
+def _genannte_symbole(zeile):
+    """Welche Woerter stehen in einer Code-Spanne wirklich als SYMBOL - nicht nur als Wort darin?
 
     WARUM DIESE UNTERSCHEIDUNG (25.08.2026): Nach dem Entfernen von `HueBridgeConfig.whitelist`
     meldete das Gatter eine Skill-Zeile mit `cmd deviceidle whitelist -<pkg>` - einem
@@ -321,13 +354,19 @@ def _als_symbol_genannt(zeile, symbol):
     Die Unterscheidung, die traegt: Ein Symbol steht an einem Punkt, einer Klammer oder allein -
     ein Wort in einem Kommando steht zwischen Leerzeichen.
     """
+    genannt = set()
     for spanne in re.findall(r"`([^`]*)`", zeile):
-        for treffer in re.finditer(r"\b" + re.escape(symbol) + r"\b", spanne):
+        for treffer in re.finditer(r"\w+", spanne):
             davor = spanne[treffer.start() - 1] if treffer.start() else ""
             danach = spanne[treffer.end()] if treffer.end() < len(spanne) else ""
             if davor in ("", ".", "(", "[") and danach in ("", ".", "(", ")", ",", "["):
-                return True
-    return False
+                genannt.add(treffer.group())
+    return genannt
+
+
+def _als_symbol_genannt(zeile, symbol):
+    """Die Einzelfrage zu `_genannte_symbole` - darueber prueft `test_doku_symbole.py` die Regel."""
+    return symbol in _genannte_symbole(zeile)
 
 
 # ---------------------------------------------------------------------------------------------
@@ -377,32 +416,58 @@ def _preview_bereiche(text):
     return bereiche
 
 
-def pruefe_composable_ohne_verbraucher(befunde):
-    dateien = [(p, _lies(p)) for p in _kotlin_dateien()]
+# Jedes Wort, dem eine Klammer folgt - auch die geschweifte (Trailing-Lambda).
+AUFRUF = re.compile(r"\b(\w+)(?=\s*[({])")
+
+
+def _composable_aufrufe(dateien):
+    """Je Composable in `main` (Vorschauen ausgenommen) die Zahl ihrer Aufrufe.
+
+    `dateien` sind Paare (Pfad, Text); zurueck kommen Tripel (Pfad, Name, Aufrufe). Ein Aufruf in
+    einem Vorschau-Bereich zaehlt nicht, ein Name direkt hinter `fun` ist die Definition.
+    """
     vorschau = {p: _preview_bereiche(t) for p, t in dateien}
 
+    karten = []
     for pfad, text in dateien:
         if os.sep + "main" + os.sep not in pfad:
             continue
         for treffer in COMPOSABLE_DEF.finditer(text):
-            name = treffer.group(1)
             eigene_zeile = text[:treffer.start()].count("\n")
-            if any(a <= eigene_zeile <= b for a, b in vorschau[pfad]):
+            if not any(a <= eigene_zeile <= b for a, b in vorschau[pfad]):
+                karten.append((pfad, treffer.group(1)))
+
+    rufe = {name: 0 for _, name in karten}
+    for pfad, text in dateien:
+        umbrueche = [m.start() for m in re.finditer("\n", text)]
+        definitionen = {m.end() for m in re.finditer(r"fun\s+", text)}
+        for aufruf in AUFRUF.finditer(text):
+            name, stelle = aufruf.group(1), aufruf.start()
+            if name not in rufe or stelle in definitionen:
                 continue
-            rufe = 0
-            for pfad2, text2 in dateien:
-                for aufruf in re.finditer(r"\b" + re.escape(name) + r"\s*[({]", text2):
-                    zeile = text2[:aufruf.start()].count("\n")
-                    if any(a <= zeile <= b for a, b in vorschau[pfad2]):
-                        continue
-                    if re.search(r"fun\s+$", text2[:aufruf.start()]):
-                        continue
-                    rufe += 1
-            if rufe == 0:
-                befunde.append(
-                    "Compose-Karte ohne Verbraucher: {} in {} - nur die eigene Vorschau "
-                    "ruft sie auf".format(name, _relativ(pfad))
-                )
+            zeile = bisect.bisect_left(umbrueche, stelle)    # Zahl der Umbrueche davor
+            if not any(a <= zeile <= b for a, b in vorschau[pfad]):
+                rufe[name] += 1
+    return [(pfad, name, rufe[name]) for pfad, name in karten]
+
+
+def pruefe_composable_ohne_verbraucher(befunde):
+    """Aufrufstellen einmal je Datei sammeln, danach nur nachschlagen.
+
+    HERGANG (28.11.2026, #236): Je Composable lief ein eigener Ausdruck ueber jede Datei, und je
+    Treffer wurde der Text davor zweimal abgeschnitten (Zeilennummer, `fun` davor) - bei 224
+    Composables und 654 Dateien 24,9 s von 76,6 s Gesamtlauf, waehrend die Schleuse das Skript
+    nach 60 s abbricht. Jetzt wird jede Datei einmal zerlegt (Vorbild:
+    `pruefe_ungenutzte_konstanten`), die Zeilennummer kommt aus einem Index der Zeilenumbrueche:
+    0,4 s auf demselben Stand.
+    """
+    dateien = [(p, _lies(p)) for p in _kotlin_dateien()]
+    for pfad, name, rufe in _composable_aufrufe(dateien):
+        if rufe == 0:
+            befunde.append(
+                "Compose-Karte ohne Verbraucher: {} in {} - nur die eigene Vorschau "
+                "ruft sie auf".format(name, _relativ(pfad))
+            )
 
 
 # ---------------------------------------------------------------------------------------------

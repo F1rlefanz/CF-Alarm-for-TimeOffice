@@ -10,8 +10,6 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.Ort
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.OrtQuelle
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.TageslichtQuelle
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.TageslichtStand
-import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.dimmer.fensterListeAlsJson
-import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.dimmer.fensterListeAusJson
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -287,14 +285,6 @@ class DimWindowTageslichtTest {
         )
     }
 
-    // ------------------------------------------------------------------ Editor-Formular uebersteht Wegnavigieren
-
-    @Test
-    fun `die Fensterliste des Editors uebersteht den Speicher-Umweg samt nachlaufBisHell`() {
-        val liste = listOf(fenster(hellAb = HellAb.DAEMMERUNG), DimWindow())
-        assertEquals(liste, fensterListeAusJson(fensterListeAlsJson(liste)))
-    }
-
     // ------------------------------------------------------------------ Scheduler: wann gelesen wird
 
     /** Zaehlt die Lesezugriffe - der Tick laeuft auch im Direct-Boot-Prozess, jeder unnoetige Read ist Flaeche. */
@@ -310,7 +300,6 @@ class DimWindowTageslichtTest {
         val sysZone = ZoneId.systemDefault()
         val wecker = LocalDate.now(sysZone).plusDays(1).atTime(7, 0).atZone(sysZone).toInstant().toEpochMilli()
         val prefs = mock<DimOverlayPrefs>()
-        whenever(prefs.togglesNow()).thenReturn(DimOverlayPrefs.Toggles(dimEnabled = true))
         whenever(prefs.strengthNow()).thenReturn(55)
         whenever(prefs.warmthNow()).thenReturn(40)
         val alarmUseCase = mock<IAlarmUseCase>()
@@ -321,10 +310,11 @@ class DimWindowTageslichtTest {
         whenever(masterPausePrefs.pausedNow()).thenReturn(false)
         val spanStore = mock<ShiftSpanStore>()
         whenever(spanStore.spansNow()).thenReturn(Result.success(emptyList()))
-        val ruleRepo = mock<DimRuleRepository>()
-        whenever(ruleRepo.getRules()).thenReturn(listOf(regel))
+        // Seit #217 liegen die Fenster am Typ: die UNIVERSAL-Regel landet ueber die echte Migration an
+        // der festen Zeile - die Tageslicht-Frage muss dort ebenso ankommen wie frueher an der Regel.
         return DimScheduleUseCase(
-            mock<Context>(), alarmUseCase, spanStore, keineFreienTage(), DimRuleUseCase(ruleRepo),
+            mock<Context>(), alarmUseCase, spanStore, keineFreienTage(),
+            konfigRepo(Result.success(konfigAusRegeln(listOf(regel), schichtNamen = emptyList()))),
             prefs, mock<DimCorrectionNotifier>(), masterPausePrefs, quelle
         )
     }

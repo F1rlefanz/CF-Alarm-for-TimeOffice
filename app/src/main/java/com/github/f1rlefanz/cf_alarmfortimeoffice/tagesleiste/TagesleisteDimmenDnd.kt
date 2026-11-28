@@ -1,15 +1,21 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste
 
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.Blockposition
-import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimRule
-import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimRuleUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimOverlayPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimWindowResolver
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.HellZeitpunkt
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.OHNE_TAGESLICHT
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.TypDimmQuelle
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndOnCallCutoffResolver
-import com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndShiftSpanResolver
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndTypSchalter
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.OhneEintragEinstellungen
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.OhneEintragWahl
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftKategorie
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.TypDimmen
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.TypNichtStoeren
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.weckzeitpunkt
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.HellAb
 import java.time.LocalDate
@@ -17,11 +23,20 @@ import java.time.LocalTime
 import java.time.ZoneOffset
 
 /*
- * Dimmen und "Nicht stoeren" fuer die Tagesleiste (Umbau #194, SPEC 3.3 Punkt 3) - AUS DEN HEUTIGEN
- * REGELN, ohne eine zweite Fensterlogik. Der Adapter erfindet fuer den Typ einen Mustertag, laesst
- * `DimWindowResolver.buildRuleSpans` darauf laufen (dieselbe Funktion wie `DimScheduleUseCase`) und
- * rechnet die Epoch-Bereiche in Minuten der Leiste um. Regelwahl, Blockposition, Unterdrueckung durch
- * eine leere Fensterliste, `startNurAmWecktag`, Weckzeit-Nachlauf und "Hell ab" kommen damit von dort.
+ * Dimmen und "Nicht stoeren" fuer die Tagesleiste (Umbau #194, seit #219 am Typ, SPEC 3.3 Punkt 3).
+ * Der Adapter bekommt die Einstellungen EINES Typs als Parameter ([DimDndEinstellungen]) - nicht aus einem
+ * Store -, damit die Typ-Seite den ungespeicherten Entwurf uebergeben kann. Er erfindet fuer den Typ einen
+ * Mustertag und rechnet ueber DIESELBEN Klassen wie die Laufzeit: [TypDimmQuelle] baut die Regel,
+ * `DimWindowResolver.buildRuleSpansMitHerkunft` die Fenster (wie `DimScheduleUseCase`), [DndTypSchalter]
+ * sagt je Tag, was "Nicht stoeren" folgt (wie `DndScheduleUseCase`). Es gibt keine zweite Fensterlogik:
+ * Regelwahl, Blockposition, Unterdrueckung durch einen Typ ohne Fenster, `startNurAmWecktag`,
+ * Weckzeit-Nachlauf und "Hell ab" kommen von dort.
+ *
+ * WARUM EINE EIN-TYP-KONFIGURATION: `TypDimmQuelle` und `DndTypSchalter` lesen ein [ShiftConfig] und
+ * bilden den Schichtnamen genau so auf den Typ ab wie zur Laufzeit. Der Adapter baut daher eine
+ * Konfiguration, die nur den Mustertyp (mit den uebergebenen Einstellungen) und die feste Zeile enthaelt -
+ * eine Abkuerzung wie `if (typ.nichtStoeren.solangeGedimmt)` wuerde diese Abbildung nachbauen und
+ * auseinanderlaufen.
  *
  * DER MUSTERTAG liegt in UTC (wie `kappenAmRufCutoff` in Tagesleiste.kt): dort faellt Wanduhr und
  * Instant zusammen, und die Leiste zeigt ohnehin einen Normaltag ohne Zeitumstellung. Er ist ein
@@ -39,27 +54,42 @@ private val MUSTER_ZONE = ZoneOffset.UTC
 private val MUSTERTAG_MS: Long = MUSTERTAG.atStartOfDay().toInstant(MUSTER_ZONE).toEpochMilli()
 private const val MINUTE_MS = 60_000L
 private const val TAG_MS = MINUTEN_PRO_TAG * MINUTE_MS
+private const val MUSTERTYP_ID = "tagesleiste-mustertyp"
 
 /**
- * Die heutigen Einstellungen, aus denen die Leiste rechnet.
+ * Die Farbwaerme faerbt die Spuren nicht (nur Spannen und Staerke zaehlen); die Vorgabe `dim_warmth`
+ * aus `DimOverlayPrefs` wird deshalb nicht gelesen (Festlegung des Betreuers in #219).
+ */
+private const val VORGABE_WAERME = DimOverlayPrefs.DEFAULT_WARMTH
+
+/**
+ * Die Einstellungen EINES Typs, aus denen die Leiste rechnet (am Typ gespeichert oder der Entwurf der
+ * Typ-Seite).
  *
- * @param dimEnabled `dim_enabled`, der eine Schalter des Dimmers. Aus heisst KEINE Dimm-Spur - und
- *   auch kein "Nicht stoeren, solange gedimmt wird": das liest die Zeitleiste des Dimmers, und die ist
- *   dann leer (`DimScheduleUseCase.computeWindowsIntern`).
- * @param regeln alle Dimm-Regeln, wie `DimRuleRepository` sie liefert.
- * @param nichtStoeren die beiden Quellen-Schalter von "Nicht stoeren".
- * @param ausgenommeneSchichten Schichtnamen, die "waehrend der Dienstzeit" ausnimmt
- *   (`DndPrefs.shiftExcludedShifts`).
+ * @param dimmen die Dimm-Fenster des Typs ([TypDimmen.an] aus oder keine Fenster = Unterdrueckung des Tages).
+ * @param nichtStoeren die beiden Schalter und "Endet spaetestens um" des Typs.
+ * @param freierTag die feste Zeile "Ohne Kalendereintrag", AUFGELOEST (bei "wie <Typ>" mit dessen
+ *   Einstellungen, [freierTagAus]): sie gilt an Tagen ohne Schichtspanne - bei der Leiste fuer Krank und
+ *   Ignorieren, wo die Laufzeit den Tag als freien Tag rechnet.
  * @param hellUm Uhrzeit, zu der es am Mustertag hell wird; `null` = kein Standort, keine solche
  *   Zeit. Dann gilt der volle Nachlauf wie ohne Standort im Dimmer (`OHNE_TAGESLICHT`).
  */
 data class DimDndEinstellungen(
-    val dimEnabled: Boolean,
-    val regeln: List<DimRule>,
-    val nichtStoeren: DndPrefs.Toggles,
-    val ausgenommeneSchichten: Set<String> = emptySet(),
+    val dimmen: TypDimmen,
+    val nichtStoeren: TypNichtStoeren,
+    val freierTag: OhneEintragEinstellungen = OhneEintragEinstellungen(),
     val hellUm: (HellAb) -> LocalTime? = { null }
 )
+
+/**
+ * Die feste Zeile so, wie die Laufzeit sie liest: bei "wie <Typ>" mit den Einstellungen dieses Typs
+ * ([OhneEintragWahl.gewaehlterTyp] - ein Verweis ins Leere steht dort als "Eigene Einstellungen"), sonst
+ * mit ihren eigenen.
+ */
+fun freierTagAus(config: ShiftConfig): OhneEintragEinstellungen =
+    OhneEintragWahl.gewaehlterTyp(config)
+        ?.let { OhneEintragEinstellungen(it.dimmen, it.nichtStoeren.solangeGedimmt) }
+        ?: config.ohneKalendereintrag
 
 /** Was die Leiste aus [dimmenUndNichtStoeren] bekommt. */
 data class DimUndNichtStoeren(val dimmen: List<DimBereich>, val nichtStoeren: List<DndBereich>) {
@@ -73,21 +103,19 @@ data class DimUndNichtStoeren(val dimmen: List<DimBereich>, val nichtStoeren: Li
  * rechnen. Rein: gleiche Eingabe, gleiches Ergebnis.
  *
  * WELCHE REGEL GILT. Ein erkannter Typ ist ein SCHICHTTAG mit seiner Weckzeit, auch mit Wecker aus
- * (#181): `findRuleForShift` (Name, sonst UNIVERSAL). Das gilt auch fuer Frei, Urlaub und Fortbildung -
- * die FREI-Regel greift heute nur an einem Tag OHNE jeden Eintrag. Krank (Tag freigegeben) und
- * Ignorieren ohne weiteren Eintrag haben keine Schichtspanne und laufen wie ein freier Tag (die Leiste
- * selbst bleibt fuer Ignorieren leer, `tagesleiste()`):
- * `findRuleForFreeDay` (FREI, sonst UNIVERSAL). Ohne gueltige Weckzeit hat ein Schichttag keinen
- * Anker - dann gibt es weder Dimmen noch "folgt dem Dimmer", nur den Kalendereintrag.
+ * (#181): `TypDimmQuelle.fuerSchicht` - die Regel des Typs, auch fuer Frei, Urlaub und Fortbildung. Krank
+ * (Tag freigegeben) und Ignorieren ohne weiteren Eintrag haben keine Schichtspanne und laufen wie ein
+ * freier Tag: `TypDimmQuelle.fuerFreienTag`, die feste Zeile (die Leiste selbst bleibt fuer Ignorieren
+ * leer, `tagesleiste()`). Ohne gueltige Weckzeit hat ein Schichttag keinen Anker - dann gibt es weder
+ * Dimmen noch "Solange gedimmt wird", nur den Kalendereintrag.
  *
  * DIE NACHBARTAGE. Je [TagesleisteEingabe.blockposition] steht am Vortag und/oder am Folgetag derselbe
  * Typ mit derselben Weckzeit (ERSTER: Folgetag, MITTLERER: beide, LETZTER: Vortag, EINZELNER: keiner).
  * Daran liest `buildRuleSpans` die Blockposition ab, und die Wecker der Nachbarn beenden ein
  * "bis Weckzeit, spaetestens um X"-Fenster genau wie im Betrieb. Die Leiste zeigt aber nur die Fenster
  * DES TAGES dieses Typs (den Kalendertag seiner Weckzeit, wie `buildRuleSpans` ihn datiert), nicht die
- * der Nachbartage: "So laeuft ein Tag F" heisst die Regel von F - eine leere Fensterliste an F zeigt
- * keinen Balken, auch wenn UNIVERSAL am freien Vortag die Nacht davor dimmt. Das ist die Zuordnung, die
- * Etappe 3 mit den Fenstern am Typ ohnehin hat.
+ * der Nachbartage: "So laeuft ein Tag F" heisst die Regel von F - ein Typ ohne Fenster zeigt keinen
+ * Balken, auch wenn die feste Zeile am freien Vortag die Nacht davor dimmt.
  *
  * WECKER AUS. Die Weckzeit bleibt Anker und Ende-Weckzeit (heute fuehrt `persistShiftSpans` sie auch
  * dann; offen als #181), aber `endetBeimWecker` ist dann falsch - der Ereignistext soll keinen Wecker
@@ -97,34 +125,34 @@ data class DimUndNichtStoeren(val dimmen: List<DimBereich>, val nichtStoeren: Li
  * Ende - kappte der Adapter vor, fände sie nichts mehr zu kuerzen, und "endet spaetestens jetzt" stuende
  * nie im Ereignistext. Die Cutoffs der NACHBARTAGE im Block kennt sie nicht; die kappt
  * [kappenAmNachbarCutoff], wie der Betrieb es ueber alle Spannen tut.
- *
- * @param regelwahl nur wegen `findRuleForShift`/`findRuleForFreeDay`: die Auswahl geht durch die
- *   echte Funktion statt durch eine Kopie. Es wird kein Repository gelesen.
  */
 fun dimmenUndNichtStoeren(
     eingabe: TagesleisteEingabe,
-    einstellungen: DimDndEinstellungen,
-    regelwahl: DimRuleUseCase
+    einstellungen: DimDndEinstellungen
 ): DimUndNichtStoeren {
     val wirksam = wirksameDienstzeit(eingabe.kategorie, eingabe.dienstzeit)
+    val config = mustertypKonfiguration(eingabe, einstellungen)
+    val schalter = DndTypSchalter(config)
 
     val nichtStoeren = mutableListOf<DndBereich>()
-    // "Waehrend des Kalendereintrags": die Spanne des Typs, ohne ausgenommene Schichten. Krank hat nie
-    // eine Schichtspanne (die Erkennung zweigt es davor ab), also auch kein DND "waehrend der Dienstzeit".
-    if (einstellungen.nichtStoeren.duringShiftEnabled && eingabe.kategorie != ShiftKategorie.KRANK && wirksam != null) {
+    // "Waehrend des Kalendereintrags": die Spanne des Typs, wenn SEIN Schalter an ist. Krank hat nie
+    // eine Schichtspanne (die Erkennung zweigt es davor ab), also auch kein DND "waehrend des Eintrags".
+    if (eingabe.kategorie != ShiftKategorie.KRANK && wirksam != null) {
         val beginn = MUSTERTAG.atTime(wirksam.beginn).toInstant(MUSTER_ZONE).toEpochMilli()
         DndShiftSpanResolver.buildShiftSpans(
             listOf(DndShiftSpanResolver.AlarmSlot(eingabe.name, beginn, beginn + wirksam.dauerMin * MINUTE_MS)),
-            einstellungen.ausgenommeneSchichten
+            schalter::waehrendEintrag
         ).forEach { nichtStoeren += DndBereich(it.first.alsMinute(), it.last.alsMinute(), DndQuelle.KALENDEREINTRAG) }
     }
 
     val tag = erfindeTag(eingabe, wirksam)
-    if (!einstellungen.dimEnabled || tag == null) {
-        return DimUndNichtStoeren(emptyList(), kappenAmNachbarCutoff(nichtStoeren, eingabe, wirksam).sortedBy { it.vonMin })
+    if (tag == null) {
+        return DimUndNichtStoeren(emptyList(), kappenAmNachbarCutoff(nichtStoeren, eingabe, wirksam, schalter).sortedBy { it.vonMin })
     }
+    val quelle = TypDimmQuelle(config, VORGABE_WAERME)
 
-    val dimmen = rechne(tag, einstellungen, regelwahl, mitWeckzeitNachlauf = true, hellZeitpunkt = hellZeitpunktAus(einstellungen.hellUm))
+    val dimmen = rechne(tag, quelle, mitWeckzeitNachlauf = true, hellZeitpunkt = hellZeitpunktAus(einstellungen.hellUm))
+        .map { it.span }
         .map { span ->
             DimBereich(
                 vonMin = span.range.first.alsMinute(),
@@ -135,19 +163,41 @@ fun dimmenUndNichtStoeren(
         }
         .beruehrtLeiste { it.vonMin to it.bisMin }
 
-    if (einstellungen.nichtStoeren.followDimmerEnabled) {
-        // OHNE den Nachlauf nach der Weckzeit und ohne "Hell ab" - wie `DndScheduleUseCase.computeWindows`:
-        // wer gerade geweckt wurde, soll erreichbar sein. Dieselbe Zeitleiste wie `previewTimeline`.
-        val spans = rechne(tag, einstellungen, regelwahl, mitWeckzeitNachlauf = false, hellZeitpunkt = OHNE_TAGESLICHT)
-        nichtStoeren += DimWindowResolver.mergeToTimeline(spans)
-            .map { DndBereich(it.range.first.alsMinute(), it.range.last.alsMinute(), DndQuelle.DIMM_FENSTER) }
-            .beruehrtLeiste { it.vonMin to it.bisMin }
-    }
+    // "Solange gedimmt wird": die Dimm-Zeitleiste der Tage, deren Typ (bzw. die feste Zeile) den Schalter
+    // an hat - gefiltert VOR dem Vereinen ueber die Herkunft, wie `previewTimelineWithStatus`. OHNE den
+    // Nachlauf nach der Weckzeit und ohne "Hell ab" - wie `DndScheduleUseCase.computeWindows`: wer gerade
+    // geweckt wurde, soll erreichbar sein.
+    val folgtDemDimmer = rechne(tag, quelle, mitWeckzeitNachlauf = false, hellZeitpunkt = OHNE_TAGESLICHT)
+        .filter { schalter.solangeGedimmt(it.herkunft) }
+        .map { it.span }
+    nichtStoeren += DimWindowResolver.mergeToTimeline(folgtDemDimmer)
+        .map { DndBereich(it.range.first.alsMinute(), it.range.last.alsMinute(), DndQuelle.DIMM_FENSTER) }
+        .beruehrtLeiste { it.vonMin to it.bisMin }
+
     return DimUndNichtStoeren(
         dimmen.sortedBy { it.vonMin },
-        kappenAmNachbarCutoff(nichtStoeren, eingabe, wirksam).sortedBy { it.vonMin }
+        kappenAmNachbarCutoff(nichtStoeren, eingabe, wirksam, schalter).sortedBy { it.vonMin }
     )
 }
+
+/**
+ * Die Konfiguration, ueber die Laufzeit-Klassen den Mustertyp lesen: genau EIN Typ mit den uebergebenen
+ * Einstellungen und der Kategorie der Eingabe (der Ruf-Cutoff haengt an ihr), dazu die aufgeloeste feste Zeile.
+ */
+private fun mustertypKonfiguration(eingabe: TagesleisteEingabe, einstellungen: DimDndEinstellungen): ShiftConfig =
+    ShiftConfig(
+        definitions = listOf(
+            ShiftDefinition(
+                id = MUSTERTYP_ID,
+                name = eingabe.name,
+                keywords = listOf(eingabe.name),
+                alarmTime = eingabe.weckzeit ?: LocalTime.MIDNIGHT,
+                dimmen = einstellungen.dimmen,
+                nichtStoeren = einstellungen.nichtStoeren
+            ).mitKategorie(eingabe.kategorie)
+        ),
+        ohneKalendereintrag = einstellungen.freierTag
+    )
 
 /**
  * Der Ruf-Cutoff der NACHBARTAGE im Block. `DndScheduleUseCase.computeWindows` bildet die Cutoffs ueber
@@ -162,14 +212,14 @@ fun dimmenUndNichtStoeren(
 private fun kappenAmNachbarCutoff(
     bereiche: List<DndBereich>,
     eingabe: TagesleisteEingabe,
-    wirksam: Dienstzeit?
+    wirksam: Dienstzeit?,
+    schalter: DndTypSchalter
 ): List<DndBereich> {
     if (eingabe.kategorie != ShiftKategorie.RUFBEREITSCHAFT || wirksam == null) return bereiche
     val beginn = MUSTERTAG.atTime(wirksam.beginn).toInstant(MUSTER_ZONE).toEpochMilli()
     val cutoffs = DndOnCallCutoffResolver.cutoffInstants(
         alarms = nachbarVersatz(eingabe.blockposition).map { DndOnCallCutoffResolver.AlarmSlot(eingabe.name, beginn + it) },
-        onCallShifts = setOf(eingabe.name),
-        cutoffMinutes = eingabe.rufCutoffMinuten.coerceIn(0, MINUTEN_PRO_TAG - 1),
+        cutoffMinutenFuer = schalter::rufCutoffMinuten,
         zone = MUSTER_ZONE
     ).map { it.alsMinute().toLong() }
     val gekuerzt = DndOnCallCutoffResolver.clip(bereiche.map { it.vonMin.toLong()..it.bisMin.toLong() }, cutoffs)
@@ -177,8 +227,8 @@ private fun kappenAmNachbarCutoff(
 }
 
 /**
- * Der erfundene Mustertag: die Slots, die `buildRuleSpans` bekommt, und die Weckzeiten fuer das Ende
- * "bis Weckzeit".
+ * Der erfundene Mustertag: die Slots, die `buildRuleSpansMitHerkunft` bekommt, und die Weckzeiten fuer das
+ * Ende "bis Weckzeit".
  *
  * @property datum der Kalendertag, dessen Fenster die Leiste zeigt: der Tag der Weckzeit des Typs.
  * @property slots leer = ein freier Tag (Krank).
@@ -199,8 +249,8 @@ private fun erfindeTag(eingabe: TagesleisteEingabe, wirksam: Dienstzeit?): Muste
         return Mustertag(MUSTERTAG, emptyList(), emptySet())
     }
     val weckzeit = eingabe.weckzeit ?: return null
-    // Dieselbe Regel wie `weckpunktMin()`, aber ohne dessen "Wecker aus gibt null": die Spanne fuehrt
-    // die Weckzeit auch bei Wecker aus.
+    // Dieselbe Regel wie `weckpunktMin()`, aber ohne dessen "Wecker aus gibt null": die Spanne
+    // fuehrt die Weckzeit auch bei Wecker aus.
     val beginn = MUSTERTAG.atTime(wirksam?.beginn ?: LocalTime.MIDNIGHT)
     val wecker = weckzeitpunkt(beginn, wirksam?.ganztaegig ?: true, weckzeit)
     val weckerMs = wecker.toInstant(MUSTER_ZONE).toEpochMilli()
@@ -215,18 +265,17 @@ private fun erfindeTag(eingabe: TagesleisteEingabe, wirksam: Dienstzeit?): Muste
 
 private fun rechne(
     tag: Mustertag,
-    einstellungen: DimDndEinstellungen,
-    regelwahl: DimRuleUseCase,
+    quelle: TypDimmQuelle,
     mitWeckzeitNachlauf: Boolean,
     hellZeitpunkt: HellZeitpunkt
-): List<DimWindowResolver.DimSpan> {
-    fun lauf(horizontTage: Int) = DimWindowResolver.buildRuleSpans(
+): List<DimWindowResolver.HerkunftSpan> {
+    fun lauf(horizontTage: Int) = DimWindowResolver.buildRuleSpansMitHerkunft(
         alarms = tag.slots,
         horizonDays = horizontTage,
         today = tag.datum,
         zone = MUSTER_ZONE,
-        ruleForShift = { regelwahl.findRuleForShift(it, einstellungen.regeln) },
-        ruleForFreeDay = { regelwahl.findRuleForFreeDay(einstellungen.regeln) },
+        ruleForShift = quelle::fuerSchicht,
+        ruleForFreeDay = quelle::fuerFreienTag,
         weckzeiten = tag.weckzeiten.toList(),
         mitWeckzeitNachlauf = mitWeckzeitNachlauf,
         hellZeitpunkt = hellZeitpunkt

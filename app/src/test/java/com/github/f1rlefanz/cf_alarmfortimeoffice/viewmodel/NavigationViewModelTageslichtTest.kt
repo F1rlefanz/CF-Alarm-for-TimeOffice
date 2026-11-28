@@ -13,7 +13,7 @@ import org.junit.Test
 /**
  * Rueckweg und Formular-Erhalt rund um "Ort fuer Tageslicht" (#140).
  *
- * Der Ort-Bildschirm hat drei Einstiege (Einstellungen, Dimm-Fenster-Editor, Hue-Regel-Editor).
+ * Der Ort-Bildschirm hat zwei Einstiege (Einstellungen, Hue-Regel-Editor).
  * Sein Rueckweg traegt den GENAUEN Herkunftszustand - ein Zurueck aus dem Ort muss den Editor
  * mit derselben `sitzung` wiederherstellen, sonst bekaeme der Editor einen frischen
  * SaveableStateProvider-Schluessel und die ungespeicherte Eingabe waere weg. Das zweite Zurueck
@@ -37,24 +37,11 @@ class NavigationViewModelTageslichtTest {
     fun `navigateBackToMain nimmt aus dem Ort denselben Rueckweg`() {
         // System-Zurueck (BackHandler -> navigateBackFrom) und navigateBackToMain duerfen fuer
         // denselben Einstieg nie verschiedene Ziele kennen - der else-Zweig landete auf HOME.
-        val herkunft = NavigationState.DimmerRuleConfig("d1", MainTab.DIMMER, true, sitzung = 7)
+        val herkunft = NavigationState.HueRuleConfig("h1", MainTab.HUE, true, sitzung = 7)
         val vm = NavigationViewModel()
         vm.navigateToOrtFuerTageslicht(herkunft)
         vm.navigateBackToMain()
         assertEquals(herkunft, vm.navigationState.value)
-    }
-
-    @Test
-    fun `aus dem Dimmer-Editor geoeffnet fuehrt Zurueck in DENSELBEN Editor und dann zur Liste`() {
-        val editor = NavigationState.DimmerRuleConfig("d1", MainTab.DIMMER, true, sitzung = 5)
-        val vm = NavigationViewModel()
-        vm.navigateToOrtFuerTageslicht(editor)
-        vm.navigateBackFrom(vm.navigationState.value)
-        // equals schliesst sitzung ein: derselbe Formular-Schluessel, dieselbe Eingabe.
-        assertEquals(editor, vm.navigationState.value)
-        assertEquals(5L, (vm.navigationState.value as NavigationState.DimmerRuleConfig).sitzung)
-        vm.navigateBackFrom(vm.navigationState.value)
-        assertEquals(NavigationState.DimmerSettings(MainTab.DIMMER), vm.navigationState.value)
     }
 
     @Test
@@ -91,10 +78,11 @@ class NavigationViewModelTageslichtTest {
         val zweite = (vm.navigationState.value as NavigationState.HueRuleConfig).sitzung
         assertNotEquals(erste, zweite)
 
-        vm.navigateToDimmerRuleConfig(fromTab = MainTab.DIMMER)
-        val dritte = (vm.navigationState.value as NavigationState.DimmerRuleConfig).sitzung
-        vm.navigateToDimmerRuleConfig(fromTab = MainTab.DIMMER)
-        val vierte = (vm.navigationState.value as NavigationState.DimmerRuleConfig).sitzung
+        // Auch ohne Zurueck dazwischen: jedes Oeffnen ist eine eigene Bearbeitung.
+        vm.navigateToHueRuleConfig(fromTab = MainTab.HUE)
+        val dritte = (vm.navigationState.value as NavigationState.HueRuleConfig).sitzung
+        vm.navigateToHueRuleConfig(fromTab = MainTab.HUE)
+        val vierte = (vm.navigationState.value as NavigationState.HueRuleConfig).sitzung
         assertNotEquals(dritte, vierte)
         assertTrue(setOf(erste, zweite, dritte, vierte).size == 4)
     }
@@ -115,9 +103,7 @@ class NavigationViewModelTageslichtTest {
     @Test
     fun `der Ort traegt den Formular-Schluessel seines Editors`() {
         val hue = NavigationState.HueRuleConfig(sitzung = 11)
-        val dim = NavigationState.DimmerRuleConfig(sitzung = 12)
         assertEquals("hue-11", hue.editorFormularSchluessel())
-        assertEquals("dim-12", dim.editorFormularSchluessel())
         assertEquals("hue-11", NavigationState.OrtFuerTageslicht(hue).editorFormularSchluessel())
         assertNull(NavigationState.OrtFuerTageslicht().editorFormularSchluessel())
         assertNull(NavigationState.MainContent(MainTab.HUE).editorFormularSchluessel())

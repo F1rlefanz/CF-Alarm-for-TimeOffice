@@ -10,8 +10,8 @@ import java.time.ZoneId
  * [com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimWindowResolver], [DndShiftSpanResolver]).
  *
  * Keine eigene Fenster-Logik/Policy fuer On-Call-Naechte: dieser Resolver KAPPT lediglich die
- * bestehenden Fenster aus den zwei anderen Quellen ("Folgt dem Dimmer" / "Waehrend der Dienstzeit")
- * auf einen festen Cutoff-Zeitpunkt am Tag der On-Call-Schicht - dieselbe [android.app.AutomaticZenRule]
+ * bestehenden Fenster aus den zwei Schaltern am Typ („Solange gedimmt wird“ / „Waehrend des
+ * Kalendereintrags“) auf einen Cutoff-Zeitpunkt am Tag der On-Call-Schicht - dieselbe [android.app.AutomaticZenRule]
  * gilt bis dahin unveraendert weiter, es gibt keine separate Policy.
  *
  * Die [ZoneId] wird stets hereingereicht (statt intern `systemDefault()` zu ziehen), damit Tests
@@ -27,27 +27,28 @@ object DndOnCallCutoffResolver {
     data class AlarmSlot(val shiftName: String, val shiftStartTime: Long)
 
     /**
-     * Ein Cutoff-Zeitpunkt (Epoch-Millis) pro erkanntem On-Call-Tag: fuer jeden Alarm, dessen
-     * [AlarmSlot.shiftName] in [onCallShifts] steht UND dessen [AlarmSlot.shiftStartTime] bekannt
-     * ist (> 0 - 0 bedeutet "unbekannt", z. B. manuell angelegte Alarme ohne Schicht), liegt der
-     * Cutoff zur Uhrzeit [cutoffMinutes] (Minuten seit Mitternacht) - und zwar an dem Kalendertag,
-     * an dem diese Uhrzeit tatsaechlich in der on-call-Nacht liegt: Startet die Schicht bereits
-     * NACH dieser Uhrzeit desselben Kalendertags (z. B. 00:30 oder 03:00 bei Cutoff 05:00), ist es
-     * derselbe Tag wie [AlarmSlot.shiftStartTime]. Startet die Schicht dagegen VOR dieser Uhrzeit,
-     * typischerweise abends (z. B. 21:00 bei Cutoff 05:00), liegt die Uhrzeit erst am naechsten
-     * Kalendertag in der Zukunft - der Cutoff wandert entsprechend auf den Folgetag. Ohne diese
-     * Fallunterscheidung landete der Cutoff einer abends beginnenden On-Call-Schicht vor deren
-     * eigenem Beginn und klippte stattdessen die voellig unbeteiligte Vornacht.
+     * Ein Cutoff-Zeitpunkt (Epoch-Millis) pro erkanntem On-Call-Tag: fuer jeden Eintrag, fuer dessen
+     * [AlarmSlot.shiftName] [cutoffMinutenFuer] eine Uhrzeit liefert (#218: der Rufbereitschafts-Typ
+     * mit seinem eigenen „Endet spaetestens um“; `null` = kein Ruf-Typ) UND dessen
+     * [AlarmSlot.shiftStartTime] bekannt ist (> 0 - 0 bedeutet "unbekannt"), liegt der Cutoff zu
+     * dieser Uhrzeit (Minuten seit Mitternacht) - und zwar an dem Kalendertag, an dem sie
+     * tatsaechlich in der on-call-Nacht liegt: Startet die Schicht bereits NACH dieser Uhrzeit
+     * desselben Kalendertags (z. B. 00:30 oder 03:00 bei Cutoff 05:00), ist es derselbe Tag wie
+     * [AlarmSlot.shiftStartTime]. Startet die Schicht dagegen VOR dieser Uhrzeit, typischerweise
+     * abends (z. B. 21:00 bei Cutoff 05:00), liegt die Uhrzeit erst am naechsten Kalendertag in der
+     * Zukunft - der Cutoff wandert entsprechend auf den Folgetag. Ohne diese Fallunterscheidung
+     * landete der Cutoff einer abends beginnenden On-Call-Schicht vor deren eigenem Beginn und
+     * klippte stattdessen die voellig unbeteiligte Vornacht.
      */
     fun cutoffInstants(
         alarms: List<AlarmSlot>,
-        onCallShifts: Set<String>,
-        cutoffMinutes: Int,
+        cutoffMinutenFuer: (String) -> Int?,
         zone: ZoneId
     ): List<Long> = alarms
         .asSequence()
-        .filter { it.shiftName in onCallShifts && it.shiftStartTime > 0L }
-        .map { alarm ->
+        .filter { it.shiftStartTime > 0L }
+        .mapNotNull { alarm ->
+            val cutoffMinutes = cutoffMinutenFuer(alarm.shiftName) ?: return@mapNotNull null
             val startZoned = Instant.ofEpochMilli(alarm.shiftStartTime).atZone(zone)
             val startMinutesOfDay = startZoned.hour * 60 + startZoned.minute
             val date = if (startMinutesOfDay >= cutoffMinutes) {
@@ -65,6 +66,18 @@ object DndOnCallCutoffResolver {
         }
         .distinct()
         .toList()
+
+    /**
+     * Die fruehere Form: EINE Uhrzeit fuer alle [onCallShifts] (`dnd_oncall_cutoff_min`). Der
+     * Scheduler nimmt seit #218 die Uhrzeit je Rufbereitschafts-Typ; diese Form rechnet nur noch die
+     * Tagesleiste, die ohnehin genau einen Typ zeigt.
+     */
+    fun cutoffInstants(
+        alarms: List<AlarmSlot>,
+        onCallShifts: Set<String>,
+        cutoffMinutes: Int,
+        zone: ZoneId
+    ): List<Long> = cutoffInstants(alarms, { if (it in onCallShifts) cutoffMinutes else null }, zone)
 
     /**
      * Kappt jedes Fenster aus [windows], dessen Ende hinter einem der [cutoffInstants] liegt, auf

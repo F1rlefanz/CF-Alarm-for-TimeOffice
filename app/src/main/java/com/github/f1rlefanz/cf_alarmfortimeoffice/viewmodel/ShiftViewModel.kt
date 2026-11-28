@@ -1,11 +1,21 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel
 
+import java.time.ZoneId
+import java.time.LocalDate
+import java.time.Instant
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.HellAb
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.TageslichtEnde
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.HellZeitpunkt
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimWindowResolver
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimWindow
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimAnchor
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.github.f1rlefanz.cf_alarmfortimeoffice.di.state.CalendarStateHolder
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimOverlayPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimRule
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimRuleUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.TypDimmQuelle
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.ZeitkettenArmierer
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.error.ErrorHandler
@@ -13,6 +23,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueSchedule
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.repository.interfaces.IHueConfigRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.HueRuleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.CalendarEvent
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.OhneEintragEinstellungen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.OhneEintragWahl
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.SchichttypEinordnen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
@@ -24,9 +35,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.LetzterSchichtStand
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftCodeSuggester
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpan
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpanStore
-import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.DimmerQuelle
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.LichtQuelle
-import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.NichtStoerenQuelle
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.Quelle
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.TagesleisteQuellen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.VorlaufMinuten
@@ -95,8 +104,120 @@ data class ShiftUiState(
      * gerade nicht erreichbar ist (Karte "Naechste Schicht"). `null` = nicht lesbar oder noch nicht
      * gelesen; die Karte zeigt dann den bisherigen Hinweis. Daraus entsteht nie ein Wecker.
      */
-    val letzterSchichtStand: LetzterSchichtStand? = null
+    val letzterSchichtStand: LetzterSchichtStand? = null,
+    /**
+     * Was die Seite „Ohne Kalendereintrag“ zuletzt beauftragt hat und was noch gespeichert wird - sonst
+     * `null`. Gelesen wird ueber [ohneEintragStand].
+     */
+    val ohneEintragBeauftragt: ShiftConfig? = null
+) {
+    /**
+     * Der Stand der festen Zeile: der beauftragte, solange er gespeichert wird, sonst der gespeicherte. Die
+     * Seite zeigt ihn, und die naechste Aenderung rechnet auf ihm - sie hat keinen Entwurf, und
+     * [currentShiftConfig] zieht erst nach dem Speichern nach.
+     */
+    val ohneEintragStand: ShiftConfig? get() = ohneEintragBeauftragt ?: currentShiftConfig
+}
+
+/** Was das Blatt „Weitere Optionen“ der Typ-Seite aus dem Bestand braucht (#224). */
+data class WeitereOptionenStand(
+    /** Die Farbwaerme aus den Einstellungen (`dim_warmth`), die ein Typ ohne eigenen Wert benutzt. */
+    val vorgabeWaerme: Int,
+    /** Die aktiven Weckzeiten fuer die Beispielzeile zum Nachlauf. */
+    val weckzeiten: List<Long>
 )
+
+/** Welche der drei Begruendungen (`tageslicht_dimmer_grund_*`) die Beispielzeile traegt. */
+enum class BeispielGrund {
+    /** Der Nachlauf laeuft voll, es wird erst danach hell. */
+    NACHLAUF_VOLL,
+
+    /** Es wird im Nachlauf hell, dort endet das Fenster. */
+    HELL,
+
+    /** Es war schon vor dem Wecken hell - Ende an der Weckzeit. */
+    WECKZEIT
+}
+
+/**
+ * Die Rechnung hinter "Nächster Wecker [weckzeit] → gedimmt bis [ende]". [grund] ist derselbe
+ * Wert, den die Vorschau zeigt; [hellZeitpunkt] fehlt nur, wenn es an dem Tag kein solches
+ * Ereignis gibt.
+ */
+data class NachlaufBeispiel(
+    val weckzeit: Long,
+    val ende: Long,
+    val grund: TageslichtEnde?,
+    val nachlaufMin: Int,
+    val hellZeitpunkt: Long?
+) {
+    /**
+     * `null` = keine Begruendung zeigen. Insbesondere dann, wenn die Uhrzeit-Schranke den
+     * Nachlauf gekappt hat: "volle 60 Minuten" waere dort gelogen.
+     */
+    val grundArt: BeispielGrund?
+        get() = when {
+            grund?.vorWeckzeit == true -> BeispielGrund.WECKZEIT
+            grund != null -> BeispielGrund.HELL
+            hellZeitpunkt != null && ende == weckzeit + nachlaufMin * 60_000L -> BeispielGrund.NACHLAUF_VOLL
+            else -> null
+        }
+}
+
+/**
+ * Die Beispielzeile zum Tageslicht-Nachlauf (#140) - ueber [DimWindowResolver.nachlaufEnde], also
+ * DIESELBE Formel wie die Wirkung.
+ *
+ * Gewaehlt wird die frueheste aktive Weckzeit nach [jetzt], die dieses Fenster faengt. Das
+ * laesst sich nur fuer einen CLOCK-Start allein aus dem Fenster beantworten (die Nacht
+ * beginnt am letzten Start vor dem Wecker und endet an der naechsten Schranke danach); fuer
+ * ALARM-/SHIFT_END-Starts haengt es an der Schicht - dort lieber kein Beispiel als ein
+ * falsches. `null` auch ohne passenden Wecker, ohne Nachlauf und bei [HellAb.IMMER].
+ */
+fun nachlaufBeispiel(
+    w: DimWindow,
+    hell: HellZeitpunkt,
+    weckzeiten: List<Long>,
+    jetzt: Long,
+    zone: ZoneId
+): NachlaufBeispiel? {
+    if (w.endAnchor != DimAnchor.ALARM_SONST_CLOCK) return null
+    if (w.weckzeitNachlaufMinuten <= 0 || w.nachlaufBisHell == HellAb.IMMER) return null
+    if (w.startAnchor != DimAnchor.CLOCK) return null
+    val weckzeit = weckzeiten.sorted().firstOrNull { it > jetzt && clockFensterFaengt(w, it, zone) }
+        ?: return null
+    val ende = DimWindowResolver.nachlaufEnde(
+        weckzeit, w.endClockMinutes, w.weckzeitNachlaufMinuten, w.nachlaufBisHell, zone, hell
+    )
+    val tag = Instant.ofEpochMilli(weckzeit).atZone(zone).toLocalDate()
+    return NachlaufBeispiel(
+        weckzeit = weckzeit,
+        ende = ende.zeit,
+        grund = ende.tageslicht,
+        nachlaufMin = w.weckzeitNachlaufMinuten.coerceIn(0, DimWindowResolver.NACHLAUF_MAX_MINUTEN),
+        hellZeitpunkt = hell(tag, w.nachlaufBisHell)
+    )
+}
+
+/**
+ * Faengt ein Fenster mit CLOCK-Start die [weckzeit]? Start = die letzte Start-Uhrzeit ECHT
+ * vor dem Wecker, Schranke = die erste Ende-Uhrzeit ECHT nach dem Start - dieselben
+ * Vergleiche wie in der Fensteraufloesung (Wanduhrzeit auf Kalendertagen, keine 24-h-Millis).
+ */
+private fun clockFensterFaengt(w: DimWindow, weckzeit: Long, zone: ZoneId): Boolean {
+    fun wand(d: LocalDate, minuten: Int) =
+        d.atStartOfDay().plusMinutes(minuten.toLong()).atZone(zone).toInstant().toEpochMilli()
+    val tag = Instant.ofEpochMilli(weckzeit).atZone(zone).toLocalDate()
+    val start = wand(tag, w.startClockMinutes).let { if (it >= weckzeit) wand(tag.minusDays(1), w.startClockMinutes) else it }
+    val startTag = Instant.ofEpochMilli(start).atZone(zone).toLocalDate()
+    var schranke = wand(startTag, w.endClockMinutes)
+    var d = startTag
+    while (schranke <= start) {
+        d = d.plusDays(1)
+        schranke = wand(d, w.endClockMinutes)
+    }
+    return weckzeit < schranke
+}
 
 /**
  * ShiftViewModel - liest Kalender-Events aus dem CalendarStateHolder, nicht vom CalendarViewModel.
@@ -109,11 +230,11 @@ class ShiftViewModel @Inject constructor(
     private val calendarStateHolder: CalendarStateHolder,
     private val errorHandler: ErrorHandler,
     /**
-     * Fuer den Muster-Nachzug beim Umbenennen einer Schicht ([zieheRegelmusterNach]); der
-     * Dimm-Teil zusaetzlich LESEND fuer die Statuszeile [schichtFolgen] und [tagesleisteQuellen]
-     * (Regelliste und `findRuleForShift` - dieselbe Auswahl wie zur Laufzeit). [hueRuleUseCase]
-     * bleibt der Statuszeile bewusst fern, siehe [hueConfigRepository]; die Tagesleiste greift nur
-     * ueber [vorlaufMinuten] darauf zu, also erst, wenn `licht()` die Vorlauf-Rechnung braucht.
+     * Fuer den Muster-Nachzug beim Umbenennen einer Schicht ([zieheRegelmusterNach]). Statuszeile
+     * [schichtFolgen] und [tagesleisteQuellen] lesen die Dimm-Regeln seit #219 NICHT mehr: Dimmen und
+     * "Nicht stoeren" liegen am Typ. [hueRuleUseCase] bleibt der Statuszeile bewusst fern, siehe
+     * [hueConfigRepository]; die Tagesleiste greift nur ueber [vorlaufMinuten] darauf zu, also erst,
+     * wenn `licht()` die Vorlauf-Rechnung braucht.
      *
      * BEWUSST `dagger.Lazy`, wie in `CFAlarmApplication`: dieses ViewModel entsteht beim
      * App-Start. Direkt injiziert wuerde damit der komplette Hue-Graph (ApiClient/OkHttp mit
@@ -124,8 +245,7 @@ class ShiftViewModel @Inject constructor(
     private val hueRuleUseCase: dagger.Lazy<HueRuleUseCase>,
     /**
      * Nach einem geaenderten Dimm-Regelmuster muessen die Fenster neu berechnet und die
-     * Tick-Kette neu armiert werden - genauso, wie `DimmerRulesViewModel.saveRule()` direkt nach
-     * jedem Regel-Schreibvorgang `enable()` ruft. Der Vorlaeufer ist `ConfigBackupUseCase`: auch
+     * Tick-Kette neu armiert werden. Der Vorlaeufer ist `ConfigBackupUseCase`: auch
      * dort armiert ein generischer Schreiber beide Ketten selbst, sonst stuende die neue Regel im
      * Store, waehrend bis zur naechsten 6h-Wartung nach dem ALTEN Plan gedimmt wird.
      */
@@ -141,8 +261,7 @@ class ShiftViewModel @Inject constructor(
      * eingebauten Nacht-Standard ist auch seine Namensliste entfallen. Der Dimmer bindet nur
      * noch ueber `DimRule.shiftPattern`, und das zieht `dimRuleUseCase` oben nach.
      *
-     * Zusaetzlich LESEND fuer die Statuszeile [schichtFolgen] (die beiden Quellen-Schalter und die
-     * Dienstzeit-Ausnahmen) und fuer [tagesleisteQuellen] (dazu der Ruf-Cutoff).
+     * Gelesen wird er seit #219 nicht mehr (Statuszeile und Tagesleiste lesen den Typ).
      *
      * Ebenfalls `dagger.Lazy`, aus demselben Grund wie oben: dieses ViewModel entsteht beim
      * App-Start, und die Klasse soll erst angefasst werden, wenn wirklich umbenannt wird oder
@@ -156,12 +275,12 @@ class ShiftViewModel @Inject constructor(
      */
     private val shiftSpanStore: dagger.Lazy<ShiftSpanStore>,
     /**
-     * Nur LESEND, fuer die Statuszeile [schichtFolgen] und [tagesleisteQuellen]: der
-     * Dimmer-Hauptschalter (`dim_enabled`). `dagger.Lazy` wie oben - angefasst erst beim Abo.
+     * Nur LESEND, fuer die Vorgabe-Farbwaerme in [weitereOptionenStand] (#224); den Hauptschalter `dim_enabled`
+     * liest seit #219 niemand mehr. `dagger.Lazy` wie oben: angefasst erst, wenn das Blatt offen ist.
      */
     private val dimOverlayPrefs: dagger.Lazy<DimOverlayPrefs>,
     /**
-     * Nur LESEND, fuer die Statuszeile [schichtFolgen] und [tagesleisteQuellen]: Hue-Regeln und ob
+     * Nur LESEND, fuer die Statuszeile [schichtFolgen] (Licht) und [tagesleisteQuellen]: Hue-Regeln und ob
      * eine Bridge eingerichtet ist. BEWUSST das Repository und NICHT `hueRuleUseCase.get()`: das Repository
      * liest nur den `@HueDataStore`, der Use-Case dagegen baut den Lampen- und HTTP-Graphen
      * (OkHttp) - fuer eine Anzeige, die keine Bridge braucht.
@@ -194,24 +313,25 @@ class ShiftViewModel @Inject constructor(
      * Was jede AKTIVE Schicht ausserhalb des Weckers ausloest - die Statuszeile
      * "Dimmen: … · Licht: … · Nicht stören: …" im `ShiftConfigScreen` (Issue #70). Schluessel ist die
      * `ShiftDefinition.id`; eine DEAKTIVIERTE Definition fehlt bewusst (ihre Karte sagt schon
-     * "kein Dimmer- und kein DND-Fenster", "Dimmen: eigene Regel" widerspraeche dem).
+     * "kein Dimmer- und kein DND-Fenster", "Dimmen: 2 Fenster" widerspraeche dem).
      *
-     * GELESEN WIRD NUR BEIM ABO (`WhileSubscribed`), nichts beim Bauen: jede Quelle steckt in
+     * Dimmen und "Nicht stoeren" liest die Zeile seit #219 am TYP (`ShiftDefinition.dimmen` /
+     * `.nichtStoeren`) - dieselbe Konfiguration, aus der die Liste ohnehin besteht, also ohne eigenen
+     * Lesefehler. Nur Hue braucht noch einen Store.
+     *
+     * GELESEN WIRD NUR BEIM ABO (`WhileSubscribed`), nichts beim Bauen: die Hue-Quelle steckt in
      * einem `flow {}`, das sein `dagger.Lazy` erst beim Sammeln anfasst. Dieses ViewModel entsteht
      * beim App-Start, und ein frueher CE-Store-Read waere genau der fremde Leser, vor dem
      * CLAUDE.md ("Persistenz") warnt.
      *
-     * Lesefehler: Dimm-Regeln und DND degradieren in ihren Stores auf "leer"/"aus" - dasselbe,
-     * was die Laufzeit dann tut. Hue liefert ein `Result`; ein Fehlschlag wird "nicht lesbar".
+     * Lesefehler: Hue liefert ein `Result`; ein Fehlschlag wird "nicht lesbar".
      *
      * MUSS VOR dem `init{}`-Block stehen (wie [selfWrittenConfig]) und nach [_uiState].
      */
     val schichtFolgen: StateFlow<Map<String, SchichtFolgen>> = combine(
         _uiState.map { it.currentShiftConfig }.distinctUntilChanged(),
-        dimmerStand(),
-        hueStand(),
-        dndStand()
-    ) { config, dim, hue, dnd ->
+        hueStand()
+    ) { config, hue ->
         config?.definitions.orEmpty()
             // #142: ein Krankmeldungs-Typ stellt nie einen Wecker und spannt keine Schicht auf -
             // DND-, Dimm- oder Licht-Aussagen ueber ihn waeren erfunden. Die Karte zeigt
@@ -220,13 +340,8 @@ class ShiftViewModel @Inject constructor(
             .associate { definition ->
                 definition.id to ermittleSchichtFolgen(
                     definition = definition,
-                    dimAn = dim.an,
-                    dimRegeln = dim.regeln,
-                    ruleForShift = dim.ruleForShift,
                     hueRegeln = hue.regeln,
-                    hueKonfiguriert = hue.konfiguriert,
-                    dndToggles = dnd.toggles,
-                    dndAusgenommen = dnd.ausgenommen
+                    hueKonfiguriert = hue.konfiguriert
                 )
             }
     }
@@ -257,35 +372,49 @@ class ShiftViewModel @Inject constructor(
 
     /**
      * Alles, was die Tagesleiste der Typ-Seite aus dem Bestand braucht (Umbau #196, SPEC 3.3 Punkt 3):
-     * Dimm-Schalter und -Regeln, die Schalter von "Nicht stoeren" mit Ausnahmen und Ruf-Cutoff,
-     * Hue-Regeln samt "Bridge eingerichtet", die Schichtspannen und der Tageslicht-Stand.
+     * die Schicht-Konfiguration (Dimmen und "Nicht stoeren" liegen seit #219 am Typ), Hue-Regeln samt
+     * "Bridge eingerichtet", die Schichtspannen und der Tageslicht-Stand.
      *
      * DIESELBEN Stores und DASSELBE Abo wie [schichtFolgen]: gelesen wird erst beim Sammeln
      * (`WhileSubscribed`), nichts beim Bauen - die Quellen stecken in kalten `flow {}`.
      *
      * `null` = noch nicht gelesen. [Quelle.Unbekannt] heisst dagegen LESEFEHLER und wird je Quelle
      * EINZELN gefuehrt (Fang VOR dem `combine`): eine unlesbare Quelle macht nur ihre Spuren
-     * unbekannt ([TagesleisteQuellen.stand]), und sie wird NIE zur leeren Liste - "keine Dimm-Regel"
-     * hiesse "kein Dimmen". Anders als bei [schichtFolgen] steht hinter dem `combine` deshalb KEIN
-     * Fang, der alles auf "leer" setzt.
+     * unbekannt ([TagesleisteQuellen.stand]), und sie wird NIE zur leeren Liste - "kein Typ hat ein
+     * Fenster" hiesse "kein Dimmen". Anders als bei [schichtFolgen] steht hinter dem `combine` deshalb
+     * KEIN Fang, der alles auf "leer" setzt.
      *
-     * Grenze: Dimm-Regeln, Dimm-Schalter und DND-Schalter degradieren in ihren Stores selbst auf
-     * "leer"/"aus" und melden den Fehler nicht weiter (`DimRuleRepository.rules`, `safeData` in
-     * `DimOverlayPrefs`/`DndPrefs`; bewusst fuer die Laufzeit, siehe Skill `cfalarm-persistenz-und-auth`).
-     * Unbekannt werden dort nur Fehler, die als Wurf bis hierher kommen; sicher erkennbar sind heute
-     * die Hue-Regeln und die Schichtspannen.
+     * Dimmen und "Nicht stoeren" kommen seit #219 aus der Konfiguration ([typenQuelle], ein `Result`):
+     * scheitert der Read, stehen beide Spuren auf "unbekannt" (#210). Offen bleibt der Hue-Teil von #210
+     * ("Bridge eingerichtet") - Etappe 4.
      *
      * MUSS VOR dem `init{}`-Block stehen (wie [schichtFolgen]).
      */
     val tagesleisteQuellen: StateFlow<TagesleisteQuellen?> = combine(
-        dimmerQuelle().fehlerAlsUnbekannt("Dimmer"),
-        nichtStoerenQuelle().fehlerAlsUnbekannt("Nicht stoeren"),
+        typenQuelle().fehlerAlsUnbekannt("Typ-Einstellungen"),
         lichtQuelle().fehlerAlsUnbekannt("Hue-Regeln"),
         spannenQuelle().fehlerAlsUnbekannt("Schichtspannen"),
         tageslichtStand()
-    ) { dimmer, nichtStoeren, licht, spannen, tageslicht ->
-        TagesleisteQuellen(dimmer, nichtStoeren, licht, spannen, tageslicht)
+    ) { typen, licht, spannen, tageslicht ->
+        TagesleisteQuellen(typen, licht, spannen, tageslicht)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /**
+     * Vorgabe-Farbwaerme und aktive Weckzeiten fuer das Blatt „Weitere Optionen“ der Typ-Seite (#224). Kalt:
+     * gelesen wird erst, solange das Blatt offen ist. Ein unlesbarer Alarm-Bestand heisst nur „kein Beispiel“ -
+     * nie eine erfundene Weckzeit.
+     */
+    fun weitereOptionenStand(): Flow<WeitereOptionenStand> = flow {
+        val weckzeiten = alarmUseCase.getAllAlarms().getOrNull()
+            ?.filter { it.isActive }
+            ?.map { it.triggerTime }
+            .orEmpty()
+        emitAll(dimOverlayPrefs.get().warmth.map { WeitereOptionenStand(it, weckzeiten) })
+    }.catch { e ->
+        if (e is CancellationException) throw e
+        // Reine Anzeige: ohne Stand zeigt das Blatt weder „Zurzeit …“ noch ein Beispiel.
+        Logger.w(LogTags.SHIFT, "Weitere Optionen: Vorgabe oder Weckzeiten nicht lesbar", e)
+    }
 
     init {
         loadShiftConfig()
@@ -551,11 +680,11 @@ class ShiftViewModel @Inject constructor(
      * ein Tag ganz ohne Kalendereintrag verhalten soll, `null` = „Eigene Einstellungen“. Die Entscheidung
      * (was zur Wahl steht, was nichts aendert) liegt in [OhneEintragWahl.waehle].
      *
-     * Geht - wie jeder Schreibweg - ueber [updateShiftConfig]; der Alarm-Sync dahinter stellt den Wecker
-     * an den leeren Tagen bzw. raeumt ihn ab (`AlarmUseCase`, #175).
+     * Geht - wie jeder Schreibweg - ueber [updateShiftConfig] ([schreibeOhneEintrag]); der Alarm-Sync
+     * dahinter stellt den Wecker an den leeren Tagen bzw. raeumt ihn ab (`AlarmUseCase`, #175).
      */
     fun waehleOhneEintrag(typId: String?) {
-        val config = _uiState.value.currentShiftConfig
+        val config = _uiState.value.ohneEintragStand
         if (config == null) {
             Logger.w(LogTags.SHIFT_CONFIG, "⚠️ OHNE-EINTRAG-WAHL: keine Konfiguration geladen - abgebrochen")
             return
@@ -573,7 +702,38 @@ class ShiftViewModel @Inject constructor(
             "✅ OHNE-EINTRAG-WAHL: Tage ohne Eintrag verhalten sich jetzt " +
                 (OhneEintragWahl.gewaehlterTyp(updated)?.let { "wie '${it.name}'" } ?: "nach eigenen Einstellungen")
         )
-        updateShiftConfig(updated)
+        schreibeOhneEintrag(updated)
+    }
+
+    /**
+     * Die eigenen Dimm- und „Nicht stoeren“-Einstellungen der festen Zeile (Umbau #223): [aenderung] formt
+     * den zuletzt beauftragten Stand um, geschrieben wird SOFORT wie bei der Wahl - die Seite hat keinen
+     * Entwurf. Definitionen und Wahl bleiben. Was nichts aendert, schreibt nicht (kein Alarm-Sync je Tipp).
+     *
+     * Das Armieren beider Zeitketten haengt am selben Weg wie beim Speichern eines Typs: nach dem Sync,
+     * ueber [NacharmierBedarf] (`TypDimmQuelle.dimmenOderNichtStoerenGeaendert` vergleicht die feste Zeile).
+     */
+    fun aendereOhneEintrag(aenderung: (OhneEintragEinstellungen) -> OhneEintragEinstellungen) {
+        val config = _uiState.value.ohneEintragStand
+        if (config == null) {
+            Logger.w(LogTags.SHIFT_CONFIG, "⚠️ OHNE-EINTRAG-EINSTELLUNGEN: keine Konfiguration geladen - abgebrochen")
+            return
+        }
+        val eigene = aenderung(config.ohneKalendereintrag)
+        if (eigene == config.ohneKalendereintrag) return
+        schreibeOhneEintrag(config.copy(ohneKalendereintrag = eigene))
+    }
+
+    /**
+     * Der Schreibweg der Seite „Ohne Kalendereintrag“: merkt [neu] als beauftragt vor
+     * ([ShiftUiState.ohneEintragStand]), damit eine zweite Aenderung vor dem Ende des Speicherns darauf
+     * aufbaut statt die erste zu ueberschreiben. Verglichen wird beim Armieren gegen den Vorgaenger, nicht
+     * gegen den gespeicherten Stand: stellt die zweite Aenderung ihn wieder her, armiert sie sonst nicht.
+     */
+    private fun schreibeOhneEintrag(neu: ShiftConfig) {
+        val vorgaenger = _uiState.value.ohneEintragStand
+        _uiState.value = _uiState.value.copy(ohneEintragBeauftragt = neu)
+        speichereShiftConfig(neu, vorgaenger)
     }
 
     /**
@@ -599,12 +759,15 @@ class ShiftViewModel @Inject constructor(
         updateShiftConfig(OhneEintragWahl.ohneTyp(config, definition))
     }
 
-    fun updateShiftConfig(config: ShiftConfig) {
+    fun updateShiftConfig(config: ShiftConfig) = speichereShiftConfig(config, vorgaenger = null)
+
+    /** [vorgaenger]: der noch nicht gespeicherte Stand, auf dem [config] aufbaut (`null` = der gespeicherte). */
+    private fun speichereShiftConfig(config: ShiftConfig, vorgaenger: ShiftConfig?) {
         viewModelScope.launch {
             // Der Stand VOR dem Schreiben - die einzige Gelegenheit, eine Umbenennung ueberhaupt
             // zu erkennen (die Definition behaelt ihre id, nur der Name aendert sich). Muss vor
-            // jedem Schreiben an `_uiState` gelesen werden. Siehe [zieheRegelmusterNach].
-            val vorherigeConfig = _uiState.value.currentShiftConfig
+            // jedem Schreiben von `currentShiftConfig` gelesen werden. Siehe [zieheRegelmusterNach].
+            val vorherigeConfig = vorgaenger ?: _uiState.value.currentShiftConfig
 
             // VOR dem Write vormerken, nicht danach - siehe [selfWrittenConfig]. Die
             // DataStore-Emission kann den Beobachter erreichen, BEVOR `saveShiftConfig()`
@@ -627,7 +790,9 @@ class ShiftViewModel @Inject constructor(
                 .onSuccess {
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
-                        currentShiftConfig = config
+                        currentShiftConfig = config,
+                        // Nur der EIGENE Auftrag faellt weg; ein juengerer steht noch aus.
+                        ohneEintragBeauftragt = _uiState.value.ohneEintragBeauftragt?.takeUnless { it === config }
                     )
 
                     // VOR der Erkennung und vor dem Alarm-Sync: beides fuehrt (ueber ShiftSpanStore
@@ -636,7 +801,14 @@ class ShiftViewModel @Inject constructor(
                     // dagegen hinter den Sync - es braucht die Spannen mit dem neuen Namen, siehe
                     // [armiereZeitkettenNeu]. Deshalb wandert der Bedarf weiter, statt hier sofort
                     // ausgefuehrt zu werden.
+                    //
+                    // #217: Die Dimm-Fenster und „Nicht stoeren“-Schalter liegen am TYP. Hat dieses
+                    // Speichern sie veraendert (auch an der festen Zeile oder ueber „wie <Typ>“),
+                    // verschieben sich Fenstergrenzen - beide Ketten muessen neu armiert werden
+                    // (Pflichtregel). Bewusst ueber denselben Bedarf: armiert wird dann ebenfalls
+                    // erst nach dem Sync und genau einmal.
                     val nacharmieren = zieheRegelmusterNach(vorherigeConfig, config)
+                        .mitTypEinstellungen(TypDimmQuelle.dimmenOderNichtStoerenGeaendert(vorherigeConfig, config))
 
                     // DAS try/finally UMSCHLIESST AUCH DAS delay(200) (Befund 21.08.2026):
                     // `zieheRegelmusterNach` hat die Namenslisten unter NonCancellable bereits auf
@@ -674,7 +846,9 @@ class ShiftViewModel @Inject constructor(
                     selfWrittenConfig = null
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
-                        error = errorHandler.getErrorMessage(error)
+                        error = errorHandler.getErrorMessage(error),
+                        // Die Seite zeigt dann wieder, was gespeichert ist.
+                        ohneEintragBeauftragt = _uiState.value.ohneEintragBeauftragt?.takeUnless { it === config }
                     )
                 }
         }
@@ -865,13 +1039,14 @@ class ShiftViewModel @Inject constructor(
         config.definitions.filter { it.isOnCall }.map { it.name }.toSet()
 
     /**
-     * Armiert die Dimm- und DND-Zeitketten neu, nachdem eine Umbenennung nachgezogen wurde:
-     * erst die Spannen (`syncAlarms()`), dann armieren - im `finally` von
-     * [triggerAlarmCreationFromConfigUpdate], weil der Sync oft ausfaellt. Hergang: schichterkennung.md.
+     * Armiert die Dimm- und DND-Zeitketten neu, nachdem eine Umbenennung nachgezogen oder die
+     * Dimm-/„Nicht stoeren“-Einstellungen eines Typs geaendert wurden (#217): erst die Spannen
+     * (`syncAlarms()`), dann armieren - im `finally` von [triggerAlarmCreationFromConfigUpdate],
+     * weil der Sync oft ausfaellt. Hergang: schichterkennung.md.
      */
     private suspend fun armiereZeitkettenNeu(bedarf: NacharmierBedarf) {
         if (!bedarf.beanspruche()) return
-        armierer.armiere("UMBENENNUNG", dimmer = bedarf.dimmer, dnd = bedarf.dnd)
+        armierer.armiere(bedarf.anlass, dimmer = bedarf.dimmer, dnd = bedarf.dnd)
     }
 
     /**
@@ -1038,25 +1213,7 @@ class ShiftViewModel @Inject constructor(
     // Jede Quelle ist ein kaltes `flow {}`: das `dagger.Lazy` wird erst beim SAMMELN angefasst,
     // also erst, wenn der ShiftConfigScreen die Zeile abonniert - nie beim Bauen des ViewModels.
 
-    private class DimmerStand(
-        val an: Boolean,
-        val regeln: List<DimRule>,
-        val ruleForShift: (String) -> DimRule?
-    )
-
     private class HueStand(val konfiguriert: Boolean, val regeln: Result<List<HueSchedule>>)
-
-    private class DndStand(val toggles: DndPrefs.Toggles, val ausgenommen: Set<String>)
-
-    /** Hauptschalter + Regeln; `ruleForShift` ist `findRuleForShift` ueber genau diese Liste. */
-    private fun dimmerStand(): Flow<DimmerStand> = flow {
-        val useCase = dimRuleUseCase.get()
-        emitAll(
-            combine(dimOverlayPrefs.get().toggles, useCase.rules) { toggles, regeln ->
-                DimmerStand(toggles.dimEnabled, regeln) { name -> useCase.findRuleForShift(name, regeln) }
-            }
-        )
-    }
 
     /**
      * Bridge-Konfiguration + Regeln. Fuer die Regeln gibt es keinen Flow; sie liegen aber im
@@ -1071,11 +1228,6 @@ class ShiftViewModel @Inject constructor(
                 HueStand(config.isConfigured, repo.getScheduleRules())
             }
         )
-    }
-
-    private fun dndStand(): Flow<DndStand> = flow {
-        val prefs = dndPrefs.get()
-        emitAll(combine(prefs.toggles, prefs.shiftExcludedShifts) { t, a -> DndStand(t, a) })
     }
 
     // --- Quellen der Tagesleiste [tagesleisteQuellen] ---
@@ -1095,18 +1247,18 @@ class ShiftViewModel @Inject constructor(
         emit(TageslichtStand.ohneOrt())
     }
 
-    private fun dimmerQuelle(): Flow<Quelle<DimmerQuelle>> =
-        dimmerStand().map { Quelle.Bekannt(DimmerQuelle(it.an, it.regeln, dimRuleUseCase.get())) }
-
-    /** Eigener Flow statt [dndStand]: der Cutoff gehoert nicht in die Statuszeile (und ihre Mocks). */
-    private fun nichtStoerenQuelle(): Flow<Quelle<NichtStoerenQuelle>> = flow {
-        val prefs = dndPrefs.get()
-        emitAll(
-            combine(prefs.toggles, prefs.shiftExcludedShifts, prefs.onCallCutoffMinutes) { toggles, ausgenommen, cutoff ->
-                Quelle.Bekannt(NichtStoerenQuelle(toggles, ausgenommen, cutoff))
-            }
-        )
-    }
+    /**
+     * Die Schicht-Konfiguration, in der seit #219 Dimmen und "Nicht stoeren" am Typ liegen. Gelesen ueber
+     * `getCurrentShiftConfig()` (ein `Result`), NICHT ueber den Flow `shiftConfig`: der degradiert bei
+     * einem Defekt auf Standardwerte, und "Standard" hiesse "kein Typ hat ein Fenster" - die Spur zeigte
+     * "kein Dimmen" statt "unbekannt". `_uiState.currentShiftConfig` ist nur der AUSLOESER fuer das
+     * Neu-Lesen (`null` heisst "noch nicht geladen" ebenso wie "Lesefehler" und taugt nicht als Wert).
+     * Die Quelle bleibt kalt: gelesen wird erst beim Sammeln.
+     */
+    private fun typenQuelle(): Flow<Quelle<ShiftConfig>> =
+        _uiState.map { it.currentShiftConfig }.distinctUntilChanged().map {
+            shiftUseCase.getCurrentShiftConfig().alsQuelle("Typ-Einstellungen") { config -> config }
+        }
 
     /** Ein Fehlschlag der Regeln ist [Quelle.Unbekannt], auch wenn die Bridge-Konfiguration lesbar war. */
     private fun lichtQuelle(): Flow<Quelle<LichtQuelle>> = hueStand().map { hue ->
@@ -1161,8 +1313,21 @@ internal data class SchichtUmbenennung(val alterName: String, val neuerName: Str
  * Ein eigener Wert statt zweier Booleans im Aufruf: Er reist vom Nachzug bis hinter den Alarm-Sync,
  * und an dieser Strecke soll man lesen koennen, was transportiert wird.
  */
-internal data class NacharmierBedarf(val dimmer: Boolean, val dnd: Boolean) {
+internal data class NacharmierBedarf(
+    val dimmer: Boolean,
+    val dnd: Boolean,
+    /** Praefix der WARN-Zeile, falls eine Kette nicht neu armiert werden konnte (`ZeitkettenArmierer`). */
+    val anlass: String = ANLASS_UMBENENNUNG
+) {
     val irgendetwas: Boolean get() = dimmer || dnd
+
+    /**
+     * Derselbe Bedarf, erweitert um geaenderte Dimm-/„Nicht stoeren“-Einstellungen am Typ (#217):
+     * dann BEIDE Ketten, denn ein verschobenes Dimm-Fenster zieht DND im Modus „Solange gedimmt
+     * wird“ immer mit. Neu gebaut statt kopiert - die Einweg-Sperre [erledigt] ist hier noch frei.
+     */
+    fun mitTypEinstellungen(geaendert: Boolean): NacharmierBedarf =
+        if (geaendert) NacharmierBedarf(dimmer = true, dnd = true, anlass = ANLASS_TYP) else this
 
     /**
      * EINWEG-SPERRE. Das Nacharmieren wird an ZWEI Stellen angestossen: im `finally` von
@@ -1180,6 +1345,8 @@ internal data class NacharmierBedarf(val dimmer: Boolean, val dnd: Boolean) {
 
     companion object {
         val KEINE = NacharmierBedarf(dimmer = false, dnd = false)
+        private const val ANLASS_UMBENENNUNG = "UMBENENNUNG"
+        private const val ANLASS_TYP = "SCHICHTTYP"
     }
 }
 

@@ -4,105 +4,40 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndScheduleUseCase
-import com.github.f1rlefanz.cf_alarmfortimeoffice.model.waehlbareSchichtNamen
-import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IShiftUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
- * ViewModel der DND-Einstellungen. Zwei unabhaengige Fenster-Schalter (siehe [DndScheduleUseCase])
- * plus [DndPrefs.Policy] - was genau stummgeschaltet wird, ist Nutzer-Entscheidung, nicht hart
- * codiert (siehe [DndPrefs.Policy]-Klassenkommentar). Die Freigabe-Pruefung
- * (ACCESS_NOTIFICATION_POLICY) braucht Context und lebt bewusst in der UI-Schicht
+ * ViewModel von „Nicht stören“ als Geraete-Einstellung (#225): [DndPrefs.Policy] - wer trotzdem
+ * durchkommt, gilt fuer alle Typen. WANN stummgeschaltet wird, steht am Schichttyp (#218). Die
+ * Freigabe-Pruefung (ACCESS_NOTIFICATION_POLICY) braucht Context und lebt bewusst in der UI-Schicht
  * ([com.github.f1rlefanz.cf_alarmfortimeoffice.util.DndPermissionHelper]), nicht hier
  * (Projekt-Konvention: ViewModels injizieren keinen Context).
  */
 @HiltViewModel
 class DndViewModel @Inject constructor(
     private val prefs: DndPrefs,
-    private val dndSchedule: DndScheduleUseCase,
-    private val shiftUseCase: IShiftUseCase
+    private val dndSchedule: DndScheduleUseCase
 ) : ViewModel() {
 
+    /** [gelesen] `false` = [policy] ist noch die Vorgabe, keine Auskunft ueber das Geraet. */
     data class DndUiState(
-        val followDimmerEnabled: Boolean = false,
-        val duringShiftEnabled: Boolean = false,
-        val shiftExcludedShifts: Set<String> = emptySet(),
-        val onCallShifts: Set<String> = emptySet(),
-        val onCallCutoffMinutes: Int = DndPrefs.DEFAULT_ONCALL_CUTOFF_MIN,
-        val policy: DndPrefs.Policy = DndPrefs.Policy()
+        val policy: DndPrefs.Policy = DndPrefs.Policy(),
+        val gelesen: Boolean = false
     )
 
-    /**
-     * Rufbereitschaft-Schichten kommen aus der Schicht-Konfiguration (`ShiftDefinition.isOnCall`),
-     * nicht aus einer DND-eigenen Auswahl - der Schalter dafuer steht im Schicht-Editor. Reaktiv,
-     * damit ein dort umgelegter Schalter hier ohne Neustart ankommt. Steht VOR `uiState`, weil
-     * Kotlin in Textreihenfolge initialisiert und `combine` den Flow beim Bauen braucht.
-     */
-    private val onCallShiftNames =
-        shiftUseCase.shiftConfig
-            .map { config -> config.definitions.filter { it.isOnCall }.map { it.name }.toSet() }
-
     val uiState: StateFlow<DndUiState> =
-        combine(
-            prefs.toggles,
-            prefs.shiftExcludedShifts,
-            onCallShiftNames,
-            prefs.onCallCutoffMinutes,
-            prefs.policy
-        ) { toggles, excluded, onCallShifts, onCallCutoffMinutes, policy ->
-            DndUiState(
-                followDimmerEnabled = toggles.followDimmerEnabled,
-                duringShiftEnabled = toggles.duringShiftEnabled,
-                shiftExcludedShifts = excluded,
-                onCallShifts = onCallShifts,
-                onCallCutoffMinutes = onCallCutoffMinutes,
-                policy = policy
-            )
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DndUiState())
-
-    /** Namen der erkannten Schicht-Definitionen, fuer die Ausnahme-Chips an der Dienstzeit-Karte.
-     * Reaktiv statt Einmal-Snapshot - eine Schicht-Umbenennung/-Neuanlage ohne App-Neustart muss
-     * sofort sichtbar werden. */
-    val shiftNames: StateFlow<List<String>> =
-        shiftUseCase.shiftConfig
-            // #142/#171: ein Krankmeldungs-, Ignorieren- oder ausgeschalteter Typ hat keine
-            // Dienstzeit - als Ausnahme waehlbar, wuerde er nie greifen.
-            .map { config -> config.definitions.waehlbareSchichtNamen() }
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
-
-    fun setFollowDimmerEnabled(enabled: Boolean) = viewModelScope.launch {
-        prefs.setFollowDimmerEnabled(enabled)
-        dndSchedule.enable()
-    }
-
-    fun setDuringShiftEnabled(enabled: Boolean) = viewModelScope.launch {
-        prefs.setDuringShiftEnabled(enabled)
-        dndSchedule.enable()
-    }
-
-    /** Schaltet eine Schicht als Ausnahme vom "Waehrend der Dienstzeit"-Trigger ein/aus. */
-    fun toggleShiftExcludedShift(shiftName: String) = viewModelScope.launch {
-        prefs.toggleShiftExcludedShift(shiftName)
-        dndSchedule.enable()
-    }
-
-    /** Setzt den Cutoff (Minuten seit Mitternacht) fuer Rufbereitschafts-Tage. */
-    fun setOnCallCutoffMinutes(minutes: Int) = viewModelScope.launch {
-        prefs.setOnCallCutoffMinutes(minutes)
-        dndSchedule.enable()
-    }
+        prefs.policy
+            .map { DndUiState(policy = it, gelesen = true) }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DndUiState())
 
     // Policy-Aenderungen wirken auf die registrierte Zen-Regel, nicht auf die Fenster-Berechnung -
-    // applyCurrentState() reicht (aktualisiert die Regel sofort), kein Reschedule noetig. Analog zu
-    // den Darstellungs-Settern des Dimmers (Farbe aendert keine Fenster) - die gab es bis zum
-    // Ein-Modell-Umbau als eigene Regler, heute gehoert Intensitaet zur Regel.
+    // applyCurrentState() reicht (aktualisiert die Regel sofort), kein Reschedule noetig.
     fun setBlockCalls(v: Boolean) = viewModelScope.launch {
         prefs.setBlockCalls(v); dndSchedule.applyCurrentState()
     }

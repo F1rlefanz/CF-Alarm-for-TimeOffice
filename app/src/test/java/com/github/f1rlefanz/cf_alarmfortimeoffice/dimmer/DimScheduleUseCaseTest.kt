@@ -1,21 +1,64 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer
 
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.TageslichtQuelle
+import android.app.AlarmManager
+import android.app.PendingIntent
 import android.content.Context
+import android.content.Intent
+import com.github.f1rlefanz.cf_alarmfortimeoffice.freietage.FreieTageStore
+import com.github.f1rlefanz.cf_alarmfortimeoffice.freietage.freieTageStoreMit
 import com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPausePrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmInfo
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.OhneEintragEinstellungen
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.TypDimmFenster
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.TypDimmen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpan
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpanStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.freietage.keineFreienTage
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.mockito.ArgumentMatchers.anyInt
+import org.mockito.ArgumentMatchers.anyLong
+import org.mockito.Mockito
+import org.mockito.kotlin.any
+import org.mockito.kotlin.anyOrNull
+import org.mockito.kotlin.eq
 import org.mockito.kotlin.mock
+import org.mockito.kotlin.never
+import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 import java.time.LocalDate
+import java.time.LocalTime
 import java.time.ZoneId
+
+/**
+ * Fuehrt [block] mit gemocktem AlarmManager und PendingIntent aus: `scheduleNextTransition()` und
+ * `enable()` brauchen beide, und `PendingIntent.getBroadcast` ist im JVM-Test nur ein Stub (#217).
+ * Der Intent wird mitgemockt: `setAction()` liefert im Stub `null`, und Kotlin prueft das.
+ * Statische und Konstruktor-Mocks gelten nur auf diesem Thread - `runTest` bleibt darauf.
+ */
+internal suspend fun <T> mitDimmTick(block: suspend (context: Context, am: AlarmManager, pi: PendingIntent) -> T): T {
+    val am = mock<AlarmManager>()
+    val context = mock<Context>()
+    whenever(context.getSystemService(Context.ALARM_SERVICE)).thenReturn(am)
+    val pi = mock<PendingIntent>()
+    Mockito.mockConstruction(Intent::class.java) { intent, _ ->
+        whenever(intent.setAction(anyOrNull())).thenReturn(intent)
+    }.use {
+        Mockito.mockStatic(PendingIntent::class.java).use { statisch ->
+            statisch.`when`<PendingIntent> {
+                PendingIntent.getBroadcast(anyOrNull(), anyInt(), anyOrNull(), anyInt())
+            }.thenReturn(pi)
+            return block(context, am, pi)
+        }
+    }
+}
 
 /**
  * Unit-Tests fuer [DimScheduleUseCase.previewTimeline] - die einzige oeffentliche,
@@ -86,19 +129,21 @@ class DimScheduleUseCaseTest {
         return prefs
     }
 
-    /** Echte [DimRuleUseCase]-Auswahl-Logik gegen ein gemocktes Repository. */
-    private suspend fun ruleUseCase(rules: List<DimRule>): DimRuleUseCase {
-        val repo = mock<DimRuleRepository>()
-        whenever(repo.getRules()).thenReturn(rules)
-        return DimRuleUseCase(repo)
-    }
-
+    /**
+     * Seit #217 liest der Scheduler die Fenster AM TYP. Die Regel-Fixtures dieser Tests werden
+     * deshalb ueber die echte Migration auf Typen mit den Schichtnamen der Fixtures uebersetzt
+     * ([konfigAusRegeln]) - die alten Faelle pruefen so, was nach dem Update am Typ steht.
+     */
     private suspend fun sut(
         prefs: DimOverlayPrefs,
         alarms: Result<List<AlarmInfo>>,
         rules: List<DimRule> = emptyList(),
+        konfig: Result<ShiftConfig> =
+            Result.success(konfigAusRegeln(rules, alarms.getOrNull().orEmpty().map { it.shiftName })),
+        freieTage: FreieTageStore = keineFreienTage(),
+        context: Context = mock(),
+        alarmUseCase: IAlarmUseCase = mock(),
     ): DimScheduleUseCase {
-        val alarmUseCase = mock<IAlarmUseCase>()
         whenever(alarmUseCase.getAllAlarms()).thenReturn(alarms)
         // Seit v1.25.2 speisen sich die Regel-Fenster aus den Schichtspannen statt aus dem
         // Alarm-Bestand (der ueberlebt die Weckzeit nicht). Fuer die Tests werden sie aus
@@ -110,28 +155,135 @@ class DimScheduleUseCaseTest {
                 list.map { ShiftSpan(it.shiftName, it.shiftStartTime, it.shiftEndTime, it.triggerTime) }
             }
         )
-        val context = mock<Context>()
         val notifier = mock<DimCorrectionNotifier>()
         // Master-Pause-Backstop (in applyCurrentState/scheduleNextTransition): fuer die reine
         // Fenster-Vorschau hier immer "nicht pausiert".
         val masterPausePrefs = mock<MasterPausePrefs>()
         whenever(masterPausePrefs.pausedNow()).thenReturn(false)
-        return DimScheduleUseCase(context, alarmUseCase, spanStore, keineFreienTage(), ruleUseCase(rules), prefs, notifier, masterPausePrefs, TageslichtQuelle.OHNE)
+        return DimScheduleUseCase(context, alarmUseCase, spanStore, freieTage, konfigRepo(konfig), prefs, notifier, masterPausePrefs, TageslichtQuelle.OHNE)
+    }
+
+    /**
+     * BEWUSSTE VERHALTENSAENDERUNG (#217, SPEC E7 "kein globaler Hauptschalter"): Hiess bis #217
+     * "previewTimeline ist leer wenn der Dimmer ausgeschaltet ist" und erwartete das Gegenteil.
+     * `dim_enabled` wird nicht mehr gelesen; "aus" steht seit der Migration als `an = false` am
+     * Typ (naechster Test). Ein alter Schalter darf die Fenster am Typ nicht mehr abschalten -
+     * sonst gaebe es zwei Stellen, die "aus" sagen, und eine davon haette keine Oberflaeche mehr.
+     */
+    @Test
+    fun `dim_enabled aus hat keine Wirkung mehr - die Fenster am Typ dimmen`() = runTest {
+        val triggerTime = atDate(today.plusDays(1), 6, 0)
+        mitDimmTick { context, am, pi ->
+            val useCase = sut(
+                mockPrefs(dimEnabled = false),
+                Result.success(listOf(alarm(shiftName = "Fruehschicht", triggerTime = triggerTime))),
+                rules = listOf(nachtRegel()),
+                context = context,
+            )
+
+            assertTrue(
+                "Die Nacht vor der Schicht fehlt - der alte Hauptschalter wirkt noch",
+                useCase.previewTimeline().any { it.range.first == atDate(today, 22, 0) && it.range.last == triggerTime }
+            )
+            useCase.scheduleNextTransition()
+            verify(am, never()).cancel(any<PendingIntent>())
+            verify(am).setExactAndAllowWhileIdle(eq(AlarmManager.RTC_WAKEUP), anyLong(), eq(pi))
+        }
     }
 
     @Test
-    fun `previewTimeline ist leer wenn der Dimmer ausgeschaltet ist`() = runTest {
-        // Uebersetzt aus "alle drei Fenster-Quellen deaktiviert": es gibt nur noch einen Schalter,
-        // und der schaltet die Regeln aus - vorhandene, aktivierte Regeln duerfen dann NICHTS tun.
+    fun `ein Typ mit an = false dimmt nicht`() = runTest {
+        // "Ausgeschaltet bleibt ausgeschaltet" (SPEC 4): die Migration traegt `dim_enabled = false`
+        // als `an = false` an jeden Typ und die feste Zeile - die Fenster bleiben, wirken aber nicht.
         val triggerTime = atDate(today.plusDays(1), 6, 0)
-        val prefs = mockPrefs(dimEnabled = false)
-        val useCase = sut(
-            prefs,
-            Result.success(listOf(alarm(shiftName = "Fruehschicht", triggerTime = triggerTime))),
-            rules = listOf(nachtRegel()),
-        )
+        val alarms = listOf(alarm(shiftName = "Fruehschicht", triggerTime = triggerTime))
+        val preview = sut(
+            mockPrefs(dimEnabled = true),
+            Result.success(alarms),
+            konfig = Result.success(konfigAusRegeln(listOf(nachtRegel()), listOf("Fruehschicht"), dimmenAn = false)),
+        ).previewTimelineWithStatus()
 
-        assertTrue(useCase.previewTimeline().isEmpty())
+        assertTrue(preview.intervals.isEmpty())
+        assertFalse(preview.alarmReadFailed)
+    }
+
+    @Test
+    fun `ohne wirksames Fenster am Typ bestellt sich die Kette ab`() = runTest {
+        mitDimmTick { context, am, pi ->
+            sut(
+                mockPrefs(dimEnabled = true),
+                Result.success(listOf(alarm(shiftName = "Fruehschicht", triggerTime = atDate(today.plusDays(1), 6, 0)))),
+                konfig = Result.success(konfigAusRegeln(emptyList(), listOf("Fruehschicht"))),
+                context = context,
+            ).scheduleNextTransition()
+
+            verify(am).cancel(pi)
+        }
+    }
+
+    @Test
+    fun `unlesbare Konfiguration - kein Fenster, Retry statt Abbestellen, kein weiterer Read`() = runTest {
+        val alarmUseCase = mock<IAlarmUseCase>()
+        mitDimmTick { context, am, pi ->
+            sut(
+                mockPrefs(dimEnabled = true),
+                Result.success(emptyList()),
+                konfig = Result.failure(IllegalStateException("vor der ersten Entsperrung")),
+                context = context,
+                alarmUseCase = alarmUseCase,
+            ).scheduleNextTransition()
+
+            verify(am, never()).cancel(any<PendingIntent>())
+            verify(am).setExactAndAllowWhileIdle(eq(AlarmManager.RTC_WAKEUP), anyLong(), eq(pi))
+        }
+        // Vor der Konfiguration wird kein weiterer Speicher gelesen (CE-Store vor der Entsperrung).
+        verify(alarmUseCase, never()).getAllAlarms()
+    }
+
+    @Test
+    fun `ein freigegebener Tag bekommt die Fenster der festen Zeile statt die des Typs`() = runTest {
+        val tag = today.plusDays(2)
+        val triggerTime = atDate(tag, 5, 30)
+        val konfig = ShiftConfig(
+            definitions = listOf(
+                ShiftDefinition(
+                    id = "f", name = "Fruehschicht", keywords = listOf("F"), alarmTime = LocalTime.of(5, 30),
+                    dimmen = TypDimmen().mitFenster(
+                        listOf(
+                            TypDimmFenster(
+                                DimWindow(startAnchor = DimAnchor.ALARM, startOffsetMinutes = -60, endAnchor = DimAnchor.ALARM),
+                                staerke = 70
+                            )
+                        )
+                    )
+                )
+            ),
+            ohneKalendereintrag = OhneEintragEinstellungen(
+                dimmen = TypDimmen().mitFenster(
+                    listOf(
+                        TypDimmFenster(
+                            DimWindow(
+                                startAnchor = DimAnchor.CLOCK, startClockMinutes = 21 * 60,
+                                endAnchor = DimAnchor.CLOCK, endClockMinutes = 23 * 60
+                            ),
+                            staerke = 30
+                        )
+                    )
+                )
+            )
+        )
+        val alarms = Result.success(listOf(alarm(shiftName = "Fruehschicht", triggerTime = triggerTime)))
+        val typFenster = triggerTime - 60 * 60_000L
+
+        val normal = sut(mockPrefs(dimEnabled = true), alarms, konfig = Result.success(konfig)).previewTimeline()
+        assertTrue("Gegenprobe: ohne Freigabe dimmt der Typ", normal.any { it.range.first == typFenster && it.strength == 70 })
+        assertTrue(normal.none { it.range.first == atDate(tag, 21, 0) })
+
+        val frei = sut(
+            mockPrefs(dimEnabled = true), alarms, konfig = Result.success(konfig), freieTage = freieTageStoreMit(setOf(tag))
+        ).previewTimeline()
+        assertTrue(frei.none { it.range.first == typFenster })
+        assertTrue(frei.any { it.range.first == atDate(tag, 21, 0) && it.range.last == atDate(tag, 23, 0) && it.strength == 30 })
     }
 
     @Test

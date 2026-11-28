@@ -4,6 +4,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.TageslichtQuelle
 import android.content.Context
 import com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPausePrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmInfo
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpanStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.freietage.keineFreienTage
@@ -29,9 +30,27 @@ import org.mockito.kotlin.whenever
  */
 class DimSchedulePreviewStatusTest {
 
-    private suspend fun sut(alarms: Result<List<AlarmInfo>>, dimEnabled: Boolean = true): DimScheduleUseCase {
+    /** Eine Nacht-Regel fuer jeden Tag, ueber die echte Migration an die feste Zeile gebracht (#217). */
+    private val mitFenster: ShiftConfig = konfigAusRegeln(
+        listOf(
+            DimRule(
+                name = "Nacht", shiftPattern = DimRule.SHIFT_UNIVERSAL,
+                windows = listOf(
+                    DimWindow(
+                        startAnchor = DimAnchor.CLOCK, startClockMinutes = 22 * 60,
+                        endAnchor = DimAnchor.ALARM_SONST_CLOCK, endClockMinutes = 7 * 60
+                    )
+                )
+            )
+        ),
+        schichtNamen = emptyList()
+    )
+
+    private suspend fun sut(
+        alarms: Result<List<AlarmInfo>>,
+        konfig: Result<ShiftConfig> = Result.success(mitFenster)
+    ): DimScheduleUseCase {
         val prefs = mock<DimOverlayPrefs>()
-        whenever(prefs.togglesNow()).thenReturn(DimOverlayPrefs.Toggles(dimEnabled = dimEnabled))
         // Suspend-Getter liefern ungestubbt `null` (Mockito-Default ueber Any?).
         whenever(prefs.strengthNow()).thenReturn(55)
         whenever(prefs.warmthNow()).thenReturn(40)
@@ -43,15 +62,13 @@ class DimSchedulePreviewStatusTest {
 
         val spanStore = mock<ShiftSpanStore>()
         whenever(spanStore.spansNow()).thenReturn(Result.success(emptyList()))
-        // Pflicht-Stub: die Regeln sind die einzige Fenster-Quelle und werden immer gelesen.
-        val ruleRepo = mock<DimRuleRepository>()
-        whenever(ruleRepo.getRules()).thenReturn(emptyList())
+        // Seit #217 ist die Konfiguration (Fenster am Typ) die einzige Fenster-Quelle und wird zuerst gelesen.
         return DimScheduleUseCase(
             mock<Context>(),
             alarmUseCase,
             spanStore,
             keineFreienTage(),
-            DimRuleUseCase(ruleRepo),
+            konfigRepo(konfig),
             prefs,
             mock<DimCorrectionNotifier>(),
             masterPausePrefs,
@@ -73,11 +90,26 @@ class DimSchedulePreviewStatusTest {
 
     @Test
     fun `Eine legitim leere Fensterliste ist KEIN Lesefehler`() = runTest {
-        // Dimmer aus: leer, aber fehlerfrei. "Leere Fensterliste" ist bedeutungstragend
-        // (z. B. Nachtdienst-Unterdrueckung) und darf keinen Retry-Tick ausloesen.
-        val preview = sut(Result.success(emptyList()), dimEnabled = false).previewTimelineWithStatus()
+        // Kein Typ hat ein Fenster (seit #217 der Nachfolger von "Dimmer aus"): leer, aber
+        // fehlerfrei. "Leere Fensterliste" ist bedeutungstragend (z. B. Nachtdienst-Unterdrueckung)
+        // und darf keinen Retry-Tick ausloesen.
+        val preview = sut(Result.success(emptyList()), konfig = Result.success(ShiftConfig())).previewTimelineWithStatus()
 
         assertTrue(preview.intervals.isEmpty())
         assertFalse(preview.alarmReadFailed)
+    }
+
+    @Test
+    fun `Eine unlesbare Konfiguration wird als alarmReadFailed gemeldet, nicht als leere Nacht`() = runTest {
+        // #217: Die Fenster liegen am Typ. Ist die Konfiguration nicht lesbar (etwa vor der ersten
+        // Entsperrung), darf das nie zu "kein Typ hat Fenster" werden - dann bestellte sich die
+        // Kette ab, und DND-Modus 1 plante den 6-h-Keep-alive statt des Retrys.
+        val preview = sut(
+            Result.success(emptyList()),
+            konfig = Result.failure(IllegalStateException("vor der ersten Entsperrung"))
+        ).previewTimelineWithStatus()
+
+        assertTrue(preview.intervals.isEmpty())
+        assertTrue(preview.alarmReadFailed)
     }
 }

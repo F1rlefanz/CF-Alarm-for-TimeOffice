@@ -1,5 +1,8 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.typ
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.Blockposition
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimOverlayPrefs
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimWindowResolver
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftKategorie
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.istZeichenmuster
 
@@ -14,7 +17,7 @@ object ShiftDefinitionTexte {
     // aus; ein Text ohne diesen Satz liesse fuerchten, dass auch sie entfallen.
     const val KRANKMELDUNG_HINWEIS =
         "Ein Termin dieses Typs gibt den ganzen Tag frei: kein Wecker aus dem Dienstplan, " +
-            "nachts gilt die Regel für freie Tage. Eigene Wecker bleiben."
+            "nachts gilt, was unter „Ohne Kalendereintrag“ eingestellt ist. Eigene Wecker bleiben."
     const val KRANKMELDUNG_AKTIVIERT_HINWEIS =
         "Aus heißt: wird nicht erkannt – ein Termin dieses Typs gibt dann keinen Tag frei."
     const val KRANKMELDUNG_STATUS = "Krankmeldung – gibt den Tag frei"
@@ -76,7 +79,8 @@ object ShiftDefinitionTexte {
             "CF-Alarm fragt den Kalender dann stündlich ab statt alle 6 Stunden, damit ein " +
             "nachgetragener Dienst noch rechtzeitig einen Wecker bekommt – Google Kalender und " +
             "TimeOffice melden Änderungen nicht von selbst. Außerdem endet „Nicht stören“ an " +
-            "diesen Tagen zur Rufbereitschafts-Uhrzeit (einstellbar unter „Nicht stören“)."
+            "diesen Tagen spätestens zu der Uhrzeit, die bei „Nicht stören“ unter " +
+            "„Endet spätestens um“ steht."
 
     // Umbau E1: die Kurzbeschreibungen der Kategorien (Prototyp, `KAT` in Main.dc.html). Ohne `else`:
     // eine achte Kategorie muss hier bewusst beschrieben werden. Der Name der Kategorie kommt aus
@@ -226,4 +230,142 @@ object ShiftDefinitionTexte {
             "Möglichkeit auf den neuen Namen umgestellt. Klappt das nicht – etwa weil der neue " +
             "Name schon vergeben ist –, sagt die App es dir; dann wählst du die Schicht in der " +
             "betroffenen Regel neu aus."
+}
+
+/**
+ * Nutzertexte der Karte „Bildschirm dimmen“ (#221, Prototyp `zeigeTyp`). „Wann“ samt Erklaerung und „Bis“-Hinweis
+ * stehen an [DimWann]. „Dimmen an diesem Tag“ und seine Hinweise stehen nicht im Prototyp (Festlegung in #221).
+ */
+internal object DimmenTexte {
+    const val TITEL = "Bildschirm dimmen"
+    const val AN_TITEL = "Dimmen an diesem Tag"
+    const val AN_HINWEIS = "Die App dimmt nur in den Fenstern dieses Typs."
+    const val AUS_HINWEIS = "Aus – kein Fenster dieses Typs dimmt."
+    const val KEIN_FENSTER = "An diesen Tagen wird nicht gedimmt."
+    const val WANN = "Wann"
+    const val VON = "Von"
+    const val BIS = "Bis"
+    const val MIT = "Mit %"
+
+    /** Die Grenze steht da, weil das Feld eine groessere Zahl auf sie zuruecksetzt. */
+    val MIT_HINWEIS = "0 bis ${DimOverlayPrefs.STRENGTH_MAX}"
+    const val DIENSTENDE = "Dienstende"
+    const val BEIM_WECKER = "Schon beim Wecker enden"
+    const val BLOCKTAGE = "Gilt an diesen Tagen eines Blocks"
+    const val FENSTER_DAZU = "+ Weiteres Fenster"
+
+    /** Statt „Vom Vorabend …“, wenn „Nacht davor“ mit „Von“ vor „Bis“ am Tag selbst liegt (E14). */
+    const val NACHT_DAVOR_AM_TAG_SELBST =
+        "Am Tag selbst, weil „$VON“ vor „$BIS“ liegt. Liegt die Weckzeit vor „$VON“, entfällt das Fenster."
+    const val NICHT_OHNE_EINTRAG = "An Tagen ohne Kalendereintrag gibt es dieses Fenster nicht."
+
+    fun entfernen(nummer: Int): String = "Fenster $nummer entfernen"
+
+    /** Unter einem Fenster ohne „Wann“ - nur, wo die Zeile „Weitere Optionen“ darunter steht. */
+    const val EIGENE_ZEITEN_HINWEIS = "Start und Ende stellst du unter „${WeitereOptionenTexte.TITEL}“ ein."
+
+    /**
+     * „bis zu“: die Uhrzeit-Grenze und „bis es hell ist“ kuerzen den Nachlauf. Ein Typ ohne Wecker ([weckerAn]
+     * `false`) braucht dafuer einen anderen Wecker im Fenster - dasselbe sagt das Blatt.
+     */
+    fun nachlauf(minuten: Int, weckerAn: Boolean): String {
+        val dauer = "bis zu $minuten ${if (minuten == 1) "Minute" else "Minuten"}"
+        return if (weckerAn) {
+            "Nach dem Wecker dimmt es noch $dauer weiter."
+        } else {
+            "Klingelt in diesem Fenster ein anderer Wecker, dimmt es danach noch $dauer weiter."
+        }
+    }
+
+    /** Der Chip eines Blocktags; `null` = alle. */
+    fun blockTag(position: Blockposition?): String = when (position) {
+        null -> "Alle"
+        Blockposition.ERSTER -> "Erster"
+        Blockposition.MITTLERER -> "Mittlere"
+        Blockposition.LETZTER -> "Letzter"
+        Blockposition.EINZELNER -> "Einzeln"
+    }
+}
+
+/**
+ * Nutzertexte des Blatts „Weitere Optionen“ der Karte „Bildschirm dimmen“ (#224). Aus dem Prototyp (`zeigeDimmen`)
+ * stehen nur Titel, Unterzeile und „Nachlauf bis es hell ist“; die Texte des Anker-Editors und der Beispielzeile
+ * teilt sich das Blatt mit dem Regel-Editor (`R.string.dimmer_*`, `R.string.tageslicht_*`).
+ */
+internal object WeitereOptionenTexte {
+    const val TITEL = "Weitere Optionen"
+    const val UNTERZEILE = "Nachlauf bis es hell ist, Dimmen ein paar Minuten nach dem Wecker"
+
+    /** Das Blatt speichert nicht selbst; [knopf] ist der Knopf der Typ-Seite, der es tut. */
+    fun speicherHinweis(knopf: String): String = "Gespeichert wird erst mit „$knopf“ auf der Typ-Seite."
+
+    const val WAERME_TITEL = "Farbwärme"
+    const val WAERME_WIE_EINSTELLUNGEN = "Wie in den Einstellungen"
+    const val WAERME_EIGENE = "Eigener Wert"
+    fun prozent(wert: Int): String = "$wert %"
+    fun waermeZurzeit(wert: Int): String = "Zurzeit ${prozent(wert)}"
+
+    const val NACH_DEM_WECKER = "Dimmen nach dem Wecker"
+
+    /** Die Grenze steht da, weil das Feld eine groessere Zahl auf sie zuruecksetzt. */
+    val NACH_DEM_WECKER_HINWEIS =
+        "Minuten, 0 bis ${DimWindowResolver.NACHLAUF_MAX_MINUTEN} – höchstens bis zur Uhrzeit, zu der das Fenster " +
+            "spätestens endet. „${NichtStoerenTexte.TITEL}“ endet trotzdem an der Weckzeit."
+
+    const val NACHLAUF_HELL_TITEL = "Nachlauf bis es hell ist"
+
+    /**
+     * Ohne Ort: der Satz des Regel-Editors ([ohneOrtSatz]) und der Weg zum Ort. [kartenTitel] ist die Ueberschrift
+     * der Karte in den Einstellungen (dieselbe String-Ressource, nie ein Abschreiben).
+     */
+    fun ohneOrt(ohneOrtSatz: String, kartenTitel: String): String =
+        "$ohneOrtSatz Den Ort stellst du unter „Einstellungen“ → „$kartenTitel“ ein."
+
+    const val BEIM_WECKER_AUS =
+        "„$NACH_DEM_WECKER“ gibt es, wenn das Fenster schon beim Wecker endet. Schalte dafür auf der Typ-Seite " +
+            "„${DimmenTexte.BEIM_WECKER}“ ein."
+    const val KEIN_NACHLAUF = "Dieses Fenster endet nicht am Wecker – hier gibt es kein „$NACH_DEM_WECKER“."
+    const val OHNE_EIGENEN_WECKER =
+        "Dieser Typ stellt keinen Wecker. Nach dem Wecker dimmt dieses Fenster nur, wenn währenddessen ein anderer " +
+            "Wecker klingelt."
+
+    /** Ueber dem Anker-Editor eines Fensters, das nicht in „Wann“ passt. */
+    const val OHNE_WANN = "Dieses Fenster passt nicht in „${DimmenTexte.WANN}“. Start und Ende stellst du hier ein."
+
+    const val KEIN_FENSTER =
+        "Dieser Typ hat kein Fenster. „$NACH_DEM_WECKER“ gibt es je Fenster – lege auf der Typ-Seite mit " +
+            "„${DimmenTexte.FENSTER_DAZU}“ eines an."
+}
+
+/**
+ * Nutzertexte der Karte „Nicht stören“ (#222, SPEC E7, Prototyp `zeigeTyp`). Titel und Untertitel stehen wie
+ * im Prototyp (Festlegung in #222). Die Texte zum fehlenden Zugriff teilt sich die Karte mit der DND-Seite
+ * (`R.string.dnd_*`); die zwei Saetze, die sagen, dass hier etwas nicht wirkt, stehen nicht im Prototyp.
+ */
+internal object NichtStoerenTexte {
+    const val TITEL = "Nicht stören"
+    const val GEDIMMT_TITEL = "Solange gedimmt wird"
+    const val GEDIMMT_HINWEIS = "In jedem Dimm-Fenster oben – endet mit dem Wecker"
+    const val EINTRAG_TITEL = "Während des Kalendereintrags"
+    const val CUTOFF_TITEL = "Endet spätestens um"
+    const val CUTOFF_HINWEIS = "Damit du für einen Einsatz erreichbar bist."
+
+    /** Unter den Texten zum fehlenden Zugriff: ein Schalter ohne Wirkung steht nicht still an. */
+    const val OHNE_ZUGRIFF = "Bis dahin wirkt nichts auf dieser Karte."
+
+    /** Unter „Solange gedimmt wird“, wenn der Schalter an ist, der Typ aber nie dimmt. */
+    const val GEDIMMT_OHNE_FENSTER =
+        "Dieser Typ hat kein eingeschaltetes Dimm-Fenster – so bewirkt „$GEDIMMT_TITEL“ nichts."
+
+    /**
+     * Der Text unter „Während des Kalendereintrags“ je Kategorie (Prototyp `dndEintragText`); `null` = die
+     * feste Zeile „Ohne Kalendereintrag“. Ohne `else`: eine achte Kategorie muss hier bewusst eingeordnet werden.
+     */
+    fun eintragText(kategorie: ShiftKategorie?): String = when (kategorie) {
+        null -> "Gibt es hier nicht – an diesen Tagen steht nichts im Kalender."
+        ShiftKategorie.DIENST, ShiftKategorie.RUFBEREITSCHAFT, ShiftKategorie.IGNORIEREN ->
+            "Von Beginn bis Ende laut Kalender – z. B. während des Nachtdienstes."
+        ShiftKategorie.FREI, ShiftKategorie.URLAUB, ShiftKategorie.FORTBILDUNG, ShiftKategorie.KRANK ->
+            "Bei ganztägigen Einträgen: den ganzen Tag."
+    }
 }

@@ -1,0 +1,163 @@
+{
+  "formatVersion": 1,
+  "appVersion": "1.56.1",
+  "createdAt": "2026-10-16T08:00:00",
+  "shiftConfig": {
+    "autoAlarmEnabled": true,
+    "definitions": [
+      {
+        "id": "morgendienst",
+        "name": "Morgendienst",
+        "keywords": [
+          "MD",
+          "MDS"
+        ],
+        "alarmTime": "05:45",
+        "isEnabled": true,
+        "isSilent": false,
+        "isOnCall": false,
+        "isSickDay": false
+      },
+      {
+        "id": "mittagsdienst",
+        "name": "Mittagsdienst",
+        "keywords": [
+          "MI",
+          "MIS"
+        ],
+        "alarmTime": "12:15",
+        "isEnabled": true,
+        "isSilent": false,
+        "isOnCall": false,
+        "isSickDay": false
+      },
+      {
+        "id": "nachtschicht",
+        "name": "Nachtschicht",
+        "keywords": [
+          "NW",
+          "NWS"
+        ],
+        "alarmTime": "19:45",
+        "isEnabled": true,
+        "isSilent": false,
+        "isOnCall": false,
+        "isSickDay": false
+      },
+      {
+        "id": "teildienst",
+        "name": "Teildienst",
+        "keywords": [
+          "TD"
+        ],
+        "alarmTime": "14:15",
+        "isEnabled": true,
+        "isSilent": false,
+        "isOnCall": false,
+        "isSickDay": false
+      },
+      {
+        "id": "buerodienst",
+        "name": "Bürodienst",
+        "keywords": [
+          "BD"
+        ],
+        "alarmTime": "07:30",
+        "isEnabled": true,
+        "isSilent": false,
+        "isOnCall": false,
+        "isSickDay": false
+      },
+      {
+        "id": "abrufdienst",
+        "name": "Abrufdienst",
+        "keywords": [
+          "HG"
+        ],
+        "alarmTime": "05:15",
+        "isEnabled": true,
+        "isSilent": true,
+        "isOnCall": true,
+        "isSickDay": false
+      },
+      {
+        "id": "krank",
+        "name": "Krank",
+        "keywords": [
+          "AU"
+        ],
+        "alarmTime": "06:30",
+        "isEnabled": true,
+        "isSilent": false,
+        "isOnCall": false,
+        "isSickDay": true
+      }
+    ]
+  },
+  "settings": {
+    "dim_enabled": {
+      "type": "boolean",
+      "value": "true",
+      "setValue": null
+    },
+    "dim_rules_enabled": {
+      "type": "boolean",
+      "value": "true",
+      "setValue": null
+    },
+    "dim_rules": {
+      "type": "string",
+      "value": "[{\"id\":\"dimrule_vorlage_taeglich\",\"name\":\"Täglich\",\"shiftPattern\":\"__UNIVERSAL__\",\"enabled\":true,\"windows\":[{\"startAnchor\":\"CLOCK\",\"startClockMinutes\":1320,\"startOffsetMinutes\":-120,\"endAnchor\":\"ALARM_SONST_CLOCK\",\"endClockMinutes\":420,\"endOffsetMinutes\":0,\"weckzeitNachlaufMinuten\":20,\"blockPositionen\":[\"ERSTER\",\"MITTLERER\",\"LETZTER\",\"EINZELNER\"]}],\"strength\":67,\"warmth\":0},{\"id\":\"dimrule_vorlage_nacht\",\"name\":\"Nachtdienst-Rhythmus: Nachtschicht\",\"shiftPattern\":\"Nachtschicht\",\"enabled\":true,\"windows\":[{\"startAnchor\":\"SHIFT_END\",\"startClockMinutes\":1200,\"startOffsetMinutes\":0,\"endAnchor\":\"CLOCK\",\"endClockMinutes\":840,\"endOffsetMinutes\":0,\"weckzeitNachlaufMinuten\":0,\"blockPositionen\":[\"ERSTER\",\"MITTLERER\"]},{\"startAnchor\":\"SHIFT_END\",\"startClockMinutes\":1200,\"startOffsetMinutes\":0,\"endAnchor\":\"CLOCK\",\"endClockMinutes\":720,\"endOffsetMinutes\":0,\"weckzeitNachlaufMinuten\":0,\"blockPositionen\":[\"LETZTER\",\"EINZELNER\"]},{\"startAnchor\":\"CLOCK\",\"startClockMinutes\":960,\"startOffsetMinutes\":-120,\"endAnchor\":\"ALARM\",\"endClockMinutes\":360,\"endOffsetMinutes\":0,\"weckzeitNachlaufMinuten\":0,\"blockPositionen\":[\"ERSTER\",\"MITTLERER\",\"LETZTER\",\"EINZELNER\"]}],\"strength\":55,\"warmth\":40}]",
+      "setValue": null
+    },
+    "dim_strength": {
+      "type": "int",
+      "value": "58",
+      "setValue": null
+    },
+    "dim_warmth": {
+      "type": "int",
+      "value": "0",
+      "setValue": null
+    },
+    "dim_night_default_enabled": {
+      "type": "boolean",
+      "value": "false",
+      "setValue": null
+    },
+    "dim_night_default_excluded_shifts": {
+      "type": "stringSet",
+      "value": null,
+      "setValue": [
+        "Nachtschicht"
+      ]
+    },
+    "dnd_during_shift_enabled": {
+      "type": "boolean",
+      "value": "true",
+      "setValue": null
+    },
+    "dnd_follow_dimmer_enabled": {
+      "type": "boolean",
+      "value": "true",
+      "setValue": null
+    },
+    "dnd_shift_excluded_shifts": {
+      "type": "stringSet",
+      "value": null,
+      "setValue": [
+        "Teildienst"
+      ]
+    },
+    "dnd_oncall_cutoff_min": {
+      "type": "int",
+      "value": "330",
+      "setValue": null
+    },
+    "dim_correction_notification_enabled": {
+      "type": "boolean",
+      "value": "true",
+      "setValue": null
+    }
+  }
+}

@@ -21,7 +21,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
@@ -71,6 +73,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.CompactOutlinedB
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.EinordnenDialog
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.EinordnenTexte
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.KnopfZeile
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.typ.DimFensterAbbildung
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.typ.OhneEintragTexte
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.typ.ShiftDefinitionTexte
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.typ.ShiftEditFormular
@@ -139,17 +142,61 @@ internal val SHIFT_RECOGNITION_HINT: String =
 
 /** Texte der Typ-Liste, die ein Test festhaelt (Beschriftungen wortgleich zum Editor). */
 internal object ShiftConfigTexte {
-    /** Nennt auch die Wahl der festen Zeile: [resetToDefaultsPreservingAutoAlarm] setzt sie zurueck. */
+    /**
+     * Nennt auch Dimmen und „Nicht stören“ (liegen seit Etappe 3 am Typ und gehen mit ihm verloren)
+     * sowie die Wahl („wie <Typ>“) und die eigenen Einstellungen der festen Zeile:
+     * [resetToDefaultsPreservingAutoAlarm] setzt beides zurueck (`getDefaultConfig()` kennt keinen Verweis).
+     */
     const val RESET_RUECKFRAGE =
         "Alle Schichtdefinitionen werden durch die Standardwerte ersetzt – eigene Namen, " +
             "Erkennungsmuster, Kategorien, Weckzeiten, die Schalter „Wecker an diesem Tag“ und " +
-            "„Stummer Wecker“ sowie die Wahl bei „Ohne Kalendereintrag“ gehen verloren. Alle " +
+            "„Stummer Wecker“, die Dimm-Fenster und die „Nicht stören“-Schalter der Typen sowie " +
+            "die Wahl und die eigenen Einstellungen bei „Ohne Kalendereintrag“ gehen verloren. Alle " +
             "kommenden Wecker werden mit den Standard-Weckzeiten neu gesetzt. Der Schalter " +
             "„Automatische Alarme“ im Bereich „Wecker“ bleibt dabei unverändert. Das lässt sich " +
             "nicht rückgängig machen."
 
     /** contentDescription des Symbols an einer Zeile mit stummem Wecker. */
     const val STUMM_SYMBOL = "Stummer Wecker – kein Ton, keine Vibration, kein Vollbild"
+}
+
+/**
+ * PURE, TESTBAR: Die Dimm-Kurzform einer Zeile der Schichttypen-Liste (SPEC E9 / 3.1, Prototyp
+ * `zeile`): „dimmt 20:00–Wecker“, „dimmt nach Dienst“, „2 Dimm-Fenster“ oder „Dimmen aus“ - `null`,
+ * wenn die Zeile zum Dimmen nichts sagt.
+ *
+ * Der Wortlaut der Fenster kommt von [DimFensterAbbildung.kurzform] (Paket #215), nicht nachgebaut.
+ * Dazu gelten fuer die LISTE:
+ * - **Ignorieren und Krank: nichts.** Beide haben in Etappe 3 keinen Dimm-Abschnitt; ein Krank-Tag
+ *   rechnet mit der festen Zeile (`TypDimmQuelle.fuerFreienTag`), nicht mit den Fenstern des Typs -
+ *   eine Kurzform an der Zeile wuerde dort etwas zusagen, das nicht gilt.
+ * - **Ausgeschalteter Typ: nichts.** Er wird nicht erkannt, die Statuszeile sagt „kein Dimmer- und
+ *   kein DND-Fenster“; „dimmt …“ daneben widerspraeche ihr.
+ * - **`an = false`: „Dimmen aus“.** Die Fenster bleiben gespeichert, wirken aber nicht
+ *   („Ausgeschaltet bleibt ausgeschaltet“, SPEC 4) - das darf die Zeile sagen.
+ * - **Ohne wirksames Fenster: nichts.** Die Liste ist kein Ort fuer „Nicht dimmen“; das sagt die
+ *   Typ-Seite.
+ */
+internal fun dimmKurzform(definition: ShiftDefinition): String? {
+    if (!definition.isEnabled) return null
+    if (definition.kategorie == ShiftKategorie.IGNORIEREN || definition.kategorie == ShiftKategorie.KRANK) return null
+    if (!definition.dimmen.an) return TypListeTexte.DIMMEN_AUS
+    return DimFensterAbbildung.kurzform(definition.dimmen, definition.weckerAn)
+}
+
+/**
+ * PURE, TESTBAR: Die ganze Kurzform einer Zeile der Schichttypen-Liste - die Statuszeile aus
+ * [kurzform] mit der Dimm-Kurzform ([dimmKurzform]) an der Stelle von „Dimmen: …“. Die Zeile
+ * [SchichttypZeile] ruft genau diese Funktion; ein Test ueber sie faengt eine falsch verdrahtete
+ * (oder doppelte) Dimm-Angabe, die ein Test nur ueber [kurzform] nicht sieht.
+ */
+internal fun listenKurzform(definition: ShiftDefinition, folgen: SchichtFolgen?): String? =
+    kurzform(definition, folgen, dimmKurzform(definition))
+
+/** Texte der Typ-Liste, die nicht schon die Typ-Seite oder ein ViewModel besitzt. */
+internal object TypListeTexte {
+    /** Der Typ hat Dimm-Fenster gespeichert, aber „Dimmen an diesem Tag“ ist aus. */
+    const val DIMMEN_AUS = "Dimmen aus"
 }
 
 /**
@@ -164,13 +211,17 @@ internal object ShiftConfigTexte {
  * Wecker-Tab und bleibt deshalb unangetastet - dieselbe Trennung, die auch die Master-Pause
  * einhaelt (sie ruehrt `autoAlarmEnabled` bewusst nicht an).
  *
+ * Ebenso bleibt die Modell-Stufe ([ShiftConfig.modellStufe], Umbau #213): sie sagt, welche Migration
+ * der Bestand schon hinter sich hat. Fiele sie hier auf 0, liefe die Migration nach dem Zuruecksetzen
+ * erneut und ueberschriebe die Typen aus dem eingefrorenen Altbestand. Beides haelt
+ * [ShiftConfig.aufStandardZurueckgesetzt] zusammen.
+ *
  * Nur wenn noch gar keine Konfiguration geladen ist, gelten die Standardwerte vollstaendig - dann
- * gibt es keinen Nutzerwunsch, der erhalten werden koennte.
+ * gibt es keinen Nutzerwunsch, der erhalten werden koennte (Stufe 0: nichts gespeichert, die
+ * Migration soll laufen).
  */
-internal fun resetToDefaultsPreservingAutoAlarm(current: ShiftConfig?): ShiftConfig {
-    val defaults = ShiftConfig.getDefaultConfig()
-    return current?.let { defaults.copy(autoAlarmEnabled = it.autoAlarmEnabled) } ?: defaults
-}
+internal fun resetToDefaultsPreservingAutoAlarm(current: ShiftConfig?): ShiftConfig =
+    current?.aufStandardZurueckgesetzt() ?: ShiftConfig.getDefaultConfig()
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -461,7 +512,9 @@ fun ShiftConfigScreen(
             onDismissRequest = { showResetConfirmation = false },
             title = { Text("Auf Standardwerte zurücksetzen?") },
             text = {
-                Text(ShiftConfigTexte.RESET_RUECKFRAGE)
+                // Scrollbar: bei 320 dp und Schrift 1,3 passt die Rueckfrage nicht in den Dialog, und das
+                // Ende der Warnung („Das lässt sich nicht rückgängig machen.“) waere sonst abgeschnitten.
+                Text(ShiftConfigTexte.RESET_RUECKFRAGE, modifier = Modifier.verticalScroll(rememberScrollState()))
             },
             confirmButton = {
                 TextButton(
@@ -819,9 +872,10 @@ private fun SchichttypZeile(
                 }
             }
             StatusZeile(definition)
-            // Kurzform (SPEC 3.1): rein lesend, nicht eigens tippbar, keine Warnfarbe - sie
-            // beschreibt die Konfiguration, sie mahnt nicht (#70).
-            kurzform(definition, folgen)?.let { kurz ->
+            // Kurzform (SPEC 3.1): EINE Zeile, rein lesend, nicht eigens tippbar, keine Warnfarbe - sie
+            // beschreibt die Konfiguration, sie mahnt nicht (#70). Die Dimm-Kurzform („dimmt 20:00–Wecker“,
+            // SPEC E9) steht darin, nicht als zweite Dimm-Angabe daneben.
+            listenKurzform(definition, folgen)?.let { kurz ->
                 Text(
                     kurz,
                     style = MaterialTheme.typography.bodySmall,

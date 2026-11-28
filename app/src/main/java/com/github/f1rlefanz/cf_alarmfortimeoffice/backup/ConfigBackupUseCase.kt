@@ -219,6 +219,10 @@ class ConfigBackupUseCase @Inject constructor(
         // geschriebenen Import nicht als gescheitert melden.
         armierer.armiere("IMPORT")
 
+        // REIHENFOLGE IST TRAGEND (#250): Werte schreiben -> Typ-Modellmigration (oben, auch das
+        // Licht) -> Ziel-Abgleich. Der Abgleich schreibt die Lichtregeln AM TYP. Liefe er vor der
+        // Migration, glich er bei einem alten Export (Licht noch im Hue-Store) noch leere Typen ab,
+        // und die Migration kopierte danach die Lampen-ids des Quellgeraets an die Typen.
         val unresolvedHueTargets = reconcileImportedHueTargets()
 
         // HUE-SONNENAUFGANGSPLANUNG NACHZIEHEN (#140). Der Import schreibt zwei ihrer Eingaben:
@@ -241,9 +245,11 @@ class ConfigBackupUseCase @Inject constructor(
     }
 
     /**
-     * Die importierten Hue-Regeln tragen die LAMPEN-IDS DES QUELLGERAETS - bridge-lokale Nummern,
+     * Die importierten Lichtregeln tragen die LAMPEN-IDS DES QUELLGERAETS - bridge-lokale Nummern,
      * die auf einer anderen Bridge ins Leere zeigen. Ist gerade eine Bridge erreichbar, wird das
-     * hier sofort abgeglichen (ueber den gespeicherten Zielnamen) und der Rest gezaehlt.
+     * hier sofort abgeglichen (ueber den gespeicherten Zielnamen) und der Rest gezaehlt. Seit #250
+     * an den Regeln AM TYP (`IHueRuleUseCase.reconcileTargets`); der importierte Altbestand im
+     * Hue-Store bleibt eingefroren, wie er in der Datei stand.
      *
      * ZUGABE, KEIN ERSATZ. Der typische Import laeuft auf einem frisch eingerichteten Geraet, BEVOR
      * die Bridge gekoppelt ist - dann ist hier nichts zu holen, und der eigentliche Abgleich

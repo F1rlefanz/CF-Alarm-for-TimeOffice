@@ -436,7 +436,7 @@ internal fun abgleichZeitText(
  * akzeptiert (im Skill notiert).
  */
 internal const val AUSFALL_TEXT: String =
-    "Kein Wecker aus dem Dienstplan, eigene Wecker bleiben. Nachts gilt die Regel für freie Tage."
+    "Kein Wecker aus dem Dienstplan, eigene Wecker bleiben. Nachts gilt, was unter „Ohne Kalendereintrag“ eingestellt ist."
 
 /**
  * #142: direkt unter "Zurücknehmen", wenn der Block auch Kalender-Tage enthaelt - die nimmt der

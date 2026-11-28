@@ -3,6 +3,8 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.typ
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.SchichttypEinordnen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftKategorie
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.AUSFALL_TEXT
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.wecker.KRANK_KALENDER_ERKLAERUNG
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -272,6 +274,22 @@ class ShiftDefinitionTexteTest {
         assertTrue(text.contains("\"Frühschicht\""))
         assertTrue("Keine unbedingte Zusage", text.contains("nach Möglichkeit"))
         assertTrue(text.contains("Klappt das nicht"))
+    }
+
+    @Test
+    fun `Freigegebene Tage verweisen auf Ohne Kalendereintrag, nicht auf die entfallene Regel fuer freie Tage`() {
+        // Etappe 3 (#226) hat die Dimm-Regel "Freie Tage (keine Schicht)" samt Editor entfernt. An
+        // freigegebenen Tagen gilt seitdem die feste Zeile (TypDimmQuelle.fuerFreienTag ->
+        // festeZeile, DndScheduleUseCase ohneKalendereintrag). Ein Text, der eine "Regel fuer
+        // freie Tage" nennt, schickt den Nutzer zum Frei-Typ - der an diesen Tagen nicht gilt.
+        listOf(
+            ShiftDefinitionTexte.KRANKMELDUNG_HINWEIS,
+            AUSFALL_TEXT,
+            KRANK_KALENDER_ERKLAERUNG,
+        ).forEach { text ->
+            assertFalse("Verweis auf eine Regel, die es nicht mehr gibt: $text", text.contains("Regel für freie Tage"))
+            assertTrue("Nennt nicht, was an dem Tag gilt: $text", text.contains("„Ohne Kalendereintrag“"))
+        }
     }
 }
 

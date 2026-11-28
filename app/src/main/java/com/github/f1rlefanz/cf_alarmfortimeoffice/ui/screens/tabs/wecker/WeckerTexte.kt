@@ -325,7 +325,7 @@ internal const val ZURUECKNEHMEN_ERKLAERUNG_BEIDE: String =
  */
 internal const val KRANK_KALENDER_ERKLAERUNG: String =
     "Laut Kalender krankgemeldet. Für diesen Tag wird kein Wecker aus dem Dienstplan gestellt, " +
-        "nachts gilt die Regel für freie Tage. Eigene Wecker bleiben."
+        "nachts gilt, was unter „Ohne Kalendereintrag“ eingestellt ist. Eigene Wecker bleiben."
 
 /**
  * #142: zweiter Knopf im Bottom-Sheet eines Diensttages neben „Dienst fällt aus“ - oeffnet den

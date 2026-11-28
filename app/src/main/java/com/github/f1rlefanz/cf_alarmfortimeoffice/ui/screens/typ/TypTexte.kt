@@ -17,7 +17,7 @@ object ShiftDefinitionTexte {
     // aus; ein Text ohne diesen Satz liesse fuerchten, dass auch sie entfallen.
     const val KRANKMELDUNG_HINWEIS =
         "Ein Termin dieses Typs gibt den ganzen Tag frei: kein Wecker aus dem Dienstplan, " +
-            "nachts gilt die Regel für freie Tage. Eigene Wecker bleiben."
+            "nachts gilt, was unter „Ohne Kalendereintrag“ eingestellt ist. Eigene Wecker bleiben."
     const val KRANKMELDUNG_AKTIVIERT_HINWEIS =
         "Aus heißt: wird nicht erkannt – ein Termin dieses Typs gibt dann keinen Tag frei."
     const val KRANKMELDUNG_STATUS = "Krankmeldung – gibt den Tag frei"

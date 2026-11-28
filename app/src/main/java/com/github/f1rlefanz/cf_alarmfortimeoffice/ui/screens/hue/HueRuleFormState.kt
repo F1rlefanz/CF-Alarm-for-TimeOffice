@@ -38,10 +38,8 @@ import java.util.Locale
 @Serializable
 internal data class HueRuleFormState(
     val name: String = "",
+    // Nie eine Eingabe: der Editor setzt hier den Namen seines Schichttyps ([amTyp], SPEC E8).
     val shiftPattern: String = "",
-    // Umbau E8 (#252): die id des Typs, an dem der Editor offen ist - dann gibt es keine
-    // Schicht-Auswahl ([amTyp]). `null` = Einstieg im Hue-Bereich.
-    val typId: String? = null,
     val enabled: Boolean = true,
     val modus: HueRuleModus = HueRuleModus.MANUELL,
 
@@ -108,7 +106,7 @@ internal data class SzenenAuswahl(
 )
 
 /** Was am Formular noch fehlt. Reihenfolge = Reihenfolge der Karten im Editor. */
-internal enum class HueRuleFormFehler { NAME_FEHLT, SCHICHT_FEHLT, ZIEL_FEHLT }
+internal enum class HueRuleFormFehler { NAME_FEHLT, ZIEL_FEHLT }
 
 /**
  * Baut aus dem Formularzustand die Regel.
@@ -255,8 +253,6 @@ internal fun HueScheduleRule.toFormState(): HueRuleFormState {
 /** Was noch fehlt, damit gespeichert werden kann. Leer = speicherbar. */
 internal fun HueRuleFormState.validate(): List<HueRuleFormFehler> = buildList {
     if (name.isBlank()) add(HueRuleFormFehler.NAME_FEHLT)
-    // Am Typ (#252) waehlt niemand eine Schicht - sie ist der Typ.
-    if (typId == null && shiftPattern.isBlank()) add(HueRuleFormFehler.SCHICHT_FEHLT)
     if (!hatZiel) add(HueRuleFormFehler.ZIEL_FEHLT)
 }
 
@@ -270,12 +266,12 @@ private const val VORBELEGUNG_SONNENAUFGANG_MINUTEN = 30
 private const val VORBELEGUNG_LICHT_AN = "Licht an zum Wecker"
 
 /**
- * Das Formular, wie der Editor am Typ es liest: die Schicht ist der GESPEICHERTE Name des Typs
+ * Das Formular, wie der Editor es liest: die Schicht ist der GESPEICHERTE Name des Typs
  * [typ] - keine Auswahl und nicht der ungespeicherte Name aus dem Entwurf der Typ-Seite, denn
  * geschrieben wird ueber den Namen (`TypLichtSchreiben.zielTyp`).
  */
 internal fun HueRuleFormState.amTyp(typ: ShiftDefinition): HueRuleFormState =
-    copy(typId = typ.id, shiftPattern = typ.name)
+    copy(shiftPattern = typ.name)
 
 /**
  * Der Anfangsstand des Editors am Typ [typ]. Eine neue Regel ist vorbelegt wie im Prototyp

@@ -75,11 +75,9 @@ class NavigationViewModel @Inject constructor() : ViewModel() {
                 val typId = action.herkunft.definitionId
                 Logger.d(LogTags.NAVIGATION, "Typ-Seite -> Hue Rule Config (typ: $typId, rule: ${action.ruleId})")
                 NavigationState.HueRuleConfig(
+                    zurueckZu = action.herkunft,
                     ruleId = action.ruleId,
-                    returnToTab = action.herkunft.returnToTab,
-                    sitzung = neueSitzung(),
-                    typId = typId,
-                    zurueckZu = action.herkunft
+                    sitzung = neueSitzung()
                 )
             }
 
@@ -102,11 +100,6 @@ class NavigationViewModel @Inject constructor() : ViewModel() {
             is NavigationAction.NavigateToOEMWarning -> {
                 Logger.d(LogTags.NAVIGATION, "Main -> OEM Warning (${action.oemType}, from ${action.fromTab})")
                 NavigationState.OEMWarning(action.oemType, action.fromTab)
-            }
-            
-            is NavigationAction.NavigateToHueRuleConfig -> {
-                Logger.d(LogTags.NAVIGATION, "Main -> Hue Rule Config (from ${action.fromTab}, rule: ${action.ruleId}, viaSettingsList: ${action.cameFromSettingsList})")
-                NavigationState.HueRuleConfig(action.ruleId, action.fromTab, action.cameFromSettingsList, neueSitzung())
             }
             
             is NavigationAction.NavigateToHueSettings -> {
@@ -165,7 +158,7 @@ class NavigationViewModel @Inject constructor() : ViewModel() {
     fun navigateToOhneEintragSeite(fromTab: MainTab = MainTab.SETTINGS) =
         handleNavigationAction(NavigationAction.NavigateToOhneEintragSeite(fromTab))
 
-    /** Regel-Editor fuer den Typ der gerenderten Seite [herkunft] (#252); den Einstieg baut #254. */
+    /** Regel-Editor fuer den Typ der gerenderten Seite [herkunft] (#252) - der einzige Weg in den Editor. */
     fun navigateToTypLichtregel(herkunft: NavigationState.TypSeite, ruleId: String? = null) =
         handleNavigationAction(NavigationAction.NavigateToTypLichtregel(herkunft, ruleId))
 
@@ -182,13 +175,6 @@ class NavigationViewModel @Inject constructor() : ViewModel() {
     fun navigateToTimeOfficeHealthCheck(fromTab: MainTab = MainTab.HOME) =
         handleNavigationAction(NavigationAction.NavigateToTimeOfficeHealthCheck(fromTab))
 
-    fun navigateToHueRuleConfig(
-        ruleId: String? = null,
-        fromTab: MainTab = MainTab.HUE,
-        cameFromSettingsList: Boolean = false
-    ) =
-        handleNavigationAction(NavigationAction.NavigateToHueRuleConfig(ruleId, fromTab, cameFromSettingsList))
-    
     fun navigateToHueSettings(fromTab: MainTab = MainTab.HUE) =
         handleNavigationAction(NavigationAction.NavigateToHueSettings(fromTab))
 
@@ -251,19 +237,11 @@ class NavigationViewModel @Inject constructor() : ViewModel() {
             Logger.d(LogTags.NAVIGATION, "-> Shift Config (${state.returnToTab} tab, aus der Ohne-Kalendereintrag-Seite)")
             return NavigationState.ShiftConfig(state.returnToTab)
         }
-        // Regel-Editor am Typ (#252): zurueck zu genau der Typ-Seite, aus der er kam (samt sitzung -
-        // nur so findet MainScreen deren Entwurf wieder). Vor den Zweigen unten, die nach Liste oder
-        // Tab fragen.
-        if (state is NavigationState.HueRuleConfig && state.zurueckZu != null) {
-            Logger.d(LogTags.NAVIGATION, "-> Typ-Seite (aus dem Regel-Editor am Typ)")
+        // Regel-Editor (#252): zurueck zu genau der Typ-Seite, aus der er kam (samt sitzung - nur so
+        // findet MainScreen deren Entwurf wieder).
+        if (state is NavigationState.HueRuleConfig) {
+            Logger.d(LogTags.NAVIGATION, "-> Typ-Seite (aus dem Regel-Editor)")
             return state.zurueckZu
-        }
-        // HueRuleConfig hat ohne Typ zwei Einstiegspfade (siehe cameFromSettingsList) - ein Zurueck
-        // darf hier NICHT blind zu MainContent aufloesen, sonst ueberspringt der Listen-Pfad
-        // HueSettings.
-        if (state is NavigationState.HueRuleConfig && state.cameFromSettingsList) {
-            Logger.d(LogTags.NAVIGATION, "-> Hue Settings (${state.returnToTab} tab, via settings list)")
-            return NavigationState.HueSettings(state.returnToTab)
         }
         val returnTab = when (state) {
             is NavigationState.CalendarSelection -> state.returnToTab
@@ -273,7 +251,6 @@ class NavigationViewModel @Inject constructor() : ViewModel() {
             is NavigationState.UnusedAppRestrictions -> state.returnToTab
             is NavigationState.TimeOfficeHealthCheck -> state.returnToTab
             is NavigationState.OEMWarning -> state.returnToTab
-            is NavigationState.HueRuleConfig -> state.returnToTab
             is NavigationState.HueSettings -> state.returnToTab
             is NavigationState.DndSettings -> state.returnToTab
             else -> MainTab.HOME

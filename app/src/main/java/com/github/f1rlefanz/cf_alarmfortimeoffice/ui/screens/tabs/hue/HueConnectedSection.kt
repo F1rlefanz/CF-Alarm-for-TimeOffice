@@ -3,13 +3,10 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.hue
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.FlashOn
 import androidx.compose.material.icons.filled.Lightbulb
@@ -51,7 +48,7 @@ internal fun ConnectedManagementCard(
     rulesCount: Int,
     enabledRulesCount: Int,
     lightsCount: Int,
-    onNavigateToRuleConfig: () -> Unit,
+    onShowShiftConfig: () -> Unit,
     onNavigateToSettings: () -> Unit,
     onTestConnection: () -> Unit
 ) {
@@ -117,40 +114,49 @@ internal fun ConnectedManagementCard(
                 )
             }
 
-            // Action Buttons
-            Column(
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                // Primary action - Manage rules
-                Button(
+            // Lichtregeln gibt es nur am Schichttyp (#255) - hier steht der Weg dorthin.
+            LichtregelnWeg(onShowShiftConfig)
+
+            // KnopfZeile statt weight(1f): kuerzte die Beschriftungen bei 320 dp mit Auslassung
+            KnopfZeile(modifier = Modifier.fillMaxWidth()) {
+                CompactOutlinedButton(
                     onClick = onNavigateToSettings,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Settings,
-                        // dekorativ: die Knopfbeschriftung daneben sagt es bereits
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(stringResource(R.string.hue_connected_manage))
-                }
+                    text = stringResource(R.string.hue_connected_bridge_lights),
+                    icon = Icons.Default.Settings
+                )
 
-                // Secondary actions - KnopfZeile statt weight(1f): kuerzte bei 320 dp zu "Neue R…"
-                KnopfZeile(modifier = Modifier.fillMaxWidth()) {
-                    CompactOutlinedButton(
-                        onClick = onNavigateToRuleConfig,
-                        text = stringResource(R.string.hue_settings_new_rule),
-                        icon = Icons.Default.Add
-                    )
-
-                    CompactOutlinedButton(
-                        onClick = onTestConnection,
-                        text = stringResource(R.string.hue_bridge_test),
-                        icon = Icons.Default.FlashOn
-                    )
-                }
+                CompactOutlinedButton(
+                    onClick = onTestConnection,
+                    text = stringResource(R.string.hue_bridge_test),
+                    icon = Icons.Default.FlashOn
+                )
             }
+        }
+    }
+}
+
+/**
+ * Der Weg zu den Lichtregeln (#255, SPEC E8): ein Satz und der Knopf zur Typ-Liste. Eine Stelle fuer
+ * den Hue-Tab (beide Karten) und die Seite „Hue-Einstellungen“ (`HueSettingsScreen`).
+ */
+@Composable
+internal fun LichtregelnWeg(
+    onShowShiftConfig: () -> Unit,
+    textAlign: TextAlign = TextAlign.Start
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Text(
+            text = stringResource(R.string.hue_rules_at_type),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+            textAlign = textAlign,
+            modifier = Modifier.fillMaxWidth()
+        )
+        Button(onClick = onShowShiftConfig, modifier = Modifier.fillMaxWidth()) {
+            Text(stringResource(R.string.hue_rules_open_types))
         }
     }
 }
@@ -189,7 +195,7 @@ internal fun QuickStatItem(
 
 @Composable
 internal fun ConnectedFeaturesCard(
-    onNavigateToRuleConfig: () -> Unit,
+    onShowShiftConfig: () -> Unit,
     onNavigateToSettings: () -> Unit,
     onTestConnection: () -> Unit
 ) {
@@ -252,30 +258,13 @@ internal fun ConnectedFeaturesCard(
                     textAlign = TextAlign.Center
                 )
 
-                // Primary Action - Create Rule
-                Button(
-                    onClick = onNavigateToRuleConfig,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Add,
-                        // dekorativ: die Knopfbeschriftung daneben sagt es bereits
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    // Ohne style-Override: titleMedium (16sp) machte die Beschriftung breiter als
-                    // den Knopf und trieb sie in die zweite Zeile. Die Standard-Button-Typografie
-                    // passt in eine Zeile - und der Knopf ist als einziger ganzbreiter Primär-
-                    // Knopf ohnehin schon deutlich genug hervorgehoben.
-                    Text(stringResource(R.string.hue_setup_done_first_rule))
-                }
+                LichtregelnWeg(onShowShiftConfig, textAlign = TextAlign.Center)
 
                 // Secondary Actions
                 KnopfZeile(modifier = Modifier.fillMaxWidth(), abstand = 12.dp) {
                     CompactOutlinedButton(
                         onClick = onNavigateToSettings,
-                        text = stringResource(R.string.hue_setup_done_settings),
+                        text = stringResource(R.string.hue_connected_bridge_lights),
                         icon = Icons.Default.Settings
                     )
 
@@ -293,20 +282,6 @@ internal fun ConnectedFeaturesCard(
                 }
             }
 
-            // Help Text
-            Card(
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.secondaryContainer
-                )
-            ) {
-                Text(
-                    text = stringResource(R.string.hue_setup_done_tip),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSecondaryContainer,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.padding(16.dp)
-                )
-            }
         }
     }
 }

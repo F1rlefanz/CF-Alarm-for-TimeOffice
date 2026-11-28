@@ -381,8 +381,8 @@ fun MainScreen(
             // Wie "Verstanden" - siehe finishOnboarding.
             is NavigationState.OEMWarning -> finishOnboarding()
 
-            // Alle uebrigen Unterscreens, auch HueRuleConfig mit seinen drei Einstiegspfaden
-            // (cameFromSettingsList, zurueckZu): der Rueckweg ist in navigateBackFrom() EINMAL
+            // Alle uebrigen Unterscreens, auch HueRuleConfig (zurueck zu seiner Typ-Seite):
+            // der Rueckweg ist in navigateBackFrom() EINMAL
             // aufgeloest - dieselbe Aufloesung, die auch Zurueck-Pfeil und Speichern des
             // Regel-Editors unten nehmen. Ebenso OrtFuerTageslicht: zurueck zu zurueckZu (dem
             // genauen Herkunftszustand, beim Editor samt sitzung - das Formular bleibt).
@@ -414,11 +414,11 @@ fun MainScreen(
     LaunchedEffect(navigationState) {
         val vorher = vorherigerZustand
         verworfeneAblagen(vorher, navigationState).forEach { editorFormulare.removeState(it) }
-        // #252: Ein Fehler aus dem Editor am Typ ist erledigt, sobald dieser verlassen ist - sonst
+        // #252: Ein Fehler aus dem Regel-Editor ist erledigt, sobald dieser verlassen ist - sonst
         // staende er beim naechsten Oeffnen und im Hue-Bereich ueber etwas, das niemand mehr sieht.
         // #254: Die Typ-Seite zeigt Hue-Fehler in ihrer Karte „Licht“. Beim Betreten und Verlassen
         // wird geraeumt: dort steht nie ein Fehler von anderswo, und ihr eigener folgt niemandem.
-        if (((vorher as? NavigationState.HueRuleConfig)?.typId != null &&
+        if ((vorher is NavigationState.HueRuleConfig &&
                 verworfenesEditorFormular(vorher, navigationState) != null) ||
             vorher is NavigationState.TypSeite || navigationState is NavigationState.TypSeite
         ) {
@@ -648,11 +648,10 @@ fun MainScreen(
             }
 
             is NavigationState.HueRuleConfig -> {
-                // Zurueck UND Speichern fuehren zum tatsaechlichen Einstiegspunkt (Hue-Tab,
-                // HueSettings oder die Typ-Seite) - aufgeloest in navigateBackFrom(), derselben
-                // Stelle wie der BackHandler oben. Der gerenderte Zustand wird uebergeben. Am Typ
-                // (#252) meldet sich das Speichern erst nach dem Schreiben: navigiert wird nur,
-                // solange der Editor dann noch angezeigt wird.
+                // Zurueck UND Speichern fuehren zur Typ-Seite, aus der der Editor kam - aufgeloest in
+                // navigateBackFrom(), derselben Stelle wie der BackHandler oben. Der gerenderte Zustand
+                // wird uebergeben. Das Speichern meldet sich erst nach dem Schreiben (#252): navigiert
+                // wird nur, solange der Editor dann noch angezeigt wird.
                 editorFormulare.SaveableStateProvider(checkNotNull(state.editorFormularSchluessel())) {
                     com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.HueRuleConfigScreen(
                         ruleId = state.ruleId,
@@ -671,19 +670,8 @@ fun MainScreen(
                 com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.HueSettingsScreen(
                     hueViewModel = hueViewModel,
                     onNavigateBack = { navigationViewModel.navigateBackToMain() },
-                    onEditRule = { ruleId ->
-                        navigationViewModel.navigateToHueRuleConfig(
-                            ruleId = ruleId,
-                            fromTab = state.returnToTab,
-                            cameFromSettingsList = true
-                        )
-                    },
-                    onCreateNewRule = {
-                        navigationViewModel.navigateToHueRuleConfig(
-                            fromTab = state.returnToTab,
-                            cameFromSettingsList = true
-                        )
-                    }
+                    // Zurueck aus der Typ-Liste fuehrt in den Hue-Bereich (#255).
+                    onShowShiftConfig = { navigationViewModel.navigateToShiftConfig(state.returnToTab) }
                 )
             }
 
@@ -730,15 +718,8 @@ fun MainScreen(
                         )
                     },
                     onShowEventList = { navigationViewModel.navigateToEventList(state.selectedTab) },
-                    // Direkter Einstieg vom Hue-Tab (kein HueSettings dazwischen) -
-                    // cameFromSettingsList = false, damit Zurueck/Speichern spaeter wieder
-                    // hierher fuehrt statt auf die nie geoeffnete Regel-Liste.
-                    onShowHueRuleConfig = {
-                        navigationViewModel.navigateToHueRuleConfig(
-                            fromTab = state.selectedTab,
-                            cameFromSettingsList = false
-                        )
-                    },
+                    // Nicht zuordenbares Lampen-Ziel (#255): die Seite des Typs, der die Regel traegt.
+                    onShowTypSeite = { id -> navigationViewModel.navigateToTypSeite(id, state.selectedTab) },
                     onShowHueSettings = { navigationViewModel.navigateToHueSettings() },
                     onShowDndSettings = { navigationViewModel.navigateToDndSettings() },
                     onShowOrtFuerTageslicht = {

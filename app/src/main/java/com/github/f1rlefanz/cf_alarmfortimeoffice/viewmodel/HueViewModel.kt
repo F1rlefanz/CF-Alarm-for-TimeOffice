@@ -9,6 +9,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.DiscoveryStatus
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueBridge
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueSchedule
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.scheduling.HueSmartScheduler
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.TypLichtSchreiben
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.IHueBridgeUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.IHueLightUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.IHueRuleUseCase
@@ -17,6 +18,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.Unresol
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueScheduleRule
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.passtAufSchicht
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmInfo
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.reinerSchichtname
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.ITageslichtRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.TageslichtEinstellungen
@@ -553,14 +555,6 @@ class HueViewModel @Inject constructor(
     fun naechsteWeckzeitFuer(shiftPattern: String): Long? =
         naechsteWeckzeitFuer(weckerFuerTageslicht.value, shiftPattern, System.currentTimeMillis())
     
-    fun createRule(rule: HueSchedule) = regelAktion(
-        eintrittsLog = "Creating new rule: ${rule.name}",
-        erfolgsLog = "Rule created successfully: ${rule.name}",
-        standardFehler = "Die Regel konnte nicht angelegt werden.",
-        fehlerLog = "Rule creation failed",
-        ausnahmeLog = "Rule creation exception"
-    ) { hueRuleUseCase.createRule(rule) }
-
     fun updateRule(rule: HueSchedule) = regelAktion(
         eintrittsLog = "Updating rule: ${rule.id}",
         erfolgsLog = "Rule updated successfully: ${rule.id}",
@@ -578,9 +572,8 @@ class HueViewModel @Inject constructor(
     ) { hueRuleUseCase.deleteRule(ruleId) }
 
     /**
-     * „Speichern“ im Editor am Typ (#252). [nachErfolg] laeuft erst, wenn die Regel geschrieben ist:
-     * die Typ-Seite zeigt keine Hue-Fehler, deshalb bleibt der Editor bei einem Fehlschlag offen und
-     * zeigt ihn. Immer der Upsert [IHueRuleUseCase.updateRule] (neu oder geaendert) - der Editor
+     * „Speichern“ im Regel-Editor (#252). [nachErfolg] laeuft erst, wenn die Regel geschrieben ist:
+     * bei einem Fehlschlag bleibt der Editor offen und zeigt ihn. Immer der Upsert [IHueRuleUseCase.updateRule] (neu oder geaendert) - der Editor
      * haelt eine id je Sitzung, ein zweiter Tipp legt so keine zweite Regel an.
      */
     fun speichereRegelAmTyp(rule: HueSchedule, nachErfolg: () -> Unit) = regelAktion(
@@ -593,8 +586,8 @@ class HueViewModel @Inject constructor(
     ) { hueRuleUseCase.updateRule(rule) }
 
     /**
-     * Gemeinsamer Ablauf von Anlegen, Aendern und Loeschen einer Regel. Im Erfolg werden die
-     * Regelliste und die vorgeplanten Hue-Jobs sofort nachgezogen, danach [nachErfolg]. Eine
+     * Gemeinsamer Ablauf von Speichern, Aendern und Loeschen einer Regel. Im Erfolg werden die
+     * Regeln im Zustand und die vorgeplanten Hue-Jobs sofort nachgezogen, danach [nachErfolg]. Eine
      * Ausnahme zeigt nur [standardFehler]; ihre technische Meldung steht im Log, nicht in der
      * Oberflaeche.
      */
@@ -693,6 +686,29 @@ internal fun naechsteWeckzeitFuer(alarme: List<AlarmInfo>, shiftPattern: String,
         .filter { muster.passtAufSchicht(reinerSchichtname(it.shiftName)) }
         .minOfOrNull { it.triggerTime }
 }
+
+/**
+ * Ein nicht zuordenbares Ziel samt dem Schichttyp, der seine Regel traegt (#255). [typId] und [typName] sind
+ * `null`, wenn die Konfiguration noch nicht gelesen ist oder kein Typ die Regel (mehr) traegt: die Zeile bleibt
+ * dann stehen, nur nicht antippbar - ein Fehlschlag der Bridge darf nicht verschwinden.
+ */
+@Immutable
+data class UnbekanntesZielAmTyp(
+    val ziel: UnresolvedRuleTarget,
+    val typId: String?,
+    val typName: String?
+)
+
+/**
+ * PURE: je Ziel der Typ, ueber die Regel-id - dieselbe Herleitung wie beim Schreiben
+ * ([TypLichtSchreiben.traeger], auch fuer verdeckte gleichnamige Typen). Nie ueber das Schichtmuster der Regel:
+ * am Typ gespeichert hat es keine Bedeutung.
+ */
+fun unbekannteZieleAmTyp(ziele: List<UnresolvedRuleTarget>, config: ShiftConfig?): List<UnbekanntesZielAmTyp> =
+    ziele.map { ziel ->
+        val typ = config?.let { c -> TypLichtSchreiben.traeger(c, ziel.ruleId)?.let { c.definitions[it] } }
+        UnbekanntesZielAmTyp(ziel, typ?.id, typ?.name)
+    }
 
 /**
  * Feste Texte fuer Fehlschlaege, deren Ursache nur technisch ist. Die Ursache (oft eine

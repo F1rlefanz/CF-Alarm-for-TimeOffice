@@ -12,8 +12,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.WbTwilight
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
@@ -32,8 +30,6 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.R
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.HellAb
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.CompactOutlinedButton
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.MIN_TOUCH_TARGET
-import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.wecker.Etikett
-import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.wecker.EtikettTon
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.wecker.InhaltUndBedienung
 
 /**
@@ -118,9 +114,8 @@ private fun SpaetestensBeiHellWahl(
 /**
  * Hue-Regel: nur ausfuehren, wenn es beim Wecken draussen noch dunkel ist (#140).
  *
- * Zeilen-Mechanik wie [com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.cards.ShiftPatternCard]
- * (ganze Zeile als Ziel, 48dp-Klemme). Bewusst NICHT "Sonnenaufgang" als Kartentitel: so heisst
- * schon der Licht-Modus mit der Rampe.
+ * Zeilen-Mechanik: die ganze Zeile ist das Ziel, mit 48dp-Klemme. Bewusst NICHT "Sonnenaufgang" als
+ * Kartentitel: so heisst schon der Licht-Modus mit der Rampe.
  *
  * [ortText] beschreibt die genutzte Ort-Stufe, `null` = kein Ort. [naechster] ist die fertige
  * Urteilszeile fuer den naechsten Wecker.
@@ -208,12 +203,6 @@ fun TageslichtKarte(
             }
         }
     }
-}
-
-/** Etikett an einer Hue-Regel in der Liste, die nur bei Dunkelheit laeuft. */
-@Composable
-fun DunkelheitEtikett() {
-    Etikett(stringResource(R.string.tageslicht_etikett_dunkel), EtikettTon.WIRKUNG, Icons.Default.WbTwilight)
 }
 
 @Composable

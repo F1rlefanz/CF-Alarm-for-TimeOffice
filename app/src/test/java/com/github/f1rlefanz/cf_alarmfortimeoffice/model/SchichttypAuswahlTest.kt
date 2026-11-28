@@ -74,7 +74,7 @@ class SchichttypAuswahlTest {
     }
 
     @Test
-    fun `die gespeicherte Reihenfolge bleibt erhalten und die Namen folgen ihr`() {
+    fun `die gespeicherte Reihenfolge bleibt erhalten`() {
         val liste = listOf(
             typ(ShiftKategorie.FORTBILDUNG), typ(ShiftKategorie.IGNORIEREN),
             typ(ShiftKategorie.DIENST), typ(ShiftKategorie.KRANK), typ(ShiftKategorie.FREI)
@@ -82,7 +82,7 @@ class SchichttypAuswahlTest {
 
         assertEquals(
             listOf("Typ fortbildung", "Typ dienst", "Typ frei"),
-            liste.waehlbareSchichtNamen()
+            liste.waehlbareSchichttypen().map { it.name }
         )
     }
 

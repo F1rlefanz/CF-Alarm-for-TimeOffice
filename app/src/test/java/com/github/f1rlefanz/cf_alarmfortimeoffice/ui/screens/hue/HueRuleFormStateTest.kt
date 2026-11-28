@@ -267,7 +267,6 @@ class HueRuleFormStateTest {
         assertEquals(
             listOf(
                 HueRuleFormFehler.NAME_FEHLT,
-                HueRuleFormFehler.SCHICHT_FEHLT,
                 HueRuleFormFehler.ZIEL_FEHLT
             ),
             HueRuleFormState().validate()
@@ -341,7 +340,6 @@ class HueRuleFormStateTest {
         val zurueck = form.baue().toFormState()
 
         assertEquals(HueRuleUseCase.UNIVERSAL_SHIFT_PATTERN, zurueck.shiftPattern)
-        assertTrue(isUniversalShiftPattern(zurueck.shiftPattern))
     }
 
     // --- Mehrere Szenen ------------------------------------------------------------------------
@@ -427,26 +425,12 @@ class HueRuleFormStateTest {
             .let { it.copy(licht = it.licht.mitRegeln(regeln.toList())) }
 
     @Test
-    fun `Ein Formular mit Typ verlangt keine Schicht`() {
-        val amTyp = HueRuleFormState(typId = "s", name = "A", selectedGroupIds = setOf("1"))
-        assertEquals(emptyList<HueRuleFormFehler>(), amTyp.validate())
-        // Gegenprobe ohne Typ (Einstieg im Hue-Bereich): die Schicht bleibt Pflicht.
-        assertEquals(listOf(HueRuleFormFehler.SCHICHT_FEHLT), amTyp.copy(typId = null).validate())
-        // Name und Ziel bleiben auch am Typ Pflicht.
-        assertEquals(
-            listOf(HueRuleFormFehler.NAME_FEHLT, HueRuleFormFehler.ZIEL_FEHLT),
-            HueRuleFormState(typId = "s").validate()
-        )
-    }
-
-    @Test
     fun `Vorbelegung - die erste Regel am Typ ist der Sonnenaufgang, jede weitere Licht an zum Wecker`() {
         val erste = anfangsFormular(typ("s", "Spätdienst"), neueRegel = true)
         assertEquals("Sonnenaufgang 30 min vor Wecker", erste.name)
         assertEquals(HueRuleModus.SONNENAUFGANG, erste.modus)
         assertEquals(30, erste.sunrise.durationMinutes)
         assertTrue(erste.sunrise.startBeforeAlarm)
-        assertEquals("s", erste.typId)
         assertEquals("Spätdienst", erste.shiftPattern)
         // Nur vorbelegt: ohne Ziel laesst sich noch nichts speichern.
         assertEquals(listOf(HueRuleFormFehler.ZIEL_FEHLT), erste.validate())
@@ -460,7 +444,7 @@ class HueRuleFormStateTest {
 
         // Bearbeiten: keine Vorbelegung, die geladene Regel fuellt das Formular.
         assertEquals(
-            HueRuleFormState(typId = "s", shiftPattern = "Spätdienst"),
+            HueRuleFormState(shiftPattern = "Spätdienst"),
             anfangsFormular(mitRegel, neueRegel = false)
         )
     }
@@ -471,7 +455,6 @@ class HueRuleFormStateTest {
 
         val gelesen = geladen.amTyp(typ("s", "Spätdienst"))
 
-        assertEquals("s", gelesen.typId)
         assertEquals("Spätdienst", gelesen.shiftPattern)
         assertEquals("Spätdienst", gelesen.baue().shiftPattern)
     }

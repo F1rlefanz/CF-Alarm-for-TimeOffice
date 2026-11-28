@@ -1,6 +1,7 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs
 
 import com.github.f1rlefanz.cf_alarmfortimeoffice.R
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -34,6 +35,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.hue.ConnectedF
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.hue.ConnectedManagementCard
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.hue.UnresolvedTargetsCard
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.HueViewModel
+import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.unbekannteZieleAmTyp
 
 /**
  * Aktionen des Hue-Tabs, die den lokalen Netzwerkzugriff brauchen (ACCESS_LOCAL_NETWORK, ab
@@ -53,8 +55,11 @@ internal enum class PendingHueAction { VALIDATE, DISCOVER, PAIR, LIGHT_TEST }
 @Composable
 fun HueTabContent(
     hueViewModel: HueViewModel,
-    onNavigateToRuleConfig: () -> Unit,
+    // Nur zum Zuordnen: welcher Schichttyp traegt die Regel eines unbekannten Ziels (#255).
+    shiftConfig: ShiftConfig?,
+    onShowShiftConfig: () -> Unit,
     onNavigateToSettings: () -> Unit,
+    onTypOeffnen: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     // collectAsStateWithLifecycle, nicht collectAsState: Beide Flows sind reine Anzeige-Zustaende
@@ -103,6 +108,17 @@ fun HueTabContent(
         }
     }
 
+    // Beim Betreten des Bereichs neu lesen (#255): Regeln aendert man am Schichttyp, also ausserhalb
+    // dieses Tabs. Sonst zeigten die Regel-Zahl und die Karte der unbekannten Ziele den Stand von vor
+    // dem Ausflug (der Ziel-Abgleich laeuft nur nach einer Antwort der Bridge).
+    val verbunden = uiState.bridgeConnectionInfo?.isConnected == true
+    LaunchedEffect(verbunden) {
+        if (verbunden) {
+            hueViewModel.refreshRules()
+            hueViewModel.refreshLightTargets()
+        }
+    }
+
     LazyColumn(
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
@@ -127,16 +143,14 @@ fun HueTabContent(
         uiState.bridgeConnectionInfo?.let { connectionInfo ->
             if (connectionInfo.isConnected) {
                 // Regel-Ziele, die auf DIESER Bridge nicht existieren (Konfigurations-Import,
-                // Bridge-Tausch). Der Tab ist der Einstieg in den Hue-Bereich; stuende der Hinweis
-                // nur in der Regel-Liste, muesste der Nutzer erst dorthin finden, um von einem
-                // Problem zu erfahren, das er nicht vermutet. Erscheint nur nach einer echten
-                // Antwort der Bridge.
+                // Bridge-Tausch). Der Tab ist der Einstieg in den Hue-Bereich - ohne den Hinweis hier
+                // erfuehre der Nutzer erst am einzelnen Schichttyp von einem Problem, das er nicht
+                // vermutet. Erscheint nur nach einer echten Antwort der Bridge.
                 if (uiState.unresolvedTargets.isNotEmpty()) {
                     item {
                         UnresolvedTargetsCard(
-                            affectedRules = uiState.unresolvedTargets.map { it.ruleName }.distinct(),
-                            targetCount = uiState.unresolvedTargets.size,
-                            onNavigateToSettings = onNavigateToSettings
+                            ziele = unbekannteZieleAmTyp(uiState.unresolvedTargets, shiftConfig),
+                            onTypOeffnen = onTypOeffnen
                         )
                     }
                 }
@@ -147,7 +161,7 @@ fun HueTabContent(
                             rulesCount = uiState.scheduleRules.size,
                             enabledRulesCount = uiState.scheduleRules.count { it.enabled },
                             lightsCount = uiState.lightTargets.lights.size,
-                            onNavigateToRuleConfig = onNavigateToRuleConfig,
+                            onShowShiftConfig = onShowShiftConfig,
                             onNavigateToSettings = onNavigateToSettings,
                             onTestConnection = { gate(PendingHueAction.LIGHT_TEST) }
                         )
@@ -184,7 +198,7 @@ fun HueTabContent(
                         // If no rules exist and not loading, show success screen for first-time setup
                         item {
                             ConnectedFeaturesCard(
-                                onNavigateToRuleConfig = onNavigateToRuleConfig,
+                                onShowShiftConfig = onShowShiftConfig,
                                 onNavigateToSettings = onNavigateToSettings,
                                 onTestConnection = {
                                     // Meaningful test: flashes the lights + shows a Toast,

@@ -56,37 +56,29 @@ sealed class NavigationState {
     ) : NavigationState()
 
     // Hue-Screens
-    // Drei Einstiegspfade: direkt vom Hue-Tab ("Neue Regel"), ueber HueSettingsScreen (Regel
-    // bearbeiten/anlegen aus der Liste, cameFromSettingsList) und von einer Typ-Seite (zurueckZu,
-    // #252). Zurueck UND Speichern muessen zum jeweils richtigen Ausgangspunkt fuehren - sonst
-    // landet der Direktpfad-Nutzer auf einer Liste, die er nie geoeffnet hat, oder der
-    // Listen-Pfad-Nutzer ueberspringt die Liste beim Zurueckgehen. Ausgewertet wird das an genau
-    // EINER Stelle, NavigationViewModel.navigateBackFrom() - System-Zurueck
-    // (MainScreen-BackHandler), Zurueck-Pfeil und Speichern laufen alle darueber.
+    // Der Regel-Editor oeffnet nur von einer Typ-Seite (#252, #255, SPEC E8): [zurueckZu] ist genau
+    // diese Seite samt sitzung. Dorthin fuehren Zurueck und Speichern, und ihr Entwurf bleibt solange
+    // abgelegt. Gesetzt nur von NavigationAction.NavigateToTypLichtregel. Aufgeloest wird der Rueckweg
+    // an genau EINER Stelle, NavigationViewModel.navigateBackFrom().
     //
     // sitzung (#140): Schluessel des SaveableStateProvider in MainScreen. Jedes frische Oeffnen
     // bekommt vom NavigationViewModel eine neue (frisches Formular); der Umweg ueber
     // OrtFuerTageslicht kehrt mit DERSELBEN zurueck (Eingabe bleibt). Siehe editorFormularSchluessel.
-    //
-    // typId/zurueckZu (#252, SPEC E8): der Editor an EINEM Typ - ohne Schicht-Auswahl, gespeichert
-    // am Typ. zurueckZu ist genau die Typ-Seite, aus der er kam (samt sitzung): dorthin fuehren
-    // Zurueck und Speichern, und ihr Entwurf bleibt solange abgelegt. Beide setzt nur
-    // NavigationAction.NavigateToTypLichtregel; ohne Typ (Hue-Bereich) sind beide null.
     data class HueRuleConfig(
+        val zurueckZu: TypSeite,
         val ruleId: String? = null,
-        val returnToTab: MainTab = MainTab.HUE,
-        val cameFromSettingsList: Boolean = false,
-        val sitzung: Long = 0,
-        val typId: String? = null,
-        val zurueckZu: NavigationState? = null
-    ) : NavigationState()
+        val sitzung: Long = 0
+    ) : NavigationState() {
+        /** Der Typ, an dem die Regel haengt: der der Seite, aus der der Editor kam. */
+        val typId: String get() = zurueckZu.definitionId
+    }
     data class HueSettings(val returnToTab: MainTab = MainTab.HUE) : NavigationState()
 
     // DND-Screen (kein eigener Bottom-Tab, erreichbar ueber Settings)
     data class DndSettings(val returnToTab: MainTab = MainTab.SETTINGS) : NavigationState()
 
     /** Ort fuer Tageslicht - zwei Einstiege (Einstellungen, Hue-Regel-Editor). Der Rueckweg traegt
-     *  den GENAUEN Herkunftszustand statt eines dritten Booleans (siehe cameFromSettingsList): aus
+     *  den GENAUEN Herkunftszustand: aus
      *  dem Editor fuehrt Zurueck in DENSELBEN Editor, samt `sitzung` - nur so findet MainScreen
      *  dessen ungespeichertes Formular wieder. */
     data class OrtFuerTageslicht(
@@ -125,7 +117,7 @@ fun verworfenesEditorFormular(vorher: NavigationState?, jetzt: NavigationState):
  */
 fun NavigationState.typEntwurfSchluessel(): String? = when (this) {
     is NavigationState.TypSeite -> "typ-$sitzung"
-    is NavigationState.HueRuleConfig -> zurueckZu?.typEntwurfSchluessel()
+    is NavigationState.HueRuleConfig -> zurueckZu.typEntwurfSchluessel()
     is NavigationState.OrtFuerTageslicht -> zurueckZu.typEntwurfSchluessel()
     else -> null
 }
@@ -195,11 +187,6 @@ sealed class NavigationAction {
     ) : NavigationAction()
     
     // Hue Navigation Actions
-    data class NavigateToHueRuleConfig(
-        val ruleId: String? = null,
-        val fromTab: MainTab = MainTab.HUE,
-        val cameFromSettingsList: Boolean = false
-    ) : NavigationAction()
     data class NavigateToHueSettings(val fromTab: MainTab = MainTab.HUE) : NavigationAction()
 
     // DND Navigation Action

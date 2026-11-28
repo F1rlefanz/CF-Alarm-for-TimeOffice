@@ -3,6 +3,7 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.model
 import androidx.compose.runtime.Immutable
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimWindow
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndPrefs
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueScheduleRule
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
@@ -14,6 +15,8 @@ import kotlinx.serialization.json.JsonElement
  * Modell des Schichttyps ([ShiftDefinition.dimmen], [ShiftDefinition.nichtStoeren]) und der festen
  * Zeile „Ohne Kalendereintrag“ ([ShiftConfig.ohneKalendereintrag]). Noch liest sie niemand - die
  * Fenster-Quelle des Dimmers bleibt bis zur Migration die Regelliste (`DimRuleRepository`).
+ * Etappe 4 (#246, SPEC E8) ergaenzt das Licht ([ShiftDefinition.licht], [TypLicht]); auch das liest
+ * noch niemand, die Hue-Regeln bleiben bis zur Licht-Migration die Quelle.
  *
  * Jedes Feld hat einen Default: ein Bestand von vor dem Umbau liest sich damit unveraendert, und
  * eine aeltere App ueberliest die Schluessel (`ignoreUnknownKeys`), Test: TypEinstellungenModellTest.
@@ -73,7 +76,7 @@ data class TypDimmen(
      * angehaengt erhalten (siehe Klasse) - sie gehoeren einer anderen Version, nicht diesem Editor.
      */
     fun mitFenster(neu: List<TypDimmFenster>): TypDimmen = copy(
-        fensterGespeichert = neu.map { FENSTER_JSON.encodeToJsonElement(TypDimmFenster.serializer(), it) } +
+        fensterGespeichert = neu.map { TYP_JSON.encodeToJsonElement(TypDimmFenster.serializer(), it) } +
             fensterGespeichert.filter { deuteFenster(it) == null }
     )
 }
@@ -113,17 +116,71 @@ data class OhneEintragEinstellungen(
     val nichtStoerenSolangeGedimmt: Boolean = false
 )
 
+/**
+ * „Licht (Hue)“ eines Typs (E8, #246): die Lichtregeln, die mit dem Wecker dieses Typs starten.
+ *
+ * DAS REGELFORMAT IST [HueScheduleRule] (Aktionen, Szene, Sonnenaufgang, `hellAb`, `ausBeiHell`) -
+ * es gibt keine zweite Regel-Klasse (Festlegung des Betreuers in #246). Zwei Felder der Regel haben
+ * am Typ KEINE Bedeutung und werden hier wortgleich gespeichert, aber nie gelesen:
+ * - `shiftPattern`: welcher Typ gemeint ist, sagt der Ort der Regel. Wer sie ausfuehrt, setzt den
+ *   Typnamen ein. Deshalb braucht das Feld auch keinen Eintrag im Umbenennungs-Nachzug.
+ * - `id` hat den Uhrzeit-Default `HueScheduleRule.generateId()`: eine gespeicherte Regel OHNE `id`
+ *   (Fremdbestand) bekommt bei jedem Lesen eine neue. [mitRegeln] schreibt die `id` immer mit
+ *   (`encodeDefaults`), danach ist sie fest. Bewusst hingenommen, keine undeutbare Regel.
+ *
+ * WARUM ROH GESPEICHERT ([regelnGespeichert], gedeutet in [regeln]) - dasselbe Muster wie
+ * [TypDimmen]: die Regel traegt kotlinx-Enums (`TargetType`, `ActionType`, `HellAb`), und
+ * `ShiftConfigRepository.json` hat kein `coerceInputValues`. Ein unbekannter Wert (spaetere Version,
+ * dann Revert; `ZONE`/`ROOM` gab es bis #19) machte sonst die GANZE Schicht-Konfiguration `Broken`
+ * und mit ihr den Wecker-Abgleich. Hier bleibt eine undeutbare Regel wortgleich gespeichert und
+ * laeuft nur nicht; JEDES Zurueckschreiben - auch [mitRegeln] - nimmt sie mit. Leser nehmen [regeln],
+ * Schreiber [mitRegeln], nie `copy(regelnGespeichert = ...)`.
+ */
+@Immutable
+@Serializable
+data class TypLicht(
+    @SerialName("regeln")
+    private val regelnGespeichert: List<JsonElement> = emptyList()
+) {
+    /** Die deutbaren Regeln in gespeicherter Reihenfolge; eine undeutbare fehlt hier (siehe Klasse). */
+    @Transient
+    val regeln: List<HueScheduleRule> = regelnGespeichert.mapNotNull(::deuteRegel)
+
+    /** Wie viele gespeicherte Regeln diese Version nicht deuten kann - fuer die Diagnose des Lesers. */
+    val unlesbareRegeln: Int get() = regelnGespeichert.size - regeln.size
+
+    /**
+     * Dasselbe Licht mit den Regeln [neu]. Undeutbare gespeicherte Regeln bleiben angehaengt erhalten
+     * (siehe Klasse) - sie gehoeren einer anderen Version, nicht diesem Editor.
+     */
+    fun mitRegeln(neu: List<HueScheduleRule>): TypLicht = copy(
+        regelnGespeichert = neu.map { TYP_JSON.encodeToJsonElement(HueScheduleRule.serializer(), it) } +
+            regelnGespeichert.filter { deuteRegel(it) == null }
+    )
+}
+
 private const val LETZTE_MINUTE_DES_TAGES = 24 * 60 - 1
 
-/** Json-Flags wie `ShiftConfigRepository.json`; Enums bleiben STRENG, das Fangen macht [deuteFenster]. */
-private val FENSTER_JSON = Json {
+/**
+ * Json-Flags wie `ShiftConfigRepository.json`; Enums bleiben STRENG, das Fangen machen [deuteFenster]
+ * und [deuteRegel].
+ */
+private val TYP_JSON = Json {
     ignoreUnknownKeys = true
     encodeDefaults = true
 }
 
 /** `null`, wenn diese Version das Fenster nicht lesen kann (unbekannter Enum-Wert, falscher Typ). */
 private fun deuteFenster(roh: JsonElement): TypDimmFenster? = try {
-    FENSTER_JSON.decodeFromJsonElement(TypDimmFenster.serializer(), roh)
+    TYP_JSON.decodeFromJsonElement(TypDimmFenster.serializer(), roh)
+} catch (_: IllegalArgumentException) {
+    // SerializationException ist eine IllegalArgumentException.
+    null
+}
+
+/** `null`, wenn diese Version die Lichtregel nicht lesen kann (unbekannter Enum-Wert, fehlendes Feld). */
+private fun deuteRegel(roh: JsonElement): HueScheduleRule? = try {
+    TYP_JSON.decodeFromJsonElement(HueScheduleRule.serializer(), roh)
 } catch (_: IllegalArgumentException) {
     // SerializationException ist eine IllegalArgumentException.
     null

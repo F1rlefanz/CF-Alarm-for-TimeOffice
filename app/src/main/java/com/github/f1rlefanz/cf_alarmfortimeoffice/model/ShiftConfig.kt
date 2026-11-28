@@ -20,7 +20,8 @@ data class ShiftConfig(
     /**
      * Umbau E6/E7 (#213): die EIGENEN Einstellungen der festen Zeile (Dimmen, „Solange gedimmt
      * wird“). Aus demselben Grund wie [ohneKalendereintragWie] ein Feld hier und nie ein Eintrag in
-     * [definitions]. Noch liest sie niemand.
+     * [definitions]. Noch liest sie niemand. Licht gibt es hier bewusst NICHT (#246, SPEC E8): Licht
+     * startet mit dem Wecker, und ein Tag ohne Eintrag hat keine eigene Weckzeit.
      */
     val ohneKalendereintrag: OhneEintragEinstellungen = OhneEintragEinstellungen(),
     /**
@@ -34,15 +35,26 @@ data class ShiftConfig(
      * [aufStandardZurueckgesetzt]) - sonst liefe die Migration erneut und ueberschriebe spaetere
      * Aenderungen aus dem eingefrorenen Altbestand.
      */
-    val modellStufe: Int = 0
+    val modellStufe: Int = 0,
+    /**
+     * Umbau Etappe 4 (#246): welche Licht-Migration (Hue-Regeln an die Typen, [ShiftDefinition.licht])
+     * diese Konfiguration schon hinter sich hat (0 = keine). Derselbe Gedanke wie [modellStufe], aber
+     * bewusst ein EIGENER Marker und nicht `modellStufe = 2`: die Version vor #246 (1.59.0) kennt
+     * [modellStufe] und schreibt sie beim Speichern zurueck, die Regeln am Typ dagegen nicht. Nach
+     * einem Revert waeren die Regeln weg, die Stufe stuende noch, und die Licht-Migration liefe nie
+     * wieder. [lichtStufe] kennt 1.59.0 nicht - sie geht ZUSAMMEN mit den Regeln verloren (ABLAUF 7,
+     * SPEC 4; Test `AltDecoderKompatibilitaetTest`). Neu gebaute Konfigurationen uebernehmen sie wie
+     * [modellStufe] (siehe [aufStandardZurueckgesetzt]).
+     */
+    val lichtStufe: Int = 0
 ) {
     /**
      * „Auf Standardwerte zuruecksetzen“: die Typen und die feste Zeile gehen auf [getDefaultConfig],
      * es BLEIBEN [autoAlarmEnabled] (eine bewusste Pause gehoert dem Wecker-Tab, Hergang an
-     * `resetToDefaultsPreservingAutoAlarm`) und [modellStufe] (siehe dort).
+     * `resetToDefaultsPreservingAutoAlarm`), [modellStufe] und [lichtStufe] (siehe dort).
      */
     fun aufStandardZurueckgesetzt(): ShiftConfig =
-        getDefaultConfig().copy(autoAlarmEnabled = autoAlarmEnabled, modellStufe = modellStufe)
+        getDefaultConfig().copy(autoAlarmEnabled = autoAlarmEnabled, modellStufe = modellStufe, lichtStufe = lichtStufe)
 
     /**
      * Der Typ, auf den „Ohne Kalendereintrag“ verweist, oder `null` fuer „eigene Einstellungen“.

@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
@@ -91,6 +93,13 @@ internal object TypSeiteTexte {
     const val VERWERFEN_HUE_TEXT =
         "Deine Änderungen an diesem Typ sind noch nicht gespeichert. Öffnest du den Bereich „Philips Hue“, gehen " +
             "sie verloren. Der gespeicherte Typ und seine Wecker bleiben, wie sie sind."
+
+    /** Lichtregeln gehoeren nicht zum Entwurf: wer „Verwerfen“ tippt, bekommt ein geschaltetes Licht nicht zurueck. */
+    const val LICHT_SCHON_GESPEICHERT = "Änderungen an Lichtregeln sind schon gespeichert und bleiben."
+
+    /** [text] der Rueckfrage, bei einem Typ mit Lichtregeln mit dem Satz [LICHT_SCHON_GESPEICHERT]. */
+    fun mitLichtHinweis(text: String, hatLichtregeln: Boolean): String =
+        if (hatLichtregeln) "$text $LICHT_SCHON_GESPEICHERT" else text
 
     /**
      * Was Zurueck ohne „Erstellen“ bedeutet; bei einem Fund-Code sagt der Satz, wo der Code bleibt.
@@ -736,17 +745,20 @@ private fun TypSeiteFormular(
             onDismissRequest = { rueckfrageOffen = false },
             title = { Text(if (neu) TypSeiteTexte.NEUER_TYP_VERWERFEN_TITEL else TypSeiteTexte.VERWERFEN_TITEL) },
             text = {
+                val frage = when {
+                    neu -> TypSeiteTexte.neuerTypVerwerfenText(
+                        fundCode,
+                        zurWoche = rueckfrageZiel == VerlassenNach.WOCHE,
+                        zurHue = rueckfrageZiel == VerlassenNach.HUE
+                    )
+                    rueckfrageZiel == VerlassenNach.WOCHE -> TypSeiteTexte.VERWERFEN_WOCHE_TEXT
+                    rueckfrageZiel == VerlassenNach.HUE -> TypSeiteTexte.VERWERFEN_HUE_TEXT
+                    else -> TypSeiteTexte.VERWERFEN_TEXT
+                }
+                // Scrollbar: bei 320 dp mit Schrift 1,3 ist der Satz hoch.
                 Text(
-                    when {
-                        neu -> TypSeiteTexte.neuerTypVerwerfenText(
-                            fundCode,
-                            zurWoche = rueckfrageZiel == VerlassenNach.WOCHE,
-                            zurHue = rueckfrageZiel == VerlassenNach.HUE
-                        )
-                        rueckfrageZiel == VerlassenNach.WOCHE -> TypSeiteTexte.VERWERFEN_WOCHE_TEXT
-                        rueckfrageZiel == VerlassenNach.HUE -> TypSeiteTexte.VERWERFEN_HUE_TEXT
-                        else -> TypSeiteTexte.VERWERFEN_TEXT
-                    }
+                    TypSeiteTexte.mitLichtHinweis(frage, lichtKarte.zeilen.isNotEmpty()),
+                    modifier = Modifier.verticalScroll(rememberScrollState())
                 )
             },
             confirmButton = {

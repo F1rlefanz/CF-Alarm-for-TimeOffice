@@ -435,5 +435,6 @@ internal object LichtTexte {
             "sich nicht rückgängig machen."
 
     fun entfernenBeschreibung(name: String): String = "Lichtregel „$name“ entfernen"
-    fun schalterBeschreibung(name: String): String = "Lichtregel „$name“ eingeschaltet"
+    /** Ohne Zustandswort: „an“ oder „aus“ sagt der Schalter selbst (TalkBack). */
+    fun schalterBeschreibung(name: String): String = "Lichtregel „$name“"
 }

@@ -16,6 +16,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -333,7 +334,12 @@ private fun RegelZeile(
                 enabled = zeile.bedienbar,
                 modifier = Modifier.semantics { contentDescription = LichtTexte.schalterBeschreibung(regel.name) }
             )
-            IconButton(onClick = { onEntfernen(regel) }, enabled = zeile.entfernbar) {
+            // Gedaempft wie im Prototyp; gesperrt faerbt Material selbst blasser.
+            IconButton(
+                onClick = { onEntfernen(regel) },
+                enabled = zeile.entfernbar,
+                colors = IconButtonDefaults.iconButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant)
+            ) {
                 Icon(Icons.Default.Close, contentDescription = LichtTexte.entfernenBeschreibung(regel.name))
             }
         }

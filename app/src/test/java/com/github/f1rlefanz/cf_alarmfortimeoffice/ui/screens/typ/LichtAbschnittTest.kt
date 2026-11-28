@@ -280,6 +280,21 @@ class LichtAbschnittTest {
     }
 
     @Test
+    fun `Verwerfen sagt bei einem Typ mit Lichtregeln, dass Licht schon gespeichert ist`() {
+        val mit = TypSeiteTexte.mitLichtHinweis(TypSeiteTexte.VERWERFEN_TEXT, hatLichtregeln = true)
+
+        assertEquals(
+            "${TypSeiteTexte.VERWERFEN_TEXT} Änderungen an Lichtregeln sind schon gespeichert und bleiben.", mit
+        )
+        assertEquals(
+            TypSeiteTexte.VERWERFEN_TEXT,
+            TypSeiteTexte.mitLichtHinweis(TypSeiteTexte.VERWERFEN_TEXT, hatLichtregeln = false)
+        )
+        // TalkBack: der Name des Schalters behauptet keinen Zustand.
+        assertEquals("Lichtregel „Bad“", LichtTexte.schalterBeschreibung("Bad"))
+    }
+
+    @Test
     fun `Unterzeile nennt Ziele und Modus, der Ziel-Hinweis steht nur an der betroffenen Regel`() {
         val sonnenaufgang = regel(
             "s", aktionen = listOf(aktion("1", "Bad", gruppe = true), aktion("2", "Flur"), aktion("3", "Flur"))

@@ -11,6 +11,8 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.RuleExe
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.TargetReconcileResult
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.RuleValidationResult
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.util.HueConstants
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
+import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IShiftConfigRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftMatch
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.HellAb
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.TageslichtQuelle
@@ -45,7 +47,14 @@ class HueRuleUseCase @Inject constructor(
      * bindet die Schicht-Konfiguration (`HueModule`); der Kotlin-Default scheitert bei jedem Lauf
      * und meldet nie „keine Regeln“ - ein Test, der ihn vergisst, sieht einen Fehlschlag.
      */
-    private val typLicht: TypLichtQuelle.Leser = TypLichtQuelle.Leser.NICHT_VERBUNDEN
+    private val typLicht: TypLichtQuelle.Leser = TypLichtQuelle.Leser.NICHT_VERBUNDEN,
+    /**
+     * Wohin [createRule], [updateRule], [deleteRule] und [reconcileTargets] schreiben (#250): an
+     * den Typ, in EINER Transaktion ([IShiftConfigRepository.updateShiftConfig]). Hilt bindet das
+     * Repository direkt; `null` (Kotlin-Default fuer Tests) laesst jeden Schreibvorgang scheitern,
+     * statt still in den Altbestand zu schreiben.
+     */
+    private val schichtKonfiguration: IShiftConfigRepository? = null
 ) : IHueRuleUseCase {
 
     /**
@@ -174,9 +183,9 @@ class HueRuleUseCase @Inject constructor(
      * eigenen Cache: eine geaenderte Regel wirkt beim naechsten Lauf.
      *
      * STRIKT: eine unlesbare Schicht-Konfiguration ist ein Fehlschlag, nie eine leere Liste, und es
-     * gibt keinen Rueckfall auf den Altbestand im Hue-Store (Festlegung #249). Geschrieben wird bis
-     * #250 weiter dort ([createRule], [updateRule], [deleteRule], [reconcileTargets],
-     * [renameShiftPattern]) - bewusst, die Etappe geht nur als Ganzes nach `main`.
+     * gibt keinen Rueckfall auf den Altbestand im Hue-Store (Festlegung #249). Geschrieben wird seit
+     * #250 ebenfalls am Typ ([createRule], [updateRule], [deleteRule], [reconcileTargets]); den
+     * Altbestand schreibt nur noch [renameShiftPattern].
      */
     override suspend fun getAllRules(): Result<List<HueSchedule>> {
         return try {
@@ -203,48 +212,70 @@ class HueRuleUseCase @Inject constructor(
         }
     }
     
+    /**
+     * Legt die Regel am Typ `rule.shiftPattern` an (#250). Doppelte id, Hoechstzahl je Typ
+     * ([MAX_RULES_PER_SHIFT] zaehlt die Regeln DES TYPS), unbekannter Typ und „Alle Schichten“
+     * werden in der Transaktion geprueft ([TypLichtSchreiben.neueRegel]).
+     *
+     * Ein Wecker-Abgleich ist nicht noetig (Licht aendert keinen Wecker); den Vorab-Sonnenaufgang
+     * plant der Aufrufer nach jedem Erfolg neu (`HueViewModel.regelAktion`), wie vor #250.
+     */
     override suspend fun createRule(rule: HueSchedule): Result<HueSchedule> {
         Logger.i(LogTags.HUE_USECASE, "Creating new schedule rule: ${rule.name}")
-        
+
         return try {
             requireValidRule(rule).onFailure { return Result.failure(it) }
 
-            val existingRules = configRepository.getScheduleRules().getOrNull() ?: emptyList()
-            if (existingRules.any { it.id == rule.id }) {
-                Logger.w(LogTags.HUE_USECASE, "Rule with ID ${rule.id} already exists")
-                return Result.failure(IllegalArgumentException("Diese Regel gibt es bereits."))
-            }
-            
-            val shiftRuleCount = existingRules.count { it.shiftPattern == rule.shiftPattern }
-            if (shiftRuleCount >= MAX_RULES_PER_SHIFT) {
-                Logger.w(LogTags.HUE_USECASE, "Maximum rules per shift exceeded for ${rule.shiftPattern}")
-                return Result.failure(
-                    IllegalArgumentException("Für ein Schichtmuster sind höchstens $MAX_RULES_PER_SHIFT Regeln möglich.")
-                )
-            }
-            
-            val ruleToSave = if (rule.id.isBlank()) {
-                rule.copy(id = generateRuleId())
-            } else {
-                rule
-            }
-            
-            val saveResult = configRepository.saveScheduleRule(ruleToSave)
-            
-            if (saveResult.isSuccess) {
-                Logger.i(LogTags.HUE_USECASE, "Successfully created rule: ${ruleToSave.id}")
-                Result.success(ruleToSave)
-            } else {
-                Logger.w(LogTags.HUE_USECASE, "Failed to save rule: ${ruleToSave.id}", saveResult.exceptionOrNull())
-                Result.failure(saveResult.exceptionOrNull() ?: Exception("Die Regel konnte nicht gespeichert werden."))
-            }
-            
+            val ruleToSave = if (rule.id.isBlank()) rule.copy(id = generateRuleId()) else rule
+            amTyp("Anlegen ${ruleToSave.id}") { TypLichtSchreiben.neueRegel(it, ruleToSave, MAX_RULES_PER_SHIFT) }
+                .map {
+                    Logger.i(LogTags.HUE_USECASE, "Successfully created rule: ${ruleToSave.id}")
+                    ruleToSave
+                }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Logger.e(LogTags.HUE_USECASE, "Failed to create rule", e)
             Result.failure(Exception("Die Regel konnte nicht angelegt werden.", e))
         }
     }
-    
+
+    /**
+     * Fuehrt eine Aenderung am Licht der Typen in EINER Transaktion aus (#250). Eine Ablehnung
+     * ([TypLichtSchreiben.Ausgang.Abgelehnt]) schreibt nichts und kommt als
+     * [IllegalArgumentException] mit dem Grund zurueck; ein Speicherfehler als Fehlschlag.
+     *
+     * @return die geschriebene bzw. entfernte Regel (`null` = Loeschen einer unbekannten id).
+     */
+    private suspend fun amTyp(
+        was: String,
+        aenderung: (ShiftConfig) -> TypLichtSchreiben.Ausgang
+    ): Result<HueSchedule?> {
+        val speicher = schichtKonfiguration
+            ?: return Result.failure(IllegalStateException("Keine Schicht-Konfiguration fuer die Lichtregeln verbunden"))
+        var ausgang: TypLichtSchreiben.Ausgang? = null
+        val write = speicher.updateShiftConfig { config ->
+            when (val a = aenderung(config).also { ausgang = it }) {
+                is TypLichtSchreiben.Ausgang.Geschrieben -> a.config
+                is TypLichtSchreiben.Ausgang.Abgelehnt -> config
+            }
+        }
+        write.exceptionOrNull()?.let { error ->
+            if (error is CancellationException) throw error
+            // WARN+ landet im Release-Log: eine nicht gespeicherte Regel ist Licht, das fehlt.
+            Logger.w(LogTags.HUE_USECASE, "Lichtregel am Typ nicht geschrieben ($was) - Konfiguration unveraendert", error)
+            return Result.failure(error)
+        }
+        return when (val a = ausgang) {
+            is TypLichtSchreiben.Ausgang.Geschrieben -> Result.success(a.regel)
+            is TypLichtSchreiben.Ausgang.Abgelehnt -> {
+                Logger.w(LogTags.HUE_USECASE, "Lichtregel abgelehnt ($was): ${a.grund}")
+                Result.failure(IllegalArgumentException(a.grund))
+            }
+            null -> Result.failure(IllegalStateException("Lichtregel: Transaktion ohne Ergebnis ($was)"))
+        }
+    }
+
     override suspend fun findApplicableRules(
         shift: ShiftMatch,
         currentTime: LocalTime,
@@ -498,48 +529,54 @@ class HueRuleUseCase @Inject constructor(
         }
     }
     
+    /**
+     * Ersetzt die Regel mit dieser id an ihrem Typ (#250, [TypLichtSchreiben.geaenderteRegel]):
+     * nennt `rule.shiftPattern` einen anderen Typ, zieht sie dorthin um; eine unbekannte id wird
+     * angelegt (bisher ein Upsert). Neuplanung wie bei [createRule].
+     */
     override suspend fun updateRule(rule: HueSchedule): Result<HueSchedule> {
         Logger.i(LogTags.HUE_USECASE, "Updating schedule rule: ${rule.id}")
-        
+
         return try {
             requireValidRule(rule).onFailure { return Result.failure(it) }
 
-            val updateResult = configRepository.updateScheduleRule(rule)
-            
-            if (updateResult.isSuccess) {
-                Logger.i(LogTags.HUE_USECASE, "Successfully updated rule: ${rule.id}")
-                Result.success(rule)
-            } else {
-                Logger.w(LogTags.HUE_USECASE, "Failed to update rule: ${rule.id}", updateResult.exceptionOrNull())
-                Result.failure(updateResult.exceptionOrNull() ?: Exception("Die Regel konnte nicht geändert werden."))
-            }
-            
+            amTyp("Aendern ${rule.id}") { TypLichtSchreiben.geaenderteRegel(it, rule, MAX_RULES_PER_SHIFT) }
+                .map {
+                    Logger.i(LogTags.HUE_USECASE, "Successfully updated rule: ${rule.id}")
+                    rule
+                }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Logger.e(LogTags.HUE_USECASE, "Failed to update rule", e)
             Result.failure(e)
         }
     }
-    
+
+    /**
+     * Entfernt GENAU EINE Regel mit dieser id an genau einem Typ (#250,
+     * [TypLichtSchreiben.ohneRegel]) - auch bei den Kopien einer frueher allgemeinen Regel trifft
+     * es nur die eine. Eine unbekannte id ist wie bisher kein Fehler.
+     */
     override suspend fun deleteRule(ruleId: String): Result<Unit> {
         Logger.i(LogTags.HUE_USECASE, "Deleting schedule rule: $ruleId")
-        
+
         return try {
-            val deleteResult = configRepository.deleteScheduleRule(ruleId)
-            
-            if (deleteResult.isSuccess) {
-                Logger.i(LogTags.HUE_USECASE, "Successfully deleted rule: $ruleId")
-            } else {
-                Logger.w(LogTags.HUE_USECASE, "Failed to delete rule: $ruleId", deleteResult.exceptionOrNull())
+            amTyp("Loeschen $ruleId") { TypLichtSchreiben.ohneRegel(it, ruleId) }.map { entfernt ->
+                if (entfernt != null) {
+                    Logger.i(LogTags.HUE_USECASE, "Successfully deleted rule: $ruleId")
+                } else {
+                    Logger.w(LogTags.HUE_USECASE, "Schedule rule not found for deletion: $ruleId")
+                }
             }
-            
-            deleteResult
-            
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Logger.e(LogTags.HUE_USECASE, "Failed to delete rule", e)
             Result.failure(e)
         }
     }
-    
+
     override suspend fun getRule(ruleId: String): Result<HueSchedule> {
         return try {
             val allRules = getAllRules().getOrElse { return Result.failure(it) }
@@ -774,18 +811,23 @@ class HueRuleUseCase @Inject constructor(
      * mit Android-Backup). Rechenweg und Haltung stecken vollstaendig in [HueTargetReconciler];
      * hier liegen nur Transaktion und Protokoll.
      *
-     * Der Abgleich laeuft INNERHALB der Schreib-Transaktion auf dem frisch gelesenen Bestand -
-     * eine gleichzeitige Nutzer-Aenderung geht dadurch nicht verloren (siehe
-     * [IHueConfigRepository.updateScheduleRules]).
+     * Seit #250 AM TYP ([TypLichtSchreiben.abgleichen]); der Altbestand im Hue-Store wird nicht mehr
+     * abgeglichen (eingefroren, SPEC 4). Der Abgleich laeuft INNERHALB der Schreib-Transaktion auf
+     * dem frisch gelesenen Bestand ([IShiftConfigRepository.updateShiftConfig]) - eine
+     * gleichzeitige Aenderung (Lichtregel gespeichert) geht dadurch nicht verloren; stimmt alles
+     * schon, wird nicht geschrieben.
      */
     override suspend fun reconcileTargets(targets: LightTargets): Result<TargetReconcileResult> {
-        var outcome: HueTargetReconciler.Outcome? = null
+        val speicher = schichtKonfiguration
+            ?: return Result.failure(IllegalStateException("Keine Schicht-Konfiguration fuer die Lichtregeln verbunden"))
+        var outcome: TypLichtSchreiben.Abgleich? = null
 
-        val write = configRepository.updateScheduleRules { current ->
-            HueTargetReconciler.reconcile(current, targets).also { outcome = it }.rules
+        val write = speicher.updateShiftConfig { config ->
+            TypLichtSchreiben.abgleichen(config, targets).also { outcome = it }.config
         }
 
         write.exceptionOrNull()?.let { error ->
+            if (error is CancellationException) throw error
             Logger.w(LogTags.HUE_USECASE, "Ziel-Abgleich nicht moeglich - Regeln bleiben unveraendert", error)
             return Result.failure(error)
         }
@@ -882,8 +924,9 @@ class HueRuleUseCase @Inject constructor(
         // Erfolg sagt nur "geschrieben". Bleibt danach noch ein Altname stehen, hat der Nachzug
         // nicht gegriffen, und die Umbenennung darf sich nicht als vollständig ausgeben.
         // Geprueft wird der ALTBESTAND, den dieser Nachzug schreibt - nicht [getAllRules]: das liest
-        // seit #249 die Regeln am Typ, deren Muster immer der aktuelle Typname ist (#250 stellt
-        // auch das Schreiben um).
+        // seit #249 die Regeln am Typ, deren Muster immer der aktuelle Typname ist. Die Regeln am
+        // Typ brauchen keinen Nachzug (#250: der Name kommt vom Typ); dieser haelt den Altbestand
+        // stimmig, damit ein Revert die Namen passend findet.
         val nachher = configRepository.getScheduleRules().getOrElse { error ->
             Logger.e(
                 LogTags.HUE_USECASE,

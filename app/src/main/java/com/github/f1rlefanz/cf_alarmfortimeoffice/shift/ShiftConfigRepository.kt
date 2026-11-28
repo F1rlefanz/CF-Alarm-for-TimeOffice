@@ -92,13 +92,23 @@ internal fun decodeShiftConfig(
 
 /**
  * Verwaltet Schicht-Konfigurationen mit DataStore Preferences und einem 30-s-Cache.
+ *
+ * Der interne Konstruktor nimmt Speicher und Entsperr-Abfrage herein, damit die Transaktion
+ * ([updateShiftConfig]) gegen einen echten Datei-DataStore auf der JVM testbar ist (#250); Hilt
+ * nimmt den Konstruktor mit dem `Context`.
  */
 @Singleton
-class ShiftConfigRepository @Inject constructor(
-    @param:ApplicationContext private val context: Context
+class ShiftConfigRepository internal constructor(
+    private val dataStore: DataStore<Preferences>,
+    private val entsperrt: () -> Boolean
 ) : IShiftConfigRepository {
 
-    private val dataStore = context.shiftDataStore
+    @Inject
+    constructor(@ApplicationContext context: Context) : this(
+        context.shiftDataStore,
+        { NutzerEntsperrung.istEntsperrt(context, LogTags.SHIFT_CONFIG) }
+    )
+
     private val shiftConfigKey = stringPreferencesKey("shift_config")
 
     /**
@@ -109,7 +119,7 @@ class ShiftConfigRepository @Inject constructor(
      * Konfiguration dauerhaft als unlesbar melden.
      */
     private val userUnlocked: Boolean
-        get() = NutzerEntsperrung.istEntsperrt(context, LogTags.SHIFT_CONFIG)
+        get() = entsperrt()
 
     /** Sicherung der rohen, nicht dekodierbaren Konfiguration - siehe [backupBrokenConfig]. */
     private val brokenConfigKey = stringPreferencesKey(BROKEN_CONFIG_KEY_NAME)
@@ -123,7 +133,32 @@ class ShiftConfigRepository @Inject constructor(
     private var cachedConfig: ShiftConfig? = null
     @Volatile
     private var cacheTimestamp: Long = 0L
-    
+
+    /**
+     * Zaehlt erfolgreiche Schreibvorgaenge; zusammen mit [cacheLock] die Reihenfolge-Wache des
+     * Caches (#250). Ein Schreiber VERWIRFT den Cache, statt ihn zu setzen: zwei Schreiber, die ihn
+     * nach ihrem `edit` setzten, koennten ihn in falscher Reihenfolge auf den aelteren Stand drehen,
+     * und das naechste Lesen-Kopieren-Speichern (`ShiftUseCase`) schriebe den zurueck - der
+     * Ziel-Abgleich waere verloren. Ein frischer Read cacht nur, wenn seit seinem Beginn niemand
+     * geschrieben hat.
+     */
+    private var schreibVersion = 0L
+    private val cacheLock = Any()
+
+    private fun verwirfCacheNachSchreiben() = synchronized(cacheLock) {
+        schreibVersion++
+        cachedConfig = null
+    }
+
+    private fun cacheVomRead(config: ShiftConfig, versionBeimLesen: Long, zeit: Long) = synchronized(cacheLock) {
+        if (schreibVersion == versionBeimLesen) {
+            cachedConfig = config
+            cacheTimestamp = zeit
+        }
+    }
+
+    private fun aktuelleSchreibVersion(): Long = synchronized(cacheLock) { schreibVersion }
+
     private companion object {
         const val CACHE_VALIDITY_MS = 30000L // 30 seconds cache validity
         const val BROKEN_CONFIG_KEY_NAME = "shift_config_broken"
@@ -180,12 +215,9 @@ class ShiftConfigRepository @Inject constructor(
     override val shiftConfig: Flow<ShiftConfig> = dataStore.data
         .map { preferences ->
             when (val decoded = decodeShiftConfig(json, preferences[shiftConfigKey], userUnlocked)) {
-                is ShiftConfigDecodeResult.Ok -> {
-                    // Update cache when config flows change
-                    cachedConfig = decoded.config
-                    cacheTimestamp = System.currentTimeMillis()
-                    decoded.config
-                }
+                // Der Anzeige-Flow setzt den Cache NICHT (#250): eine Emission kann einen Stand
+                // tragen, den ein Schreibvorgang schon abgeloest hat - siehe [schreibVersion].
+                is ShiftConfigDecodeResult.Ok -> decoded.config
 
                 is ShiftConfigDecodeResult.Broken -> {
                     Logger.e(
@@ -197,12 +229,7 @@ class ShiftConfigRepository @Inject constructor(
                     ShiftConfig.getDefaultConfig()
                 }
 
-                ShiftConfigDecodeResult.NotConfigured -> {
-                    val defaultConfig = ShiftConfig.getDefaultConfig()
-                    cachedConfig = defaultConfig
-                    cacheTimestamp = System.currentTimeMillis()
-                    defaultConfig
-                }
+                ShiftConfigDecodeResult.NotConfigured -> ShiftConfig.getDefaultConfig()
 
                 ShiftConfigDecodeResult.LockedStorage -> {
                     // Wie im Broken-Zweig: die ANZEIGE darf degradieren, der CACHE nicht. Ein
@@ -249,12 +276,80 @@ class ShiftConfigRepository @Inject constructor(
             dataStore.edit { preferences ->
                 preferences[shiftConfigKey] = jsonString
             }
-            
-            cachedConfig = config
-            cacheTimestamp = System.currentTimeMillis()
-            
-            Logger.d(LogTags.SHIFT_CONFIG, "✅ SINGLETON-SAVE: Shift config saved with ${config.definitions.size} definitions and cache updated")
+
+            verwirfCacheNachSchreiben()
+
+            Logger.d(LogTags.SHIFT_CONFIG, "✅ SINGLETON-SAVE: Shift config saved with ${config.definitions.size} definitions, cache verworfen")
         }
+
+    /**
+     * Die Transform-Schreibstelle (#250), siehe [IShiftConfigRepository.updateShiftConfig].
+     *
+     * - Das Entsperr-Tor steht VOR `edit`, denn `edit` liest zuerst - und ein CE-Read vor der
+     *   ersten Entsperrung liefert still leer und vergiftet den Store fuer den Prozess.
+     * - Dekodiert wird STRIKT aus den Preferences der Transaktion, nicht aus dem Cache. `Broken`
+     *   wirft ohne zu schreiben; die Rohdaten sichert [backupBrokenConfig] erst NACH der
+     *   Transaktion (ein `edit` im `edit` desselben Stores ginge nicht).
+     * - Gleiches Ergebnis = kein Schreibvorgang: der Ziel-Abgleich laeuft bei jedem
+     *   Bridge-Kontakt, und jeder Write emittiert auf [shiftConfig].
+     */
+    override suspend fun updateShiftConfig(
+        transform: suspend (ShiftConfig) -> ShiftConfig
+    ): Result<ShiftConfig> = SafeExecutor.safeExecute("ShiftConfigRepository.updateShiftConfig") {
+        if (!userUnlocked) {
+            throw AppError.DataStoreError(
+                message = "Schicht-Konfiguration vor der ersten Entsperrung nicht aenderbar " +
+                    "(CREDENTIAL-ENCRYPTED Storage) - es wird NICHTS geschrieben"
+            )
+        }
+        var defekt: ShiftConfigDecodeResult.Broken? = null
+        var ergebnis: ShiftConfig? = null
+        var geschrieben = false
+        try {
+            dataStore.edit { preferences ->
+                ergebnis = null
+                geschrieben = false
+                val vorher = when (val decoded = decodeShiftConfig(json, preferences[shiftConfigKey], userUnlocked)) {
+                    is ShiftConfigDecodeResult.Ok -> decoded.config
+                    ShiftConfigDecodeResult.NotConfigured -> ShiftConfig.getDefaultConfig()
+                    is ShiftConfigDecodeResult.Broken -> {
+                        defekt = decoded
+                        throw AppError.DataStoreError(
+                            message = "Schicht-Konfiguration ist nicht lesbar - es wird NICHTS geschrieben " +
+                                "(Sicherung unter '$BROKEN_CONFIG_KEY_NAME')",
+                            cause = decoded.cause
+                        )
+                    }
+                    ShiftConfigDecodeResult.LockedStorage -> throw AppError.DataStoreError(
+                        message = "Schicht-Konfiguration vor der ersten Entsperrung nicht aenderbar " +
+                            "(CREDENTIAL-ENCRYPTED Storage) - es wird NICHTS geschrieben"
+                    )
+                }
+                val nachher = transform(vorher)
+                if (nachher != vorher) {
+                    preferences[shiftConfigKey] = try {
+                        json.encodeToString(nachher)
+                    } catch (e: SerializationException) {
+                        throw AppError.DataStoreError(
+                            message = "Fehler beim Serialisieren der Schicht-Konfiguration",
+                            cause = e
+                        )
+                    }
+                    geschrieben = true
+                }
+                ergebnis = nachher
+            }
+        } finally {
+            defekt?.let { backupBrokenConfig(it.raw) }
+        }
+        if (geschrieben) verwirfCacheNachSchreiben()
+        Logger.d(
+            LogTags.SHIFT_CONFIG,
+            if (geschrieben) "✅ Schicht-Konfiguration in einer Transaktion geaendert, cache verworfen"
+            else "Schicht-Konfiguration: Transaktion ohne Aenderung, nichts geschrieben"
+        )
+        checkNotNull(ergebnis) { "Transaktion ohne Ergebnis" }
+    }
 
     override suspend fun getCurrentShiftConfig(): Result<ShiftConfig> = 
         SafeExecutor.safeExecute("ShiftConfigRepository.getCurrentShiftConfig") {
@@ -286,6 +381,7 @@ class ShiftConfigRepository @Inject constructor(
                 )
             }
 
+            val versionBeimLesen = aktuelleSchreibVersion()
             val preferences = dataStore.data.first()
             val config = when (val decoded = decodeShiftConfig(json, preferences[shiftConfigKey], userUnlocked)) {
                 is ShiftConfigDecodeResult.Ok -> decoded.config
@@ -314,10 +410,9 @@ class ShiftConfigRepository @Inject constructor(
                 )
             }
 
-            cachedConfig = config
-            cacheTimestamp = currentTime
+            cacheVomRead(config, versionBeimLesen, currentTime)
 
-            Logger.d(LogTags.SHIFT_CONFIG, "✅ SINGLETON-FRESH-LOAD: Config loaded with ${config.definitions.size} definitions and cached")
+            Logger.d(LogTags.SHIFT_CONFIG, "✅ SINGLETON-FRESH-LOAD: Config loaded with ${config.definitions.size} definitions")
             config
         }
 }

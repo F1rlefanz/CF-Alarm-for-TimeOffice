@@ -9,10 +9,25 @@ import kotlinx.coroutines.flow.Flow
 interface IHueConfigRepository {
     
     /**
-     * Get configuration as Flow for reactive updates
+     * Get configuration as Flow for reactive updates.
+     *
+     * DEGRADIERT BEWUSST: ein Lesefehler wird zur leeren Konfiguration („nicht eingerichtet“). Das ist
+     * die Richtung der Laufzeit. Wer ANZEIGT, ob eine Bridge eingerichtet ist, nimmt
+     * [bridgeEingerichtetOderFehler].
      */
     fun getConfiguration(): Flow<HueConfiguration>
-    
+
+    /**
+     * Ob eine Bridge eingerichtet ist (IP UND Benutzer gespeichert, wie
+     * [HueConfiguration.isConfigured]) - die STRIKTE Lese-Stelle fuer Anzeigen (#210, #253): ein
+     * Lesefehler ist ein Fehlschlag, nie „nicht eingerichtet“.
+     *
+     * Der Rumpf scheitert absichtlich (Muster `IShiftConfigRepository.updateShiftConfig`): Test-Fakes
+     * kompilieren weiter, und eine vergessene Umsetzung meldet nie „keine Bridge“.
+     */
+    suspend fun bridgeEingerichtetOderFehler(): Result<Boolean> =
+        Result.failure(UnsupportedOperationException("Keine strikte Lese-Stelle fuer die Bridge-Einrichtung"))
+
     /**
      * Save bridge connection details
      */

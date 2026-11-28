@@ -19,9 +19,9 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.TypDimmQuelle
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.ZeitkettenArmierer
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.error.ErrorHandler
-import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueSchedule
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.repository.interfaces.IHueConfigRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.HueRuleUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.TypLichtQuelle
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.CalendarEvent
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.OhneEintragEinstellungen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.OhneEintragWahl
@@ -280,10 +280,11 @@ class ShiftViewModel @Inject constructor(
      */
     private val dimOverlayPrefs: dagger.Lazy<DimOverlayPrefs>,
     /**
-     * Nur LESEND, fuer die Statuszeile [schichtFolgen] (Licht) und [tagesleisteQuellen]: Hue-Regeln und ob
-     * eine Bridge eingerichtet ist. BEWUSST das Repository und NICHT `hueRuleUseCase.get()`: das Repository
-     * liest nur den `@HueDataStore`, der Use-Case dagegen baut den Lampen- und HTTP-Graphen
-     * (OkHttp) - fuer eine Anzeige, die keine Bridge braucht.
+     * Nur LESEND, fuer die Statuszeile [schichtFolgen] (Licht) und [tagesleisteQuellen]: ob eine Bridge
+     * eingerichtet ist ([bridgeEingerichtet]). Die Lichtregeln liegen seit #253 am Typ. BEWUSST das
+     * Repository und NICHT `hueRuleUseCase.get()`: das Repository liest nur den `@HueDataStore`, der
+     * Use-Case dagegen baut den Lampen- und HTTP-Graphen (OkHttp) - fuer eine Anzeige, die keine Bridge
+     * braucht.
      */
     private val hueConfigRepository: dagger.Lazy<IHueConfigRepository>,
     /**
@@ -315,23 +316,25 @@ class ShiftViewModel @Inject constructor(
      * `ShiftDefinition.id`; eine DEAKTIVIERTE Definition fehlt bewusst (ihre Karte sagt schon
      * "kein Dimmer- und kein DND-Fenster", "Dimmen: 2 Fenster" widerspraeche dem).
      *
-     * Dimmen und "Nicht stoeren" liest die Zeile seit #219 am TYP (`ShiftDefinition.dimmen` /
-     * `.nichtStoeren`) - dieselbe Konfiguration, aus der die Liste ohnehin besteht, also ohne eigenen
-     * Lesefehler. Nur Hue braucht noch einen Store.
+     * Dimmen, "Nicht stoeren" (seit #219) und die Lichtregeln (seit #253, [TypLichtQuelle], wie zur
+     * Laufzeit) liest die Zeile am TYP - aus derselben Konfiguration, aus der die Liste ohnehin besteht,
+     * also ohne eigenen Lesefehler. Nur "Bridge eingerichtet" braucht noch einen Store.
      *
      * GELESEN WIRD NUR BEIM ABO (`WhileSubscribed`), nichts beim Bauen: die Hue-Quelle steckt in
      * einem `flow {}`, das sein `dagger.Lazy` erst beim Sammeln anfasst. Dieses ViewModel entsteht
      * beim App-Start, und ein frueher CE-Store-Read waere genau der fremde Leser, vor dem
      * CLAUDE.md ("Persistenz") warnt.
      *
-     * Lesefehler: Hue liefert ein `Result`; ein Fehlschlag wird "nicht lesbar".
+     * Lesefehler: "Bridge eingerichtet" ist ein `Result` ([bridgeEingerichtet]); ein Fehlschlag wird
+     * "nicht lesbar", nie "keine Bridge" (#210).
      *
      * MUSS VOR dem `init{}`-Block stehen (wie [selfWrittenConfig]) und nach [_uiState].
      */
     val schichtFolgen: StateFlow<Map<String, SchichtFolgen>> = combine(
         _uiState.map { it.currentShiftConfig }.distinctUntilChanged(),
-        hueStand()
-    ) { config, hue ->
+        bridgeEingerichtet()
+    ) { config, bridge ->
+        val lichtRegeln = Result.success(config?.let { TypLichtQuelle(it).regeln }.orEmpty())
         config?.definitions.orEmpty()
             // #142: ein Krankmeldungs-Typ stellt nie einen Wecker und spannt keine Schicht auf -
             // DND-, Dimm- oder Licht-Aussagen ueber ihn waeren erfunden. Die Karte zeigt
@@ -340,8 +343,8 @@ class ShiftViewModel @Inject constructor(
             .associate { definition ->
                 definition.id to ermittleSchichtFolgen(
                     definition = definition,
-                    hueRegeln = hue.regeln,
-                    hueKonfiguriert = hue.konfiguriert
+                    hueRegeln = lichtRegeln,
+                    hueKonfiguriert = bridge.getOrNull()
                 )
             }
     }
@@ -372,8 +375,8 @@ class ShiftViewModel @Inject constructor(
 
     /**
      * Alles, was die Tagesleiste der Typ-Seite aus dem Bestand braucht (Umbau #196, SPEC 3.3 Punkt 3):
-     * die Schicht-Konfiguration (Dimmen und "Nicht stoeren" liegen seit #219 am Typ), Hue-Regeln samt
-     * "Bridge eingerichtet", die Schichtspannen und der Tageslicht-Stand.
+     * die Schicht-Konfiguration (Dimmen und "Nicht stoeren" liegen seit #219 am Typ, die Lichtregeln seit
+     * #253), "Bridge eingerichtet", die Schichtspannen und der Tageslicht-Stand.
      *
      * DIESELBEN Stores und DASSELBE Abo wie [schichtFolgen]: gelesen wird erst beim Sammeln
      * (`WhileSubscribed`), nichts beim Bauen - die Quellen stecken in kalten `flow {}`.
@@ -385,18 +388,19 @@ class ShiftViewModel @Inject constructor(
      * KEIN Fang, der alles auf "leer" setzt.
      *
      * Dimmen und "Nicht stoeren" kommen seit #219 aus der Konfiguration ([typenQuelle], ein `Result`):
-     * scheitert der Read, stehen beide Spuren auf "unbekannt" (#210). Offen bleibt der Hue-Teil von #210
-     * ("Bridge eingerichtet") - Etappe 4.
+     * scheitert der Read, stehen beide Spuren auf "unbekannt" (#210). Das Licht haengt seit #253 an
+     * derselben Konfiguration UND an "Bridge eingerichtet" ([bridgeQuelle], strikt): scheitert einer der
+     * beiden Reads, steht seine Spur auf "unbekannt" ([lichtQuelle]).
      *
      * MUSS VOR dem `init{}`-Block stehen (wie [schichtFolgen]).
      */
     val tagesleisteQuellen: StateFlow<TagesleisteQuellen?> = combine(
         typenQuelle().fehlerAlsUnbekannt("Typ-Einstellungen"),
-        lichtQuelle().fehlerAlsUnbekannt("Hue-Regeln"),
+        bridgeQuelle().fehlerAlsUnbekannt("Bridge-Einrichtung"),
         spannenQuelle().fehlerAlsUnbekannt("Schichtspannen"),
         tageslichtStand()
-    ) { typen, licht, spannen, tageslicht ->
-        TagesleisteQuellen(typen, licht, spannen, tageslicht)
+    ) { typen, bridge, spannen, tageslicht ->
+        TagesleisteQuellen(typen, lichtQuelle(typen, bridge), spannen, tageslicht)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     /**
@@ -1208,32 +1212,25 @@ class ShiftViewModel @Inject constructor(
         }
     }
 
-    // --- Quellen der Statuszeile [schichtFolgen] ---
+    // --- Quelle der Statuszeile [schichtFolgen] und der Tagesleiste ---
     //
-    // Jede Quelle ist ein kaltes `flow {}`: das `dagger.Lazy` wird erst beim SAMMELN angefasst,
-    // also erst, wenn der ShiftConfigScreen die Zeile abonniert - nie beim Bauen des ViewModels.
-
-    private class HueStand(val konfiguriert: Boolean, val regeln: Result<List<HueSchedule>>)
+    // Ein kaltes `flow {}`: das `dagger.Lazy` wird erst beim SAMMELN angefasst, also erst, wenn der
+    // ShiftConfigScreen oder die Typ-Seite abonniert - nie beim Bauen des ViewModels.
 
     /**
-     * Bridge-Konfiguration + Regeln. Fuer die Regeln gibt es keinen Flow; sie liegen aber im
-     * SELBEN `@HueDataStore` wie die Konfiguration, und `getConfiguration()` emittiert bei jeder
-     * Aenderung dieses Stores (dort steht kein `distinctUntilChanged`) - eine gespeicherte oder
-     * nachgezogene Regel liest sich damit von selbst neu ein, ohne Ausloeser vom Screen.
+     * "Bridge eingerichtet" aus dem `@HueDataStore`, STRIKT (#210, #253). `getConfiguration()` ist nur der
+     * AUSLOESER: er emittiert bei jeder Aenderung dieses Stores, degradiert bei einem Lesefehler aber auf
+     * "nicht eingerichtet" und taugt deshalb nicht als Wert. Der Wert kommt aus der strikten Lese-Stelle.
      */
-    private fun hueStand(): Flow<HueStand> = flow {
+    private fun bridgeEingerichtet(): Flow<Result<Boolean>> = flow {
         val repo = hueConfigRepository.get()
-        emitAll(
-            repo.getConfiguration().map { config ->
-                HueStand(config.isConfigured, repo.getScheduleRules())
-            }
-        )
+        emitAll(repo.getConfiguration().map { repo.bridgeEingerichtetOderFehler() })
     }
 
     // --- Quellen der Tagesleiste [tagesleisteQuellen] ---
     //
-    // Dieselben kalten Flows wie oben (Dimmer, Hue), dazu "Nicht stoeren" mit dem Ruf-Cutoff und die
-    // Spannen. Jede Quelle fuehrt ihren Lesefehler selbst als [Quelle.Unbekannt] - siehe dort.
+    // Die Konfiguration (Typ-Einstellungen), "Bridge eingerichtet" und die Spannen. Jede Quelle fuehrt
+    // ihren Lesefehler selbst als [Quelle.Unbekannt] - siehe dort.
 
     /**
      * Einmal je Abo, kein [Quelle]: ohne Ort heisst fail-safe "keine Einschraenkung" (Licht an, voller
@@ -1260,10 +1257,20 @@ class ShiftViewModel @Inject constructor(
             shiftUseCase.getCurrentShiftConfig().alsQuelle("Typ-Einstellungen") { config -> config }
         }
 
-    /** Ein Fehlschlag der Regeln ist [Quelle.Unbekannt], auch wenn die Bridge-Konfiguration lesbar war. */
-    private fun lichtQuelle(): Flow<Quelle<LichtQuelle>> = hueStand().map { hue ->
-        hue.regeln.alsQuelle("Hue-Regeln") { LichtQuelle(hue.konfiguriert, it, vorlaufMinuten) }
-    }
+    private fun bridgeQuelle(): Flow<Quelle<Boolean>> =
+        bridgeEingerichtet().map { bridge -> bridge.alsQuelle("Bridge-Einrichtung") { it } }
+
+    /**
+     * Licht der Leiste: die Regeln am Typ aus derselben Naht wie die Laufzeit ([TypLichtQuelle]), aus der
+     * schon strikt gelesenen Konfiguration [typen], dazu [bridge]. Fehlt eines davon, ist die Quelle
+     * [Quelle.Unbekannt] (das WARN steht bei der Quelle) - nie "keine Regel" oder "keine Bridge".
+     */
+    private fun lichtQuelle(typen: Quelle<ShiftConfig>, bridge: Quelle<Boolean>): Quelle<LichtQuelle> =
+        if (typen is Quelle.Bekannt && bridge is Quelle.Bekannt) {
+            Quelle.Bekannt(LichtQuelle(bridge.wert, TypLichtQuelle(typen.wert).regeln, vorlaufMinuten))
+        } else {
+            Quelle.Unbekannt
+        }
 
     /**
      * Die Spannen stehen nur als Einmal-Lesung bereit (`spansNow()`, kein Flow) und werden deshalb bei

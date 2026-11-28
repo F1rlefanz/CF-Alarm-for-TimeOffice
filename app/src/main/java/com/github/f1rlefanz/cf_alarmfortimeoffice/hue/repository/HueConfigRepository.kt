@@ -11,6 +11,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.repository.interfaces.HueC
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.repository.interfaces.IHueConfigRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
@@ -44,18 +45,31 @@ class HueConfigRepository @Inject constructor(
                 Logger.e(LogTags.HUE_CONFIG, "Error reading configuration", exception)
                 emit(emptyPreferences())
             }
-            .map { preferences ->
-                val bridgeIp = preferences[BRIDGE_IP_KEY] ?: ""
-                val username = preferences[USERNAME_KEY] ?: ""
-                
-                HueConfiguration(
-                    bridgeIp = bridgeIp,
-                    username = username,
-                    isConfigured = bridgeIp.isNotEmpty() && username.isNotEmpty()
-                )
-            }
+            .map { it.toHueConfiguration() }
     }
-    
+
+    override suspend fun bridgeEingerichtetOderFehler(): Result<Boolean> {
+        return try {
+            Result.success(dataStore.data.first().toHueConfiguration().isConfigured)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Logger.e(LogTags.HUE_CONFIG, "Failed to read bridge setup", e)
+            Result.failure(e)
+        }
+    }
+
+    /** Die EINE Herleitung von „eingerichtet“ - fuer den degradierenden Flow und die strikte Lese-Stelle. */
+    private fun Preferences.toHueConfiguration(): HueConfiguration {
+        val bridgeIp = this[BRIDGE_IP_KEY] ?: ""
+        val username = this[USERNAME_KEY] ?: ""
+        return HueConfiguration(
+            bridgeIp = bridgeIp,
+            username = username,
+            isConfigured = bridgeIp.isNotEmpty() && username.isNotEmpty()
+        )
+    }
+
     override suspend fun saveBridgeConfig(bridgeIp: String, username: String): Result<Unit> {
         return try {
             dataStore.edit { preferences ->

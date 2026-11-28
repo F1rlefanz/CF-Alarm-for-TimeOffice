@@ -13,11 +13,13 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueScheduleRule
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.repository.interfaces.HueConfiguration
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.repository.interfaces.IHueConfigRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.HueRuleUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.TypLichtQuelle
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftKategorie
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.TypDimmFenster
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.TypDimmen
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.TypLicht
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.TypNichtStoeren
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpanStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.HellAb
@@ -28,6 +30,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
@@ -43,7 +46,9 @@ import org.junit.Test
 import org.mockito.kotlin.any
 import org.mockito.kotlin.doReturn
 import org.mockito.kotlin.mock
+import org.mockito.kotlin.never
 import org.mockito.kotlin.stub
+import org.mockito.kotlin.verifyBlocking
 import org.mockito.kotlin.whenever
 import java.time.LocalTime
 
@@ -51,7 +56,8 @@ import java.time.LocalTime
  * Die Statuszeile "Dimmen: … · Licht: … · Nicht stören: …" je Schicht (Issue #70).
  *
  * Seit #219 liest die Zeile Dimmen und "Nicht stoeren" AM TYP (`ShiftDefinition.dimmen`,
- * `.nichtStoeren`) - dort, wo auch die Laufzeit liest; die Hue-Auswahl kommt weiter aus `passtAufSchicht`.
+ * `.nichtStoeren`), seit #253 auch die Lichtregeln (`TypLichtQuelle`) - dort, wo auch die Laufzeit liest;
+ * die Hue-Auswahl kommt weiter aus `passtAufSchicht`.
  * Eine Zeile, die anders zaehlt als die Wirkung, luegt genau dann, wenn man sie braucht.
  */
 @OptIn(ExperimentalCoroutinesApi::class) // Dispatchers.setMain/resetMain, advanceUntilIdle
@@ -82,7 +88,7 @@ class SchichtFolgenTest {
     private fun dimmenMit(vararg fenster: TypDimmFenster, an: Boolean = true): TypDimmen =
         TypDimmen(an = an).mitFenster(fenster.toList())
 
-    private fun hueRegel(id: String, muster: String, aktiv: Boolean = true, hellAb: HellAb = HellAb.IMMER): HueSchedule =
+    private fun hueRegel(id: String, muster: String, aktiv: Boolean = true, hellAb: HellAb = HellAb.IMMER): HueScheduleRule =
         HueScheduleRule(id = id, name = "Hue $id", shiftPattern = muster, enabled = aktiv, timeRanges = emptyList(), hellAb = hellAb)
 
     private fun nd(solange: Boolean = false, waehrend: Boolean = false) =
@@ -96,7 +102,7 @@ class SchichtFolgenTest {
         definition: ShiftDefinition = def(),
         dimmen: TypDimmen = definition.dimmen,
         hueRegeln: Result<List<HueSchedule>> = Result.success(emptyList()),
-        hueKonfiguriert: Boolean = true,
+        hueKonfiguriert: Boolean? = true,
         dnd: TypNichtStoeren = definition.nichtStoeren
     ): SchichtFolgen = ermittleSchichtFolgen(
         definition = definition.copy(dimmen = dimmen, nichtStoeren = dnd),
@@ -150,6 +156,14 @@ class SchichtFolgenTest {
     }
 
     @Test
+    fun `Licht - unlesbare Bridge-Einrichtung heisst nicht lesbar, nie keine Bridge`() {
+        // #210: "Bridge eingerichtet" liess sich nicht lesen - auch mit Regeln am Typ keine Aussage.
+        val f = folgen(hueKonfiguriert = null, hueRegeln = Result.success(listOf(hueRegel("h1", "AD1"))))
+        assertEquals(LichtStatus.NichtLesbar, f.licht)
+        assertEquals("Licht: nicht lesbar", licht(f))
+    }
+
+    @Test
     fun `Licht - stille Schicht fuehrt ihre Hue-Regel aus wie eine laute (Lichtwecker)`() {
         // #251: der stumme Wecker ist ein Lichtwecker, die Stille nimmt nur Ton, Vibration, Vollbild.
         val f = folgen(definition = def(silent = true), hueRegeln = Result.success(listOf(hueRegel("h1", "AD1"))))
@@ -175,17 +189,16 @@ class SchichtFolgenTest {
     }
 
     @Test
-    fun `Licht - eigene und allgemeine Regeln feuern gemeinsam`() {
-        val f = folgen(hueRegeln = Result.success(listOf(hueRegel("h1", "AD1"), hueRegel("h2", "ALL"))))
-        assertEquals("Licht: 1 Regel + allgemeine", licht(f))
-        assertEquals(LichtStatus.Regeln(eigene = 1, allgemeine = 1), f.licht)
-    }
+    fun `Licht - nur die Regeln dieses Typs, eine am Typ gespeicherte ALL-Regel gehoert nur ihm`() {
+        // #253: am Typ gibt es keine allgemeine Regel mehr. Die Migration (#247) laesst bei den Kopien
+        // "ALL" im Speicher stehen - die Naht der Laufzeit (`TypLichtQuelle`) setzt den Typnamen ein.
+        val ad1 = def("AD1").copy(licht = TypLicht().mitRegeln(listOf(hueRegel("h1", "ALL"), hueRegel("h2", "egal"))))
+        val frueh = def("F")
+        val regeln = Result.success(TypLichtQuelle(ShiftConfig(definitions = listOf(ad1, frueh))).regeln)
 
-    @Test
-    fun `Licht - nur allgemeine Regel, Muster wie zur Laufzeit ohne Gross-Kleinschreibung`() {
-        val f = folgen(hueRegeln = Result.success(listOf(hueRegel("h1", "all"))))
-        assertEquals("Licht: allgemeine Regel", licht(f))
-        assertEquals(HueRuleUseCase.UNIVERSAL_SHIFT_PATTERN, "ALL") // Anker des Tests
+        assertEquals("Licht: 2 Regeln", licht(folgen(definition = ad1, hueRegeln = regeln)))
+        assertEquals(LichtStatus.Regeln(eigene = 2, allgemeine = 0), folgen(definition = ad1, hueRegeln = regeln).licht)
+        assertEquals("Licht: keine", licht(folgen(definition = frueh, hueRegeln = regeln)))
     }
 
     @Test
@@ -204,15 +217,15 @@ class SchichtFolgenTest {
             hueRegeln = Result.success(
                 listOf(
                     hueRegel("h1", "AD1", hellAb = HellAb.SONNENAUFGANG),
-                    hueRegel("h2", "ALL", hellAb = HellAb.DAEMMERUNG),
+                    hueRegel("h2", "ad1", hellAb = HellAb.DAEMMERUNG),
                     hueRegel("h3", "AD1"),
                     hueRegel("h4", "AD1", aktiv = false, hellAb = HellAb.SONNENAUFGANG),
                     hueRegel("h5", "Frühdienst", hellAb = HellAb.SONNENAUFGANG)
                 )
             )
         )
-        assertEquals(LichtStatus.Regeln(eigene = 2, allgemeine = 1, nurBeiDunkelheit = 2), f.licht)
-        assertEquals("Licht: 2 Regeln + allgemeine (2 nur bei Dunkelheit)", licht(f))
+        assertEquals(LichtStatus.Regeln(eigene = 3, allgemeine = 0, nurBeiDunkelheit = 2), f.licht)
+        assertEquals("Licht: 3 Regeln (2 nur bei Dunkelheit)", licht(f))
     }
 
     @Test
@@ -268,10 +281,10 @@ class SchichtFolgenTest {
     fun `ganze Zeile in der Reihenfolge Dimmen, Licht, DND`() {
         val f = folgen(
             dimmen = dimmenMit(nachtFenster),
-            hueRegeln = Result.success(listOf(hueRegel("h1", "ALL"))),
+            hueRegeln = Result.success(listOf(hueRegel("h1", "AD1"))),
             dnd = nd(waehrend = true)
         )
-        assertEquals("Dimmen: 1 Fenster · Licht: allgemeine Regel · Nicht stören: Dienstzeit", f.lesbar())
+        assertEquals("Dimmen: 1 Fenster · Licht: 1 Regel · Nicht stören: Dienstzeit", f.lesbar())
     }
 
     @Test
@@ -279,7 +292,7 @@ class SchichtFolgenTest {
         val f = folgen(
             definition = def(onCall = true),
             dimmen = dimmenMit(nachtFenster, nachtFenster.copy(staerke = 30)),
-            hueRegeln = Result.success(listOf(hueRegel("h1", "AD1"), hueRegel("h2", "ALL"))),
+            hueRegeln = Result.success(listOf(hueRegel("h1", "AD1"), hueRegel("h2", "AD1"))),
             dnd = nd(solange = true, waehrend = true)
         )
         val text = f.alsText()
@@ -344,16 +357,16 @@ class SchichtFolgenTest {
         // Hue laeuft nur zu einem ALARM (AlarmReceiver -> executeRulesForAlarm); ein Typ mit
         // weckerAn = false stellt keinen. "Licht: 1 Regel + allgemeine" neben "kein Wecker" waere ein
         // Ablauf, den es nicht gibt (Pruefer-Befund zu #170, SPEC E8).
-        val regeln = Result.success(listOf(hueRegel("h1", "AD1"), hueRegel("h2", "ALL")))
+        val regeln = Result.success(listOf(hueRegel("h1", "AD1"), hueRegel("h2", "AD1")))
         val ohneWecker = def().copy(weckerAn = false)
         val f = folgen(definition = ohneWecker, hueRegeln = regeln)
-        assertEquals("Testvoraussetzung: die Statuszeile kennt die Regeln", "Licht: 1 Regel + allgemeine", licht(f))
+        assertEquals("Testvoraussetzung: die Statuszeile kennt die Regeln", "Licht: 2 Regeln", licht(f))
 
         val text = kurz(ohneWecker, f)!!
         assertFalse("Ohne Alarm laeuft keine Hue-Regel: $text", text.contains("Licht"))
         assertEquals("kein Wecker · Nicht stören: aus", text)
         // Mit Wecker bleibt die Regel Teil der Zeile.
-        assertTrue(kurz(def(), folgen(hueRegeln = regeln))!!.contains("Licht: 1 Regel + allgemeine"))
+        assertTrue(kurz(def(), folgen(hueRegeln = regeln))!!.contains("Licht: 2 Regeln"))
     }
 
     @Test
@@ -417,34 +430,30 @@ class SchichtFolgenTest {
         Dispatchers.resetMain()
     }
 
-    @Test
-    fun `ViewModel liest erst beim Abo und zeigt fuer deaktivierte Schicht und Krank-Typ keine Zeile`() =
-        runTest(dispatcher) {
-            // #142: ein Krankmeldungs-Typ spannt keine Schicht auf - keine Zeile ueber Dimmen/Licht/DND.
-            // Dimmen und "Nicht stoeren" liegen am Typ: die Zeile liest sie aus der Konfiguration.
-            val ad1 = def("AD1").copy(dimmen = dimmenMit(nachtFenster), nichtStoeren = nd(waehrend = true))
-            val config = ShiftConfig(
-                definitions = listOf(ad1, def("Frei", enabled = false), def("Krank").copy(isSickDay = true))
-            )
+    /** Ein ViewModel, dessen Statuszeile Konfiguration und Hue-Repository aus diesem Test bekommt. */
+    private class VmWelt(config: ShiftConfig, bridge: Result<Boolean>, altbestand: List<HueSchedule>) {
+        var angefasst = 0
+        var regelnAngefasst = 0
+        val hue = mock<IHueConfigRepository>()
+        val vm: ShiftViewModel
+
+        init {
             val shiftUseCase = mock<IShiftUseCase>()
             whenever(shiftUseCase.shiftConfig).thenReturn(flowOf(config))
             shiftUseCase.stub {
                 on { getCurrentShiftConfig() } doReturn Result.success(config)
                 on { recognizeShiftsInEvents(any()) } doReturn Result.success(emptyList())
             }
-
+            // Der Flow ist nur der Ausloeser; sein Wert sagt bewusst "nicht eingerichtet".
+            whenever(hue.getConfiguration()).thenReturn(flowOf(HueConfiguration()))
+            hue.stub {
+                onBlocking { bridgeEingerichtetOderFehler() } doReturn bridge
+                onBlocking { getScheduleRules() } doReturn Result.success(altbestand)
+            }
             val dimUseCase = DimRuleUseCase(mock<DimRuleRepository>())
             val overlay = mock<DimOverlayPrefs>()
             val dnd = mock<DndPrefs>()
-            val hue = mock<IHueConfigRepository>()
-            whenever(hue.getConfiguration()).thenReturn(
-                flowOf(HueConfiguration(bridgeIp = "1.2.3.4", username = "u", isConfigured = true))
-            )
-            hue.stub { on { getScheduleRules() } doReturn Result.success(listOf(hueRegel("h1", "AD1"))) }
-
-            var angefasst = 0
-            var regelnAngefasst = 0
-            val vm = ShiftViewModel(
+            vm = ShiftViewModel(
                 shiftUseCase = shiftUseCase,
                 alarmUseCase = mock<IAlarmUseCase>(),
                 calendarStateHolder = CalendarStateHolder(),
@@ -457,22 +466,65 @@ class SchichtFolgenTest {
                 dimOverlayPrefs = dagger.Lazy { regelnAngefasst++; overlay },
                 hueConfigRepository = dagger.Lazy { angefasst++; hue }
             )
-            advanceUntilIdle()
-            assertEquals("Ohne Abo darf keine Quelle der Statuszeile angefasst werden", 0, angefasst)
+        }
+    }
 
-            backgroundScope.launch { vm.schichtFolgen.collect { } }
-            // `advanceUntilIdle()` allein haelt an, sobald nur noch Hintergrund-Arbeit ansteht - der
-            // Sammler im `backgroundScope` liefe dann nie an. `runCurrent()` startet ihn; das Abo
-            // stoesst die Quellen im viewModelScope an, und die arbeitet `advanceUntilIdle()` ab.
-            runCurrent()
-            advanceUntilIdle()
+    /** Abonniert die Statuszeile und arbeitet das Lesen ab. */
+    private fun TestScope.zeilen(w: VmWelt): Map<String, SchichtFolgen> {
+        backgroundScope.launch { w.vm.schichtFolgen.collect { } }
+        // `advanceUntilIdle()` allein haelt an, sobald nur noch Hintergrund-Arbeit ansteht - der
+        // Sammler im `backgroundScope` liefe dann nie an. `runCurrent()` startet ihn; das Abo
+        // stoesst die Quellen im viewModelScope an, und die arbeitet `advanceUntilIdle()` ab.
+        runCurrent()
+        advanceUntilIdle()
+        return w.vm.schichtFolgen.value
+    }
 
-            val zeilen = vm.schichtFolgen.value
+    /** AD1 mit EINER Lichtregel am Typ; der Altbestand im Hue-Store traegt zwei weitere auf "AD1". */
+    private fun welt(bridge: Result<Boolean> = Result.success(true)): VmWelt {
+        // #142: ein Krankmeldungs-Typ spannt keine Schicht auf - keine Zeile ueber Dimmen/Licht/DND.
+        // Dimmen, "Nicht stoeren" und Licht liegen am Typ: die Zeile liest sie aus der Konfiguration.
+        val ad1 = def("AD1").copy(
+            dimmen = dimmenMit(nachtFenster),
+            nichtStoeren = nd(waehrend = true),
+            licht = TypLicht().mitRegeln(listOf(hueRegel("h1", "egal")))
+        )
+        val config = ShiftConfig(
+            definitions = listOf(ad1, def("Frei", enabled = false), def("Krank").copy(isSickDay = true))
+        )
+        return VmWelt(config, bridge, altbestand = listOf(hueRegel("a1", "AD1"), hueRegel("a2", "AD1")))
+    }
+
+    @Test
+    fun `ViewModel liest erst beim Abo und zeigt fuer deaktivierte Schicht und Krank-Typ keine Zeile`() =
+        runTest(dispatcher) {
+            val w = welt()
+            advanceUntilIdle()
+            assertEquals("Ohne Abo darf keine Quelle der Statuszeile angefasst werden", 0, w.angefasst)
+
+            val zeilen = zeilen(w)
+
             assertEquals(setOf("id-AD1"), zeilen.keys) // die deaktivierte Schicht und der Krank-Typ fehlen
+            // Eine Regel: die am Typ. Der Altbestand im Hue-Store (zwei Regeln) wird nicht gelesen (#253).
             assertEquals(
                 "Dimmen: 1 Fenster · Licht: 1 Regel · Nicht stören: Dienstzeit",
                 zeilen.getValue("id-AD1").lesbar()
             )
-            assertEquals("Dimm-Regeln, Dimm-Schalter und DND-Schalter werden nicht mehr gelesen", 0, regelnAngefasst)
+            verifyBlocking(w.hue, never()) { getScheduleRules() }
+            assertEquals("Dimm-Regeln, Dimm-Schalter und DND-Schalter werden nicht mehr gelesen", 0, w.regelnAngefasst)
         }
+
+    @Test
+    fun `ViewModel - ohne eingerichtete Bridge heisst die Zeile keine Bridge`() = runTest(dispatcher) {
+        val zeile = zeilen(welt(bridge = Result.success(false))).getValue("id-AD1")
+        assertEquals("Licht: keine Bridge", licht(zeile))
+    }
+
+    @Test
+    fun `ViewModel - unlesbare Bridge-Einrichtung heisst nicht lesbar, nie keine Bridge`() = runTest(dispatcher) {
+        val zeile = zeilen(welt(bridge = Result.failure(java.io.IOException("hue_settings nicht lesbar"))))
+            .getValue("id-AD1")
+        assertEquals("Licht: nicht lesbar", licht(zeile))
+        assertEquals("Dimmen: 1 Fenster", dimmen(zeile))
+    }
 }

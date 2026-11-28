@@ -1,7 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel
 
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueSchedule
-import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.HueRuleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.passtAufSchicht
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftKategorie
@@ -15,8 +14,8 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.HellAb
  * (`ShiftDefinition.dimmen`, `ShiftDefinition.nichtStoeren`) - dort, wo auch Dimmer und DND zur Laufzeit
  * lesen. Es gibt keine Regel und keinen globalen Schalter mehr, die verwaisen oder doppelt belegt sein
  * koennten; Umbenennen kostet beides nichts (die Einstellungen reisen mit dem Typ), Loeschen nimmt sie
- * mit. Hue-Regeln binden dagegen noch ueber den Schichtnamen ([passtAufSchicht], eigene UND allgemeine
- * feuern gemeinsam) - bis Etappe 4.
+ * mit. Seit #253 gilt das auch fuer das Licht: gezaehlt werden die Regeln am Typ, aus derselben Naht
+ * wie zur Laufzeit (`TypLichtQuelle`) und mit derselben Auswahl ([passtAufSchicht]).
  *
  * Bewusst NICHT in der Zeile: die Master-Pause (voruebergehend, steht an anderer Stelle - die
  * Zeile beschreibt die Konfiguration) und zwei Schichten am selben Tag (die Zeile beschreibt EINEN Typ).
@@ -59,16 +58,21 @@ enum class DimmArt {
 }
 
 sealed interface LichtStatus {
-    /** Die Hue-Regeln liessen sich nicht lesen - "keine" waere hier eine Behauptung. */
+    /**
+     * "Bridge eingerichtet" (oder die Regeln) liess sich nicht lesen - "keine" oder "keine Bridge" waere
+     * hier eine Behauptung.
+     */
     data object NichtLesbar : LichtStatus
 
     /** Keine Bridge eingerichtet - es geht kein Licht an, egal wie viele Regeln es gibt. */
     data object KeineBridge : LichtStatus
 
     /**
-     * [eigene] und [allgemeine] feuern GEMEINSAM; beide 0 heisst "keine". [nurBeiDunkelheit]
-     * zaehlt, wie viele davon eine Tageslicht-Schwelle tragen (#140) - sie sind MITGEZAEHLT,
-     * nicht abgezogen: ob eine solche Regel an einem Morgen entfaellt, haengt an der Weckzeit.
+     * [eigene] = die Regeln dieses Typs; 0 heisst "keine". [allgemeine] ist seit #253 immer 0 (am Typ
+     * gibt es keine Regel fuer alle Schichten) und bleibt nur, weil `WeckerTage.kt` und seine Tests die
+     * Form kennen - wie die Reste von [DimmArt]. [nurBeiDunkelheit] zaehlt, wie viele davon eine
+     * Tageslicht-Schwelle tragen (#140) - sie sind MITGEZAEHLT, nicht abgezogen: ob eine solche Regel an
+     * einem Morgen entfaellt, haengt an der Weckzeit.
      */
     data class Regeln(val eigene: Int, val allgemeine: Int, val nurBeiDunkelheit: Int = 0) : LichtStatus
 }
@@ -93,13 +97,15 @@ data class DndStatus(
  * Leitet die [SchichtFolgen] einer Schichtdefinition ab. Rein, ohne Seiteneffekt, als JVM-Test
  * pruefbar.
  *
- * @param hueRegeln das Ergebnis von `IHueConfigRepository.getScheduleRules()`; ein Fehlschlag
- *   wird "nicht lesbar", nie "keine".
+ * @param hueRegeln die Lichtregeln am Typ aus der Naht der Laufzeit (`TypLichtQuelle(config).regeln`);
+ *   ein Fehlschlag wird "nicht lesbar", nie "keine".
+ * @param hueKonfiguriert "Bridge eingerichtet" (`IHueConfigRepository.bridgeEingerichtetOderFehler`);
+ *   `null` = nicht lesbar, daraus wird "nicht lesbar", nie "keine Bridge" (#210).
  */
 internal fun ermittleSchichtFolgen(
     definition: ShiftDefinition,
     hueRegeln: Result<List<HueSchedule>>,
-    hueKonfiguriert: Boolean
+    hueKonfiguriert: Boolean?
 ): SchichtFolgen = SchichtFolgen(
     dimmen = dimmStatus(definition),
     licht = lichtStatus(definition, hueRegeln, hueKonfiguriert),
@@ -117,12 +123,13 @@ private fun dimmStatus(definition: ShiftDefinition): DimmStatus {
 private fun lichtStatus(
     definition: ShiftDefinition,
     hueRegeln: Result<List<HueSchedule>>,
-    hueKonfiguriert: Boolean
+    hueKonfiguriert: Boolean?
 ): LichtStatus {
     val regeln = hueRegeln.getOrElse { return LichtStatus.NichtLesbar }
+    val bridgeEingerichtet = hueKonfiguriert ?: return LichtStatus.NichtLesbar
     // Kein Ausstieg fuer die stille Schicht (#251): der stumme Wecker ist ein Lichtwecker, der
     // `AlarmReceiver` fuehrt seine Regeln aus, und der Vorab-Sonnenaufgang wird fuer ihn geplant.
-    if (!hueKonfiguriert) return LichtStatus.KeineBridge
+    if (!bridgeEingerichtet) return LichtStatus.KeineBridge
     // Dieselbe Auswahl wie `HueRuleUseCase.findApplicableRules`: aktiv UND passtAufSchicht.
     //
     // Die Tageslicht-Bedingung (#140, `laeuftBeiTageslicht`) wird hier bewusst NICHT angewendet,
@@ -131,12 +138,9 @@ private fun lichtStatus(
     // vergleichen koennte. Ein Filter mit "heute" wuerde je nach Uhrzeit des Hinschauens
     // wechseln und die Regel als "keine" ausweisen, obwohl sie am naechsten dunklen Morgen laeuft.
     val treffer = regeln.filter { it.enabled && it.passtAufSchicht(definition.name) }
-    val allgemeine = treffer.count {
-        it.shiftPattern.equals(HueRuleUseCase.UNIVERSAL_SHIFT_PATTERN, ignoreCase = true)
-    }
     return LichtStatus.Regeln(
-        eigene = treffer.size - allgemeine,
-        allgemeine = allgemeine,
+        eigene = treffer.size,
+        allgemeine = 0,
         nurBeiDunkelheit = treffer.count { it.hellAb != HellAb.IMMER }
     )
 }
@@ -249,15 +253,8 @@ private fun LichtStatus.teile(): List<String> = when (this) {
     LichtStatus.NichtLesbar -> listOf(Texte.NICHT_LESBAR)
     LichtStatus.KeineBridge -> listOf(Texte.KEINE_BRIDGE)
     is LichtStatus.Regeln -> buildList {
-        add(
-            when {
-                eigene > 0 && allgemeine > 0 -> "${regelAnzahl(eigene)} + allgemeine"
-                eigene > 0 -> regelAnzahl(eigene)
-                allgemeine == 1 -> Texte.ALLGEMEINE_REGEL
-                allgemeine > 1 -> "$allgemeine allgemeine Regeln"
-                else -> Texte.KEINE
-            }
-        )
+        // `allgemeine` erzeugt die Ableitung nicht mehr (siehe LichtStatus.Regeln).
+        add(if (eigene > 0) regelAnzahl(eigene) else Texte.KEINE)
         // Eigenes Stueck, damit davor umbrochen werden darf (wie "(+N ohne Wirkung)").
         if (nurBeiDunkelheit > 0) add("($nurBeiDunkelheit ${Texte.NUR_BEI_DUNKELHEIT})")
     }
@@ -295,7 +292,6 @@ private object Texte {
 
     const val AUS = "aus"
     const val KEINE = "keine"
-    const val ALLGEMEINE_REGEL = "allgemeine Regel"
     const val NICHT_LESBAR = "nicht lesbar"
     const val KEINE_BRIDGE = "keine Bridge"
     /** Gleicher Wortlaut wie das Etikett `tageslicht_etikett_dunkel` in der Hue-Regelliste. */

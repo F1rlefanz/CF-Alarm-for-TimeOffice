@@ -22,6 +22,8 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.repository.HueConfigReposi
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.repository.interfaces.HueConfiguration
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.repository.interfaces.IHueConfigRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.HueRuleUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.TypLichtQuelle
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.IHueLightUseCaseAdvanced
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.CalendarEvent
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
@@ -32,12 +34,20 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.model.TypLicht
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.TypNichtStoeren
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpan
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpanStore
+import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftMatch
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.Dienstzeit
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.LichtEinstellungen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.Quelle
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.Spur
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.SpurStand
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.TagesleisteEingabe
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.TagesleisteQuellen
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.TageslichtAmMustertag
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.alsQuelle
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.fehlerAlsUnbekannt
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.geltendeLichtRegeln
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.weckpunktMin
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.HellAb
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.Ort
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.OrtQuelle
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.TageslichtQuelle
@@ -82,6 +92,7 @@ import org.mockito.kotlin.stub
 import org.mockito.kotlin.verifyBlocking
 import org.mockito.kotlin.whenever
 import java.io.IOException
+import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.ZoneId
@@ -354,6 +365,79 @@ class TagesleisteQuellenTest {
         assertEquals(listOf(630 to 675), lichtBalken(q, "S"))
         assertEquals(emptyList<Pair<Int, Int>>(), lichtBalken(q, "N"))
         verifyBlocking(w.hueRepo, never()) { getScheduleRules() }
+    }
+
+    /**
+     * Leiste = Laufzeit (Muster `TagesleisteDimmenDndTest`): fuer jeden Typ und jede Weckzeit waehlt die
+     * Leiste aus den Regeln DES VIEWMODELS genau die Regeln, die der echte `HueRuleUseCase` zur Weckzeit
+     * waehlt - samt Tageslicht-Bedingung. Faellt eine der beiden Seiten auf eine andere Quelle oder eine
+     * andere Auswahl zurueck, wird der Vergleich ungleich.
+     */
+    @Test
+    fun `Leiste und Laufzeit waehlen je Typ und Weckzeit dieselben Regeln`() = runTest(dispatcher) {
+        val berlin = TageslichtStand(Ort(52.52, 13.40, OrtQuelle.PLZ, null), ZoneId.of("Europe/Berlin"))
+        val tagesquelle = object : TageslichtQuelle {
+            override suspend fun stand(): TageslichtStand = berlin
+        }
+        fun regel(id: String, muster: String = "egal", aktiv: Boolean = true, hellAb: HellAb = HellAb.IMMER) =
+            lampeRegel(id, minuten = 20, muster = muster).copy(enabled = aktiv, hellAb = hellAb)
+        // "ALL" im Speicher gehoert nur F; der zweite Typ "f" ist vom ersten verdeckt; N hat keine Regel.
+        val config = ShiftConfig(
+            definitions = listOf(
+                typ(
+                    "F",
+                    regel("f-immer"),
+                    regel("f-aus", aktiv = false),
+                    regel("f-dunkel", hellAb = HellAb.SONNENAUFGANG),
+                    regel("f-all", muster = "ALL")
+                ),
+                typ("S", regel("s-immer"), regel("s-daemmerung", hellAb = HellAb.DAEMMERUNG)),
+                typ("N"),
+                typ("f", regel("verdeckt")).copy(id = "id-zweites-f")
+            )
+        )
+        val laufzeit = HueRuleUseCase(
+            mock<IHueConfigRepository>(), mock<IHueLightUseCaseAdvanced>(),
+            tageslicht = tagesquelle,
+            typLicht = TypLichtQuelle.Leser { Result.success(config) }
+        )
+        val q = lese(welt(konfig = Result.success(config), tageslicht = tagesquelle))
+        val licht = (q.licht as Quelle.Bekannt).wert
+        val tag = LocalDate.of(2026, 12, 21) // Sonnenaufgang in Berlin etwa 08:15
+        val dienstAb14 = Dienstzeit(LocalTime.of(14, 0), 480, ganztaegig = false)
+
+        val gewaehlt = mutableMapOf<Pair<String, LocalTime>, List<String>>()
+        for (name in listOf("F", "S", "N", "f")) {
+            for (weckzeit in listOf(LocalTime.of(4, 30), LocalTime.of(7, 45), LocalTime.of(10, 0))) {
+                val wecken = tag.atTime(weckzeit)
+                val schicht = ShiftMatch(
+                    config.definitions.first { it.name.equals(name, ignoreCase = true) },
+                    CalendarEvent("e", name, tag.atTime(14, 0), tag.atTime(22, 0), "cal"),
+                    wecken
+                )
+                val zurWeckzeit = laufzeit
+                    .findApplicableRules(schicht, weckzeit, wecken.atZone(berlin.zone).toInstant().toEpochMilli())
+                    .getOrThrow().map { it.id }
+
+                // Dienst ab 14:00: der Wecker der Leiste liegt auf dem Mustertag selbst.
+                val eingabe = TagesleisteEingabe(name, ShiftKategorie.DIENST, true, weckzeit, false, dienstAb14)
+                val aufDerLeiste = geltendeLichtRegeln(
+                    eingabe,
+                    LichtEinstellungen(licht.konfiguriert, licht.regeln, TageslichtAmMustertag(tag, q.tageslicht)),
+                    weckpunktMin(eingabe.kategorie, eingabe.weckerAn, eingabe.weckzeit, eingabe.dienstzeit)!!
+                ).map { it.id }
+
+                assertEquals("$name um $weckzeit", zurWeckzeit, aufDerLeiste)
+                gewaehlt[name to weckzeit] = aufDerLeiste
+            }
+        }
+
+        // Kein Vergleich leer gegen leer: die Auswahl haengt am Typ, an "aktiv" und am Tageslicht.
+        assertEquals(listOf("f-immer", "f-dunkel", "f-all"), gewaehlt["F" to LocalTime.of(4, 30)])
+        assertEquals(listOf("f-immer", "f-all"), gewaehlt["F" to LocalTime.of(10, 0)])
+        assertEquals(listOf("s-immer"), gewaehlt["S" to LocalTime.of(7, 45)])
+        assertEquals(emptyList<String>(), gewaehlt["N" to LocalTime.of(4, 30)])
+        assertEquals(gewaehlt["F" to LocalTime.of(4, 30)], gewaehlt["f" to LocalTime.of(4, 30)])
     }
 
     @Test

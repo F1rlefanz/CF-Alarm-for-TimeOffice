@@ -1245,7 +1245,8 @@ class ShiftViewModel @Inject constructor(
     }
 
     /**
-     * Die Schicht-Konfiguration, in der seit #219 Dimmen und "Nicht stoeren" am Typ liegen. Gelesen ueber
+     * Die Schicht-Konfiguration, in der seit #219 Dimmen und "Nicht stoeren" und seit #253 die
+     * Lichtregeln am Typ liegen. Gelesen ueber
      * `getCurrentShiftConfig()` (ein `Result`), NICHT ueber den Flow `shiftConfig`: der degradiert bei
      * einem Defekt auf Standardwerte, und "Standard" hiesse "kein Typ hat ein Fenster" - die Spur zeigte
      * "kein Dimmen" statt "unbekannt". `_uiState.currentShiftConfig` ist nur der AUSLOESER fuer das

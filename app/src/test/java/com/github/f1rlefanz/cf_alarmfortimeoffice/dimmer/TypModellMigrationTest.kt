@@ -11,12 +11,25 @@ import androidx.datastore.preferences.core.mutablePreferencesOf
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import com.github.f1rlefanz.cf_alarmfortimeoffice.backup.ConfigBackupUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.backup.ConfigBackup
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndPrefs
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.ActionType
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueLightAction
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueScheduleRule
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueTimeRange
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.TargetType
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.repository.HueConfigRepository
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.repository.interfaces.IHueConfigRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.scheduling.HueSmartScheduler
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.HueRuleUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.TypLichtUebersetzung
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.CalendarEvent
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftKategorie
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.TypDimmFenster
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.TypLicht
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.UmbauVorlagen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IAlarmRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.RufbereitschaftMigration
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftMatch
@@ -26,6 +39,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -38,12 +53,17 @@ import org.mockito.kotlin.never
 import org.mockito.kotlin.times
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
+import java.io.IOException
 import java.time.LocalTime
 
 /**
  * #216: die Uebersetzung aus #214 laeuft auf dem Geraet einmalig, idempotent und nur ueber einen
  * lesbaren Bestand - und scheitert sie, bleibt alles unangetastet und [TypModellMigration.stand]
  * sagt es (Karte im System-Status). Durch die ECHTEN Stores (In-Memory-DataStore), nicht durch Ersatz.
+ *
+ * #248: derselbe Einstieg zieht danach die Hue-Regeln an die Typen (Abschnitt „Licht“ unten). Die
+ * Tests der Etappe 3 laufen auf einer Konfiguration, deren Licht schon migriert ist ([eigeneKonfig]),
+ * damit sie weiter genau einen Schritt pruefen.
  */
 class TypModellMigrationTest {
 
@@ -53,6 +73,7 @@ class TypModellMigrationTest {
     private val KEY_FOLGT_DIMMER = booleanPreferencesKey("dnd_follow_dimmer_enabled")
     private val KEY_WAEHREND_DIENST = booleanPreferencesKey("dnd_during_shift_enabled")
     private val KEY_RUF_ALTLISTE = stringSetPreferencesKey(DndPrefs.LEGACY_ONCALL_KEY_NAME)
+    private val KEY_HUE_RULES = stringPreferencesKey("hue_schedule_rules")
 
     /** In-Memory-DataStore; [beimLesen] laeuft bei JEDEM Sammeln von [data] vor dem Wert. */
     private class SpeicherStore(initial: Preferences = emptyPreferences()) : DataStore<Preferences> {
@@ -83,7 +104,8 @@ class TypModellMigrationTest {
     }
 
     private val dienst = ShiftDefinition(id = "f", name = "Frueh", keywords = listOf("F"), alarmTime = LocalTime.of(5, 30))
-    private val eigeneKonfig = ShiftConfig(definitions = listOf(dienst))
+    // #248: `lichtStufe` gesetzt - der Licht-Schritt ist hier erledigt und schreibt nicht mit.
+    private val eigeneKonfig = ShiftConfig(definitions = listOf(dienst), lichtStufe = TypLichtUebersetzung.LICHT_STUFE)
 
     private val universal = DimRule(
         id = "u", name = "Taeglich", shiftPattern = DimRule.SHIFT_UNIVERSAL,
@@ -120,7 +142,8 @@ class TypModellMigrationTest {
         store: DataStore<Preferences>,
         schicht: IShiftUseCase,
         entsperrt: Boolean = true,
-        alarme: IAlarmRepository = alarmRepository
+        alarme: IAlarmRepository = alarmRepository,
+        hue: IHueConfigRepository = HueConfigRepository(SpeicherStore())
     ) = TypModellMigration(
         context = kontext(entsperrt),
         dataStore = store,
@@ -130,6 +153,7 @@ class TypModellMigrationTest {
         dndPrefs = DndPrefs(store),
         shiftUseCase = schicht,
         alarmRepository = alarme,
+        hueConfigRepository = hue,
         armierer = armierer
     )
 
@@ -347,7 +371,8 @@ class TypModellMigrationTest {
         val gespeichert = standard.copy(
             definitions = standard.definitions.mapIndexed { i, typ ->
                 if (i == 0) typ.copy(dimmen = typ.dimmen.mitFenster(listOf(fenster))) else typ
-            }
+            },
+            lichtStufe = TypLichtUebersetzung.LICHT_STUFE // #248: nur der erste Schritt
         )
         assertEquals(0, gespeichert.modellStufe)
         val store = SpeicherStore(mutablePreferencesOf().apply { this[KEY_DIMMER_MARKER] = DimmerModellMigration.STAND })
@@ -393,7 +418,8 @@ class TypModellMigrationTest {
 
         assertTrue(import.import(datei).isSuccess)
 
-        assertEquals("Import und Migration, je ein Schreibvorgang", 2, schicht.gespeichert.size)
+        // #248: dazu der Licht-Schritt - diese Vorlage hat keine Hue-Regeln, er setzt nur die Stufe.
+        assertEquals("Import und beide Schritte, je ein Schreibvorgang", 3, schicht.gespeichert.size)
         val ausDatei = schicht.gespeichert.first()
         assertEquals("der Export traegt keine Stufe", 0, ausDatei.modellStufe)
         val dnd = DndPrefs(store).altbestandOderFehler().getOrThrow()
@@ -407,11 +433,254 @@ class TypModellMigrationTest {
             ),
             DimRuleUseCase(DimRuleRepository(store))
         )
-        assertEquals(nachher, schicht.konfig)
+        assertEquals(nachher.copy(lichtStufe = TypLichtUebersetzung.LICHT_STUFE), schicht.konfig)
         assertEquals(TypEinstellungenUebersetzung.MODELL_STUFE, schicht.konfig.modellStufe)
         assertTrue("die Regeln der Datei kommen an", schicht.konfig.definitions.any { it.dimmen.fenster.isNotEmpty() })
         assertEquals("die Vorlage hat den Cutoff 05:30", 330, dnd.rufCutoffMinuten)
     }
+
+    // --- Licht (#248) ---------------------------------------------------------------------------
+
+    private val hueJson = Json { encodeDefaults = true }
+
+    private fun hueRegel(id: String, muster: String, enabled: Boolean = true) = HueScheduleRule(
+        id = id, name = "Regel $id", shiftPattern = muster, enabled = enabled,
+        timeRanges = listOf(
+            HueTimeRange(
+                listOf(HueLightAction(targetType = TargetType.LIGHT, targetId = "1", targetName = "Flur", actionType = ActionType.TURN_ON, on = true))
+            )
+        )
+    )
+
+    private fun hueStore(vararg regeln: HueScheduleRule) = SpeicherStore(
+        mutablePreferencesOf().apply {
+            this[KEY_HUE_RULES] = hueJson.encodeToString(ListSerializer(HueScheduleRule.serializer()), regeln.toList())
+        }
+    )
+
+    /** Etappe 3 ist durch, das Licht noch nicht: der Stand eines Geraets beim Update auf Etappe 4. */
+    private val vorDemLicht = eigeneKonfig.copy(modellStufe = TypEinstellungenUebersetzung.MODELL_STUFE, lichtStufe = 0)
+
+    @Test
+    fun `Licht - Erfolg schreibt einmal, Hue-Altbestand byte-gleich, zweiter Lauf schreibt nichts`() = runTest {
+        val regel = hueRegel("r1", "frueh") // Name in anderer Schreibweise als der Typ
+        val hue = hueStore(regel)
+        val vorher = hue.stand.value
+        val schicht = SchichtSpeicher(vorDemLicht)
+
+        assertTrue(migration(bestandsgeraet(), schicht, hue = HueConfigRepository(hue)).migriereEinmalig())
+
+        assertEquals(listOf(TypLichtUebersetzung.uebersetze(vorDemLicht, listOf(regel)).config), schicht.gespeichert)
+        assertEquals("die Regel steht am Typ", listOf(regel), schicht.konfig.definitions.single().licht.regeln)
+        assertEquals(TypLichtUebersetzung.LICHT_STUFE, schicht.konfig.lichtStufe)
+        assertEquals("kopieren statt verschieben", vorher.asMap(), hue.stand.value.asMap())
+        verify(armierer, never()).armiere(any(), any(), any())
+        assertEquals(TypModellMigration.Stand.Erledigt, TypModellMigration.stand.value)
+
+        // Zweiter Lauf - auch, wenn der Hue-Store inzwischen unlesbar waere: nichts, kein Fehler.
+        assertFalse(migration(bestandsgeraet(), schicht, hue = HueConfigRepository(hue)).migriereEinmalig())
+        hue.beimLesen = { throw IOException("kaputt") }
+        assertFalse(migration(bestandsgeraet(), schicht, hue = HueConfigRepository(hue)).migriereEinmalig())
+        assertEquals(1, schicht.gespeichert.size)
+        assertEquals(TypModellMigration.Stand.Erledigt, TypModellMigration.stand.value)
+    }
+
+    /**
+     * Die Pflichtregel "Kein Fehler darf als leeres Erfolgsergebnis durchrutschen": ein unlesbarer
+     * Hue-Store als "keine Regeln" gelesen setzte die Stufe endgueltig - die Regeln kaemen nie an.
+     * Zwei Wege: undekodierbarer Inhalt und ein Lesefehler des Stores.
+     */
+    @Test
+    fun `Licht - Lesefehler des Hue-Stores setzt keine Stufe und schreibt nichts, der Grund steht in stand`() = runTest {
+        val undekodierbar = SpeicherStore(mutablePreferencesOf().apply { this[KEY_HUE_RULES] = "[{\"id\":\"r1\",kaputt" })
+        val lesefehler = hueStore(hueRegel("r1", "Frueh")).apply { beimLesen = { throw IOException("kaputt") } }
+        for (hue in listOf(undekodierbar, lesefehler)) {
+            TypModellMigration.standZuruecksetzen()
+            val vorher = hue.stand.value
+            val schicht = SchichtSpeicher(vorDemLicht)
+
+            assertFalse(migration(bestandsgeraet(), schicht, hue = HueConfigRepository(hue)).migriereEinmalig())
+
+            assertTrue(schicht.gespeichert.isEmpty())
+            assertEquals(0, schicht.konfig.lichtStufe)
+            assertEquals(vorher.asMap(), hue.stand.value.asMap())
+            assertLichtFehler(TypModellMigration.Grund.HUE_REGELN_NICHT_LESBAR)
+        }
+    }
+
+    /**
+     * Die Schritte haengen nicht aneinander: scheitert der eine, schreibt der andere trotzdem - und
+     * die Karte nennt den gescheiterten. Ein gesperrter Alarm-Bestand haelt auch das Licht an.
+     */
+    @Test
+    fun `Licht - die beiden Schritte sind unabhaengig, die Karte nennt den gescheiterten`() = runTest {
+        val regel = hueRegel("r1", "Frueh")
+
+        // Dimmer-Umstellung haengt: Etappe 3 schreibt nicht, das Licht schon.
+        val ohneMarker = bestandsgeraet().apply { stand.value = stand.value.toMutablePreferences().apply { remove(KEY_DIMMER_MARKER) } }
+        val schicht = SchichtSpeicher(eigeneKonfig.copy(lichtStufe = 0))
+        assertTrue(migration(ohneMarker, schicht, hue = HueConfigRepository(hueStore(regel))).migriereEinmalig())
+        assertEquals(1, schicht.gespeichert.size)
+        assertEquals(0, schicht.konfig.modellStufe)
+        assertEquals(listOf(regel), schicht.konfig.definitions.single().licht.regeln)
+        assertFehler(TypModellMigration.Grund.DIMMER_UMSTELLUNG_AUSSTEHEND)
+
+        // Hue unlesbar: Etappe 3 schreibt, das Licht nicht.
+        TypModellMigration.standZuruecksetzen()
+        val kaputt = hueStore(regel).apply { beimLesen = { throw IOException("kaputt") } }
+        val zweite = SchichtSpeicher(eigeneKonfig.copy(lichtStufe = 0))
+        assertTrue(migration(bestandsgeraet(), zweite, hue = HueConfigRepository(kaputt)).migriereEinmalig())
+        assertEquals(1, zweite.gespeichert.size)
+        assertEquals(TypEinstellungenUebersetzung.MODELL_STUFE, zweite.konfig.modellStufe)
+        assertEquals(0, zweite.konfig.lichtStufe)
+        assertLichtFehler(TypModellMigration.Grund.HUE_REGELN_NICHT_LESBAR)
+
+        // Alarm-Bestand gesperrt: auch das Licht schreibt nicht.
+        TypModellMigration.standZuruecksetzen()
+        val dritte = SchichtSpeicher(vorDemLicht)
+        val gesperrt = mock<IAlarmRepository> { onBlocking { isPersistenceBlocked() } doReturn true }
+        assertFalse(migration(bestandsgeraet(), dritte, alarme = gesperrt, hue = HueConfigRepository(hueStore(regel))).migriereEinmalig())
+        assertTrue(dritte.gespeichert.isEmpty())
+        assertLichtFehler(TypModellMigration.Grund.BESTAND_NICHT_LESBAR)
+    }
+
+    /**
+     * Tor 5: nie ueber die Standard-Konfiguration (sie kommt auch, wenn `shift_prefs` vor der
+     * Entsperrung gelesen wurde - die Uebersetzung schriebe die ganze Konfiguration darueber). Eine
+     * Karte, weil Hue-Regeln liegen bleiben; ohne Regeln keine (Etappe-3-Test oben, Fall "frisch").
+     */
+    @Test
+    fun `Licht - Standard-Konfiguration mit Hue-Regeln schreibt nichts und zeigt die Karte`() = runTest {
+        val ohneAltbestand = SpeicherStore(mutablePreferencesOf().apply { this[KEY_DIMMER_MARKER] = DimmerModellMigration.STAND })
+        val schicht = SchichtSpeicher(ShiftConfig.getDefaultConfig())
+        val name = ShiftConfig.getDefaultConfig().definitions.first().name
+
+        assertFalse(migration(ohneAltbestand, schicht, hue = HueConfigRepository(hueStore(hueRegel("r1", name)))).migriereEinmalig())
+
+        assertTrue(schicht.gespeichert.isEmpty())
+        assertLichtFehler(TypModellMigration.Grund.KEINE_EIGENEN_SCHICHTTYPEN)
+    }
+
+    /**
+     * Zwilling von #234 (Kommentar des Eigentuemers in #248): frische Installation, beide Stufen 0,
+     * Standard-Typen. Auf der Typ-Seite wird eine Lichtregel gespeichert (`config.copy`, die Stufen
+     * bleiben) - die Konfiguration weicht vom Standard ab, Tor 5 greift nicht. Der Hue-Altbestand ist
+     * leer: die Migration darf die Regel nicht durch "keine Regeln" ersetzen, nur die Stufe setzen.
+     * Dazu der Geschwisterfall, in dem der Schutz je Typ greifen MUSS: liegt im Altbestand eine Regel
+     * mit dem Namen dieses Typs und eine allgemeine, bekommt er nichts dazu, die anderen schon.
+     */
+    @Test
+    fun `Zwilling 234 - am Typ gespeicherte Lichtregel bleibt, auch bei Hue-Regeln im Altbestand`() = runTest {
+        val standard = ShiftConfig.getDefaultConfig()
+        val eigene = hueRegel("am_typ", "")
+        val gespeichert = standard.copy(
+            definitions = standard.definitions.mapIndexed { i, typ -> if (i == 0) typ.copy(licht = typ.licht.mitRegeln(listOf(eigene))) else typ }
+        )
+        assertEquals(0, gespeichert.modellStufe)
+        assertEquals(0, gespeichert.lichtStufe)
+        val leererBestand = { SpeicherStore(mutablePreferencesOf().apply { this[KEY_DIMMER_MARKER] = DimmerModellMigration.STAND }) }
+
+        // Fall des Eigentuemers: Hue-Altbestand leer.
+        val schicht = SchichtSpeicher(gespeichert)
+        assertTrue(migration(leererBestand(), schicht, hue = HueConfigRepository(SpeicherStore())).migriereEinmalig())
+        assertEquals("die gespeicherte Lichtregel bleibt", listOf(eigene), schicht.konfig.definitions.first().licht.regeln)
+        assertEquals(
+            "ausser den Stufen aendert sich nichts",
+            gespeichert.copy(modellStufe = TypEinstellungenUebersetzung.MODELL_STUFE, lichtStufe = TypLichtUebersetzung.LICHT_STUFE),
+            schicht.konfig
+        )
+
+        // Geschwister: Regel mit dem Namen des ersten Typs und eine allgemeine im Altbestand.
+        val mitNamen = hueRegel("alt_name", standard.definitions.first().name)
+        val alle = hueRegel("alt_alle", HueRuleUseCase.UNIVERSAL_SHIFT_PATTERN)
+        val zweite = SchichtSpeicher(gespeichert)
+        assertTrue(migration(leererBestand(), zweite, hue = HueConfigRepository(hueStore(mitNamen, alle))).migriereEinmalig())
+        assertEquals("der erste Typ behaelt nur seine Regel", listOf(eigene), zweite.konfig.definitions.first().licht.regeln)
+        val andere = zweite.konfig.definitions.drop(1).filter { it.kategorie != ShiftKategorie.KRANK && it.kategorie != ShiftKategorie.IGNORIEREN }
+        assertTrue("die Standard-Konfiguration hat weitere Typen mit Wecker", andere.isNotEmpty())
+        andere.forEach { typ -> assertEquals(listOf(alle.copy(id = TypLichtUebersetzung.kopieId(alle.id, typ.id))), typ.licht.regeln) }
+    }
+
+    // --- Licht: Import und beide Vorlagen verlustfrei -------------------------------------------
+
+    @Test
+    fun `Import der nachgebauten Vorlage - die Hue-Regeln stehen verlustfrei an den Typen`() = runTest {
+        importiereUndPruefeLichtVerlustfrei(UmbauVorlagen.nachgebaut())
+    }
+
+    @Test
+    fun `Import der echten Vorlage - die Hue-Regeln stehen verlustfrei an den Typen, falls lokal vorhanden`() = runTest {
+        importiereUndPruefeLichtVerlustfrei(UmbauVorlagen.echteOderUeberspringen())
+    }
+
+    /**
+     * Ein alter Export (ohne `lichtStufe`) auf einem schon migrierten Geraet, durch den ECHTEN Import:
+     * danach steht jede Hue-Regel der Datei wortgleich am Typ ihres Namens (allgemeine als Kopie an
+     * jedem Typ mit moeglichem Wecker, an einem stummen Typ ausgeschaltet), der Hue-Store traegt den
+     * Altbestand unveraendert, und ausser Licht und Stufe aendert der Schritt nichts. Die Erwartung ist
+     * hier unabhaengig von [TypLichtUebersetzung] aufgeschrieben. Keine Werte aus der Datei in den
+     * Meldungen - die echte Vorlage gehoert dem Eigentuemer.
+     */
+    private suspend fun importiereUndPruefeLichtVerlustfrei(datei: String) {
+        val store = SpeicherStore(mutablePreferencesOf().apply { this[KEY_DIMMER_MARKER] = DimmerModellMigration.STAND })
+        val hue = SpeicherStore()
+        val schicht = SchichtSpeicher(eigeneKonfig.copy(modellStufe = TypEinstellungenUebersetzung.MODELL_STUFE))
+        val import = ConfigBackupUseCase(
+            mainDataStore = store,
+            hueDataStore = hue,
+            shiftUseCase = schicht,
+            armierer = armierer,
+            dimmerModellMigration = DimmerModellMigration(kontext(), store, DimRuleUseCase(DimRuleRepository(store)), mock()),
+            rufbereitschaftMigration = RufbereitschaftMigration(kontext(), DndPrefs(store), schicht),
+            typModellMigration = migration(store, schicht, hue = HueConfigRepository(hue)),
+            hueLightUseCase = mock(),
+            hueRuleUseCase = mock(),
+            hueSmartScheduler = { mock<HueSmartScheduler>() }
+        )
+
+        assertTrue(import.import(datei).isSuccess)
+
+        val altRegeln = HueConfigRepository(hue).getScheduleRules().getOrThrow()
+        assertTrue("die Vorlage traegt Hue-Regeln", altRegeln.isNotEmpty())
+        val rohAusDatei = hueJson.decodeFromString(ConfigBackup.serializer(), datei).hue["hue_schedule_rules"]?.value
+        assertEquals("kopieren statt verschieben: der Hue-Store traegt den Altbestand wortgleich", rohAusDatei, hue.stand.value[KEY_HUE_RULES])
+
+        assertEquals("Import, Etappe 3, Licht - je ein Schreibvorgang", 3, schicht.gespeichert.size)
+        val vorLicht = schicht.gespeichert[1]
+        val nachher = schicht.konfig
+        assertEquals(TypLichtUebersetzung.LICHT_STUFE, nachher.lichtStufe)
+        assertTrue("die Vorlage hat noch kein Licht am Typ", vorLicht.definitions.all { it.licht == TypLicht() })
+        assertEquals(
+            "ausser Licht und Stufe aendert der Licht-Schritt nichts",
+            vorLicht,
+            nachher.copy(definitions = nachher.definitions.map { it.copy(licht = TypLicht()) }, lichtStufe = vorLicht.lichtStufe)
+        )
+
+        val (allgemeine, mitNamen) = altRegeln.partition { it.shiftPattern.equals(HueRuleUseCase.UNIVERSAL_SHIFT_PATTERN, ignoreCase = true) }
+        val zielJeRegel = mitNamen.map { r -> nachher.definitions.indexOfFirst { it.name.equals(r.shiftPattern, ignoreCase = true) } }
+        assertTrue("jede Regel mit Namen trifft einen Typ (sonst ginge sie verloren)", zielJeRegel.none { it < 0 })
+        nachher.definitions.forEachIndexed { i, typ ->
+            val eigene = mitNamen.filterIndexed { n, _ -> zielJeRegel[n] == i }
+            val kopien = if (typ.kategorie == ShiftKategorie.KRANK || typ.kategorie == ShiftKategorie.IGNORIEREN) {
+                emptyList()
+            } else {
+                allgemeine.map { it.copy(id = TypLichtUebersetzung.kopieId(it.id, typ.id)) }
+            }
+            val erwartet = (eigene + kopien).map { if (typ.isSilent) it.copy(enabled = false) else it }
+            assertEquals("Typ #$i: Lichtregeln", erwartet, typ.licht.regeln)
+            assertEquals("Typ #$i: nichts Undeutbares", 0, typ.licht.unlesbareRegeln)
+        }
+
+        // Verlustfrei auch gespeichert: Schreiben und Lesen wie `ShiftConfigRepository` ergibt dasselbe.
+        val repoJson = Json { ignoreUnknownKeys = true; encodeDefaults = true }
+        assertEquals(nachher, repoJson.decodeFromString(ShiftConfig.serializer(), repoJson.encodeToString(ShiftConfig.serializer(), nachher)))
+        assertEquals(TypModellMigration.Stand.Erledigt, TypModellMigration.stand.value)
+    }
+
+    private fun assertLichtFehler(grund: TypModellMigration.Grund) = assertEquals(
+        TypModellMigration.Stand.Fehlgeschlagen(grund, TypModellMigration.Schritt.LICHT),
+        TypModellMigration.stand.value
+    )
 
     private fun assertFehler(grund: TypModellMigration.Grund) =
         assertEquals(TypModellMigration.Stand.Fehlgeschlagen(grund), TypModellMigration.stand.value)

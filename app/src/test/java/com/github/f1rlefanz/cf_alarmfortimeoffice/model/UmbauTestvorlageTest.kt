@@ -1,6 +1,9 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.model
 
 import com.github.f1rlefanz.cf_alarmfortimeoffice.backup.ConfigBackup
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueScheduleRule
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.HueRuleUseCase
+import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
@@ -25,6 +28,9 @@ import java.io.File
  * „Verlustfrei“ heisst hier: jedes Feld der Datei steht nach Lesen und erneutem Schreiben mit
  * demselben Wert da, und ein zweites Lesen ergibt dasselbe Objekt. Die neuen Felder kommen beim
  * Schreiben hinzu (`encodeDefaults`), alte fallen nie weg. Json-Flags wie `ConfigBackupUseCase`.
+ *
+ * Dass beide Vorlagen auch verlustfrei MIGRIEREN (Licht, #248), prueft `TypModellMigrationTest` ueber
+ * den echten Import; die Vorlagen findet er ueber [UmbauVorlagen].
  */
 class UmbauTestvorlageTest {
 
@@ -36,7 +42,7 @@ class UmbauTestvorlageTest {
 
     @Test
     fun `nachgebaute Vorlage wird verlustfrei gelesen und die Kategorien passen zu den Flags`() {
-        val text = checkNotNull(javaClass.classLoader?.getResource(NACHGEBAUT)) { "$NACHGEBAUT fehlt" }.readText()
+        val text = UmbauVorlagen.nachgebaut()
 
         val config = pruefeVerlustfreiUndDeckungsgleich(text)
 
@@ -48,19 +54,25 @@ class UmbauTestvorlageTest {
         assertEquals(1, config.definitions.count { it.kategorie == ShiftKategorie.KRANK })
         assertEquals(5, config.definitions.count { it.kategorie == ShiftKategorie.DIENST })
         assertEquals("Vorlage von vor dem Umbau: kein Verweis", null, config.ohneKalendereintragWie)
+
+        // Die Faelle der Licht-Migration (#248): eine Regel mit Szene, eine allgemeine, eine an einem
+        // stummen Typ - und keine, deren Name keinen Typ trifft (die Vorlage migriert verlustfrei).
+        val hue = json.decodeFromString(ConfigBackup.serializer(), text).hue.getValue("hue_schedule_rules")
+        val regeln = json.decodeFromString(ListSerializer(HueScheduleRule.serializer()), checkNotNull(hue.value))
+        assertTrue("eine Regel mit Szene", regeln.any { r -> r.lightActions.any { it.isScene } })
+        assertTrue("eine Regel mit Sonnenaufgang", regeln.any { it.sunrise != null })
+        assertTrue("eine deaktivierte Regel", regeln.any { !it.enabled })
+        val (allgemeine, mitNamen) = regeln.partition { it.shiftPattern.equals(HueRuleUseCase.UNIVERSAL_SHIFT_PATTERN, ignoreCase = true) }
+        assertEquals("genau eine allgemeine Regel", 1, allgemeine.size)
+        val ziele = mitNamen.map { r -> config.definitions.firstOrNull { it.name.equals(r.shiftPattern, ignoreCase = true) } }
+        assertTrue("jede Regel mit Namen trifft einen Typ", ziele.all { it != null })
+        assertTrue("eine Regel an einem stummen Typ", ziele.any { it?.isSilent == true })
+        assertTrue("eine Regel in anderer Schreibweise als ihr Typ", mitNamen.zip(ziele).any { (r, t) -> r.shiftPattern != t?.name })
     }
 
     @Test
     fun `echte Vorlage des Eigentuemers wird verlustfrei gelesen, falls lokal vorhanden`() {
-        val kandidaten = kandidatenFuerEchteVorlage()
-        val datei = kandidaten.firstOrNull { it.isFile }
-        assumeTrue(
-            "Echte Testvorlage nicht vorhanden (nur lokal beim Eigentuemer) - uebersprungen. Gesucht: " +
-                kandidaten.joinToString { it.path },
-            datei != null
-        )
-
-        val config = pruefeVerlustfreiUndDeckungsgleich(datei!!.readText(Charsets.UTF_8))
+        val config = pruefeVerlustfreiUndDeckungsgleich(UmbauVorlagen.echteOderUeberspringen())
 
         assertTrue("die echte Vorlage hat Typen", config.definitions.isNotEmpty())
     }
@@ -108,6 +120,30 @@ class UmbauTestvorlageTest {
             }
         }
     }
+}
+
+/**
+ * Wo die beiden Vorlagen liegen - geteilt mit `TypModellMigrationTest` (#248), damit beide Klassen
+ * dieselben Dateien finden.
+ */
+internal object UmbauVorlagen {
+    const val NACHGEBAUT = "umbau/testvorlage-nachgebaut.json"
+    private const val ECHTE_VORLAGE = "..Projektdateien/umbau/testvorlagen/konfiguration-eigentuemer-2026-10-16.json"
+
+    fun nachgebaut(): String =
+        checkNotNull(javaClass.classLoader?.getResource(NACHGEBAUT)) { "$NACHGEBAUT fehlt" }.readText()
+
+    /** Der Text der echten Vorlage; fehlt sie, wird der laufende Test mit Meldung UEBERSPRUNGEN. */
+    fun echteOderUeberspringen(): String {
+        val kandidaten = kandidatenFuerEchteVorlage()
+        val datei = kandidaten.firstOrNull { it.isFile }
+        assumeTrue(
+            "Echte Testvorlage nicht vorhanden (nur lokal beim Eigentuemer) - uebersprungen. Gesucht: " +
+                kandidaten.joinToString { it.path },
+            datei != null
+        )
+        return datei!!.readText(Charsets.UTF_8)
+    }
 
     /**
      * Wo die echte Vorlage liegen kann. Gradle-Unit-Tests laufen in `app/`; gesucht wird in jedem
@@ -130,10 +166,5 @@ class UmbauTestvorlageTest {
             ordner = ordner.parentFile
         }
         return wurzeln.distinct().map { File(it, ECHTE_VORLAGE) }
-    }
-
-    private companion object {
-        const val NACHGEBAUT = "umbau/testvorlage-nachgebaut.json"
-        const val ECHTE_VORLAGE = "..Projektdateien/umbau/testvorlagen/konfiguration-eigentuemer-2026-10-16.json"
     }
 }

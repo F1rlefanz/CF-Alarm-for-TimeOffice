@@ -6,6 +6,8 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.intPreferencesKey
 import com.github.f1rlefanz.cf_alarmfortimeoffice.di.qualifiers.MainDataStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndPrefs
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.repository.interfaces.IHueConfigRepository
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.TypLichtUebersetzung
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IAlarmRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IShiftUseCase
@@ -86,6 +88,30 @@ import javax.inject.Singleton
  * [ZeitkettenArmierer] ist das keine Fensterlogik: die Einbahnstrasse betrifft die Fensterquellen.
  *
  * LAEUFT NIE BEIM BAUEN DES GRAPHEN, nur aus [migriereEinmalig] (kein CE-Zugriff im Konstruktor).
+ *
+ * ZWEITER SCHRITT: DAS LICHT (Umbau Etappe 4, #248, SPEC E8 und Abschnitt 4). Nach dem Schritt oben
+ * zieht [lichtSchritt] die heutigen Hue-Regeln einmalig an die Typen ([TypLichtUebersetzung], #247).
+ * Eigener Marker [ShiftConfig.lichtStufe] (nicht `modellStufe = 2`, siehe dort), eigene Tore, ein
+ * eigener Schreibvorgang. Er laeuft AUCH, wenn der Schritt oben gescheitert ist: die Uebersetzung
+ * braucht nichts aus ihm (Name, Kategorie, `isSilent`, das eigene Licht), und eine haengende
+ * Dimmer-Umstellung soll das Licht nicht mit festhalten. Die Tore, jedes schreibt bei "nein" nichts:
+ * 1. Entsperrt? (gemeinsam mit oben) - davor liest auch `hue_settings` still leer, und eine leere
+ *    Liste setzt die Stufe endgueltig.
+ * 2. `lichtStufe` gesetzt? Dann erledigt, nie ein Fehler.
+ * 3. [IAlarmRepository.isPersistenceBlocked].
+ * 4. Die Hue-Regeln STRIKT ([IHueConfigRepository.getScheduleRules]): ein Fehlschlag ist
+ *    [Grund.HUE_REGELN_NICHT_LESBAR], nie "keine Regeln". Ueber das Repository, nicht ueber
+ *    `HueRuleUseCase`: das zoege den Hue-Graphen (OkHttp) in jeden Anlass. Gelesen wird erst hier,
+ *    nie beim Bauen.
+ * 5. Die Konfiguration erneut lesen (gleichzeitige Nutzeraenderung, wie oben) und Tor 7 von oben:
+ *    nie ueber eine leere oder die Standard-Konfiguration - die Uebersetzung schreibt die GANZE
+ *    Konfiguration, ueber einen vor dem Entsperren gelesenen Standard waere die echte weg. Die
+ *    Betreuer-Reihenfolge in #248 nennt das Tor nicht; ohne es waere genau dieser Fall offen.
+ * Der Altbestand im Hue-Store bleibt unveraendert (kopieren statt verschieben). Kein Armieren:
+ * Dimmer und DND lesen das Licht nicht. Rest: hat ein anderer Leser `hue_settings` in diesem Prozess
+ * vor dem Entsperren gelesen, liest der Store danach still leer (Skill cfalarm-persistenz-und-auth),
+ * und Tor 1 faengt das nicht - einen Kanarienvogel wie den Dimmer-Marker hat der Hue-Store nicht.
+ * Dagegen steht die Regel, dass jeder Leser im Prozessstart vorher `istEntsperrt()` fragt.
  */
 @Singleton
 class TypModellMigration @Inject constructor(
@@ -98,6 +124,8 @@ class TypModellMigration @Inject constructor(
     private val dndPrefs: DndPrefs,
     private val shiftUseCase: IShiftUseCase,
     private val alarmRepository: IAlarmRepository,
+    // NUR gelesen, im Licht-Schritt (Tor 4) - der Altbestand bleibt unveraendert.
+    private val hueConfigRepository: IHueConfigRepository,
     private val armierer: ZeitkettenArmierer
 ) {
     /** Was die Karte im System-Status anzeigt. Nur im Speicher: kein neuer Preference-Schluessel. */
@@ -105,10 +133,23 @@ class TypModellMigration @Inject constructor(
         /** In diesem Prozess noch nicht entschieden (oder nur verschoben, weil gesperrt). */
         data object Offen : Stand
 
-        /** Die Konfiguration traegt die Stufe - gerade migriert oder schon vorher. */
+        /** Die Konfiguration traegt beide Stufen - gerade migriert oder schon vorher. */
         data object Erledigt : Stand
 
-        data class Fehlgeschlagen(val grund: Grund) : Stand
+        /**
+         * Ein Schritt ist gescheitert; scheitern beide, steht hier der erste ([Schritt.DIMMEN_UND_DND]).
+         * [schritt] sagt, welcher - derselbe [Grund] kann in beiden vorkommen.
+         */
+        data class Fehlgeschlagen(val grund: Grund, val schritt: Schritt = Schritt.DIMMEN_UND_DND) : Stand
+    }
+
+    /** Welcher Teil der Uebernahme gescheitert ist. */
+    enum class Schritt {
+        /** Dimm-Regeln, Dimm-Schalter und „Nicht stoeren“ (#216). */
+        DIMMEN_UND_DND,
+
+        /** Die Hue-Regeln (#248). */
+        LICHT
     }
 
     /** Warum nicht migriert wurde, in Nutzersprache (eine Zeile auf der Karte). */
@@ -119,7 +160,8 @@ class TypModellMigration @Inject constructor(
         RUFBEREITSCHAFT_AUSSTEHEND("Die Übernahme der Rufbereitschaft ist noch nicht abgeschlossen."),
         ALTBESTAND_NICHT_LESBAR("Die bisherigen Einstellungen für Dimmen und „Nicht stören“ ließen sich nicht lesen."),
         SPEICHERN_FEHLGESCHLAGEN("Die Schichttypen ließen sich nicht speichern."),
-        KEINE_EIGENEN_SCHICHTTYPEN("Die App hat keine eigenen Schichttypen gefunden.")
+        KEINE_EIGENEN_SCHICHTTYPEN("Die App hat keine eigenen Schichttypen gefunden."),
+        HUE_REGELN_NICHT_LESBAR("Die bisherigen Hue-Regeln ließen sich nicht lesen.")
     }
 
     companion object {
@@ -141,45 +183,67 @@ class TypModellMigration @Inject constructor(
 
     private class Abbruch(val grund: Grund, cause: Throwable? = null) : Exception(grund.name, cause)
 
+    /** Wie ein Schritt ausgegangen ist; daraus setzt [migriereEinmalig] den [stand]. */
+    private sealed interface Ausgang {
+        /** Gerade geschrieben. */
+        data object Geschrieben : Ausgang
+
+        /** Die Stufe stand schon. */
+        data object SchonErledigt : Ausgang
+
+        /** Verschoben ohne Fehler (es liegt nichts brach); der naechste Anlass versucht es erneut. */
+        data object Verschoben : Ausgang
+
+        data class Gescheitert(val grund: Grund) : Ausgang
+    }
+
     /**
-     * Migriert, falls die Konfiguration noch keine [TypEinstellungenUebersetzung.MODELL_STUFE]
-     * traegt. Wirft nie.
+     * Migriert, falls die Konfiguration noch keine [TypEinstellungenUebersetzung.MODELL_STUFE] bzw.
+     * keine [TypLichtUebersetzung.LICHT_STUFE] traegt - erst Dimmen und DND, dann das Licht. Wirft nie.
      *
-     * @return `true`, wenn geschrieben wurde. Dimmer und DND sind dann schon neu armiert.
+     * @return `true`, wenn einer der beiden Schritte geschrieben hat. Hat der erste geschrieben, sind
+     *   Dimmer und DND schon neu armiert.
      */
     suspend fun migriereEinmalig(): Boolean = withContext(NonCancellable) {
         // NonCancellable: angestossen wird das auch aus dem lifecycleScope einer Activity.
-        try {
-            fuehreAus()
-        } catch (e: Abbruch) {
-            _stand.value = Stand.Fehlgeschlagen(e.grund)
-            Logger.w(
-                LogTags.DIMMER,
-                "Typ-Modellmigration nicht ausgefuehrt (${e.grund}) - nichts geschrieben, " +
-                    "Altbestand unveraendert, naechster Anlass versucht es erneut",
-                e.cause
-            )
-            false
-        } catch (e: Exception) {
-            _stand.value = Stand.Fehlgeschlagen(Grund.SPEICHERN_FEHLGESCHLAGEN)
-            Logger.w(LogTags.DIMMER, "Typ-Modellmigration fehlgeschlagen - naechster Anlass versucht es erneut", e)
-            false
-        }
-    }
-
-    private suspend fun fuehreAus(): Boolean {
-        // Tor 1 - kein Fehlerzustand: gesperrt gibt es keine Oberflaeche, und nach dem Entsperren
-        // kommt der naechste Anlass.
+        // Tor 1 beider Schritte - kein Fehlerzustand: gesperrt gibt es keine Oberflaeche, und nach
+        // dem Entsperren kommt der naechste Anlass.
         if (!NutzerEntsperrung.istEntsperrt(context, LogTags.DIMMER)) {
             Logger.w(LogTags.DIMMER, "Typ-Modellmigration verschoben - Geraet noch nicht entsperrt (CE-Store waere leer)")
-            return false
+            return@withContext false
         }
+        val dimmenUndDnd = schritt("Typ-Modellmigration") { fuehreAus() }
+        val licht = schritt("Licht-Migration") { lichtSchritt() }
 
-        // Tor 2 - zuerst, damit ein schon migriertes Geraet nie wieder einen Fehler meldet.
-        if (konfiguration().modellStufe >= TypEinstellungenUebersetzung.MODELL_STUFE) {
-            _stand.value = Stand.Erledigt
-            return false
+        _stand.value = when {
+            dimmenUndDnd is Ausgang.Gescheitert -> Stand.Fehlgeschlagen(dimmenUndDnd.grund, Schritt.DIMMEN_UND_DND)
+            licht is Ausgang.Gescheitert -> Stand.Fehlgeschlagen(licht.grund, Schritt.LICHT)
+            dimmenUndDnd != Ausgang.Verschoben && licht != Ausgang.Verschoben -> Stand.Erledigt
+            else -> Stand.Offen
         }
+        dimmenUndDnd == Ausgang.Geschrieben || licht == Ausgang.Geschrieben
+    }
+
+    /** Fuehrt einen Schritt aus; jeder Fehler wird zu [Ausgang.Gescheitert], mit WARN im Release-Log. */
+    private suspend fun schritt(name: String, block: suspend () -> Ausgang): Ausgang = try {
+        block()
+    } catch (e: Abbruch) {
+        Logger.w(
+            LogTags.DIMMER,
+            "$name nicht ausgefuehrt (${e.grund}) - nichts geschrieben, " +
+                "Altbestand unveraendert, naechster Anlass versucht es erneut",
+            e.cause
+        )
+        Ausgang.Gescheitert(e.grund)
+    } catch (e: Exception) {
+        Logger.w(LogTags.DIMMER, "$name fehlgeschlagen - naechster Anlass versucht es erneut", e)
+        Ausgang.Gescheitert(Grund.SPEICHERN_FEHLGESCHLAGEN)
+    }
+
+    /** Der Schritt Dimmen und DND (#216), nach Tor 1 in [migriereEinmalig]. */
+    private suspend fun fuehreAus(): Ausgang {
+        // Tor 2 - zuerst, damit ein schon migriertes Geraet nie wieder einen Fehler meldet.
+        if (konfiguration().modellStufe >= TypEinstellungenUebersetzung.MODELL_STUFE) return Ausgang.SchonErledigt
 
         // Tor 3
         if (alarmRepository.isPersistenceBlocked()) throw Abbruch(Grund.BESTAND_NICHT_LESBAR)
@@ -215,10 +279,7 @@ class TypModellMigration @Inject constructor(
         // (gleichzeitige Nutzeraenderung). Jeder Schreiber im Prozess aktualisiert den
         // Repository-Cache, dieser Read sieht also auch eine Aenderung von eben.
         val config = konfiguration()
-        if (config.modellStufe >= TypEinstellungenUebersetzung.MODELL_STUFE) {
-            _stand.value = Stand.Erledigt
-            return false
-        }
+        if (config.modellStufe >= TypEinstellungenUebersetzung.MODELL_STUFE) return Ausgang.SchonErledigt
         // Tor 7 - siehe Klassen-KDoc. Eine Karte nur, wenn dabei wirklich etwas liegen bleibt:
         // eine frische Installation (keine Regel, DND aus) hat nichts zu melden.
         if (config.definitions.isEmpty() || config == ShiftConfig.getDefaultConfig()) {
@@ -230,13 +291,12 @@ class TypModellMigration @Inject constructor(
                     (if (traegtEtwas) "traegt Einstellungen" else "leer") + " - nichts geschrieben"
             )
             if (traegtEtwas) throw Abbruch(Grund.KEINE_EIGENEN_SCHICHTTYPEN)
-            return false
+            return Ausgang.Verschoben
         }
 
         val ziel = TypEinstellungenUebersetzung.uebersetze(config, alt, dimRuleUseCase)
         shiftUseCase.saveShiftConfig(ziel).getOrElse { throw Abbruch(Grund.SPEICHERN_FEHLGESCHLAGEN, it) }
 
-        _stand.value = Stand.Erledigt
         Logger.business(
             LogTags.DIMMER,
             if (alt.istLeer) {
@@ -249,7 +309,50 @@ class TypModellMigration @Inject constructor(
         )
         // Nach Erfolg beide Ketten neu armieren (#216). Wirft nicht, faengt selbst.
         armierer.armiere(ANLASS)
-        return true
+        return Ausgang.Geschrieben
+    }
+
+    /** Der Schritt Licht (#248), nach Tor 1 in [migriereEinmalig]; die Tore im Klassen-KDoc. */
+    private suspend fun lichtSchritt(): Ausgang {
+        // Tor 2 - zuerst, damit ein schon migriertes Geraet nie wieder einen Fehler meldet.
+        if (konfiguration().lichtStufe >= TypLichtUebersetzung.LICHT_STUFE) return Ausgang.SchonErledigt
+
+        // Tor 3
+        if (alarmRepository.isPersistenceBlocked()) throw Abbruch(Grund.BESTAND_NICHT_LESBAR)
+
+        // Tor 4 - strikt: `getScheduleRules()` meldet einen Lese- oder Dekodierfehler als Failure.
+        val altRegeln = hueConfigRepository.getScheduleRules().getOrElse { throw Abbruch(Grund.HUE_REGELN_NICHT_LESBAR, it) }
+
+        // Tor 5 - erst JETZT die Fassung lesen, die geschrieben wird (wie oben), und nie ueber eine
+        // leere oder die Standard-Konfiguration. Eine Karte nur, wenn dabei Regeln liegen bleiben.
+        val config = konfiguration()
+        if (config.lichtStufe >= TypLichtUebersetzung.LICHT_STUFE) return Ausgang.SchonErledigt
+        if (config.definitions.isEmpty() || config == ShiftConfig.getDefaultConfig()) {
+            Logger.w(
+                LogTags.DIMMER,
+                "Licht-Migration verschoben - keine eigene Schicht-Konfiguration " +
+                    "(${config.definitions.size} Typ(en)), ${altRegeln.size} Hue-Regel(n) - nichts geschrieben"
+            )
+            if (altRegeln.isNotEmpty()) throw Abbruch(Grund.KEINE_EIGENEN_SCHICHTTYPEN)
+            return Ausgang.Verschoben
+        }
+
+        val ergebnis = TypLichtUebersetzung.uebersetze(config, altRegeln)
+        shiftUseCase.saveShiftConfig(ergebnis.config).getOrElse { throw Abbruch(Grund.SPEICHERN_FEHLGESCHLAGEN, it) }
+
+        val z = ergebnis.zaehler
+        Logger.business(
+            LogTags.DIMMER,
+            if (altRegeln.isEmpty()) {
+                "💡 Licht-Migration: keine Hue-Regeln - nur die Stufe gesetzt, ${config.definitions.size} Typ(en) unveraendert"
+            } else {
+                "💡 Licht-Migration: ${altRegeln.size} Hue-Regel(n), ${config.definitions.size} Typ(en) - " +
+                    "${z.uebernommen} uebernommen, ${z.kopiert} Kopie(n) allgemeiner Regeln, " +
+                    "${z.stummAbgeschaltet} am stummen Typ ausgeschaltet, ${z.verwaist} ohne Typ, " +
+                    "${z.schonBelegt} entfallen (Typ hatte schon Licht) - Hue-Altbestand unveraendert"
+            }
+        )
+        return Ausgang.Geschrieben
     }
 
     private suspend fun konfiguration() =

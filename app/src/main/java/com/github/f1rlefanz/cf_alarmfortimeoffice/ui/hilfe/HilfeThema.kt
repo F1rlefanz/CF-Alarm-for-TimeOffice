@@ -35,7 +35,6 @@ enum class HilfeThema(val seite: HilfeSeite, val anker: String?) {
     ANLEITUNG_VORBEREITUNG(HilfeSeite.ANLEITUNG, "vorbereitung"),
     ANLEITUNG_SCHICHTEN(HilfeSeite.ANLEITUNG, "schichten"),
     ANLEITUNG_WECKER(HilfeSeite.ANLEITUNG, "wecker"),
-    ANLEITUNG_DIMMER(HilfeSeite.ANLEITUNG, "dimmer"),
     ANLEITUNG_NICHT_STOEREN(HilfeSeite.ANLEITUNG, "nicht-stoeren"),
     ANLEITUNG_HUE(HilfeSeite.ANLEITUNG, "hue"),
     ANLEITUNG_TAGESLICHT(HilfeSeite.ANLEITUNG, "tageslicht"),

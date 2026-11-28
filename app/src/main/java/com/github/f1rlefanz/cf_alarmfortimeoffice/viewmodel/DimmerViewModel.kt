@@ -4,7 +4,6 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimOverlayPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimScheduleUseCase
-import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.ZeitkettenArmierer
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -23,37 +22,6 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
-
-/**
- * Der alte Hauptschalter (`dim_enabled`). Er hat seit #225 keine Bedienoberflaeche mehr (und seit
- * #217 liest ihn der Dimmer nicht mehr); die Klasse bleibt bis #226, weil `DimmerDndNachzugTest`
- * sie bis dahin baut. Die Geraete-Einstellungen liegen in [GeraeteDimmenViewModel].
- */
-@HiltViewModel
-class DimmerViewModel @Inject constructor(
-    private val prefs: DimOverlayPrefs,
-    private val armierer: ZeitkettenArmierer
-) : ViewModel() {
-
-    data class DimmerUiState(val dimEnabled: Boolean = false)
-
-    val uiState: StateFlow<DimmerUiState> =
-        prefs.toggles
-            .map { DimmerUiState(dimEnabled = it.dimEnabled) }
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DimmerUiState())
-
-    /**
-     * WARN, damit die Zeile im Release-Log steht: Der Schalter ist eine DAUERHAFTE Einstellung,
-     * keine Nachtpause - und er war bis 1.41.1 der einzige Schreiber von `dim_enabled`, der
-     * nichts protokollierte. Am 16.09.2026 liess sich ein "warum war heute Nacht kein Dimmen"
-     * nur ueber einen Tab-Wechsel und den Abschaltgrund `DIMMER_AUS` rekonstruieren.
-     */
-    fun setDimEnabled(enabled: Boolean) = viewModelScope.launch {
-        Logger.w(LogTags.DIMMER, "Dimmer per Hauptschalter ${if (enabled) "AN" else "AUS"} - gilt dauerhaft, bis er zurueckgestellt wird")
-        prefs.setDimEnabled(enabled)
-        armierer.armiere("DIMMER")
-    }
-}
 
 /**
  * Die Geraete-Einstellungen des Dimmens unter "Einstellungen" (#225): Farbwaerme und Vorschau. Die
@@ -114,9 +82,7 @@ class GeraeteDimmenViewModel @Inject constructor(
  * kein `finally` aus; deshalb schreibt [DimOverlayPrefs.setPreviewOverlay] den Ablaufzeitpunkt mit
  * auf die Platte, und jeder spaetere Leser setzt das Ende der Vorschau von allein durch.
  *
- * Eine Instanz je ViewModel: Die Vorschau im Regel-Editor (bis #226) und die in den Einstellungen
- * kennen einander nicht. Ueberlappen sie, endet die spaetere frueher - der Bildschirm wird dabei
- * hell, nie dauerhaft dunkel.
+ * Eine Instanz je ViewModel; der einzige Nutzer ist [GeraeteDimmenViewModel].
  */
 internal class DimmVorschau(
     private val prefs: DimOverlayPrefs,

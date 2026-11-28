@@ -43,10 +43,10 @@ object DimWindowResolver {
     private const val MIN_MS = 60_000L
 
     /**
-     * Horizont der Konflikt-Auskunft für die Regelliste ([findRuleConflicts]) in Kalendertagen.
+     * Horizont von [findRuleConflicts] in Kalendertagen.
      *
      * Ist zugleich der Planungshorizont des Schedulers: `DimScheduleUseCase.HORIZON_DAYS` wird aus
-     * dieser Konstante gesetzt — die Oberfläche darf keinen Zeitraum behaupten, den der Scheduler
+     * dieser Konstante gesetzt — eine Auskunft darf keinen Zeitraum behaupten, den der Scheduler
      * gar nicht plant. Bis v1.45 stand der Zahlenwert an zwei Stellen, Gleichheit nur per KDoc
      * (#130, G7-14).
      */
@@ -394,8 +394,8 @@ object DimWindowResolver {
      *    ueberschreibt UNIVERSAL komplett, nicht additiv", nur jetzt ueber alle Schichten des
      *    Tages gebildet statt ueber eine zufaellig ausgewaehlte.
      * 3. **Widersprechen sich zwei VERSCHIEDENE spezifische Regeln an einem Tag, gilt die Regel der
-     *    Schicht, die als erste weckt** - der Fall wird als WARN protokolliert UND ueber
-     *    [findRuleConflicts] in der Regelliste angezeigt. Den Tag nicht auslassen (Regeln sind die
+     *    Schicht, die als erste weckt** - der Fall wird als WARN protokolliert; [findRuleConflicts]
+     *    liefert dieselbe Auskunft (ohne Bedienoberflaeche). Den Tag nicht auslassen (Regeln sind die
      *    einzige Quelle), die Fenster nicht vereinigen (additiv).
      * 4. Die gewaehlte Regel wird an der Schicht VERANKERT, zu der sie gehoert - ihre ALARM-/
      *    SHIFT_END-Anker meinen diese Schicht, nicht irgendeine andere des Tages. Treffen mehrere
@@ -495,11 +495,8 @@ object DimWindowResolver {
             }
         }
         if (konflikte.isNotEmpty()) {
-            // WARN, damit es im Release-Log landet (dort steht nur WARN+). Das Log ist hier NUR
-            // die Diagnose-Spur - die Auskunft an den Nutzer laeuft ueber [findRuleConflicts] und
-            // die Regelliste; ein Konflikt, den ausschliesslich das Log kennt, waere wieder
-            // "angezeigt, wirkt nicht". Bewusst nur Datum und Regel-IDs - Regel- und Schichtnamen
-            // sind Nutzertexte und gehoeren nicht ins Log.
+            // WARN, damit es im Release-Log landet (dort steht nur WARN+). Bewusst nur Datum und
+            // Regel-IDs - Regel- und Schichtnamen sind Nutzertexte und gehoeren nicht ins Log.
             Logger.w(
                 LogTags.DIMMER,
                 "Dimm-Regelkonflikt an ${konflikte.size} Tag(en): mehrere Schichten eines Tages " +
@@ -521,11 +518,11 @@ object DimWindowResolver {
     )
 
     /**
-     * Auskunft fuer die Regelliste: an welchen Kalendertagen wird welche Regel von einer anderen
-     * verdraengt?
+     * An welchen Kalendertagen wird welche Regel von einer anderen verdraengt?
      *
-     * Auskunft für die Regelliste; gleiche Auswahl [regelFuerTag] wie [buildRuleSpans], Punkt 3 dort -
-     * zweiter Aufrufer derselben Funktion, damit Anzeige und Wirkung nicht abdriften.
+     * Gleiche Auswahl [regelFuerTag] wie [buildRuleSpans], Punkt 3 dort - zweiter Aufrufer derselben
+     * Funktion, damit Auskunft und Wirkung nicht abdriften. Ohne Bedienoberflaeche: nur Tests rufen
+     * sie (#240).
      *
      * Der Horizont beginnt bei [today] und NICHT - anders als in [buildRuleSpans] - einen Tag
      * davor: der Rueckblick dort haelt eine ueber Mitternacht laufende Nacht am Leben, fuer eine

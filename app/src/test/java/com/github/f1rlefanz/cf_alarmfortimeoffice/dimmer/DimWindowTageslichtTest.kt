@@ -10,8 +10,6 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.Ort
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.OrtQuelle
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.TageslichtQuelle
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.TageslichtStand
-import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.dimmer.fensterListeAlsJson
-import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.dimmer.fensterListeAusJson
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -285,14 +283,6 @@ class DimWindowTageslichtTest {
             t(nacht, "22:00")..t(wecktag, "08:00"),
             DimWindowResolver.resolveFreeWindow(fenster(), nacht, zone, listOf(t(wecktag, "07:00")))
         )
-    }
-
-    // ------------------------------------------------------------------ Editor-Formular uebersteht Wegnavigieren
-
-    @Test
-    fun `die Fensterliste des Editors uebersteht den Speicher-Umweg samt nachlaufBisHell`() {
-        val liste = listOf(fenster(hellAb = HellAb.DAEMMERUNG), DimWindow())
-        assertEquals(liste, fensterListeAusJson(fensterListeAlsJson(liste)))
     }
 
     // ------------------------------------------------------------------ Scheduler: wann gelesen wird

@@ -245,8 +245,7 @@ class ShiftViewModel @Inject constructor(
     private val hueRuleUseCase: dagger.Lazy<HueRuleUseCase>,
     /**
      * Nach einem geaenderten Dimm-Regelmuster muessen die Fenster neu berechnet und die
-     * Tick-Kette neu armiert werden - genauso, wie `DimmerRulesViewModel.saveRule()` direkt nach
-     * jedem Regel-Schreibvorgang `enable()` ruft. Der Vorlaeufer ist `ConfigBackupUseCase`: auch
+     * Tick-Kette neu armiert werden. Der Vorlaeufer ist `ConfigBackupUseCase`: auch
      * dort armiert ein generischer Schreiber beide Ketten selbst, sonst stuende die neue Regel im
      * Store, waehrend bis zur naechsten 6h-Wartung nach dem ALTEN Plan gedimmt wird.
      */

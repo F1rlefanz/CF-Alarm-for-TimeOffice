@@ -60,6 +60,16 @@ class MainTabZieleTest {
     }
 
     @Test
+    fun `die Schublade zeigt genau die Bereiche der Vorlage in ihrer Reihenfolge`() {
+        // SPEC 3.7 / BILDSCHIRME B7: die Titel sind das Menue. Ein Dimm-Eintrag gehoert nicht
+        // hinein (Dimmen stellt man am Schichttyp ein, Geraete-Werte unter "Einstellungen").
+        assertEquals(
+            listOf("Übersicht", "Wecker", "Philips Hue", "System-Status", "Einstellungen"),
+            MAIN_TAB_ZIELE.map { it.titel }
+        )
+    }
+
+    @Test
     fun `mainTabZiel liefert zu jedem Bereich einen Eintrag`() {
         MainTab.entries.forEach { tab ->
             assertEquals(tab, mainTabZiel(tab).tab)

@@ -82,8 +82,8 @@ import java.util.Locale
 /*
  * Das Blatt „Weitere Optionen“ der Karte „Bildschirm dimmen“ (Umbau Etappe 3, #224, SPEC E6 und 3.3 Punkt 6):
  * die Farbwaerme des Typs, je Fenster „Dimmen nach dem Wecker“ samt „Nachlauf bis es hell ist“ und fuer Fenster,
- * die nicht in „Wann“ passen, der Anker-Editor. Anker-Editor, Nachlauf und Tageslicht-Beispiel sind aus dem
- * Regel-Editor hierher umgezogen; der ruft sie bis zu seiner Entfernung (#226) von hier auf.
+ * die nicht in „Wann“ passen, der Anker-Editor. Anker-Editor, Nachlauf und Tageslicht-Beispiel stammen aus
+ * dem frueheren Regel-Editor.
  */
 
 // ── Anker-Editor: Listen und Feld-Zuordnung ──────────────────────────────────────────────────
@@ -96,9 +96,8 @@ internal enum class AnkerFeld { UHRZEIT, OFFSET }
  *
  * WARUM [DimAnchor.ALARM] HIER STEHEN MUSS: Seit dem Ein-Modell-Umbau ist ein Fenster
  * „Weckzeit −60 → Weckzeit" der einzige Weg zu einer Einschlafhilfe vor dem Dienst - die frühere
- * Wellness-Quelle gibt es nicht mehr. Genau das versprechen der Erklärtext im Dimmer-Tab
- * (`dimmer_rules_explain`) und die Modellmigration, die migrierten Nutzern ein solches Fenster
- * anlegt. Fehlte der Knopf, gäbe es die einzige Fähigkeit, die die entfallene Quelle ersetzen
+ * Wellness-Quelle gibt es nicht mehr. Genau das verspricht die Modellmigration, die migrierten
+ * Nutzern ein solches Fenster anlegt. Fehlte der Knopf, gäbe es die einzige Fähigkeit, die die entfallene Quelle ersetzen
  * soll, ohne Bedienelement - und ein migriertes Fenster wäre im Editor nicht einmal darstellbar.
  *
  * [DimAnchor.ALARM_SONST_CLOCK] fehlt bewusst: er ist ein reiner ENDE-Anker (siehe sein KDoc).

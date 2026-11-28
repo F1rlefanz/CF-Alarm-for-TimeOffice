@@ -140,7 +140,7 @@ class DimAccessibilityService : AccessibilityService() {
      * (etwa nachdem eine `UiAutomation` sie voruebergehend unterdrueckt hat, siehe [DimDiagnostik]).
      * Ohne Abbruch saessen danach ZWEI Collector auf demselben Flow und riefen `render()` doppelt,
      * jeder mit eigener Alpha-Rampe - ausgerechnet Flackern waere die Folge. Cancel-and-replace ist
-     * hier das Hausmuster (Vorbild: der Vorschau-Job in `DimmerRulesViewModel`).
+     * hier das Hausmuster (Vorbild: der Vorschau-Job in `DimmVorschau`).
      */
     private var renderJob: Job? = null
 

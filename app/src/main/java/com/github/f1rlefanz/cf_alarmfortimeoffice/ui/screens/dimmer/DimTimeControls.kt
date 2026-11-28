@@ -9,12 +9,15 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
+import com.github.f1rlefanz.cf_alarmfortimeoffice.R
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.Blockposition
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.HellAb
 
 /*
- * Bausteine, die der Regel-Editor und der Abschnitt „Bildschirm dimmen“ der Typ-Seite (#221) teilen:
- * die Uhrzeit-Auswahl und die Auswahl der Blockpositionen.
+ * Bausteine des Abschnitts „Bildschirm dimmen“ der Typ-Seite (#221) und seines Blatts „Weitere
+ * Optionen“: die Uhrzeit-Auswahl, die Auswahl der Blockpositionen und der Name des Hell-Ereignisses.
  */
 
 /** "HH:mm" aus Minuten seit Mitternacht - fuer die Uhrzeit-Felder der Dimm-Fenster. */
@@ -67,3 +70,16 @@ internal fun blockpositionUmschalten(aktuell: Set<Blockposition>, position: Bloc
     } else {
         aktuell + position
     }
+
+/**
+ * Nutzername des Ereignisses hinter einer [HellAb]-Wahl ("Dämmerung"/"Sonnenaufgang") - fuer
+ * Vorschau und Editor-Beispiel. [HellAb.IMMER] kuerzt nie und taucht hier nicht auf; faellt es
+ * doch hinein, ist "Sonnenaufgang" die harmlose Beschriftung.
+ */
+@Composable
+internal fun tageslichtEreignisName(hellAb: HellAb): String = stringResource(
+    when (hellAb) {
+        HellAb.DAEMMERUNG -> R.string.tageslicht_ereignis_daemmerung
+        HellAb.SONNENAUFGANG, HellAb.IMMER -> R.string.tageslicht_ereignis_sonnenaufgang
+    }
+)

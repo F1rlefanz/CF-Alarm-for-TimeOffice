@@ -1,4 +1,4 @@
-"""Testet die beiden Entscheidungen in `pruefe_reste.py`, die still falsch sein koennen.
+"""Testet die Entscheidungen in `pruefe_reste.py`, die still falsch sein koennen.
 
 WARUM ES DAS GIBT
 -----------------
@@ -191,6 +191,233 @@ class OffenerMerge(unittest.TestCase):
         with mock.patch.object(pruefe_reste, "WURZEL", self.repo),                 mock.patch.object(pruefe_reste, "pruefe_tote_importe", gerufen),                 mock.patch.object(pruefe_reste, "pruefe_verwaiste_strings"),                 mock.patch.object(pruefe_reste, "pruefe_composable_ohne_verbraucher"),                 mock.patch.object(pruefe_reste, "pruefe_haengende_kdocs"),                 mock.patch.object(pruefe_reste, "pruefe_ungenutzte_konstanten"),                 mock.patch.object(pruefe_reste, "pruefe_doku_verweise"),                 mock.patch.object(sys, "argv", ["pruefe_reste.py", "--ci"]):
             pruefe_reste.main()
         gerufen.assert_called_once()
+
+
+# ---------------------------------------------------------------------------------------------
+# Charakterisierung der Pruefungen 2, 3 und 4 (#236)
+#
+# Geschrieben VOR dem Umbau auf einen Index und gegen die alte Fassung gruen: eine Beschleunigung
+# darf keine Aussage aendern. Alle Tests gehen ueber die `pruefe_*`-Funktionen, nicht ueber
+# Hilfsfunktionen, und vergleichen die GANZE Befundliste - ein Fund zu viel faellt so genauso auf
+# wie einer zu wenig. Auch die lockeren Stellen sind festgehalten (Teilstring bei `@string/`,
+# Aufruf im Kommentar): sie sollen so bleiben.
+# ---------------------------------------------------------------------------------------------
+class WegwerfBaum(unittest.TestCase):
+    """Ein Wegwerf-Baum, auf den ALLE fuenf Pfad-Konstanten zeigen.
+
+    `WURZEL` allein reicht nicht: die uebrigen vier werden beim Import daraus berechnet. Ein
+    Test, der nur `WURZEL` umbiegt, liest den echten Baum und ist grundlos gruen.
+    """
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.repo = tmp.name
+        quellen = os.path.join(self.repo, "app", "src")
+        umgebogen = mock.patch.multiple(
+            pruefe_reste,
+            WURZEL=self.repo,
+            QUELLEN=quellen,
+            STRINGS=os.path.join(quellen, "main", "res", "values", "strings.xml"),
+            DOKU_ORTE=[
+                os.path.join(self.repo, "CLAUDE.md"),
+                os.path.join(self.repo, ".claude", "skills"),
+            ],
+            NACHTRAEGE=os.path.join(self.repo, "nachtraege.md"),
+        )
+        umgebogen.start()
+        self.addCleanup(umgebogen.stop)
+
+    def schreibe(self, relativ, *zeilen):
+        pfad = os.path.join(self.repo, *relativ.split("/"))
+        os.makedirs(os.path.dirname(pfad), exist_ok=True)
+        with open(pfad, "w", encoding="utf-8", newline="\n") as f:
+            f.write("\n".join(zeilen) + "\n")
+
+
+class DokuVerweise(WegwerfBaum):
+    """Pruefung 3 an einem echten Diff zwischen zwei Commits."""
+
+    def _commit(self, nachricht):
+        _git_in(self.repo, "add", "app")
+        _git_in(self.repo, "commit", "-q", "-m", nachricht)
+        return subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=self.repo, check=True, capture_output=True,
+            text=True,
+        ).stdout.strip()
+
+    def test_gemeldet_wird_nur_das_verschwundene_und_undokumentierte_symbol(self):
+        _git_in(self.repo, "init", "-q", "-b", "main")
+        # Jede Deklaration auf eigener Zeile: aus dem Diff wird nur eine je Zeile gelesen.
+        self.schreibe(
+            "app/src/main/java/a/Alt.kt",
+            "package a",
+            "",
+            "fun verschwunden() = 1",
+            "fun verschoben() = 2",
+            "data class Titel(",
+            "    val eventTitle: String,",
+            "    val mitAnnotation: Int,",
+            "    val mehrzeilig: Int,",
+            ")",
+            "fun dokumentiert() = 3",
+            "fun nurErwaehnt() = 4",
+            "class Ueberlappt",
+        )
+        basis = self._commit("basis")
+        self.schreibe(
+            "app/src/main/java/a/Alt.kt",
+            "package a",
+            "",
+            # Zwei Schluesselwoerter hintereinander: `class Ueberlappt` zaehlt auch dann als
+            # Deklaration, wenn `val class` schon ein Treffer war.
+            "// frueher val class Ueberlappt",
+            "fun verschwundenSpaeter() = 5",
+            "fun trifft(eventTitle: String, @Deprecated mitAnnotation: Int) = 6",
+            "fun weiter(",
+            "    mehrzeilig: Int,",
+            ") = 7",
+        )
+        self.schreibe("app/src/main/java/b/Neu.kt", "package b", "", "fun verschoben() = 2")
+        self._commit("umbau")
+        self.schreibe(
+            "CLAUDE.md",
+            "- `verschwunden()` macht die Arbeit.",
+            "- `verschoben()` auch.",
+            "- `eventTitle`, `mitAnnotation` und `mehrzeilig` sind Parameter.",
+            "- `dokumentiert` steht noch da.",
+            "- `nurErwaehnt` ebenfalls.",
+            "- `Ueberlappt` bleibt.",
+            "- `verschwunden()` ruft `nurErwaehnt` auf, und `verschwunden` nochmal.",
+            "- `verschwunden` wurde mit dem Umbau entfernt.",
+        )
+        self.schreibe(".claude/skills/x/SKILL.md", "- Auch der Skill ruft `a.verschwunden()`.")
+        self.schreibe(
+            "nachtraege.md",
+            "- `dokumentiert` entfaellt mit dem Umbau.",
+            "- `nurErwaehnt` wird jetzt woanders gelesen.",
+        )
+
+        befunde = []
+        pruefe_reste.pruefe_doku_verweise(befunde, basis)
+
+        meldung = "Doku nennt entferntes Symbol `{}`: {}"
+        self.assertEqual(
+            sorted([
+                meldung.format("verschwunden", ".claude/skills/x/SKILL.md:1"),
+                meldung.format("verschwunden", "CLAUDE.md:1"),
+                meldung.format("nurErwaehnt", "CLAUDE.md:5"),
+                meldung.format("nurErwaehnt", "CLAUDE.md:7"),
+                meldung.format("verschwunden", "CLAUDE.md:7"),
+            ]),
+            sorted(befunde),
+        )
+
+
+class ComposableOhneVerbraucher(WegwerfBaum):
+    """Pruefung 4 ueber mehrere Dateien."""
+
+    def test_gemeldet_wird_nur_die_karte_ohne_echten_aufruf(self):
+        karten = []
+        for name in (
+            "NurVorschau", "Andernorts", "Thema", "NurFremdVorschau", "NachDerVorschau",
+            "NurImTest", "NurImKommentar",
+        ):
+            karten += ["@Composable", "fun %s() {" % name, "}", ""]
+        self.schreibe(
+            "app/src/main/java/a/Karten.kt",
+            "package a",
+            "",
+            *karten,
+            # Nur die eigene Definition, mit zusaetzlichem Leerraum: kein Aufruf.
+            "@Composable",
+            "internal fun  Verwaist () {",
+            "}",
+            "",
+            "@Preview",
+            "@Composable",
+            "private fun NurVorschauPreview() {",
+            "    NurVorschau()",
+            "}",
+        )
+        self.schreibe(
+            "app/src/main/java/b/Nutzer.kt",
+            "package b",
+            "",
+            "// siehe NurImKommentar()",
+            "fun nutze() {",
+            "    Andernorts()",
+            "    Thema {",
+            "    }",
+            "}",
+            "",
+            # Vorschau einer FREMDEN Datei. Ihr Bereich endet auf der `fun`-Zeile; der Aufruf
+            # direkt darunter zaehlt - so faellt ein Versatz um eine Zeile in beide Richtungen auf.
+            "@Preview",
+            "@Composable",
+            "fun FremdPreview() { NurFremdVorschau() }",
+            "fun direktDanach() = NachDerVorschau()",
+        )
+        self.schreibe(
+            "app/src/test/java/a/KartenTest.kt",
+            "package a",
+            "",
+            "fun pruefe() { NurImTest() }",
+            "",
+            "@Composable",
+            "fun NurTestKarte() {",
+            "}",
+        )
+
+        befunde = []
+        pruefe_reste.pruefe_composable_ohne_verbraucher(befunde)
+
+        meldung = (
+            "Compose-Karte ohne Verbraucher: {} in app/src/main/java/a/Karten.kt - nur die "
+            "eigene Vorschau ruft sie auf"
+        )
+        self.assertEqual(
+            sorted(meldung.format(n) for n in ("NurFremdVorschau", "NurVorschau", "Verwaist")),
+            sorted(befunde),
+        )
+
+
+class VerwaisteStrings(WegwerfBaum):
+    """Pruefung 2: beide Verwender-Wege, streng bei `R.string`, locker bei `@string/`."""
+
+    def test_gemeldet_wird_nur_der_name_ohne_verwender(self):
+        namen = (
+            "ueber_r", "ueber_xml", "teilstring", "unbenutzt", "nur_laenger", "mit.punkt",
+        )
+        self.schreibe(
+            "app/src/main/res/values/strings.xml",
+            "<resources>",
+            *['    <string name="%s">x</string>' % n for n in namen],
+            # Ein Verweis innerhalb der strings.xml selbst haelt nichts am Leben.
+            '    <string name="selbstbezug">@string/selbstbezug</string>',
+            "</resources>",
+        )
+        self.schreibe(
+            "app/src/main/java/a/A.kt",
+            "package a",
+            "",
+            "val a = R.string.ueber_r",
+            "val b = R.string.nur_laenger_noch",
+            "// R.string.mit.punkt",
+        )
+        self.schreibe(
+            "app/src/main/AndroidManifest.xml",
+            '<application label="@string/ueber_xml" icon="@string/teilstring_lang" />',
+        )
+
+        befunde = []
+        pruefe_reste.pruefe_verwaiste_strings(befunde)
+
+        meldung = "Verwaiste String-Ressource: {} - kein R.string- und kein @string-Verwender"
+        self.assertEqual(
+            sorted(meldung.format(n) for n in ("nur_laenger", "selbstbezug", "unbenutzt")),
+            sorted(befunde),
+        )
 
 
 if __name__ == "__main__":

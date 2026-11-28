@@ -1,7 +1,11 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs
 
+import android.content.pm.PackageManager
+import android.os.Build
 import com.github.f1rlefanz.cf_alarmfortimeoffice.R
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.hue.ACCESS_LOCAL_NETWORK_PERMISSION
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.hue.braucheLokaleNetzwerkFreigabe
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -115,7 +119,13 @@ fun HueTabContent(
     LaunchedEffect(verbunden) {
         if (verbunden) {
             hueViewModel.refreshRules()
-            hueViewModel.refreshLightTargets()
+            // Die Bridge-Abfrage ist kein Tipp des Nutzers: ohne erteilten Netzwerkzugriff entfaellt sie
+            // still - ein Systemdialog beim blossen Betreten des Bereichs gehoert nicht ins Tor.
+            val istErteilt = context.checkSelfPermission(ACCESS_LOCAL_NETWORK_PERMISSION) ==
+                PackageManager.PERMISSION_GRANTED
+            if (!braucheLokaleNetzwerkFreigabe(Build.VERSION.SDK_INT, istErteilt)) {
+                hueViewModel.refreshLightTargets()
+            }
         }
     }
 

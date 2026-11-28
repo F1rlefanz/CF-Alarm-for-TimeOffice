@@ -7,10 +7,16 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.GateSchritt
 import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.MainTab
 import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.NavigationAction
 import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.NavigationState
+import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.editorFormularSchluessel
+import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.imTypBereich
 import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.naechsterGateSchritt
+import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.typEntwurfSchluessel
+import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.verworfeneAblagen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.BatteryOptimizationHelper
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.LocalTime
@@ -408,11 +414,14 @@ class NavigationViewModelTest {
 
     // ---- Typ-Seite (Umbau #187) ---------------------------------------------------------
 
+    /** Die Typ-Seite ohne ihre sitzung (#252: bei jedem Oeffnen neu, eigener Test unten). */
+    private fun ohneSitzung(state: NavigationState) = (state as NavigationState.TypSeite).copy(sitzung = 0)
+
     @Test
     fun `NavigateToTypSeite setzt TypSeite mit id und Herkunftstab`() {
         val vm = newViewModel()
         vm.handleNavigationAction(NavigationAction.NavigateToTypSeite("typ-1", MainTab.WECKER))
-        assertEquals(NavigationState.TypSeite("typ-1", MainTab.WECKER), vm.navigationState.value)
+        assertEquals(NavigationState.TypSeite("typ-1", MainTab.WECKER), ohneSitzung(vm.navigationState.value))
     }
 
     @Test
@@ -452,7 +461,7 @@ class NavigationViewModelTest {
         // Die Vorlage reist im NavigationState und nirgends sonst (Festlegung des Betreuers).
         val vm = newViewModel()
         vm.navigateToNeuerTyp(vorlage, "AD1", MainTab.WECKER)
-        assertEquals(NavigationState.TypSeite("neu-1", MainTab.WECKER, vorlage, "AD1"), vm.navigationState.value)
+        assertEquals(NavigationState.TypSeite("neu-1", MainTab.WECKER, vorlage, "AD1"), ohneSitzung(vm.navigationState.value))
 
         // Das „+“ der Liste hat keinen Fund-Code.
         vm.navigateToNeuerTyp(vorlage, fromTab = MainTab.WECKER)
@@ -502,7 +511,7 @@ class NavigationViewModelTest {
         vm.navigateToOhneEintragSeite(MainTab.WECKER)
 
         vm.navigateToTypSeite("fruehschicht", MainTab.WECKER)
-        assertEquals(NavigationState.TypSeite("fruehschicht", MainTab.WECKER), vm.navigationState.value)
+        assertEquals(NavigationState.TypSeite("fruehschicht", MainTab.WECKER), ohneSitzung(vm.navigationState.value))
 
         vm.navigateBackFrom(vm.navigationState.value)
         assertEquals(NavigationState.ShiftConfig(MainTab.WECKER), vm.navigationState.value)
@@ -516,6 +525,123 @@ class NavigationViewModelTest {
         vm.navigateBackFrom(gerendert)
         vm.navigateBackFrom(gerendert)
         assertEquals(NavigationState.ShiftConfig(MainTab.STATUS), vm.navigationState.value)
+    }
+
+    // ---- Regel-Editor am Typ (Umbau #252) --------------------------------------------------------
+
+    /** Von der Typ-Liste (Tab WECKER, nicht der Default) auf die Typ-Seite „typ-x“. */
+    private fun aufDerTypSeite(vm: NavigationViewModel): NavigationState.TypSeite {
+        vm.navigateToShiftConfig(MainTab.WECKER)
+        vm.navigateToTypSeite("typ-x", MainTab.WECKER)
+        return vm.navigationState.value as NavigationState.TypSeite
+    }
+
+    @Test
+    fun `Rueckweg aus dem Editor am Typ traegt die Typ-Seite samt Entwurfsschluessel - auch ueber Ort fuer Tageslicht`() {
+        val vm = newViewModel()
+        val seite = aufDerTypSeite(vm)
+        val entwurf = checkNotNull(seite.typEntwurfSchluessel())
+
+        vm.navigateToTypLichtregel(seite)
+        val editor = vm.navigationState.value as NavigationState.HueRuleConfig
+        assertEquals("typ-x", editor.typId)
+        assertEquals(seite, editor.zurueckZu)
+        assertEquals(entwurf, editor.typEntwurfSchluessel())
+        assertTrue(editor.imTypBereich())
+        assertEquals(emptyList<String>(), verworfeneAblagen(seite, editor))
+
+        // Ausflug zum Ort: Entwurf der Seite UND Formular des Editors bleiben liegen.
+        vm.navigateToOrtFuerTageslicht(editor)
+        val ort = vm.navigationState.value
+        assertEquals(entwurf, ort.typEntwurfSchluessel())
+        assertTrue(ort.imTypBereich())
+        assertEquals(emptyList<String>(), verworfeneAblagen(editor, ort))
+
+        vm.navigateBackFrom(ort)
+        assertEquals(editor, vm.navigationState.value)
+        assertEquals(emptyList<String>(), verworfeneAblagen(ort, editor))
+
+        vm.navigateBackFrom(editor)
+        assertEquals(seite, vm.navigationState.value)
+        // Verworfen wird nur das Formular des Editors, nie der Entwurf der Seite.
+        assertEquals(listOf(editor.editorFormularSchluessel()), verworfeneAblagen(editor, seite))
+
+        // Erst das Verlassen der Seite raeumt den Entwurf; Zurueck landet in der Liste.
+        vm.navigateBackFrom(seite)
+        assertEquals(NavigationState.ShiftConfig(MainTab.WECKER), vm.navigationState.value)
+        assertEquals(listOf(entwurf), verworfeneAblagen(seite, vm.navigationState.value))
+    }
+
+    @Test
+    fun `navigateBackToMain nimmt aus dem Editor am Typ denselben Rueckweg`() {
+        val vm = newViewModel()
+        val seite = aufDerTypSeite(vm)
+        vm.navigateToTypLichtregel(seite, ruleId = "r1")
+        assertEquals("r1", (vm.navigationState.value as NavigationState.HueRuleConfig).ruleId)
+
+        vm.navigateBackToMain()
+
+        assertEquals(seite, vm.navigationState.value)
+    }
+
+    @Test
+    fun `jedes frische Oeffnen bekommt eigene Schluessel fuer Typ-Seite und Editor`() {
+        val vm = newViewModel()
+        val erste = aufDerTypSeite(vm)
+        vm.navigateToTypLichtregel(erste)
+        val ersterEditor = vm.navigationState.value.editorFormularSchluessel()
+        vm.navigateBackToMain()
+        vm.navigateToTypLichtregel(erste)
+        assertNotEquals(ersterEditor, vm.navigationState.value.editorFormularSchluessel())
+        vm.navigateBackToMain()
+        vm.navigateBackToMain()
+
+        val zweite = aufDerTypSeite(vm)
+        assertNotEquals(erste.typEntwurfSchluessel(), zweite.typEntwurfSchluessel())
+
+        // Auch die Neuanlage desselben Typs:
+        vm.navigateToNeuerTyp(vorlage, fromTab = MainTab.WECKER)
+        val neuAngelegt = vm.navigationState.value.typEntwurfSchluessel()
+        vm.navigateToNeuerTyp(vorlage, fromTab = MainTab.WECKER)
+        assertNotEquals(neuAngelegt, vm.navigationState.value.typEntwurfSchluessel())
+    }
+
+    @Test
+    fun `den Editor am Typ auf anderem Weg verlassen raeumt Formular und Entwurf`() {
+        val vm = newViewModel()
+        val seite = aufDerTypSeite(vm)
+        vm.navigateToTypLichtregel(seite)
+        val editor = vm.navigationState.value
+        val hueTab = NavigationState.MainContent(MainTab.HUE)
+
+        assertEquals(
+            listOf(editor.editorFormularSchluessel(), seite.typEntwurfSchluessel()),
+            verworfeneAblagen(editor, hueTab)
+        )
+        assertFalse(hueTab.imTypBereich())
+
+        // Der Einstieg ohne Typ gehoert nicht zum Typ-Bereich und haelt keinen Entwurf.
+        vm.navigateToMainWithTab(MainTab.HUE)
+        vm.navigateToHueRuleConfig(fromTab = MainTab.HUE)
+        assertFalse(vm.navigationState.value.imTypBereich())
+        assertNull(vm.navigationState.value.typEntwurfSchluessel())
+    }
+
+    @Test
+    fun `ein spaetes Speichern holt niemanden auf die Typ-Seite zurueck`() {
+        val vm = newViewModel()
+        val seite = aufDerTypSeite(vm)
+        vm.navigateToTypLichtregel(seite)
+        val editor = vm.navigationState.value
+
+        // Wird der Editor noch angezeigt, fuehrt das Speichern zur Typ-Seite ...
+        vm.navigateBackNachSpeichern(editor)
+        assertEquals(seite, vm.navigationState.value)
+
+        // ... ist der Nutzer inzwischen weiter, bleibt er dort.
+        vm.navigateBackFrom(seite)
+        vm.navigateBackNachSpeichern(editor)
+        assertEquals(NavigationState.ShiftConfig(MainTab.WECKER), vm.navigationState.value)
     }
 
     @Test

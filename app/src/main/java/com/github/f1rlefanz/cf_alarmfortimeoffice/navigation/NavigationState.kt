@@ -25,12 +25,17 @@ sealed class NavigationState {
      * `vorlage.id`. Die Vorlage reist hier und in keinem zweiten Speicher; gespeichert wird erst mit
      * „Erstellen“ auf der Seite. [fundCode] ist der Kalender-Code aus „Im Kalender gefunden“, aus dem
      * die Vorlage entstand (`null` beim „+“ der Liste): er bestimmt Banner und Schreibweg.
+     *
+     * [sitzung] (#252): Schluessel, unter dem MainScreen den ungespeicherten Entwurf haelt
+     * ([typEntwurfSchluessel]). Jedes frische Oeffnen bekommt vom NavigationViewModel eine neue; der
+     * Ausflug in den Regel-Editor kehrt mit DERSELBEN zurueck, der Entwurf bleibt.
      */
     data class TypSeite(
         val definitionId: String,
         val returnToTab: MainTab = MainTab.SETTINGS,
         val vorlage: ShiftDefinition? = null,
-        val fundCode: String? = null
+        val fundCode: String? = null,
+        val sitzung: Long = 0
     ) : NavigationState()
 
     /**
@@ -51,22 +56,29 @@ sealed class NavigationState {
     ) : NavigationState()
 
     // Hue-Screens
-    // cameFromSettingsList unterscheidet die zwei Einstiegspfade: direkt vom Hue-Tab ("Neue
-    // Regel") vs. ueber HueSettingsScreen (Regel bearbeiten/anlegen aus der Liste). Zurueck UND
-    // Speichern muessen zum jeweils richtigen Ausgangspunkt fuehren - sonst landet der
-    // Direktpfad-Nutzer auf einer Liste, die er nie geoeffnet hat, oder der Listen-Pfad-Nutzer
-    // ueberspringt die Liste beim Zurueckgehen. Ausgewertet wird der Flag an genau EINER Stelle,
-    // NavigationViewModel.navigateBackFrom() - System-Zurueck (MainScreen-BackHandler),
-    // Zurueck-Pfeil und Speichern laufen alle darueber.
+    // Drei Einstiegspfade: direkt vom Hue-Tab ("Neue Regel"), ueber HueSettingsScreen (Regel
+    // bearbeiten/anlegen aus der Liste, cameFromSettingsList) und von einer Typ-Seite (zurueckZu,
+    // #252). Zurueck UND Speichern muessen zum jeweils richtigen Ausgangspunkt fuehren - sonst
+    // landet der Direktpfad-Nutzer auf einer Liste, die er nie geoeffnet hat, oder der
+    // Listen-Pfad-Nutzer ueberspringt die Liste beim Zurueckgehen. Ausgewertet wird das an genau
+    // EINER Stelle, NavigationViewModel.navigateBackFrom() - System-Zurueck
+    // (MainScreen-BackHandler), Zurueck-Pfeil und Speichern laufen alle darueber.
     //
     // sitzung (#140): Schluessel des SaveableStateProvider in MainScreen. Jedes frische Oeffnen
     // bekommt vom NavigationViewModel eine neue (frisches Formular); der Umweg ueber
     // OrtFuerTageslicht kehrt mit DERSELBEN zurueck (Eingabe bleibt). Siehe editorFormularSchluessel.
+    //
+    // typId/zurueckZu (#252, SPEC E8): der Editor an EINEM Typ - ohne Schicht-Auswahl, gespeichert
+    // am Typ. zurueckZu ist genau die Typ-Seite, aus der er kam (samt sitzung): dorthin fuehren
+    // Zurueck und Speichern, und ihr Entwurf bleibt solange abgelegt. Beide setzt nur
+    // NavigationAction.NavigateToTypLichtregel; ohne Typ (Hue-Bereich) sind beide null.
     data class HueRuleConfig(
         val ruleId: String? = null,
         val returnToTab: MainTab = MainTab.HUE,
         val cameFromSettingsList: Boolean = false,
-        val sitzung: Long = 0
+        val sitzung: Long = 0,
+        val typId: String? = null,
+        val zurueckZu: NavigationState? = null
     ) : NavigationState()
     data class HueSettings(val returnToTab: MainTab = MainTab.HUE) : NavigationState()
 
@@ -105,6 +117,37 @@ fun verworfenesEditorFormular(vorher: NavigationState?, jetzt: NavigationState):
     return if (alt == jetzt.editorFormularSchluessel()) null else alt
 }
 
+/**
+ * Schluessel, unter dem MainScreen den ungespeicherten Entwurf der Typ-Seite ablegt - oder `null`,
+ * wenn zu [this] keine Typ-Seite gehoert. Der Regel-Editor am Typ und der Ort-Bildschirm daraus
+ * tragen den Schluessel der Seite, aus der sie kamen (#252): solange der Nutzer dort ist, wird der
+ * Entwurf noch gebraucht.
+ */
+fun NavigationState.typEntwurfSchluessel(): String? = when (this) {
+    is NavigationState.TypSeite -> "typ-$sitzung"
+    is NavigationState.HueRuleConfig -> zurueckZu?.typEntwurfSchluessel()
+    is NavigationState.OrtFuerTageslicht -> zurueckZu.typEntwurfSchluessel()
+    else -> null
+}
+
+/**
+ * Alles, was der Wechsel [vorher] -> [jetzt] in der Ablage endgueltig verwaist: das Formular des
+ * Regel-Editors ([verworfenesEditorFormular]) und der Entwurf der Typ-Seite.
+ */
+fun verworfeneAblagen(vorher: NavigationState?, jetzt: NavigationState): List<String> = listOfNotNull(
+    verworfenesEditorFormular(vorher, jetzt),
+    vorher?.typEntwurfSchluessel()?.takeIf { it != jetzt.typEntwurfSchluessel() }
+)
+
+/**
+ * Gehoert [this] zum Typ-Bereich - Liste, Typ-Seiten und die Ausfluege aus ihnen (Regel-Editor am
+ * Typ, Ort daraus)? Solange bleibt der Scroll-Stand der Typ-Liste erhalten.
+ */
+fun NavigationState.imTypBereich(): Boolean =
+    this is NavigationState.ShiftConfig ||
+        this is NavigationState.OhneEintragSeite ||
+        typEntwurfSchluessel() != null
+
 enum class MainTab {
     HOME, WECKER, STATUS, SETTINGS, HUE
 }
@@ -132,6 +175,15 @@ sealed class NavigationAction {
 
     /** Die Seite der festen Zeile „Ohne Kalendereintrag“ (#191). */
     data class NavigateToOhneEintragSeite(val fromTab: MainTab = MainTab.SETTINGS) : NavigationAction()
+
+    /**
+     * Der Regel-Editor fuer den Typ der Seite [herkunft] (#252, SPEC 3.3 Punkt 8); [ruleId] `null`
+     * heisst neue Regel. [herkunft] ist der GERENDERTE Zustand der Typ-Seite.
+     */
+    data class NavigateToTypLichtregel(
+        val herkunft: NavigationState.TypSeite,
+        val ruleId: String? = null
+    ) : NavigationAction()
 
     // Onboarding Navigation Actions
     data class NavigateToBatteryExemption(val fromTab: MainTab = MainTab.HOME) : NavigationAction()

@@ -369,3 +369,71 @@ internal object NichtStoerenTexte {
             "Bei ganztägigen Einträgen: den ganzen Tag."
     }
 }
+
+/**
+ * Nutzertexte der Karte „Licht (Hue)“ (#254, SPEC E8 und 3.3 Punkt 8, Prototyp `zeigeTyp`). Titel, „+“ und der
+ * Hinweis ohne Wecker stehen wie im Prototyp; der Rest beschreibt Zustaende, die es dort nicht gibt.
+ */
+internal object LichtTexte {
+    const val TITEL = "Licht (Hue)"
+    const val HINZU = "+ Lichtregel hinzufügen"
+    const val OHNE_WECKER =
+        "Licht startet mit dem Wecker. Ohne Weckzeit gibt es an diesem Tag kein Licht – schalte oben den " +
+            "Wecker ein, gern stumm."
+
+    const val OHNE_BRIDGE =
+        "Es ist noch keine Hue-Bridge eingerichtet. Erst mit einer Bridge kannst du Lichtregeln anlegen."
+    const val ZU_HUE = "Zum Bereich „Philips Hue“"
+    const val BRIDGE_NICHT_LESBAR =
+        "Gerade nicht lesbar, ob eine Hue-Bridge eingerichtet ist. Bis dahin lässt sich hier keine Regel anlegen."
+
+    /** Eine Neuanlage steht noch nicht in der Konfiguration - der Editor kehrte ohne Speichern zurueck. */
+    fun neuanlage(knopf: String): String =
+        "Lichtregeln kannst du hinzufügen, sobald der Typ angelegt ist („$knopf“)."
+
+    /** Ein frueherer Typ traegt denselben Namen: geschrieben und ausgefuehrt wird nur am ersten (#261). */
+    fun verdeckt(name: String): String =
+        "Ein früherer Typ heißt genauso („$name“). Lichtregeln gelten nur für den ersten Typ dieses Namens – " +
+            "gib diesem Typ einen eigenen Namen."
+
+    /** Derselbe Wortlaut wie die Ablehnung beim Speichern (`TypLichtSchreiben`). */
+    fun hoechstzahl(anzahl: Int): String = "Für einen Schichttyp sind höchstens $anzahl Lichtregeln möglich."
+
+    // Unterzeile einer Regel: Ziele und Modus.
+    const val KEIN_ZIEL = "kein Ziel"
+    const val EINSCHALTEN = "Einschalten"
+    const val AUSSCHALTEN = "Ausschalten"
+    const val SZENE_OHNE_NAMEN = "Szene"
+    fun licht(id: String): String = "Licht $id"
+    fun gruppe(id: String): String = "Gruppe $id"
+    fun sonnenaufgang(minuten: Int): String = "Sonnenaufgang $minuten min"
+    fun szenen(namen: List<String>): String = when {
+        namen.isEmpty() -> SZENE_OHNE_NAMEN
+        namen.size == 1 -> "Szene «${namen.single()}»"
+        else -> "Szenen ${aufzaehlung(namen.map { "«$it»" })}"
+    }
+
+    /** „A“, „A und B“, „A, B und C“. */
+    fun aufzaehlung(teile: List<String>): String = when {
+        teile.size <= 1 -> teile.joinToString("")
+        else -> teile.dropLast(1).joinToString(", ") + " und " + teile.last()
+    }
+
+    /** Ziele, die auf der verbundenen Bridge ins Leere zeigen; [antippbar] = die Zeile laesst sich oeffnen. */
+    fun unbekannteZiele(namen: List<String>, antippbar: Boolean): String =
+        "Auf dieser Bridge unbekannt: ${namen.joinToString()}. Die Regel schaltet dafür nichts" +
+            if (antippbar) " – tippe auf die Regel und wähle neu." else "."
+
+    const val ENTFERNEN_TITEL = "Lichtregel entfernen?"
+    const val ENTFERNEN = "Entfernen"
+    const val ABBRECHEN = "Abbrechen"
+    const val FEHLER_SCHLIESSEN = "Schließen"
+
+    /** Die Regel gehoert nicht zum Entwurf der Seite: „Verwerfen“ holt sie nicht zurueck. */
+    fun entfernenText(name: String): String =
+        "„$name“ wird mit allen Einstellungen gelöscht. Das gilt sofort, auch ohne „Speichern“, und lässt " +
+            "sich nicht rückgängig machen."
+
+    fun entfernenBeschreibung(name: String): String = "Lichtregel „$name“ entfernen"
+    fun schalterBeschreibung(name: String): String = "Lichtregel „$name“ eingeschaltet"
+}

@@ -1,14 +1,27 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.typ
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.EchteSchichtKonfiguration
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.ActionType
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueLightAction
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueSchedule
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueTimeRange
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.TargetType
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftKategorie
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.setMain
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
 import java.time.LocalTime
 
 /**
@@ -18,6 +31,9 @@ import java.time.LocalTime
  * waere `updateShiftConfig()` ein Alarm-Sync - geschrieben wird nur ueber [TypSeiteSpeicherung].
  */
 class TypSeiteEntwurfTest {
+
+    @get:Rule
+    val ordner = TemporaryFolder()
 
     private val frueh = ShiftDefinition(
         id = "id-frueh", name = "Frueh", keywords = listOf("F", "IMCF"), alarmTime = LocalTime.of(5, 30)
@@ -171,5 +187,44 @@ class TypSeiteEntwurfTest {
         val unbekannt = TypEntwurf.ausSpeicherListe(listOf("N", listOf("N"), "05:30", true, false, true, "gibt-es-nicht"))
         assertEquals(ShiftKategorie.DIENST, unbekannt?.kategorie)
         assertNotEquals(null, unbekannt)
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class) // Dispatchers.setMain/resetMain
+    @Test
+    fun `Regel im Editor angelegt, Entwurf mit neuer Weckzeit gespeichert - die Regel bleibt`() = runBlocking {
+        Dispatchers.setMain(Dispatchers.Unconfined)
+        val konfiguration = EchteSchichtKonfiguration(ordner.newFolder())
+        try {
+            konfiguration.repo.saveShiftConfig(config).getOrThrow()
+            suspend fun gespeichert() = konfiguration.repo.getCurrentShiftConfig().getOrThrow()
+            // Die Seite ist offen: die Weckzeit steht im Entwurf, noch nicht in der Konfiguration.
+            val entwurf = TypEntwurf.aus(gespeichert().definitions.first { it.id == frueh.id })
+                .copy(weckzeitText = "04:15")
+
+            // Ausflug in den Regel-Editor am Typ: die Regel wird sofort geschrieben.
+            val regel = HueSchedule(
+                id = "rule_neu", name = "Licht an zum Wecker", shiftPattern = frueh.name, timeRanges = listOf(
+                    HueTimeRange(
+                        listOf(HueLightAction(TargetType.GROUP, "1", "Bad", ActionType.TURN_ON, on = true, isGroup = true))
+                    )
+                )
+            )
+            val viewModel = hueViewModelAn(konfiguration.repo)
+            viewModel.fuehreAus { speichereRegelAmTyp(regel) {} }
+            assertNull(viewModel.uiState.value.error)
+
+            // Zurueck auf der Seite: „Speichern“ mit dem Stand, den sie jetzt kennt, und dem alten Entwurf.
+            var geschrieben: ShiftConfig? = null
+            val ergebnis = TypSeiteSpeicherung { geschrieben = it }.speichere(gespeichert(), frueh.id, entwurf)
+            assertEquals(SpeicherErgebnis.GESCHRIEBEN, ergebnis)
+            konfiguration.repo.saveShiftConfig(geschrieben!!).getOrThrow()
+
+            val danach = gespeichert().definitions.first { it.id == frueh.id }
+            assertEquals(LocalTime.of(4, 15), danach.alarmTime)
+            assertEquals(listOf("rule_neu"), danach.licht.regeln.map { it.id })
+        } finally {
+            konfiguration.schliessen()
+            Dispatchers.resetMain()
+        }
     }
 }

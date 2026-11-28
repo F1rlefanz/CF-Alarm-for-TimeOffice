@@ -53,6 +53,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.tonPaar
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
+import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.HueViewModel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.ShiftViewModel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.WeitereOptionenStand
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.titel
@@ -86,13 +87,23 @@ internal object TypSeiteTexte {
         "Deine Änderungen an diesem Typ sind noch nicht gespeichert. Öffnest du den Bereich „Wecker“, gehen sie " +
             "verloren. Der gespeicherte Typ und seine Wecker bleiben, wie sie sind."
 
+    /** Der Weg „Philips Hue“ der Karte „Licht“ (#254, ohne eingerichtete Bridge) fragt wie der Wecker-Link. */
+    const val VERWERFEN_HUE_TEXT =
+        "Deine Änderungen an diesem Typ sind noch nicht gespeichert. Öffnest du den Bereich „Philips Hue“, gehen " +
+            "sie verloren. Der gespeicherte Typ und seine Wecker bleiben, wie sie sind."
+
     /**
      * Was Zurueck ohne „Erstellen“ bedeutet; bei einem Fund-Code sagt der Satz, wo der Code bleibt.
-     * [zurWoche]: der Weg geht nicht zurueck, sondern in den Bereich „Wecker“ (Link der Tagesleiste).
+     * [zurWoche] und [zurHue]: der Weg geht nicht zurueck, sondern in den Bereich „Wecker“ (Link der
+     * Tagesleiste) bzw. „Philips Hue“ (Karte „Licht“).
      */
-    fun neuerTypVerwerfenText(fundCode: String?, zurWoche: Boolean = false): String =
+    fun neuerTypVerwerfenText(fundCode: String?, zurWoche: Boolean = false, zurHue: Boolean = false): String =
         "Dieser Typ ist noch nicht angelegt. " +
-            (if (zurWoche) "Öffnest du den Bereich „Wecker“, wird er nicht angelegt." else "Gehst du zurück, wird er nicht angelegt.") +
+            when {
+                zurWoche -> "Öffnest du den Bereich „Wecker“, wird er nicht angelegt."
+                zurHue -> "Öffnest du den Bereich „Philips Hue“, wird er nicht angelegt."
+                else -> "Gehst du zurück, wird er nicht angelegt."
+            } +
             if (fundCode != null) {
                 " „$fundCode“ bleibt unter „${EinordnenTexte.FUND_TITEL}“."
             } else {
@@ -100,8 +111,7 @@ internal object TypSeiteTexte {
             }
 
     // Banner nach dem Einordnen (SPEC 3.3 Punkt 1, Prototyp `typ.neuBanner`). Der zweite Satz ist der des
-    // Betreuers: darunter ist in Etappe 2 nur der Wecker einstellbar, der Text verspricht kein Dimmen und
-    // kein Licht. Der erste Satz sagt „Neuer Typ“ statt „Neu angelegt“, der dritte nennt den Knopf.
+    // Betreuers. Der erste Satz sagt „Neuer Typ“ statt „Neu angelegt“, der dritte nennt den Knopf.
     const val BANNER_ANFANG = "Neuer Typ aus dem Kalender-Code "
     const val BANNER_VORSTELLUNG = "Alles darunter ist eine Voreinstellung – stell es ein, wie du an diesen Tagen leben willst."
     const val BANNER_ERSTELLEN = "Angelegt ist der Typ erst mit „$ERSTELLEN“."
@@ -113,6 +123,9 @@ internal object TypSeiteTexte {
         append(" als „${kategorie.titel()}“. $BANNER_VORSTELLUNG $BANNER_ERSTELLEN")
     }
 }
+
+/** Wohin die Seite verlassen wird - entscheidet, was die Rueckfrage „Verwerfen?“ sagt und wohin sie fuehrt. */
+private enum class VerlassenNach { LISTE, WOCHE, HUE }
 
 /** Wie ein Speichern-Versuch der Typ-Seite ausging ([TypSeiteSpeicherung.speichere]). */
 internal enum class SpeicherErgebnis {
@@ -178,7 +191,8 @@ internal object TypSeiteEntwurf {
      * dieser Weg nie an (der Dialog hat das bei der Neuanlage getan, das ist hier ausgeschlossen).
      *
      * Der Entwurf geht auf den GERADE gespeicherten Typ, nicht auf den vom Oeffnen: was das Formular
-     * nicht kennt, bleibt so auf dem aktuellen Stand.
+     * nicht kennt, bleibt so auf dem aktuellen Stand - etwa die Lichtregeln (#254), die die Karte „Licht“
+     * und der Regel-Editor sofort schreiben, waehrend der Entwurf offen ist.
      */
     fun speichernIn(config: ShiftConfig, definitionId: String, entwurf: TypEntwurf): ShiftConfig? {
         val aktuell = config.definitions.firstOrNull { it.id == definitionId } ?: return null
@@ -246,14 +260,18 @@ private val EntwurfSaver: Saver<TypEntwurf, Any> = Saver(
  * Oben die Karte „Typ“ ([TypAbschnitt]: Name, Muster, Kategorie), darunter der Sonderfall-Kasten
  * ([SonderfallKasten], nur Rufbereitschaft, Krank, Ignorieren) und die Karte „Wecker“
  * ([WeckerAbschnitt], nicht bei Krank und Ignorieren) mit den Karten „Bildschirm dimmen“
- * ([DimmenAbschnitt]) und „Nicht stören“ ([NichtStoerenAbschnitt]) darunter, an denselben Typen; zwischen
- * „Typ“ und Sonderfall-Kasten steht die Tagesleiste „So läuft ein Tag“ ([TagesleisteKarte], nicht bei
- * Ignorieren). Licht kommt mit einem eigenen Paket.
+ * ([DimmenAbschnitt]), „Nicht stören“ ([NichtStoerenAbschnitt]) und „Licht (Hue)“ ([LichtAbschnitt])
+ * darunter, an denselben Typen; zwischen „Typ“ und Sonderfall-Kasten steht die Tagesleiste „So läuft ein
+ * Tag“ ([TagesleisteKarte], nicht bei Ignorieren).
  *
  * ENTWURF STATT SOFORT-SCHREIBEN (bewusste Abweichung vom Prototyp, der keinen Speichern-Knopf
  * hat): `updateShiftConfig()` speichert und stoesst den Alarm-Sync an - je Tastendruck im Namen
  * waere das ein Sync und ein Umbenennungs-Nachzug. Geschrieben wird erst mit „Speichern“, ueber
  * [TypSeiteSpeicherung].
+ *
+ * AUSNAHME LICHT (#254): Die Lichtregeln gehoeren nicht zum Entwurf. Schalter, Entfernen und der
+ * Regel-Editor schreiben sofort am gespeicherten Typ (`HueViewModel`); die Karte liest sie von dort.
+ * Der Editor ist ein eigener Bildschirm - den Entwurf haelt `MainScreen` ueber den Ausflug (#252).
  *
  * ZURUECK: Die Aufloesung des Ziels bleibt allein bei `NavigationViewModel.navigateBackFrom`
  * (aufgerufen ueber [onZurueck], auch vom `BackHandler` in `MainScreen`). Der `BackHandler`
@@ -268,17 +286,23 @@ private val EntwurfSaver: Saver<TypEntwurf, Any> = Saver(
  * Der Typ ist nicht in der Konfiguration, also gibt es hier kein „verschwunden“.
  *
  * @param onZurueck verlaesst die Seite zur Typ-Liste (`navigateBackFrom(state)`).
+ * @param onZurHue oeffnet den Bereich „Philips Hue“ (ohne eingerichtete Bridge).
+ * @param onLichtregel oeffnet den Regel-Editor fuer diesen Typ; `null` = neue Regel.
  */
 @Composable
 fun TypSeite(
     definitionId: String,
     shiftViewModel: ShiftViewModel,
+    hueViewModel: HueViewModel,
     onZurueck: () -> Unit,
     onZurWoche: () -> Unit,
+    onZurHue: () -> Unit,
+    onLichtregel: (regelId: String?) -> Unit,
     vorlage: ShiftDefinition? = null,
     fundCode: String? = null
 ) {
     val shiftState by shiftViewModel.uiState.collectAsStateWithLifecycle()
+    val hueState by hueViewModel.uiState.collectAsStateWithLifecycle()
     // `null` = noch nicht gelesen (kein Fehler); jede Quelle fuehrt ihren Lesefehler selbst (#196).
     val quellen by shiftViewModel.tagesleisteQuellen.collectAsStateWithLifecycle()
     val config = shiftState.currentShiftConfig
@@ -315,8 +339,18 @@ fun TypSeite(
         weitereStand = shiftViewModel::weitereOptionenStand,
         schreibe = shiftViewModel::updateShiftConfig,
         legeAusCodeAn = shiftViewModel::legeTypAusCodeAn,
+        licht = LichtAnbindung(
+            unaufgeloest = hueState.unresolvedTargets,
+            fehler = hueState.error,
+            speichere = hueViewModel::updateRule,
+            entferne = hueViewModel::deleteRule,
+            schliesseFehler = hueViewModel::clearError,
+            frageZieleAb = { hueViewModel.refreshLightTargets() },
+            oeffneEditor = onLichtregel
+        ),
         onZurueck = onZurueck,
-        onZurWoche = onZurWoche
+        onZurWoche = onZurWoche,
+        onZurHue = onZurHue
     )
 }
 
@@ -418,8 +452,10 @@ private fun TypSeiteFormular(
     weitereStand: () -> Flow<WeitereOptionenStand>,
     schreibe: (ShiftConfig) -> Unit,
     legeAusCodeAn: (String, ShiftDefinition) -> Unit,
+    licht: LichtAnbindung,
     onZurueck: () -> Unit,
-    onZurWoche: () -> Unit
+    onZurWoche: () -> Unit,
+    onZurHue: () -> Unit
 ) {
     // Der Ausgangsstand wird beim Oeffnen eingefroren und reist mit: jede Config-Emission (auch
     // die eigene nach dem Speichern, auch fremde Schreiber) liefert ein neues ShiftDefinition-
@@ -436,8 +472,10 @@ private fun TypSeiteFormular(
         entwurf = neuerEntwurf
     }
     var rueckfrageOffen by rememberSaveable { mutableStateOf(false) }
-    // Wohin „Verwerfen“ fuehrt: zur Liste (Zurueck) oder in den Bereich „Wecker“ (Link der Tagesleiste).
-    var rueckfrageZurWoche by rememberSaveable { mutableStateOf(false) }
+    // Wohin „Verwerfen“ fuehrt: zur Liste (Zurueck), in den Bereich „Wecker“ oder „Philips Hue“.
+    var rueckfrageZiel by rememberSaveable { mutableStateOf(VerlassenNach.LISTE) }
+    // Die Lichtregel (id), nach deren Entfernen gerade gefragt wird; `null` = keine Rueckfrage.
+    var entfernenRegelId by rememberSaveable { mutableStateOf<String?>(null) }
     // Die Blockposition der Tagesleiste gehoert der Seite wie das „+“-Feld, nicht dem Typ: sie wird nie
     // gespeichert. `null` = die Vorgabe der Kategorie.
     var blockposition by rememberSaveable { mutableStateOf<String?>(null) }
@@ -455,27 +493,29 @@ private fun TypSeiteFormular(
     // aendert nichts (TypAbschnittLogik.musterHinzufuegen).
     val kandidat = TypAbschnittLogik.mitEingabe(entwurf, neuesMuster)
     val geaendert = TypSeiteEntwurf.hatAenderungen(ausgang, kandidat)
-    val zurueck: () -> Unit = {
-        if (geaendert) {
-            rueckfrageZurWoche = false
-            rueckfrageOffen = true
-        } else {
-            onZurueck()
+    val verlasse: (VerlassenNach) -> Unit = { ziel ->
+        when (ziel) {
+            VerlassenNach.LISTE -> onZurueck()
+            VerlassenNach.WOCHE -> onZurWoche()
+            VerlassenNach.HUE -> onZurHue()
         }
     }
-    // Der Link der Tagesleiste verlaesst die Seite wie Zurueck: dasselbe Gate, nur das Ziel ist ein anderes.
-    val zurWoche: () -> Unit = {
+    val verlasseMitRueckfrage: (VerlassenNach) -> Unit = { ziel ->
         if (geaendert) {
-            rueckfrageZurWoche = true
+            rueckfrageZiel = ziel
             rueckfrageOffen = true
         } else {
-            onZurWoche()
+            verlasse(ziel)
         }
     }
+    val zurueck: () -> Unit = { verlasseMitRueckfrage(VerlassenNach.LISTE) }
+    // Der Link der Tagesleiste und der Weg zu „Philips Hue“ verlassen die Seite wie Zurueck: dasselbe Gate,
+    // nur das Ziel ist ein anderes.
+    val zurWoche: () -> Unit = { verlasseMitRueckfrage(VerlassenNach.WOCHE) }
 
     // Gate, kein Ziel: siehe KDoc. Ein offener AlertDialog frisst Zurueck selbst (eigenes Fenster).
     BackHandler(enabled = geaendert) {
-        rueckfrageZurWoche = false
+        rueckfrageZiel = VerlassenNach.LISTE
         rueckfrageOffen = true
     }
 
@@ -488,6 +528,17 @@ private fun TypSeiteFormular(
     val gespeicherterName = if (neu) null else definition.name
     val anzeige = remember(entwurf, quellen, wirksamePosition, gespeicherterName) {
         TagesleisteKarteLogik.rechne(entwurf, gespeicherterName, quellen, wirksamePosition, jetztMs, zone)
+    }
+
+    // Die Regeln kommen aus dem gespeicherten Typ, „Wecker an diesem Tag“ aus dem Entwurf (#254).
+    val bridge = LichtAbschnittLogik.bridgeStand(quellen)
+    val lichtKarte = LichtAbschnittLogik.karte(config, definition, neu, entwurf.weckerAn, bridge, licht.unaufgeloest)
+    // Welche Ziele die Bridge nicht kennt, steht erst nach einem Abgleich fest - wie beim Oeffnen des
+    // Hue-Bereichs, und nur wenn es Regeln gibt. Laeuft nach der Rueckkehr aus dem Editor erneut.
+    val zieleAbfragen = LichtAbschnittLogik.zeigtAbschnitt(entwurf.kategorie) &&
+        lichtKarte.zeilen.isNotEmpty() && bridge == BridgeStand.EINGERICHTET
+    LaunchedEffect(zieleAbfragen) {
+        if (zieleAbfragen) licht.frageZieleAb()
     }
 
     Scaffold(
@@ -578,6 +629,23 @@ private fun TypSeiteFormular(
                         )
                     }
                 }
+                if (LichtAbschnittLogik.zeigtAbschnitt(entwurf.kategorie)) {
+                    item(key = "licht") {
+                        LichtAbschnitt(
+                            karte = lichtKarte,
+                            typName = definition.name,
+                            fehler = licht.fehler,
+                            onSchalten = { regel, an ->
+                                licht.speichere(LichtAbschnittLogik.geschaltet(regel, an, definition.name))
+                            },
+                            onOeffnen = { regel -> licht.oeffneEditor(regel.id) },
+                            onEntfernen = { regel -> entfernenRegelId = regel.id },
+                            onHinzu = { licht.oeffneEditor(null) },
+                            onZurHue = { verlasseMitRueckfrage(VerlassenNach.HUE) },
+                            onFehlerSchliessen = licht.schliesseFehler
+                        )
+                    }
+                }
             }
 
             Spacer(modifier = Modifier.height(SpacingConstants.SPACING_SMALL))
@@ -650,6 +718,19 @@ private fun TypSeiteFormular(
         )
     }
 
+    // Verschwindet die Regel, waehrend gefragt wird (Import, anderer Schreiber), gibt es keine Frage mehr.
+    val zuEntfernen = entfernenRegelId?.let { id -> lichtKarte.zeilen.firstOrNull { it.regel.id == id }?.regel }
+    if (zuEntfernen != null) {
+        LichtEntfernenDialog(
+            name = zuEntfernen.name,
+            onEntfernen = {
+                entfernenRegelId = null
+                licht.entferne(zuEntfernen.id)
+            },
+            onAbbrechen = { entfernenRegelId = null }
+        )
+    }
+
     if (rueckfrageOffen) {
         AlertDialog(
             onDismissRequest = { rueckfrageOffen = false },
@@ -657,8 +738,13 @@ private fun TypSeiteFormular(
             text = {
                 Text(
                     when {
-                        neu -> TypSeiteTexte.neuerTypVerwerfenText(fundCode, zurWoche = rueckfrageZurWoche)
-                        rueckfrageZurWoche -> TypSeiteTexte.VERWERFEN_WOCHE_TEXT
+                        neu -> TypSeiteTexte.neuerTypVerwerfenText(
+                            fundCode,
+                            zurWoche = rueckfrageZiel == VerlassenNach.WOCHE,
+                            zurHue = rueckfrageZiel == VerlassenNach.HUE
+                        )
+                        rueckfrageZiel == VerlassenNach.WOCHE -> TypSeiteTexte.VERWERFEN_WOCHE_TEXT
+                        rueckfrageZiel == VerlassenNach.HUE -> TypSeiteTexte.VERWERFEN_HUE_TEXT
                         else -> TypSeiteTexte.VERWERFEN_TEXT
                     }
                 )
@@ -668,7 +754,7 @@ private fun TypSeiteFormular(
                     onClick = {
                         rueckfrageOffen = false
                         Logger.d(LogTags.UI, "Typ-Seite: ${if (neu) "neuer Typ" else "Aenderungen an"} ${definition.id} verworfen")
-                        if (rueckfrageZurWoche) onZurWoche() else onZurueck()
+                        verlasse(rueckfrageZiel)
                     }
                 ) {
                     Text(TypSeiteTexte.VERWERFEN)

@@ -2,7 +2,6 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.dnd
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -12,7 +11,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.Card
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
@@ -37,16 +35,16 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.github.f1rlefanz.cf_alarmfortimeoffice.R
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.SimpleBackTopAppBar
-import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.SwitchRow
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.hilfe.HilfeThema
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.DndPermissionHelper
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.DndViewModel
 
 /**
- * DND-Einstellungen: zwei unabhaengige Trigger ("Schlaf-Fenster folgt dem Dimmer" / "Waehrend der
- * Dienstzeit"), kein Regel-Editor - siehe [com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndScheduleUseCase].
- * Freigabe-Pruefung lebt hier (Composable-Ebene), nicht im ViewModel - Refresh bei ON_RESUME, analog
- * zur Bedienungshilfen-Karte des Dimmers.
+ * „Nicht stören“ als Geraete-Einstellung (#225): Zugriff und was trotzdem durchkommt - fuer alle
+ * Typen. WANN stummgeschaltet wird, steht am Schichttyp (siehe
+ * [com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndScheduleUseCase]). Die Freigabe-Pruefung lebt
+ * hier (Composable-Ebene), nicht im ViewModel - Refresh bei ON_RESUME, analog zur
+ * Bedienungshilfen-Karte des Dimmers.
  */
 @Composable
 fun DndSettingsScreen(
@@ -55,7 +53,6 @@ fun DndSettingsScreen(
 ) {
     // DND steuert DndScheduleUseCase (Tick-Alarm), nicht diese Abos - sie duerfen unter STARTED ruhen.
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    val shiftNames by viewModel.shiftNames.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
 
@@ -131,97 +128,6 @@ fun DndSettingsScreen(
                             ) {
                                 Text(stringResource(R.string.dnd_permission_grant))
                             }
-                        }
-                    }
-                }
-            }
-
-            item {
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp)
-                    ) {
-                        SwitchRow(
-                            title = stringResource(R.string.dnd_follow_dimmer),
-                            description = stringResource(R.string.dnd_follow_dimmer_hint),
-                            checked = state.followDimmerEnabled,
-                            onCheckedChange = { viewModel.setFollowDimmerEnabled(it) },
-                            enabled = bedienbar,
-                            titleStyle = MaterialTheme.typography.titleMedium
-                        )
-                    }
-                }
-            }
-
-            item {
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        SwitchRow(
-                            title = stringResource(R.string.dnd_during_shift),
-                            description = stringResource(R.string.dnd_during_shift_hint),
-                            checked = state.duringShiftEnabled,
-                            onCheckedChange = { viewModel.setDuringShiftEnabled(it) },
-                            enabled = bedienbar,
-                            titleStyle = MaterialTheme.typography.titleMedium
-                        )
-                        if (shiftNames.isNotEmpty()) {
-                            Text(
-                                text = stringResource(R.string.dnd_during_shift_exceptions),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                shiftNames.forEach { name ->
-                                    FilterChip(
-                                        selected = name in state.shiftExcludedShifts,
-                                        onClick = { viewModel.toggleShiftExcludedShift(name) },
-                                        label = { Text(name) }
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            if (shiftNames.isNotEmpty()) {
-                item {
-                    Card(modifier = Modifier.fillMaxWidth()) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Text(
-                                text = "Rufbereitschaft",
-                                style = MaterialTheme.typography.titleMedium
-                            )
-                            Text(
-                                text = "An Rufbereitschafts-Tagen endet „Nicht stören“ spätestens zur Uhrzeit " +
-                                    "aus „Endet spätestens um“ – ab dann bist du erreichbar. Die Uhrzeit stellst " +
-                                    "du je Typ auf der Seite des Schichttyps unter „Nicht stören“ ein.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            // Rufbereitschaft ist eine Kategorie des Schichttyps (ShiftDefinition.isOnCall) - hier nur Auskunft.
-                            Text(
-                                text = if (state.onCallShifts.isEmpty()) {
-                                    "Noch kein Schichttyp hat die Kategorie „Rufbereitschaft“. Die Kategorie " +
-                                        "wählst du auf der Seite des Schichttyps."
-                                } else {
-                                    "Typen der Kategorie „Rufbereitschaft“: " +
-                                        state.onCallShifts.sorted().joinToString(", ")
-                                },
-                                style = MaterialTheme.typography.bodyMedium
-                            )
                         }
                     }
                 }

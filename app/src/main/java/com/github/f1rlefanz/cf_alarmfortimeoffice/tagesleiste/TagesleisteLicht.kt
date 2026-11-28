@@ -108,7 +108,8 @@ fun licht(
  * der Naht den Namen ihres Typs, so gilt je Typ nur seine eigene), mit [LichtEinstellungen.tageslicht]
  * zusaetzlich `laeuftBeiTageslicht` am Wecktag des Weckpunkts [weckerMin] (er kann am Vortag liegen).
  * Nur die Leiste filtert ausserdem Regeln ohne schaltbares Ziel aus ([schaltetLicht]): die Laufzeit
- * fuehrt sie aus, sie schalten dort nur nichts. `TagesleisteLichtTest` haelt beides gegeneinander.
+ * fuehrt sie aus, sie schalten dort nur nichts. `TagesleisteQuellenTest` („Leiste und Laufzeit …“)
+ * haelt beides gegeneinander.
  */
 internal fun geltendeLichtRegeln(
     eingabe: TagesleisteEingabe,

@@ -117,8 +117,8 @@ import javax.inject.Singleton
  * ueber `dagger.Lazy` entsteht der Scheduler nie beim Bauen, sondern nur nach Tor 1 in genau dem
  * einen Anlass, der schreibt - einmal je Geraet. Beim Import plant es dadurch zweimal (hier und am
  * Ende von `ConfigBackupUseCase.import`) - harmlos, `scheduleSunriseStarts()` raeumt ab und plant
- * mit `REPLACE`. Ein Fehler beim Neuplanen kippt den Ausgang nicht. Rest: hat ein anderer Leser `hue_settings` in diesem Prozess
- * vor dem Entsperren gelesen, liest der Store danach still leer (Skill cfalarm-persistenz-und-auth),
+ * mit `REPLACE`. Ein Fehler beim Neuplanen kippt den Ausgang nicht.
+ * Rest: hat ein anderer Leser `hue_settings` in diesem Prozess vor dem Entsperren gelesen, liest der Store danach still leer (Skill cfalarm-persistenz-und-auth),
  * und Tor 1 faengt das nicht - einen Kanarienvogel wie den Dimmer-Marker hat der Hue-Store nicht.
  * Dagegen steht die Regel, dass jeder Leser im Prozessstart vorher `istEntsperrt()` fragt.
  */

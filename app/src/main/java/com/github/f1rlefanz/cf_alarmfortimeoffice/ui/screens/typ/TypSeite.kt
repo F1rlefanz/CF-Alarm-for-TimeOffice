@@ -334,6 +334,10 @@ fun TypSeite(
  * `navigateBackFrom` in die Typ-Liste. Die feste Seite hat weder Tagesleiste noch Wecker-Abschnitt: an
  * Tagen ohne Eintrag stellt „Eigene Einstellungen“ keinen Wecker, „Wie <Typ>“ verweist auf den Typ.
  *
+ * Aus der Karte „Bildschirm dimmen“ fuehrt „Weitere Optionen“ in dasselbe Blatt wie bei einem Typ
+ * ([OhneEintragWeitereOptionen], #238); auch dort schreibt jede Aenderung sofort, und Zurueck schliesst zuerst
+ * das Blatt (eigenes Fenster).
+ *
  * Ein Typ, der verschwindet, waehrend die Seite offen ist, muss hier nichts behandeln: die Wahl liest
  * [OhneEintragWahl.gewaehlterTyp], ein Verweis ins Leere ist „Eigene Einstellungen“.
  *
@@ -349,6 +353,10 @@ fun OhneEintragSeite(
     val shiftState by shiftViewModel.uiState.collectAsStateWithLifecycle()
     // Nicht `currentShiftConfig`: das zieht erst nach dem Speichern nach, und die Karten schreiben sofort.
     val config = shiftState.ohneEintragStand
+    // `null`, solange „wie <Typ>“ gilt oder nichts gelesen ist - dann gibt es kein Blatt.
+    val blatt = config?.let(OhneEintragAbschnittLogik::blattWerte)
+    // Das Blatt „Weitere Optionen“: `null` = zu, sonst die Fenster, die beim Oeffnen den Anker-Editor bekamen.
+    var weitereOptionen by rememberSaveable { mutableStateOf<ArrayList<Int>?>(null) }
 
     Scaffold(
         topBar = {
@@ -374,10 +382,28 @@ fun OhneEintragSeite(
                     config = config,
                     onWaehle = shiftViewModel::waehleOhneEintrag,
                     onAendere = shiftViewModel::aendereOhneEintrag,
-                    onTypOeffnen = { typ -> onTypOeffnen(typ.id) }
+                    onTypOeffnen = { typ -> onTypOeffnen(typ.id) },
+                    onWeitereOptionen = {
+                        weitereOptionen = blatt?.let { ArrayList(WeitereOptionenLogik.ohneForm(it.dimmen)) }
+                    }
                 )
             }
         }
+    }
+
+    // Die Werte fuers Blatt wie auf der Typ-Seite; Vorgabe und Weckzeiten werden erst gelesen, wenn es offen ist.
+    val ankerBeimOeffnen = weitereOptionen
+    if (ankerBeimOeffnen != null && blatt != null) {
+        val stand by remember { shiftViewModel.weitereOptionenStand() }.collectAsStateWithLifecycle(initialValue = null)
+        val quellen by shiftViewModel.tagesleisteQuellen.collectAsStateWithLifecycle()
+        OhneEintragWeitereOptionen(
+            werte = blatt,
+            stand = stand,
+            tageslicht = quellen?.tageslicht,
+            ankerBeimOeffnen = ankerBeimOeffnen,
+            onAendere = shiftViewModel::aendereOhneEintrag,
+            onSchliessen = { weitereOptionen = null }
+        )
     }
 }
 
@@ -602,7 +628,9 @@ private fun TypSeiteFormular(
             gespeicherteWaerme = definition.dimmen.farbwaerme,
             stand = stand,
             tageslicht = quellen?.tageslicht,
-            speicherKnopf = if (neu) TypSeiteTexte.ERSTELLEN else TypSeiteTexte.SPEICHERN,
+            speicherHinweis = WeitereOptionenTexte.speicherHinweis(
+                if (neu) TypSeiteTexte.ERSTELLEN else TypSeiteTexte.SPEICHERN
+            ),
             ankerBeimOeffnen = ankerBeimOeffnen,
             aendere = { aenderung -> aendere { e -> e.dimmen?.let { e.copy(dimmen = aenderung(it)) } ?: e } },
             onSchliessen = { weitereOptionen = null }

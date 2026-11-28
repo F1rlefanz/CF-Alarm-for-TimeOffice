@@ -33,6 +33,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftKategorie
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.TypDimmen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.TypNichtStoeren
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.TageslichtStand
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.CompactOutlinedButton
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.KnopfZeile
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.TypListeTexte
@@ -40,6 +41,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.StatusTon
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.tonPaar
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.SchichttypBlock
+import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.WeitereOptionenStand
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.listenCode
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.titel
 
@@ -67,6 +69,9 @@ object OhneEintragTexte {
     const val EIGENE_EINSTELLUNGEN_BESCHREIBUNG = "Kein Wecker an diesen Tagen."
 
     const val KEIN_WECKER = "kein Wecker"
+
+    /** Oben im Blatt „Weitere Optionen“: anders als auf einer Typ-Seite gibt es hier kein „Speichern“. */
+    const val SOFORT_GESPEICHERT = "Änderungen hier werden sofort gespeichert."
 
     /** Zusatz in der Rueckfrage vor dem Loeschen des Typs, auf den die feste Zeile verweist. */
     const val LOESCHEN_FOLGE =
@@ -124,11 +129,19 @@ internal data class WahlZeile(
     val ausgewaehlt: Boolean
 )
 
+/** Was das Blatt „Weitere Optionen“ von der festen Zeile bekommt ([OhneEintragAbschnittLogik.blattWerte]). */
+internal data class BlattWerte(
+    val dimmen: DimmenEntwurf,
+    val weckerAn: Boolean,
+    val mitBlocktagen: Boolean,
+    val gespeicherteWaerme: Int?
+)
+
 /**
- * Die Rechnung der Seite, ohne Compose (Umbau #191, #223): welche Zeilen die Wahl hat, welcher Typ
+ * Die Rechnung der Seite, ohne Compose (Umbau #191, #223, #238): welche Zeilen die Wahl hat, welcher Typ
  * „<Name> öffnen“ bekommt, dass ein Tipp genau EINMAL schreibt - und was die wiederverwendeten Karten
- * „Bildschirm dimmen“ und „Nicht stören“ von der festen Zeile bekommen und zurueckgeben. Geschrieben
- * wird nie hier, sondern ueber `ShiftViewModel.waehleOhneEintrag` (der entscheidet,
+ * „Bildschirm dimmen“ und „Nicht stören“ sowie das Blatt „Weitere Optionen“ von der festen Zeile bekommen
+ * und zurueckgeben. Geschrieben wird nie hier, sondern ueber `ShiftViewModel.waehleOhneEintrag` (der entscheidet,
  * [OhneEintragWahl.waehle], ob sich ueberhaupt etwas aendert) bzw. `ShiftViewModel.aendereOhneEintrag`.
  */
 internal object OhneEintragAbschnittLogik {
@@ -170,7 +183,8 @@ internal object OhneEintragAbschnittLogik {
     fun zeigtEigeneEinstellungen(config: ShiftConfig): Boolean = OhneEintragWahl.gewaehlterTyp(config) == null
 
     /**
-     * Was die Karte „Bildschirm dimmen“ von der festen Zeile bekommt. Sie liest nur Dimmen, Wecker und
+     * Was die Karte „Bildschirm dimmen“ (und ueber [blattWerte] ihr Blatt) von der festen Zeile bekommt. Die Karte
+     * liest nur Dimmen, Wecker und
      * Kategorie: ohne Wecker fehlt „Schon beim Wecker enden“ (an diesen Tagen gibt es keinen eigenen),
      * eine Kategorie ohne Dienstblock laesst die Blocktage weg. Ein gespeichertes „bis Wecker“ bleibt
      * dabei stehen - die Karte schreibt nur, was sie zeigt.
@@ -187,8 +201,9 @@ internal object OhneEintragAbschnittLogik {
     )
 
     /**
-     * [eigene] nach einer Aenderung der Karte „Bildschirm dimmen“. Ueber [DimmenEntwurf.anwenden] auf
-     * dem Gespeicherten: Farbwaerme und undeutbare Fenster bleiben.
+     * [eigene] nach einer Aenderung der Karte „Bildschirm dimmen“ oder ihres Blatts „Weitere Optionen“. Ueber
+     * [DimmenEntwurf.anwenden] auf dem Gespeicherten: undeutbare Fenster bleiben, und die Farbwaerme bleibt,
+     * solange das Blatt sie nicht aendert.
      */
     fun nachDimmAenderung(
         eigene: OhneEintragEinstellungen,
@@ -196,6 +211,32 @@ internal object OhneEintragAbschnittLogik {
     ): OhneEintragEinstellungen {
         val neu = aenderung(dimmEntwurf(eigene)).dimmen ?: return eigene
         return eigene.copy(dimmen = neu.anwenden(eigene.dimmen))
+    }
+
+    /**
+     * Die Werte fuer das Blatt „Weitere Optionen“, aus demselben Entwurf wie die Karte ([dimmEntwurf]) -
+     * `null` bei „wie <Typ>“: dort gilt der Typ, und es gibt kein Blatt ([zeigtEigeneEinstellungen]).
+     */
+    fun blattWerte(config: ShiftConfig): BlattWerte? {
+        if (!zeigtEigeneEinstellungen(config)) return null
+        val eigene = config.ohneKalendereintrag
+        val entwurf = dimmEntwurf(eigene)
+        return BlattWerte(
+            dimmen = DimmenEntwurf.aus(eigene.dimmen),
+            weckerAn = entwurf.weckerAn,
+            mitBlocktagen = DimmenAbschnittLogik.zeigtBlocktage(entwurf.kategorie),
+            gespeicherteWaerme = eigene.dimmen.farbwaerme
+        )
+    }
+
+    /**
+     * Der Weg der Aenderungen aus dem Blatt: jede geht SOFORT an [schreibe]
+     * (`ShiftViewModel.aendereOhneEintrag`) und dort ueber [nachDimmAenderung] - kein Entwurf, kein „Speichern“.
+     */
+    fun blattSchreibweg(
+        schreibe: ((OhneEintragEinstellungen) -> OhneEintragEinstellungen) -> Unit
+    ): ((DimmenEntwurf) -> DimmenEntwurf) -> Unit = { aenderung ->
+        schreibe { eigene -> nachDimmAenderung(eigene) { e -> e.copy(dimmen = e.dimmen?.let(aenderung)) } }
     }
 
     /** Was die Karte „Nicht stören“ zeigt; „Während des Kalendereintrags“ gibt es an der festen Zeile nicht. */
@@ -220,12 +261,16 @@ internal object OhneEintragAbschnittLogik {
  *
  * [onAendere] bekommt eine UMFORMUNG der eigenen Einstellungen, keinen fertigen Wert: angewandt wird sie
  * auf den zuletzt beauftragten Stand, auch wenn der noch gespeichert wird.
+ *
+ * @param onWeitereOptionen oeffnet aus der Karte „Bildschirm dimmen“ das Blatt „Weitere Optionen“
+ *   ([OhneEintragWeitereOptionen]); `null` = keine Zeile.
  */
 internal fun LazyListScope.ohneEintragAbschnitt(
     config: ShiftConfig,
     onWaehle: (typId: String?) -> Unit,
     onAendere: ((OhneEintragEinstellungen) -> OhneEintragEinstellungen) -> Unit,
-    onTypOeffnen: (ShiftDefinition) -> Unit
+    onTypOeffnen: (ShiftDefinition) -> Unit,
+    onWeitereOptionen: (() -> Unit)? = null
 ) {
     item(key = "ohne-eintrag-typ") { TypKarte() }
     item(key = "ohne-eintrag-wahl") { WahlKarte(OhneEintragAbschnittLogik.zeilen(config), onWaehle) }
@@ -237,7 +282,8 @@ internal fun LazyListScope.ohneEintragAbschnitt(
                 giltOhneEintrag = true,
                 aendere = { aenderung ->
                     onAendere { OhneEintragAbschnittLogik.nachDimmAenderung(it, aenderung) }
-                }
+                },
+                onWeitereOptionen = onWeitereOptionen
             )
         }
         item(key = "ohne-eintrag-nichtstoeren") {
@@ -255,6 +301,34 @@ internal fun LazyListScope.ohneEintragAbschnitt(
     OhneEintragAbschnittLogik.oeffnenZiel(config)?.let { typ ->
         item(key = "ohne-eintrag-richtet-sich-nach") { RichtetSichNach(typ, onOeffnen = { onTypOeffnen(typ) }) }
     }
+}
+
+/**
+ * Das Blatt „Weitere Optionen“ der festen Zeile (#238): dasselbe wie auf einer Typ-Seite
+ * ([WeitereOptionenBlatt]), nur schreibt hier jede Aenderung sofort ([OhneEintragAbschnittLogik.blattSchreibweg]).
+ * [werte] kommen aus dem zuletzt beauftragten Stand; die uebrigen Parameter wie dort.
+ */
+@Composable
+internal fun OhneEintragWeitereOptionen(
+    werte: BlattWerte,
+    stand: WeitereOptionenStand?,
+    tageslicht: TageslichtStand?,
+    ankerBeimOeffnen: Collection<Int>,
+    onAendere: ((OhneEintragEinstellungen) -> OhneEintragEinstellungen) -> Unit,
+    onSchliessen: () -> Unit
+) {
+    WeitereOptionenBlatt(
+        dimmen = werte.dimmen,
+        weckerAn = werte.weckerAn,
+        mitBlocktagen = werte.mitBlocktagen,
+        gespeicherteWaerme = werte.gespeicherteWaerme,
+        stand = stand,
+        tageslicht = tageslicht,
+        speicherHinweis = OhneEintragTexte.SOFORT_GESPEICHERT,
+        ankerBeimOeffnen = ankerBeimOeffnen,
+        aendere = OhneEintragAbschnittLogik.blattSchreibweg(onAendere),
+        onSchliessen = onSchliessen
+    )
 }
 
 /** Weisse Flaeche mit Rand statt `surfaceVariant` (hell identisch mit dem Hintergrund) - ui-texte-und-layout.md. */

@@ -83,7 +83,7 @@ import java.util.Locale
  * Das Blatt „Weitere Optionen“ der Karte „Bildschirm dimmen“ (Umbau Etappe 3, #224, SPEC E6 und 3.3 Punkt 6):
  * die Farbwaerme des Typs, je Fenster „Dimmen nach dem Wecker“ samt „Nachlauf bis es hell ist“ und fuer Fenster,
  * die nicht in „Wann“ passen, der Anker-Editor. Anker-Editor, Nachlauf und Tageslicht-Beispiel stammen aus
- * dem frueheren Regel-Editor.
+ * dem frueheren Regel-Editor. Dasselbe Blatt benutzt die feste Zeile „Ohne Kalendereintrag“ (#238).
  */
 
 // ── Anker-Editor: Listen und Feld-Zuordnung ──────────────────────────────────────────────────
@@ -142,8 +142,8 @@ internal enum class NachlaufLage {
 }
 
 /**
- * Jede Aenderung ist eine Umformung des Dimm-Teils im Entwurf der Typ-Seite; geschrieben wird erst mit
- * „Speichern“. Fenster werden nur ueber `copy` geaendert, nie neu gebaut: was das Blatt nicht zeigt, bleibt.
+ * Jede Aenderung ist eine Umformung eines [DimmenEntwurf]: auf der Typ-Seite des Entwurfs, geschrieben erst mit
+ * „Speichern“; an der festen Zeile des gespeicherten Stands, geschrieben sofort. Fenster werden nur ueber `copy` geaendert, nie neu gebaut: was das Blatt nicht zeigt, bleibt.
  */
 internal object WeitereOptionenLogik {
 
@@ -216,12 +216,12 @@ internal object WeitereOptionenLogik {
 
 /**
  * Das Blatt als bildschirmfuellender Dialog: eigenes Fenster, Zurueck schliesst zuerst das Blatt, der
- * `BackHandler` in `MainScreen` bleibt unberuehrt. Zustandslos - der Entwurf gehoert der Typ-Seite.
+ * `BackHandler` in `MainScreen` bleibt unberuehrt. Zustandslos - [dimmen] und [aendere] gehoeren dem Aufrufer.
  *
- * @param gespeicherteWaerme die Farbwaerme am GESPEICHERTEN Typ (`null` = wie in den Einstellungen).
+ * @param gespeicherteWaerme die GESPEICHERTE Farbwaerme von Typ bzw. fester Zeile (`null` = wie in den Einstellungen).
  * @param stand Vorgabe-Waerme und Weckzeiten; `null` = noch nicht gelesen.
  * @param tageslicht Ort und Zone; `null` = noch nicht gelesen, dann steht weder Hinweis noch Beispiel da.
- * @param speicherKnopf die Beschriftung des Knopfs der Typ-Seite, der speichert.
+ * @param speicherHinweis der Satz oben im Blatt: wann gespeichert wird.
  * @param ankerBeimOeffnen siehe [WeitereOptionenLogik.zeigtAnkerEditor].
  */
 @Composable
@@ -232,7 +232,7 @@ internal fun WeitereOptionenBlatt(
     gespeicherteWaerme: Int?,
     stand: WeitereOptionenStand?,
     tageslicht: TageslichtStand?,
-    speicherKnopf: String,
+    speicherHinweis: String,
     ankerBeimOeffnen: Collection<Int>,
     aendere: ((DimmenEntwurf) -> DimmenEntwurf) -> Unit,
     onSchliessen: () -> Unit
@@ -259,7 +259,7 @@ internal fun WeitereOptionenBlatt(
                     contentPadding = PaddingValues(vertical = SpacingConstants.SPACING_LARGE),
                     verticalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_LARGE)
                 ) {
-                    item(key = "hinweis") { Nebentext(WeitereOptionenTexte.speicherHinweis(speicherKnopf)) }
+                    item(key = "hinweis") { Nebentext(speicherHinweis) }
                     item(key = "waerme") {
                         WaermeKarte(
                             eigene = WeitereOptionenLogik.waerme(dimmen, gespeicherteWaerme),
@@ -358,9 +358,16 @@ private fun Nebentext(text: String) {
     Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 }
 
-/** Die Farbwaerme des Typs: genau zwei Wahlen. [eigene] `null` = „wie in den Einstellungen“. */
+/**
+ * Die Farbwaerme: genau zwei Wahlen. [eigene] `null` = „wie in den Einstellungen“. Der Regler meldet beim Ziehen
+ * jeden Zwischenwert; [onWahl] bekommt erst den Wert beim Loslassen - an der festen Zeile ist jeder Aufruf ein
+ * Speichern samt Alarm-Abgleich.
+ */
 @Composable
 private fun WaermeKarte(eigene: Int?, vorgabe: Int?, onWahl: (Int?) -> Unit) {
+    // Der Wert unter dem Finger; `null` = es wird gerade nicht gezogen.
+    var gezogen by remember(eigene) { mutableStateOf<Int?>(null) }
+    val gezeigt = gezogen ?: eigene
     Karte(WeitereOptionenTexte.WAERME_TITEL) {
         Column(modifier = Modifier.selectableGroup()) {
             WahlZeile(
@@ -370,17 +377,21 @@ private fun WaermeKarte(eigene: Int?, vorgabe: Int?, onWahl: (Int?) -> Unit) {
             ) { onWahl(null) }
             WahlZeile(
                 titel = WeitereOptionenTexte.WAERME_EIGENE,
-                unterzeile = eigene?.let(WeitereOptionenTexte::prozent),
+                unterzeile = gezeigt?.let(WeitereOptionenTexte::prozent),
                 gewaehlt = eigene != null
             ) {
                 // Der eigene Wert beginnt bei dem, was gerade wirkt.
                 if (eigene == null) onWahl(vorgabe ?: DimOverlayPrefs.DEFAULT_WARMTH)
             }
         }
-        if (eigene != null) {
+        if (gezeigt != null) {
             Slider(
-                value = eigene.toFloat(),
-                onValueChange = { onWahl(it.toInt()) },
+                value = gezeigt.toFloat(),
+                onValueChange = { gezogen = it.toInt() },
+                onValueChangeFinished = {
+                    gezogen?.let(onWahl)
+                    gezogen = null
+                },
                 valueRange = 0f..DimOverlayPrefs.WARMTH_MAX.toFloat()
             )
         }

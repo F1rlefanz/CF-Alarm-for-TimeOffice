@@ -42,7 +42,11 @@ data class ShiftDefinition(
     // Umbau E6/E7 (#213): Dimmen und „Nicht stoeren“ des Typs, siehe TypEinstellungen.kt. Noch liest
     // sie niemand; eine aeltere App ueberliest die Schluessel.
     val dimmen: TypDimmen = TypDimmen(),
-    val nichtStoeren: TypNichtStoeren = TypNichtStoeren()
+    val nichtStoeren: TypNichtStoeren = TypNichtStoeren(),
+    // Umbau E8 (#246): die Lichtregeln des Typs, siehe [TypLicht]. Noch liest sie niemand - die
+    // Ausfuehrung bleibt bis zur Licht-Migration bei den Hue-Regeln; eine aeltere App ueberliest den
+    // Schluessel. Marker der Migration ist [ShiftConfig.lichtStufe].
+    val licht: TypLicht = TypLicht()
 ) {
     /**
      * Die wirksame Kategorie (Umbau E1) - immer deckungsgleich mit den Flags, weil sie aus ihnen

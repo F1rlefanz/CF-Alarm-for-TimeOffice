@@ -27,7 +27,29 @@ Schreibkonventionen (der Generator verlässt sich darauf):
 - `### 🐛 Behoben` — Rubrik, mit Emoji wie bisher.
 - `- **Kurzfassung:** Erklärung` — ein Eintrag.
 
-## 🆕 Version 1.58.0 (Aktuell – interne Alpha)
+## 🆕 Version 1.59.0 (Aktuell – interne Alpha)
+
+**Stand:** November 2026
+
+_Wann der Bildschirm gedimmt wird und wann „Nicht stören“ gilt, stellst du jetzt direkt am Schichttyp ein – der eigene Bereich „Schicht-Dimmer“ entfällt._
+
+### ✨ Neu
+
+- **Dimmen am Schichttyp:** Auf der Seite eines Schichttyps stellst du unter „Bildschirm dimmen“ ein, wann gedimmt wird: Nacht davor, Abend danach oder nach dem Dienst, mit Uhrzeiten, Stärke und den Tagen im Dienstblock. Die Leiste „So läuft ein Tag“ zeigt es sofort.
+- **„Weitere Optionen“ fürs Dimmen:** eine eigene Farbwärme je Typ, nach dem Wecker noch ein paar Minuten weiterdimmen (auf Wunsch nur, solange es dunkel ist) und bei Fenstern mit eigenen Zeiten Start und Ende ändern.
+- **„Nicht stören“ am Schichttyp:** solange gedimmt wird, während des Kalendereintrags und bei Rufbereitschaft, bis wann es spätestens endet. Fehlt die Freigabe von Android, sagt dir die Karte das.
+- **Tage ohne Kalendereintrag:** Auf der Seite „Ohne Kalendereintrag“ stellst du selbst ein, wann gedimmt wird und ob „Nicht stören“ mitläuft, auf Wunsch mit „Weitere Optionen“. Das gilt auch für freigegebene Tage („Dienst fällt aus“, Krank). Änderungen dort werden sofort gespeichert. Steht dort „Wie …“ mit einem Typ, gilt weiter dessen Einstellung.
+- **Dimmen auf einen Blick:** Jede Zeile in der Liste der Schichttypen und im Tagesblatt zeigt, ob und wann der Typ dimmt, z. B. „dimmt 20:00–Wecker“, „2 Dimm-Fenster“ oder „Dimmen aus“. Beim Einordnen eines Kalender-Codes nennt der Hinweis jetzt auch Dimmen und „Nicht stören“.
+
+### 🎨 Feinschliff
+
+- **Der Menüpunkt „Schicht-Dimmer“ ist weg:** Dimmer und „Nicht stören“ richten sich jetzt nach den Einstellungen am Schichttyp. Die Regelliste, die beiden Hauptschalter, die Schnellstart-Vorlagen und die Vorschau der nächsten Tage gibt es nicht mehr.
+- **„Einstellungen“ gelten fürs ganze Gerät:** Dort findest du Bedienungshilfe, Farbwärme und eine 10-Sekunden-Vorschau fürs Dimmen sowie den Zugriff auf „Nicht stören“ und wer trotzdem durchkommt. „Schichttypen verwalten“ heißt jetzt „Schichttypen einrichten“, „Ort für Tageslicht“ heißt „Standort“.
+- **Deine bisherigen Einstellungen ziehen mit um:** Beim ersten Start übernimmt die App deine Dimm-Regeln und „Nicht stören“-Schalter in die Schichttypen und in „Ohne Kalendereintrag“. War das Dimmen bisher ausgeschaltet, bleibt es aus, und deine Fenster bleiben trotzdem erhalten. Der alte Stand wird nicht gelöscht. Klappt die Übernahme nicht, sagt dir der System-Status das mit einer eigenen Karte, und die App versucht es von selbst erneut.
+- **Rückfrage beim Zurücksetzen:** „Auf Standardwerte zurücksetzen“ zählt jetzt auch die Dimm-Fenster, die „Nicht stören“-Schalter und die Einstellungen bei „Ohne Kalendereintrag“ auf und lässt sich auch bei großer Schrift vollständig lesen.
+- **Krank und „Dienst fällt aus“:** Der Hinweis dazu nennt jetzt „Ohne Kalendereintrag“ als die Stelle, die an diesen Tagen fürs Dimmen und „Nicht stören“ gilt.
+
+## Version 1.58.0
 
 **Stand:** November 2026
 

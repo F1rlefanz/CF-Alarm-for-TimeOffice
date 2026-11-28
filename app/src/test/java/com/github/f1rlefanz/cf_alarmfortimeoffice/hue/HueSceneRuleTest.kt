@@ -321,5 +321,5 @@ class HueSceneRuleTest {
     }
 
     private fun useCase(rules: List<HueSchedule>, light: FakeLightUseCase = FakeLightUseCase()) =
-        HueRuleUseCase(FakeConfigRepository(rules), light)
+        HueRuleUseCase(FakeConfigRepository(emptyList()), light, typLicht = lichtAmTyp(rules))
 }

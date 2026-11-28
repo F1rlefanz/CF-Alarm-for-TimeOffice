@@ -153,7 +153,7 @@ class HueTageslichtRegelTest {
         regeln: List<HueSchedule>,
         licht: FakeLightUseCase = FakeLightUseCase(),
         quelle: TageslichtQuelle = FesteQuelle(muenchen)
-    ) = HueRuleUseCase(FakeConfigRepository(regeln), licht, quelle)
+    ) = HueRuleUseCase(FakeConfigRepository(emptyList()), licht, quelle, lichtAmTyp(regeln))
 
     // --- laeuftBeiTageslicht ---------------------------------------------------------------
 

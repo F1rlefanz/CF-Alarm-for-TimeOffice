@@ -39,7 +39,13 @@ class HueRuleUseCase @Inject constructor(
      * Tageslicht-Repository, mit Entsperr-Gate VOR jedem Lesen); der Kotlin-Default haelt die
      * Tests, die diesen UseCase direkt bauen, ohne Ort - dann laeuft jede Regel.
      */
-    private val tageslicht: TageslichtQuelle = TageslichtQuelle.OHNE
+    private val tageslicht: TageslichtQuelle = TageslichtQuelle.OHNE,
+    /**
+     * Woher [getAllRules] die Lichtregeln liest (#249): die Regeln am Typ, STRIKT gelesen. Hilt
+     * bindet die Schicht-Konfiguration (`HueModule`); der Kotlin-Default scheitert bei jedem Lauf
+     * und meldet nie „keine Regeln“ - ein Test, der ihn vergisst, sieht einen Fehlschlag.
+     */
+    private val typLicht: TypLichtQuelle.Leser = TypLichtQuelle.Leser.NICHT_VERBUNDEN
 ) : IHueRuleUseCase {
 
     /**
@@ -162,11 +168,35 @@ class HueRuleUseCase @Inject constructor(
         ): List<AutoOffTarget> = autoOffTargetsOf(rules, fruehAus, minutenBisWecker)
     }
     
+    /**
+     * Die Lichtregeln am Typ (#249, [TypLichtQuelle]) - die EINE Quelle fuer Weckzeit-Pfad,
+     * Vorab-Sonnenaufgang, dessen Planung und Auto-Aus. Bei jedem Aufruf frisch gelesen, ohne
+     * eigenen Cache: eine geaenderte Regel wirkt beim naechsten Lauf.
+     *
+     * STRIKT: eine unlesbare Schicht-Konfiguration ist ein Fehlschlag, nie eine leere Liste, und es
+     * gibt keinen Rueckfall auf den Altbestand im Hue-Store (Festlegung #249). Geschrieben wird bis
+     * #250 weiter dort ([createRule], [updateRule], [deleteRule], [reconcileTargets],
+     * [renameShiftPattern]) - bewusst, die Etappe geht nur als Ganzes nach `main`.
+     */
     override suspend fun getAllRules(): Result<List<HueSchedule>> {
         return try {
-            configRepository.getScheduleRules().onFailure {
-                Logger.w(LogTags.HUE_USECASE, "Failed to get schedule rules", it)
+            val config = typLicht.konfiguration().getOrElse { error ->
+                if (error is CancellationException) throw error
+                Logger.w(LogTags.HUE_USECASE, "Lichtregeln am Typ nicht lesbar (Schicht-Konfiguration)", error)
+                return Result.failure(Exception("Die Hue-Regeln konnten nicht geladen werden.", error))
             }
+            val quelle = TypLichtQuelle(config)
+            // WARN+ landet im Release-Log: beides ist Licht, das am Wecktag nicht angeht.
+            if (quelle.unlesbareRegeln > 0) {
+                Logger.w(LogTags.HUE_USECASE, "${quelle.unlesbareRegeln} Lichtregel(n) am Typ von dieser Version nicht deutbar - laufen nicht")
+            }
+            if (quelle.verdeckteRegeln > 0) {
+                Logger.w(LogTags.HUE_USECASE, "${quelle.verdeckteRegeln} Lichtregel(n) an einem gleichnamigen spaeteren Typ - laufen nicht")
+            }
+            Logger.d(LogTags.HUE_USECASE, "${quelle.regeln.size} Lichtregel(n) am Typ")
+            Result.success(quelle.regeln)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Logger.e(LogTags.HUE_USECASE, "Failed to get all rules", e)
             Result.failure(Exception("Die Hue-Regeln konnten nicht geladen werden.", e))
@@ -851,7 +881,10 @@ class HueRuleUseCase @Inject constructor(
         // NACHPRÜFEN statt annehmen: `updateScheduleRules` schreibt in EINER Transaktion, aber der
         // Erfolg sagt nur "geschrieben". Bleibt danach noch ein Altname stehen, hat der Nachzug
         // nicht gegriffen, und die Umbenennung darf sich nicht als vollständig ausgeben.
-        val nachher = getAllRules().getOrElse { error ->
+        // Geprueft wird der ALTBESTAND, den dieser Nachzug schreibt - nicht [getAllRules]: das liest
+        // seit #249 die Regeln am Typ, deren Muster immer der aktuelle Typname ist (#250 stellt
+        // auch das Schreiben um).
+        val nachher = configRepository.getScheduleRules().getOrElse { error ->
             Logger.e(
                 LogTags.HUE_USECASE,
                 "❌ Hue-Regeln nach dem Nachziehen nicht lesbar - Ergebnis unbestaetigt ('$oldName' -> '$newName')",

@@ -146,7 +146,9 @@ class Pruefrunde8HueRegelNachzugTest {
     @Test
     fun `Regel der umbenannten Schicht wird auf den neuen Namen umgeschrieben`() = runTest {
         val repo = FakeConfigRepository(listOf(rule("a", "AD1"), rule("b", "Frueh")))
-        val useCase = HueRuleUseCase(repo, FakeLightUseCase())
+        // #249: die Ausfuehrung liest die Regeln am Typ. Dort zaehlt der Typname, den die Typ-Seite
+        // beim Umbenennen speichert - der Nachzug unten betrifft nur den Altbestand (bis #250).
+        val useCase = HueRuleUseCase(repo, FakeLightUseCase(), typLicht = lichtAmTyp(listOf(rule("a", "Abrufdienst"), rule("b", "Frueh"))))
 
         assertEquals(1, useCase.renameShiftPattern("AD1", "Abrufdienst").getOrNull())
 

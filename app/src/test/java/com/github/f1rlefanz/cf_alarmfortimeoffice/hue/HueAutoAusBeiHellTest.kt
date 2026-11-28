@@ -246,9 +246,10 @@ class HueAutoAusBeiHellTest {
         val weckzeit = um(6, 30)
         val licht = FakeLightUseCase()
         val uc = HueRuleUseCase(
-            FakeConfigRepository(listOf(regel(dauer = 120, ausBeiHell = HellAb.DAEMMERUNG))),
+            FakeConfigRepository(emptyList()),
             licht,
-            FesteQuelle(muenchen)
+            FesteQuelle(muenchen),
+            lichtAmTyp(listOf(regel(dauer = 120, ausBeiHell = HellAb.DAEMMERUNG)))
         ).apply { jetzt = { weckzeit } }
 
         uc.executeRulesForAlarm(shift(), LocalTime.of(6, 30), weckzeit = weckzeit).getOrThrow()
@@ -260,9 +261,10 @@ class HueAutoAusBeiHellTest {
     fun `Weckzeit-Pfad ohne Weckzeit - Dauer wie bisher`() = runTest {
         val licht = FakeLightUseCase()
         HueRuleUseCase(
-            FakeConfigRepository(listOf(regel(dauer = 120, ausBeiHell = HellAb.DAEMMERUNG))),
+            FakeConfigRepository(emptyList()),
             licht,
-            FesteQuelle(muenchen)
+            FesteQuelle(muenchen),
+            lichtAmTyp(listOf(regel(dauer = 120, ausBeiHell = HellAb.DAEMMERUNG)))
         ).executeRulesForAlarm(shift(), LocalTime.of(6, 30), weckzeit = null).getOrThrow()
 
         assertEquals(listOf(ziel(120)), licht.autoOffCalls)
@@ -274,9 +276,10 @@ class HueAutoAusBeiHellTest {
         val rampe = SunriseConfig(enabled = true, durationMinutes = 15, startBeforeAlarm = true)
         val licht = FakeLightUseCase()
         val uc = HueRuleUseCase(
-            FakeConfigRepository(listOf(regel(dauer = 120, ausBeiHell = HellAb.DAEMMERUNG, sunrise = rampe))),
+            FakeConfigRepository(emptyList()),
             licht,
-            FesteQuelle(muenchen)
+            FesteQuelle(muenchen),
+            lichtAmTyp(listOf(regel(dauer = 120, ausBeiHell = HellAb.DAEMMERUNG, sunrise = rampe)))
         ).apply { jetzt = { um(6, 15) } }
 
         uc.executeSunrisePreAlarm("Frühdienst", minutenBisWecker = 15, weckzeit = weckzeit).getOrThrow()

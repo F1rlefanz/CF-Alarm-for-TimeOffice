@@ -105,8 +105,9 @@ internal fun RulePreviewCard(
             if (form.shiftPattern.isNotBlank()) {
                 // Das Universalmuster ist ein Sentinel ("ALL") und ergibt eingesetzt einen
                 // Satz, den es nicht gibt ("Bei ALL-Schicht") - deshalb ein eigener Wortlaut.
+                // Am Typ (#252) gibt es kein "Alle Schichten": dort steht immer der Typname.
                 Text(
-                    if (isUniversalShiftPattern(form.shiftPattern)) {
+                    if (form.typId == null && isUniversalShiftPattern(form.shiftPattern)) {
                         stringResource(R.string.hue_preview_any_shift)
                     } else {
                         stringResource(R.string.hue_preview_shift, form.shiftPattern)

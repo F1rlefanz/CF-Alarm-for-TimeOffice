@@ -640,18 +640,19 @@ fun MainScreen(
             }
 
             is NavigationState.HueRuleConfig -> {
-                // Zurueck UND Speichern fuehren zum tatsaechlichen Einstiegspunkt (Hue-Tab oder
-                // HueSettings, siehe cameFromSettingsList) - aufgeloest in navigateBackFrom(),
-                // derselben Stelle wie der BackHandler oben. Der gerenderte Zustand wird
-                // uebergeben, damit ein zweiter Tipp auf Speichern zum selben Ziel fuehrt.
-                val zurueckZumEinstieg: () -> Unit = { navigationViewModel.navigateBackFrom(state) }
+                // Zurueck UND Speichern fuehren zum tatsaechlichen Einstiegspunkt (Hue-Tab,
+                // HueSettings oder die Typ-Seite) - aufgeloest in navigateBackFrom(), derselben
+                // Stelle wie der BackHandler oben. Der gerenderte Zustand wird uebergeben. Am Typ
+                // (#252) meldet sich das Speichern erst nach dem Schreiben: navigiert wird nur,
+                // solange der Editor dann noch angezeigt wird.
                 editorFormulare.SaveableStateProvider(checkNotNull(state.editorFormularSchluessel())) {
                     com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.HueRuleConfigScreen(
                         ruleId = state.ruleId,
+                        typId = state.typId,
                         hueViewModel = hueViewModel,
                         shiftViewModel = shiftViewModel,
-                        onNavigateBack = zurueckZumEinstieg,
-                        onSaveComplete = zurueckZumEinstieg,
+                        onNavigateBack = { navigationViewModel.navigateBackFrom(state) },
+                        onSaveComplete = { navigationViewModel.navigateBackNachSpeichern(state) },
                         // Der GERENDERTE Zustand (samt sitzung) ist der Rueckweg aus dem Ort.
                         onOrtAendern = { navigationViewModel.navigateToOrtFuerTageslicht(state) }
                     )

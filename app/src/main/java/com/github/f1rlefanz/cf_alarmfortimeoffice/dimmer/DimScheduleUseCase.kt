@@ -56,7 +56,7 @@ class DimScheduleUseCase @Inject constructor(
     private val correctionNotifier: DimCorrectionNotifier,
     private val masterPausePrefs: MasterPausePrefs,
     /**
-     * Ort/Zone fuer "Nachlauf nur, solange es dunkel ist" (#140). Gelesen NUR, wenn ein Fenster
+     * Ort/Zone fuer "Nachlauf bis es hell ist" (#140). Gelesen NUR, wenn ein Fenster
      * das braucht; das Entsperr-Gate sitzt in der Implementierung (`stand()` liest vor der ersten
      * Entsperrung nichts).
      */
@@ -65,7 +65,7 @@ class DimScheduleUseCase @Inject constructor(
     companion object {
         const val ACTION_TICK = "com.github.f1rlefanz.cf_alarmfortimeoffice.DIM_SCHED_TICK"
         private const val REQ_TICK = 7710
-        /** EINE Quelle mit der Konflikt-Auskunft der Regelliste, siehe [DimWindowResolver.KONFLIKT_HORIZONT_TAGE]. */
+        /** Planungshorizont, EINE Quelle: [DimWindowResolver.KONFLIKT_HORIZONT_TAGE]. */
         private const val HORIZON_DAYS = DimWindowResolver.KONFLIKT_HORIZONT_TAGE
         /** Retry-Abstand, wenn der Alarm-Bestand gerade NICHT lesbar war (transienter Fehler). */
         private const val RETRY_MS = 15 * 60_000L
@@ -169,8 +169,8 @@ class DimScheduleUseCase @Inject constructor(
      */
     private suspend fun applyCurrentStateIntern(): Windows? {
         // Zentraler Master-Pause-Backstop - Vorbild AlarmUseCase.syncAlarms(): jeder
-        // DimmerViewModel-/NotificationSettingsViewModel-Setter ruft enable() UNGEGATET auf, und der
-        // rollende Tick plant sich selbst nach. Ohne diesen Fangnetz-Punkt genuegt eine einzige
+        // Einstellungs-Setter ruft enable() UNGEGATET auf, und der rollende Tick plant sich selbst
+        // nach. Ohne diesen Fangnetz-Punkt genuegt eine einzige
         // Einstellungs-Aenderung waehrend der Pause, um Dimmen + Tick-Kette dauerhaft wieder
         // anzuwerfen, obwohl die UI "pausiert" anzeigt. disable() bleibt bewusst UNgegatet, damit
         // MasterPauseUseCase.pause() weiter durchkommt.
@@ -178,8 +178,8 @@ class DimScheduleUseCase @Inject constructor(
             meldeAbschaltung(DimDiagnostik.AbschaltGrund.MASTER_PAUSE)
             // Derselbe Aufraeumpfad wie disable(), aber ohne den rollenden Alarm anzufassen.
             // ACHTUNG, keine Garantie: applyCurrentState() wird auch OHNE
-            // scheduleNextTransition() gerufen (DimNotificationService, DimmerRulesViewModel,
-            // die Vorschau im Regel-Editor) - "beide immer zusammen" gilt nur fuer enable().
+            // scheduleNextTransition() gerufen (DimNotificationService, die Dimm-Vorschau) -
+            // "beide immer zusammen" gilt nur fuer enable().
             // Storniert wird der REQ_TICK-Alarm heute ausschliesslich von disable() bzw.
             // scheduleNextTransition(), und die Pause wird nur ueber MasterPauseUseCase.pause()
             // gesetzt, das disable() mit-ruft. Wer das Pause-Flag kuenftig woanders setzt, MUSS

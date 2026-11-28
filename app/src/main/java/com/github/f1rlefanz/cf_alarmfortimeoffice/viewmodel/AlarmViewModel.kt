@@ -1316,10 +1316,8 @@ class AlarmViewModel @Inject constructor(
      * fehlte in der Auswahl komplett, ein geloeschter wurde weiter angeboten. Der Kalender-Sync
      * repariert das nicht: er schont manuelle Alarme (`keepManualAlarms`).
      *
-     * Vorbild ist `DimmerRulesViewModel.shiftNames` ("Reaktiv statt Einmal-Snapshot - eine
-     * Schicht-Umbenennung/-Neuanlage ohne App-Neustart muss sofort sichtbar werden"); von den
-     * fuenf ViewModels, die die Schicht-Konfiguration anzeigen, war dieses das einzige mit
-     * Einmal-Read.
+     * Regel: reaktiv statt Einmal-Snapshot - eine Schicht-Umbenennung/-Neuanlage ohne App-Neustart
+     * muss sofort sichtbar werden. Dieses ViewModel war das einzige mit Einmal-Read.
      *
      * Der Flow degradiert bei unlesbarer Konfiguration bewusst auf die Standardwerte und wirft
      * nicht (`ShiftConfigRepository.shiftConfig`) - der frueher hier eingebaute

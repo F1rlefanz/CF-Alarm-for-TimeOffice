@@ -23,17 +23,7 @@
     <string name="dim_accessibility_label">CF-Alarm Schicht-Dimmer</string>
     <string name="dim_accessibility_desc">Legt eine abdunkelnde Schicht über den Bildschirm, um dich vor Schichtbeginn zum Herunterfahren zu bringen. Der Dienst liest keine Bildschirminhalte und wertet keine Eingaben aus – er dient ausschließlich der Verdunkelung.</string>
 
-    <!-- Dimmer-Tab -->
-
-    <!-- Dimmer-Vorschau-Zeitleiste -->
-
-    <!-- Dimm-Regeln: Liste + Editor -->
-    <!-- Schnellstart: legt eine SICHTBARE Regel an, kein eingebautes Verhalten. Die Texte sagen
-         das ausdruecklich ("kannst du danach anpassen oder loeschen") - der abgeloeste
-         Nacht-Standard wirkte, ohne in dieser Liste zu stehen, und genau das soll nicht
-         zurueckkommen. -->
-    <!-- Kein <plurals>: "Fenster" lautet im Deutschen in Singular UND Plural gleich - eine
-         Pluralform waere ein kuenstlicher, wortgleicher Zweig ohne Nutzen. -->
+    <!-- Dimm-Fenster der Typ-Seite: Anker-Editor, Bedienungshilfe und ihre Offenlegung -->
     <string name="dimmer_window_start">Start</string>
     <string name="dimmer_window_end">Ende</string>
     <string name="dimmer_clock_time">Uhrzeit</string>

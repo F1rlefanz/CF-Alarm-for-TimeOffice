@@ -158,9 +158,8 @@ class ShiftConfigRepository @Inject constructor(
      * ANZEIGE-Flow. Darf degradieren, aber niemals crashen: `.catch` faengt sowohl eine defekte
      * preferences_pb (Upstream) als auch alles, was aus dem `map{}` kommen koennte - Vorbild
      * `DataStoreTokenRepository.observe()`. Ohne das wuerde der Fehler an den
-     * CoroutineExceptionHandler der drei `stateIn(viewModelScope, ...)`-Konsumenten gehen
-     * (DimmerRulesViewModel/DimmerViewModel/DndViewModel) und die App beim Oeffnen des
-     * Dimmer-/DND-Tabs beenden.
+     * CoroutineExceptionHandler der `stateIn(viewModelScope, ...)`-Konsumenten gehen und die App
+     * beim Oeffnen des jeweiligen Bildschirms beenden.
      *
      * WICHTIG: bei einer DEFEKTEN Konfiguration wird der Default NICHT in den Cache geschrieben -
      * sonst wuerde `getCurrentShiftConfig()` ihn als Cache-Hit als echte Konfiguration ausliefern

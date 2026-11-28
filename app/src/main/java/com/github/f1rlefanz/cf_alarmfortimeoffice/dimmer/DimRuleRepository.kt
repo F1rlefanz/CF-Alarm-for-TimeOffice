@@ -133,10 +133,9 @@ class DimRuleRepository @Inject constructor(
      * `HueConfigRepository.saveScheduleRule()`.
      *
      * Zwei Gründe, warum Lesen und Schreiben hier nicht getrennt sein dürfen:
-     * 1. Atomizität: Jede Nutzeraktion läuft in einer eigenen, unabgewarteten Coroutine
-     *    (`DimmerRulesViewModel`). Zwei getrennte Transaktionen (`getRules()` + Zurückschreiben der
-     *    Ganzliste) verlieren bei einem Doppel-Tap eine Änderung; DataStore serialisiert
-     *    `edit{}`-Blöcke selbst.
+     * 1. Atomizität: Die Schreiber laufen in eigenen, voneinander unabhängigen Coroutines. Zwei
+     *    getrennte Transaktionen (`getRules()` + Zurückschreiben der Ganzliste) verlieren bei
+     *    gleichzeitigen Aufrufen eine Änderung; DataStore serialisiert `edit{}`-Blöcke selbst.
      * 2. Datenverlust: Ein Dekodier-Fehler darf NICHT als leere Liste in den Schreibvorgang laufen –
      *    sonst löscht das nächste Speichern/Löschen alle übrigen Regeln endgültig (inklusive der
      *    bedeutungstragenden Nachtdienst-Ausnahme mit leerer Fensterliste). Deshalb bricht der Edit

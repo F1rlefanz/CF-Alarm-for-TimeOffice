@@ -119,7 +119,7 @@ class DimOverlayPrefs @Inject constructor(
     // DimNotificationService's Aktions-Handler (Heller/Dunkler/Pause) UND DimScheduleUseCase.
     // applyCurrentState()'s eigenes Stale-Clearing lesen beide overrideNow() und schreiben ggf.
     // zurueck, aber aus unabhaengigen, potenziell gleichzeitig laufenden Kontexten (Tick-Alarm,
-    // 6h-Wartung, Boot, jeder DimmerViewModel-Setter, Notification-Button-Tap). Ein rein lokaler
+    // 6h-Wartung, Boot, jeder Einstellungs-Setter, Notification-Button-Tap). Ein rein lokaler
     // Mutex in einem der Aufrufer schuetzt nur gegen sich selbst, nicht gegen die anderen - dieser
     // Singleton ist der einzige Ort, an dem ALLE Aufrufer tatsaechlich dieselbe Instanz teilen.
     private val overrideMutex = Mutex()

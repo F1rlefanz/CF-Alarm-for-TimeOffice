@@ -102,6 +102,9 @@ Risiko: niedrig/mittel (Sonnet setzt um) | hoch (Opus setzt um)
 
 Das Feld **Dateien** ist nötig, damit zwei Pakete parallel laufen können (nur ohne gemeinsame
 Dateien) und damit der Prüfer merkt, wenn ein Lauf ausufert.
+Ändert ein Paket den Wortlaut einer Text-Konstante, gehört **der Test, der den alten Wortlaut
+festhält**, mit ins Feld (sonst stößt der Lauf erst beim Testlauf darauf und braucht den Betreuer;
+#220).
 
 ## 5. Die Besetzung
 

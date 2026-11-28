@@ -6,13 +6,13 @@
 # - Etappen-Abschluss nur, wenn kein Paket der Etappe mehr offen ist.
 # - Nur emulator-5554. Das Fairphone wird nie angesprochen.
 #
-# Aufruf:  powershell -ExecutionPolicy Bypass -File tools\umbau\runner.ps1 [-DryRun]
+# Aufruf:  powershell -ExecutionPolicy Bypass -File tools\umbau\runner.ps1 [-DryRun] [-WochenReserve 1]
 #   -DryRun  zeigt nur, was als Naechstes passieren wuerde, und beendet sich (kein Agent, keine Labels).
 # Notbremse: Label "umbau-pause" am Epic oder Datei ..Projektdateien\umbau\STOP.
 #
 # Bewusst nur ASCII: Windows PowerShell 5.1 liest UTF-8 ohne BOM falsch.
 
-param([switch]$DryRun)
+param([switch]$DryRun, [double]$WochenReserve = 0.9)
 
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 # Der Auftrag geht per Standardeingabe an claude (siehe StarteClaude); ohne UTF-8 hier wuerde
@@ -31,12 +31,15 @@ $StopFile = Join-Path $Proj 'STOP'
 $WtBase = Join-Path (Split-Path $Root -Parent) 'CFAlarm-umbau-wt'
 $Integration = 'feature/umbau-schichttyp'
 $Emu = 'emulator-5554'
-$Avd = 'Medium_Phone'
+# Eigenes, sprechend benanntes Geraet (21.11.2026): Medium_Phone und R8_Smoke fielen zweimal einer
+# Bereinigung zum Opfer (27.10., 13.11.). Telefon-Profil, neuestes installiertes Android, PIN 1234.
+$Avd = 'CFAlarm_Umbau'
 $Sdk = Join-Path $env:LOCALAPPDATA 'Android\Sdk'
 $Adb = Join-Path $Sdk 'platform-tools\adb.exe'
 # M von 60 auf 75 (17.10.2026): drei von fuenf UI-Paketen in Etappe 1 brauchten bei 60 einen zweiten Lauf.
 $Caps = @{ 'groesse-S' = 40; 'groesse-M' = 75 }
-$WochenReserve = 0.9   # ab diesem Wochenverbrauch pausiert der Runner (Rest bleibt dem Eigentuemer)
+# $WochenReserve (Parameter, Standard 0.9): ab diesem Wochenverbrauch pausiert der Runner, der Rest bleibt
+# dem Eigentuemer. Braucht er den Rest nicht, startet er mit -WochenReserve 1 (dann greift nur das Limit selbst).
 $script:Woche = $null
 $SkillEtappen = @(9)   # braucht vorher Label skills-bereit-9 am Epic; Etappe 3 laeuft seit 21.11.2026 ueber die Nachtrags-Bruecke (ABLAUF Abschnitt 3)
 
@@ -171,10 +174,17 @@ function EmulatorBereit() {
     }
     if (-not $bereit) { Log "Emulator $Avd ist nach 5 min nicht hochgefahren - braucht den Eigentuemer"; return $false }
     # Test-PIN 1234 (Emulator braucht eine Sperre fuer Direct-Boot-Tests, Memory env_emulator_needs_pin_for_directboot)
-    & $Adb -s $Emu shell input keyevent 82 | Out-Null
-    & $Adb -s $Emu shell input text 1234 | Out-Null
-    & $Adb -s $Emu shell input keyevent 66 | Out-Null
-    return $true
+    # Android 17 (CFAlarm_Umbau) oeffnet die PIN-Eingabe erst nach Aus/An und Wischen, und `input text`
+    # kommt dort nicht an - die Ziffern als Tastencodes (KEYCODE_1..4 = 8..11). Gemessen 22.11.2026.
+    for ($v = 0; $v -lt 3; $v++) {
+        foreach ($k in @(26, 26, 82)) { & $Adb -s $Emu shell input keyevent $k | Out-Null; Start-Sleep -Milliseconds 800 }
+        & $Adb -s $Emu shell input swipe 540 2000 540 600 300 | Out-Null
+        foreach ($k in @(8, 9, 10, 11, 66)) { & $Adb -s $Emu shell input keyevent $k | Out-Null }
+        Start-Sleep -Seconds 2
+        if (((& $Adb -s $Emu shell dumpsys trust) | Out-String) -match 'deviceLocked=0') { return $true }
+    }
+    Log "Emulator $Avd laesst sich nicht entsperren - braucht den Eigentuemer"
+    return $false
 }
 
 function Worktree([string]$name, [string]$branch, [string]$basis) {
@@ -238,6 +248,27 @@ function StarteClaude([string]$goal, [string]$model, [int]$cap, [string]$cwd, [s
     # Live mitlesen: Get-Content ..Projektdateien\umbau\logs\<paket>.log -Wait
     Anhaengen $live "$(Get-Date -Format s)  Start $logName ($model, Cap $cap)"
     $ergebnis = $null; $reset = $null; $rest = New-Object System.Collections.Generic.List[string]
+    # Leerlauf-Waechter: Ein Lauf, der sein Ergebnis gemeldet hat und KEINE offene Hintergrundaufgabe
+    # mehr hat, blieb trotzdem haengen (22.11.2026, #219: alle 30 task_started hatten ihre
+    # task_notification, der Prozess wartete ~45 min). Bleibt er danach 3 min still, wird claude beendet.
+    # Offene Aufgaben (Pruef-Agenten) halten ihn weiter am Leben - dafuer gilt die 45-min-Decke oben.
+    $zustand = Join-Path $Logs "$logName.zustand"
+    $offen = New-Object System.Collections.Generic.HashSet[string]
+    $fertigGemeldet = $false
+    Set-Content -Path $zustand -Value 'laeuft' -Encoding ASCII
+    $waechter = Start-Job -ArgumentList $zustand, $PID -ScriptBlock {
+        param($datei, $eltern)
+        while (Test-Path $datei) {
+            Start-Sleep -Seconds 30
+            $z = Get-Content $datei -ErrorAction SilentlyContinue
+            if ($z -ne 'still') { continue }
+            $alter = ((Get-Date) - (Get-Item $datei).LastWriteTime).TotalSeconds
+            if ($alter -lt 180) { continue }
+            Get-CimInstance Win32_Process -Filter "ParentProcessId = $eltern AND Name = 'claude.exe'" |
+                ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+            Set-Content -Path $datei -Value 'beendet' -Encoding ASCII
+        }
+    }
     try {
         # Der Auftrag per Standardeingabe, NICHT als Argument: PowerShell 5.1 zerlegt ein Argument mit
         # Anfuehrungszeichen in mehrere (16.10.2026: '"Schichttyp als Zentrale"' im Ziel, dahinter
@@ -250,14 +281,26 @@ function StarteClaude([string]$goal, [string]$model, [int]$cap, [string]$cwd, [s
             if ($z.StartsWith('{')) {
                 try {
                     $e = $z | ConvertFrom-Json
-                    if ($e.type -eq 'result') { $ergebnis = $z }
+                    if ($e.type -eq 'result') { $ergebnis = $z; $fertigGemeldet = $true }
+                    if ($e.type -eq 'system' -and $e.subtype -eq 'task_started') { [void]$offen.Add("$($e.task_id)") }
+                    if ($e.type -eq 'system' -and $e.subtype -eq 'task_notification') { [void]$offen.Remove("$($e.task_id)") }
                     if ($e.type -eq 'rate_limit_event' -and $e.rate_limit_info.status -eq 'rejected') { $reset = $e.rate_limit_info.resetsAt }
                     if ($e.type -eq 'rate_limit_event' -and $e.rate_limit_info.unifiedWindows.seven_day) { $script:Woche = $e.rate_limit_info.unifiedWindows.seven_day }
                 } catch {}
             }
             $rest.Add($z); if ($rest.Count -gt 40) { $rest.RemoveAt(0) }
+            # Jede Zeile setzt die Uhr des Waechters zurueck; 'still' nur nach Ergebnis ohne offene Aufgabe.
+            $neu = if ($fertigGemeldet -and $offen.Count -eq 0) { 'still' } else { 'laeuft' }
+            Set-Content -Path $zustand -Value $neu -Encoding ASCII
         }
-    } finally { Pop-Location }
+    } finally {
+        Pop-Location
+        if ((Get-Content $zustand -ErrorAction SilentlyContinue) -eq 'beendet') {
+            Anhaengen $live "$(Get-Date -Format s)  Leerlauf nach dem Ergebnis - claude beendet (Waechter)"
+        }
+        Remove-Item $zustand -ErrorAction SilentlyContinue
+        Stop-Job $waechter -ErrorAction SilentlyContinue; Remove-Job $waechter -Force -ErrorAction SilentlyContinue
+    }
     # Das Ergebnis-Objekt (wie frueher mit --output-format json); fehlt es (Absturz), die letzten Zeilen.
     $text = if ($ergebnis) { $ergebnis } else { $rest -join "`n" }
     if ($reset) { $text = "LIMIT_RESET=$reset`n$text" }
@@ -346,6 +389,7 @@ KONTINGENT: Ein Workflow mit Fable-Agenten hat am 17.10.2026 zweimal ein ganzes 
 - Liegt diese Datei schon vor (Teilarbeit eines frueheren Anlaufs): NICHT neu suchen. Nur fortsetzen (fehlende Urteile, Fixes) und nur die Commits seit dem dort genannten Stand pruefen.
 - Halte jede bestandene Pruefung aus Schritt 3 mit Zeit und Commit in $Proj\etappe-$n-abschluss.md fest; bei einer Fortsetzung nur wiederholen, was die Commits seitdem betreffen koennen.
 - Fruehere Anlaeufe: $Logs\etappe-$n-abschluss-*.log (lesbares Live-Log).
+- Es gibt nur EIN Emulator-Geraet ($Avd, emulator-5554); ein zweites (frueher R8_Smoke) existiert nicht mehr. Release-Kaltstart deshalb nacheinander auf demselben Geraet: Release-APK installieren, Kaltstart pruefen, danach die Debug-APK wieder installieren. Keine neuen Geraete anlegen.
 - Nach dem Push auf main: auf veroeffentlichen.yml warten (gh run watch --exit-status). Scheitert nur der Upload an einem voruebergehenden Google-Fehler (z. B. 'service is currently unavailable'), einmal gh run rerun --failed. Erst ein gruener Upload ist ausgeliefert; sonst Bericht im Epic (17.10.2026: 1.57.0 scheiterte zuerst daran).
 Fertig erst, wenn jede Pruefung aus Schritt 3 mit Beleg im Transcript steht, main gemergt, Bump (Minor; Etappe 0 nur Patch, sie enthaelt nur Fehlerbehebungen) und Changelog gepusht sind (Schleuse gruen), #$($etIssue.number) geschlossen und ein Bericht im Epic steht.
 Ist eine Pruefung rot und nicht behebbar: nichts nach main, Bericht in #$($etIssue.number), Label blockiert. Konsultiere den Advisor vor dem Merge nach main. Keine Rueckfragen. Stoppe nach 80 Turns.

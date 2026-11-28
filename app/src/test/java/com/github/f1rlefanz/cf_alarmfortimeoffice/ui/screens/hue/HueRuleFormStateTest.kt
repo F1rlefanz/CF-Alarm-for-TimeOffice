@@ -19,6 +19,8 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IShiftConfigRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.ITageslichtRepository
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.typ.TypEntwurf
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.typ.TypSeiteEntwurf
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.HueViewModel
 import kotlinx.coroutines.CompletableDeferred
@@ -518,9 +520,17 @@ class HueRuleFormStateTest {
                 withTimeout(10_000) { gespeichert.await() }
             }
 
-            val danach = konfiguration.repo.getCurrentShiftConfig().getOrThrow().definitions
+            val gespeichert = konfiguration.repo.getCurrentShiftConfig().getOrThrow()
+            val danach = gespeichert.definitions
             assertEquals(listOf("rule_editor"), danach[1].licht.regeln.map { it.id })
             assertTrue("am anderen Typ nichts", danach[0].licht.regeln.isEmpty())
+
+            // Zurueck auf der Typ-Seite: ihr Entwurf von VOR dem Ausflug nimmt beim Speichern die Regel nicht mit.
+            val nachTypSpeichern = TypSeiteEntwurf.speichernIn(
+                gespeichert, "s", TypEntwurf.aus(spaet).copy(name = "Spät neu")
+            )!!.definitions[1]
+            assertEquals("Spät neu", nachTypSpeichern.name)
+            assertEquals(listOf("rule_editor"), nachTypSpeichern.licht.regeln.map { it.id })
 
             // Gibt es den Typ nicht (mehr), bleibt der Rueckruf aus und der Editor zeigt den Grund.
             var zurueck = false

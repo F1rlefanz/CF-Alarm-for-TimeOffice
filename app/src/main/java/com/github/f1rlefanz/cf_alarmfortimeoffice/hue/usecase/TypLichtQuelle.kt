@@ -123,7 +123,8 @@ object TypLichtSchreiben {
 
     /** Die Stelle des Typs, an dem eine Regel mit [shiftPattern] liegt; `null` = keiner. */
     fun zielTyp(config: ShiftConfig, shiftPattern: String): Int? =
-        wirksameTypen(config).firstOrNull { config.definitions[it].name.equals(shiftPattern.trim(), ignoreCase = true) }
+        // Ohne trim, wie der Leser: `getAllRules()` setzt `shiftPattern` wortgleich auf den Typnamen.
+        wirksameTypen(config).firstOrNull { config.definitions[it].name.equals(shiftPattern, ignoreCase = true) }
 
     /** Die Stelle des Typs, der die Regel [regelId] traegt (Vorrang wie beim Leser); `null` = keiner. */
     fun traeger(config: ShiftConfig, regelId: String): Int? {

@@ -29,9 +29,10 @@ class NavigationViewModel @Inject constructor() : ViewModel() {
     )
     val navigationState: StateFlow<NavigationState> = _navigationState.asStateFlow()
 
-    // Letzte vergebene Editor-Sitzung (siehe NavigationState.HueRuleConfig.sitzung). nanoTime
-    // als Basis, damit eine nach Prozess-Neustart wiederhergestellte Formular-Ablage keinen
-    // gleichen Schluessel trifft; das +1 garantiert Eindeutigkeit auch bei grober Uhraufloesung.
+    // Letzte vergebene Sitzung von Regel-Editor und Typ-Seite (siehe NavigationState.HueRuleConfig
+    // und TypSeite, Feld sitzung). nanoTime als Basis, damit eine nach Prozess-Neustart
+    // wiederhergestellte Ablage keinen gleichen Schluessel trifft; das +1 garantiert Eindeutigkeit
+    // auch bei grober Uhraufloesung.
     private var letzteSitzung = 0L
 
     private fun neueSitzung(): Long =
@@ -57,17 +58,29 @@ class NavigationViewModel @Inject constructor() : ViewModel() {
             
             is NavigationAction.NavigateToTypSeite -> {
                 Logger.d(LogTags.NAVIGATION, "Shift Config -> Typ-Seite (from ${action.fromTab}, id: ${action.definitionId})")
-                NavigationState.TypSeite(action.definitionId, action.fromTab)
+                NavigationState.TypSeite(action.definitionId, action.fromTab, sitzung = neueSitzung())
             }
 
             is NavigationAction.NavigateToNeuerTyp -> {
                 Logger.d(LogTags.NAVIGATION, "Shift Config -> Typ-Seite, neuer Typ (from ${action.fromTab}, aus Fund: ${action.fundCode != null})")
-                NavigationState.TypSeite(action.vorlage.id, action.fromTab, action.vorlage, action.fundCode)
+                NavigationState.TypSeite(action.vorlage.id, action.fromTab, action.vorlage, action.fundCode, neueSitzung())
             }
 
             is NavigationAction.NavigateToOhneEintragSeite -> {
                 Logger.d(LogTags.NAVIGATION, "Shift Config -> Ohne-Kalendereintrag-Seite (from ${action.fromTab})")
                 NavigationState.OhneEintragSeite(action.fromTab)
+            }
+
+            is NavigationAction.NavigateToTypLichtregel -> {
+                val typId = action.herkunft.definitionId
+                Logger.d(LogTags.NAVIGATION, "Typ-Seite -> Hue Rule Config (typ: $typId, rule: ${action.ruleId})")
+                NavigationState.HueRuleConfig(
+                    ruleId = action.ruleId,
+                    returnToTab = action.herkunft.returnToTab,
+                    sitzung = neueSitzung(),
+                    typId = typId,
+                    zurueckZu = action.herkunft
+                )
             }
 
             // Battery and OEM navigation
@@ -152,6 +165,10 @@ class NavigationViewModel @Inject constructor() : ViewModel() {
     fun navigateToOhneEintragSeite(fromTab: MainTab = MainTab.SETTINGS) =
         handleNavigationAction(NavigationAction.NavigateToOhneEintragSeite(fromTab))
 
+    /** Regel-Editor fuer den Typ der gerenderten Seite [herkunft] (#252); den Einstieg baut #254. */
+    fun navigateToTypLichtregel(herkunft: NavigationState.TypSeite, ruleId: String? = null) =
+        handleNavigationAction(NavigationAction.NavigateToTypLichtregel(herkunft, ruleId))
+
     // Battery and OEM navigation convenience methods
     fun navigateToBatteryExemption(fromTab: MainTab = MainTab.HOME) = 
         handleNavigationAction(NavigationAction.NavigateToBatteryExemption(fromTab))
@@ -187,9 +204,19 @@ class NavigationViewModel @Inject constructor() : ViewModel() {
         handleNavigationAction(NavigationAction.NavigateBackToMain)
 
     /**
+     * Rueckweg nach dem "Speichern" des Regel-Editors: nur, solange noch [state] angezeigt wird. Am
+     * Typ (#252) kommt der Aufruf erst nach dem Schreiben - wer den Editor bis dahin verlassen hat,
+     * wird nicht zurueckgeholt.
+     */
+    fun navigateBackNachSpeichern(state: NavigationState) {
+        if (_navigationState.value == state) navigateBackFrom(state)
+    }
+
+    /**
      * Zurueck aus [state] - die EINZIGE Aufloesung des Rueckwegs. System-Zurueck (`BackHandler`
-     * in `MainScreen`), der Zurueck-Pfeil des Regel-Editors und dessen "Speichern" rufen alle
-     * hierher; [navigateBackToMain] delegiert mit dem aktuellen Zustand.
+     * in `MainScreen`), der Zurueck-Pfeil des Regel-Editors und dessen "Speichern" (ueber
+     * [navigateBackNachSpeichern]) rufen alle hierher; [navigateBackToMain] delegiert mit dem
+     * aktuellen Zustand.
      *
      * Bis Issue #132 stand der Rueckweg aus den Regel-Editoren DREIMAL im Code
      * (BackHandler, zwei Screen-Lambdas, hier) - mit genau der Gefahr, die v1.22.0 schon einmal
@@ -224,8 +251,16 @@ class NavigationViewModel @Inject constructor() : ViewModel() {
             Logger.d(LogTags.NAVIGATION, "-> Shift Config (${state.returnToTab} tab, aus der Ohne-Kalendereintrag-Seite)")
             return NavigationState.ShiftConfig(state.returnToTab)
         }
-        // HueRuleConfig hat zwei Einstiegspfade (siehe cameFromSettingsList) - ein Zurueck darf
-        // hier NICHT blind zu MainContent aufloesen, sonst ueberspringt der Listen-Pfad HueSettings.
+        // Regel-Editor am Typ (#252): zurueck zu genau der Typ-Seite, aus der er kam (samt sitzung -
+        // nur so findet MainScreen deren Entwurf wieder). Vor den Zweigen unten, die nach Liste oder
+        // Tab fragen.
+        if (state is NavigationState.HueRuleConfig && state.zurueckZu != null) {
+            Logger.d(LogTags.NAVIGATION, "-> Typ-Seite (aus dem Regel-Editor am Typ)")
+            return state.zurueckZu
+        }
+        // HueRuleConfig hat ohne Typ zwei Einstiegspfade (siehe cameFromSettingsList) - ein Zurueck
+        // darf hier NICHT blind zu MainContent aufloesen, sonst ueberspringt der Listen-Pfad
+        // HueSettings.
         if (state is NavigationState.HueRuleConfig && state.cameFromSettingsList) {
             Logger.d(LogTags.NAVIGATION, "-> Hue Settings (${state.returnToTab} tab, via settings list)")
             return NavigationState.HueSettings(state.returnToTab)

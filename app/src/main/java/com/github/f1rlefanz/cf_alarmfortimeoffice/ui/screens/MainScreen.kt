@@ -27,7 +27,10 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.MainTab
 import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.NavigationState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.editorFormularSchluessel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.einstiegNachSpaeter
+import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.imTypBereich
 import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.naechsterGateSchritt
+import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.typEntwurfSchluessel
+import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.verworfeneAblagen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.verworfenesEditorFormular
 import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.wirdAngezeigtIn
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmMaintenanceService
@@ -378,21 +381,22 @@ fun MainScreen(
             // Wie "Verstanden" - siehe finishOnboarding.
             is NavigationState.OEMWarning -> finishOnboarding()
 
-            // Alle uebrigen Unterscreens, auch HueRuleConfig mit seinen zwei Einstiegspfaden
-            // (cameFromSettingsList): der Rueckweg ist in navigateBackFrom() EINMAL aufgeloest -
-            // dieselbe Aufloesung, die auch Zurueck-Pfeil und Speichern des Regel-Editors unten
-            // nehmen. Ebenso OrtFuerTageslicht: zurueck zu zurueckZu (dem genauen
-            // Herkunftszustand, beim Editor samt sitzung - das Formular bleibt).
+            // Alle uebrigen Unterscreens, auch HueRuleConfig mit seinen drei Einstiegspfaden
+            // (cameFromSettingsList, zurueckZu): der Rueckweg ist in navigateBackFrom() EINMAL
+            // aufgeloest - dieselbe Aufloesung, die auch Zurueck-Pfeil und Speichern des
+            // Regel-Editors unten nehmen. Ebenso OrtFuerTageslicht: zurueck zu zurueckZu (dem
+            // genauen Herkunftszustand, beim Editor samt sitzung - das Formular bleibt).
             else -> navigationViewModel.navigateBackFrom(state)
         }
     }
 
-    // FORMULAR DES REGEL-EDITORS (#140): "Ort einstellen" aus dem Editor ersetzt ihn im
-    // when unten, seine Komposition endet - und ein rememberSaveable ueberlebt das NUR unter
-    // einem SaveableStateHolder. Schluessel ist die sitzung des Editors (frisch je Oeffnen),
-    // siehe editorFormularSchluessel(). Verlaesst der Nutzer die Bearbeitung endgueltig (Liste,
-    // Tab, neuer Editor), wird der Eintrag geraeumt - sonst sammelte die Ablage jedes je
-    // geoeffnete Formular bis zum Prozessende.
+    // UNGESPEICHERTE EINGABEN UEBER EINEN AUSFLUG (#140, #252): "Ort einstellen" aus dem Editor
+    // und "Lichtregel" aus der Typ-Seite ersetzen den Bildschirm im when unten, seine Komposition
+    // endet - und ein rememberSaveable ueberlebt das NUR unter einem SaveableStateHolder.
+    // Schluessel ist die sitzung des Bildschirms (frisch je Oeffnen), siehe
+    // editorFormularSchluessel() und typEntwurfSchluessel(). Verlaesst der Nutzer die Bearbeitung
+    // endgueltig (Liste, Tab, neuer Editor), wird der Eintrag geraeumt - sonst sammelte die Ablage
+    // jedes je geoeffnete Formular bis zum Prozessende.
     val editorFormulare = rememberSaveableStateHolder()
 
     // SCROLL-STAND DER TYP-LISTE: die Liste verlaesst die Komposition, sobald eine Typ-Seite offen
@@ -401,17 +405,21 @@ fun MainScreen(
     // MainScreen die beiden Zustaende ueberdauert, und wird zurueckgesetzt, sobald der Nutzer den
     // Typ-Bereich ganz verlaesst (Liste -> Tab): ein spaeteres Oeffnen beginnt oben.
     val typListeZustand = rememberLazyListState()
-    val imTypBereich = navigationState is NavigationState.ShiftConfig ||
-        navigationState is NavigationState.TypSeite ||
-        navigationState is NavigationState.OhneEintragSeite
+    val imTypBereich = navigationState.imTypBereich()
     LaunchedEffect(imTypBereich) {
         if (!imTypBereich) typListeZustand.scrollToItem(0)
     }
 
     var vorherigerZustand by remember { mutableStateOf<NavigationState?>(null) }
     LaunchedEffect(navigationState) {
-        verworfenesEditorFormular(vorherigerZustand, navigationState)?.let { schluessel ->
-            editorFormulare.removeState(schluessel)
+        val vorher = vorherigerZustand
+        verworfeneAblagen(vorher, navigationState).forEach { editorFormulare.removeState(it) }
+        // #252: Ein Fehler aus dem Editor am Typ ist erledigt, sobald dieser verlassen ist - sonst
+        // staende er beim naechsten Oeffnen und im Hue-Bereich ueber etwas, das niemand mehr sieht.
+        if ((vorher as? NavigationState.HueRuleConfig)?.typId != null &&
+            verworfenesEditorFormular(vorher, navigationState) != null
+        ) {
+            hueViewModel.clearError()
         }
         vorherigerZustand = navigationState
     }
@@ -451,16 +459,20 @@ fun MainScreen(
                 // Zurueck (Pfeil, System-Taste ueber den BackHandler oben, "Verwerfen", Speichern)
                 // loest allein navigateBackFrom() auf; der Entwurf-Schutz in der Seite fragt nur
                 // vorher und entscheidet nie ueber das Ziel.
-                com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.typ.TypSeite(
-                    definitionId = state.definitionId,
-                    shiftViewModel = shiftViewModel,
-                    onZurueck = { navigationViewModel.navigateBackFrom(state) },
-                    // Link der Tagesleiste: in den Tab „Wecker“ (die Tagesliste); die Seite fragt vorher bei
-                    // ungespeicherten Aenderungen, wie bei Zurueck.
-                    onZurWoche = { navigationViewModel.navigateToMainWithTab(MainTab.WECKER) },
-                    vorlage = state.vorlage,
-                    fundCode = state.fundCode
-                )
+                // Der SaveableStateProvider haelt den ungespeicherten Entwurf ueber den Ausflug in
+                // den Regel-Editor am Typ (#252).
+                editorFormulare.SaveableStateProvider(checkNotNull(state.typEntwurfSchluessel())) {
+                    com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.typ.TypSeite(
+                        definitionId = state.definitionId,
+                        shiftViewModel = shiftViewModel,
+                        onZurueck = { navigationViewModel.navigateBackFrom(state) },
+                        // Link der Tagesleiste: in den Tab „Wecker“ (die Tagesliste); die Seite fragt vorher bei
+                        // ungespeicherten Aenderungen, wie bei Zurueck.
+                        onZurWoche = { navigationViewModel.navigateToMainWithTab(MainTab.WECKER) },
+                        vorlage = state.vorlage,
+                        fundCode = state.fundCode
+                    )
+                }
             }
 
             is NavigationState.CalendarSelection -> {
@@ -628,18 +640,19 @@ fun MainScreen(
             }
 
             is NavigationState.HueRuleConfig -> {
-                // Zurueck UND Speichern fuehren zum tatsaechlichen Einstiegspunkt (Hue-Tab oder
-                // HueSettings, siehe cameFromSettingsList) - aufgeloest in navigateBackFrom(),
-                // derselben Stelle wie der BackHandler oben. Der gerenderte Zustand wird
-                // uebergeben, damit ein zweiter Tipp auf Speichern zum selben Ziel fuehrt.
-                val zurueckZumEinstieg: () -> Unit = { navigationViewModel.navigateBackFrom(state) }
+                // Zurueck UND Speichern fuehren zum tatsaechlichen Einstiegspunkt (Hue-Tab,
+                // HueSettings oder die Typ-Seite) - aufgeloest in navigateBackFrom(), derselben
+                // Stelle wie der BackHandler oben. Der gerenderte Zustand wird uebergeben. Am Typ
+                // (#252) meldet sich das Speichern erst nach dem Schreiben: navigiert wird nur,
+                // solange der Editor dann noch angezeigt wird.
                 editorFormulare.SaveableStateProvider(checkNotNull(state.editorFormularSchluessel())) {
                     com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.HueRuleConfigScreen(
                         ruleId = state.ruleId,
+                        typId = state.typId,
                         hueViewModel = hueViewModel,
                         shiftViewModel = shiftViewModel,
-                        onNavigateBack = zurueckZumEinstieg,
-                        onSaveComplete = zurueckZumEinstieg,
+                        onNavigateBack = { navigationViewModel.navigateBackFrom(state) },
+                        onSaveComplete = { navigationViewModel.navigateBackNachSpeichern(state) },
                         // Der GERENDERTE Zustand (samt sitzung) ist der Rueckweg aus dem Ort.
                         onOrtAendern = { navigationViewModel.navigateToOrtFuerTageslicht(state) }
                     )

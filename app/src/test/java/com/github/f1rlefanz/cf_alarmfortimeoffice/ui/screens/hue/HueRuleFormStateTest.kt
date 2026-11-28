@@ -1,13 +1,50 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.EchteSchichtKonfiguration
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.connection.HueBridgeConnectionManager
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.BridgeConnectionInfo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueRuleModus
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueScheduleRule
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.SunriseConfig
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.repository.interfaces.IHueConfigRepository
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.scheduling.HueSmartScheduler
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.HueRuleUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.TypLichtQuelle
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.IHueBridgeUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.IHueLightUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.IHueLightUseCaseAdvanced
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.util.HueColorConverter
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmInfo
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
+import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IShiftConfigRepository
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.ITageslichtRepository
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.typ.TypEntwurf
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.typ.TypSeiteEntwurf
+import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.HueViewModel
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.setMain
+import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
+import org.mockito.kotlin.doReturn
+import org.mockito.kotlin.mock
+import org.mockito.kotlin.stub
+import org.mockito.kotlin.whenever
+import java.time.LocalTime
 
 /**
  * Der Formzustand des Regel-Editors - jetzt pruefbar, weil er als reines Datenobjekt ausserhalb
@@ -378,5 +415,132 @@ class HueRuleFormStateTest {
             szenen = emptyList()
         )
         assertEquals(listOf(HueRuleFormFehler.ZIEL_FEHLT), leer.validate())
+    }
+
+    // --- Editor am Typ (Umbau #252) -------------------------------------------------------------
+
+    @get:Rule
+    val ordner = TemporaryFolder()
+
+    private fun typ(id: String, name: String, vararg regeln: HueScheduleRule) =
+        ShiftDefinition(id = id, name = name, keywords = listOf(name), alarmTime = LocalTime.of(5, 30))
+            .let { it.copy(licht = it.licht.mitRegeln(regeln.toList())) }
+
+    @Test
+    fun `Ein Formular mit Typ verlangt keine Schicht`() {
+        val amTyp = HueRuleFormState(typId = "s", name = "A", selectedGroupIds = setOf("1"))
+        assertEquals(emptyList<HueRuleFormFehler>(), amTyp.validate())
+        // Gegenprobe ohne Typ (Einstieg im Hue-Bereich): die Schicht bleibt Pflicht.
+        assertEquals(listOf(HueRuleFormFehler.SCHICHT_FEHLT), amTyp.copy(typId = null).validate())
+        // Name und Ziel bleiben auch am Typ Pflicht.
+        assertEquals(
+            listOf(HueRuleFormFehler.NAME_FEHLT, HueRuleFormFehler.ZIEL_FEHLT),
+            HueRuleFormState(typId = "s").validate()
+        )
+    }
+
+    @Test
+    fun `Vorbelegung - die erste Regel am Typ ist der Sonnenaufgang, jede weitere Licht an zum Wecker`() {
+        val erste = anfangsFormular(typ("s", "Spätdienst"), neueRegel = true)
+        assertEquals("Sonnenaufgang 30 min vor Wecker", erste.name)
+        assertEquals(HueRuleModus.SONNENAUFGANG, erste.modus)
+        assertEquals(30, erste.sunrise.durationMinutes)
+        assertTrue(erste.sunrise.startBeforeAlarm)
+        assertEquals("s", erste.typId)
+        assertEquals("Spätdienst", erste.shiftPattern)
+        // Nur vorbelegt: ohne Ziel laesst sich noch nichts speichern.
+        assertEquals(listOf(HueRuleFormFehler.ZIEL_FEHLT), erste.validate())
+
+        val vorhandene = HueRuleFormState(shiftPattern = "Spätdienst", name = "x", selectedGroupIds = setOf("1")).baue("r1")
+        val mitRegel = typ("s", "Spätdienst", vorhandene)
+        val zweite = anfangsFormular(mitRegel, neueRegel = true)
+        assertEquals("Licht an zum Wecker", zweite.name)
+        assertEquals(HueRuleModus.MANUELL, zweite.modus)
+        assertTrue(zweite.on)
+
+        // Bearbeiten: keine Vorbelegung, die geladene Regel fuellt das Formular.
+        assertEquals(
+            HueRuleFormState(typId = "s", shiftPattern = "Spätdienst"),
+            anfangsFormular(mitRegel, neueRegel = false)
+        )
+    }
+
+    @Test
+    fun `der gespeicherte Typ gewinnt ueber eine geladene oder wiederhergestellte Schicht`() {
+        val geladen = HueRuleFormState(name = "x", shiftPattern = "Alter Name", selectedGroupIds = setOf("1"))
+
+        val gelesen = geladen.amTyp(typ("s", "Spätdienst"))
+
+        assertEquals("s", gelesen.typId)
+        assertEquals("Spätdienst", gelesen.shiftPattern)
+        assertEquals("Spätdienst", gelesen.baue().shiftPattern)
+    }
+
+    /** Das echte ViewModel ueber dem echten Regel-UseCase und der echten Schicht-Konfiguration. */
+    private fun viewModelAn(repo: IShiftConfigRepository): HueViewModel {
+        val ruleUseCase = HueRuleUseCase(
+            configRepository = mock<IHueConfigRepository>(),
+            lightUseCase = mock<IHueLightUseCaseAdvanced>(),
+            typLicht = TypLichtQuelle.Leser { repo.getCurrentShiftConfig() },
+            schichtKonfiguration = repo
+        )
+        val bridge = mock<IHueBridgeUseCase>()
+        whenever(bridge.getDiscoveryStatus()).thenReturn(emptyFlow())
+        bridge.stub { on { getBridgeConnectionInfo() } doReturn Result.success(BridgeConnectionInfo(isConnected = false)) }
+        val verbindung = mock<HueBridgeConnectionManager> {
+            on { connectionStatus } doReturn MutableStateFlow<HueBridgeConnectionManager.ConnectionState>(
+                HueBridgeConnectionManager.ConnectionState.DISCONNECTED
+            )
+        }
+        val wecker = mock<IAlarmUseCase> { on { activeAlarms } doReturn MutableStateFlow(emptyList<AlarmInfo>()) }
+        return HueViewModel(
+            bridge, mock<IHueLightUseCase>(), ruleUseCase, verbindung, mock<HueSmartScheduler>(), wecker,
+            mock<ITageslichtRepository>()
+        )
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class) // Dispatchers.setMain/resetMain
+    @Test
+    fun `Speichern landet am Typ des Editors und meldet erst nach dem Schreiben zurueck`() = runBlocking {
+        Dispatchers.setMain(Dispatchers.Unconfined)
+        val konfiguration = EchteSchichtKonfiguration(ordner.newFolder())
+        try {
+            konfiguration.repo.saveShiftConfig(
+                ShiftConfig(definitions = listOf(typ("f", "Frühdienst"), typ("s", "Spätdienst")))
+            ).getOrThrow()
+            val viewModel = viewModelAn(konfiguration.repo)
+            val spaet = konfiguration.repo.getCurrentShiftConfig().getOrThrow().definitions[1]
+
+            // Wie der Editor: Vorbelegung, Ziel waehlen, mit dem Typ lesen, speichern - zweimal mit derselben id.
+            val regel = anfangsFormular(spaet, neueRegel = true).copy(selectedGroupIds = setOf("1"))
+                .amTyp(spaet).baue("rule_editor")
+            repeat(2) {
+                val gespeichert = CompletableDeferred<Unit>()
+                viewModel.speichereRegelAmTyp(regel) { gespeichert.complete(Unit) }
+                withTimeout(10_000) { gespeichert.await() }
+            }
+
+            val gespeichert = konfiguration.repo.getCurrentShiftConfig().getOrThrow()
+            val danach = gespeichert.definitions
+            assertEquals(listOf("rule_editor"), danach[1].licht.regeln.map { it.id })
+            assertTrue("am anderen Typ nichts", danach[0].licht.regeln.isEmpty())
+
+            // Zurueck auf der Typ-Seite: ihr Entwurf von VOR dem Ausflug nimmt beim Speichern die Regel nicht mit.
+            val nachTypSpeichern = TypSeiteEntwurf.speichernIn(
+                gespeichert, "s", TypEntwurf.aus(spaet).copy(name = "Spät neu")
+            )!!.definitions[1]
+            assertEquals("Spät neu", nachTypSpeichern.name)
+            assertEquals(listOf("rule_editor"), nachTypSpeichern.licht.regeln.map { it.id })
+
+            // Gibt es den Typ nicht (mehr), bleibt der Rueckruf aus und der Editor zeigt den Grund.
+            var zurueck = false
+            viewModel.speichereRegelAmTyp(regel.copy(id = "rule_2", shiftPattern = "Weg")) { zurueck = true }
+            val grund = withTimeout(10_000) { viewModel.uiState.first { it.error != null } }.error
+            assertEquals("Den Schichttyp „Weg“ gibt es nicht.", grund)
+            assertFalse(zurueck)
+        } finally {
+            konfiguration.schliessen()
+            Dispatchers.resetMain()
+        }
     }
 }

@@ -10,8 +10,6 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.model.TypDimmen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.HellAb
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.typ.DimFensterAbbildung.deute
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.typ.DimFensterAbbildung.zuFenster
-import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.DimmerRulesViewModel.Companion.baueVorlagenRegel
-import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.DimmerRulesViewModel.SchnellstartVorlage
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -388,14 +386,43 @@ class DimmFensterFormTest {
 
     @Test
     fun dieDreiFensterartenDerVorlage_sindFormOderAusdruecklichNichtDarstellbar() {
+        // Die Fenster stehen literal hier: es sind die der frueheren Vorlagen. Neu angelegt werden
+        // sie nicht mehr, sie stecken aber in migrierten Bestaenden weiter und muessen deutbar bleiben.
         // (1) UNIVERSAL: CLOCK 22:00 -> ALARM_SONST_CLOCK 07:00, dazu Nachlauf 20 (nicht Teil der Form).
-        val nachtruhe = baueVorlagenRegel(SchnellstartVorlage.NACHT_DIMMEN, "Nacht", null)!!.windows.single()
-            .copy(weckzeitNachlaufMinuten = 20)
+        val nachtruheVorlage = DimWindow(
+            startAnchor = DimAnchor.CLOCK,
+            startClockMinutes = uhr(22),
+            endAnchor = DimAnchor.ALARM_SONST_CLOCK,
+            endClockMinutes = uhr(7)
+        )
+        val nachtruhe = nachtruheVorlage.copy(weckzeitNachlaufMinuten = 20)
         val ansicht1 = deute(TypDimmFenster(nachtruhe, staerke = 55)) as DimFensterAnsicht.Darstellbar
         assertEquals(form(DimWann.ABEND_DANACH, uhr(22), uhr(7), beimWecker = true), ansicht1.form)
         assertEquals("Nachlauf bleibt beim Schreiben", nachtruhe, zuFenster(ansicht1.form, nachtruhe))
 
-        val nd = baueVorlagenRegel(SchnellstartVorlage.NACHTDIENST_RHYTHMUS, "ND", "ND")!!.windows
+        val nd = listOf(
+            DimWindow(
+                startAnchor = DimAnchor.SHIFT_END,
+                startOffsetMinutes = 0,
+                endAnchor = DimAnchor.CLOCK,
+                endClockMinutes = uhr(14),
+                blockPositionen = setOf(Blockposition.ERSTER, Blockposition.MITTLERER)
+            ),
+            DimWindow(
+                startAnchor = DimAnchor.SHIFT_END,
+                startOffsetMinutes = 0,
+                endAnchor = DimAnchor.CLOCK,
+                endClockMinutes = uhr(12),
+                blockPositionen = setOf(Blockposition.LETZTER, Blockposition.EINZELNER)
+            ),
+            DimWindow(
+                startAnchor = DimAnchor.CLOCK,
+                startClockMinutes = uhr(16),
+                endAnchor = DimAnchor.ALARM,
+                endOffsetMinutes = 0,
+                startNurAmWecktag = true
+            )
+        )
         // (2) Nachtschicht: SHIFT_END -> CLOCK (Schlaf nach dem Dienst; zwei Fenster, je nach Blockposition).
         val schlaf = nd[0]
         val ansicht2 = deute(TypDimmFenster(schlaf)) as DimFensterAnsicht.Darstellbar

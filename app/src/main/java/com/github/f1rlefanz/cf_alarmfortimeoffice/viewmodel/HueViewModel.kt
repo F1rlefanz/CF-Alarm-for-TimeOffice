@@ -661,7 +661,8 @@ class HueViewModel @Inject constructor(
  * liefe - oder `null`.
  *
  * Gezaehlt wird, was der `AlarmReceiver` mit Hue-Regeln ausfuehrt: jeder aktive Wecker, auch ein
- * stiller (#251, „Lichtwecker“: die Stille nimmt nur Ton, Vibration und Vollbild). Die Schichtzuordnung ist KEINE Nachbildung, sondern dieselbe Funktion wie
+ * stiller (#251, „Lichtwecker“: die Stille nimmt nur Ton, Vibration und Vollbild). Die
+ * Schichtzuordnung ist KEINE Nachbildung, sondern dieselbe Funktion wie
  * zur Laufzeit (`passtAufSchicht`, exakter Name ODER Universalmuster) - ueber den REINEN
  * Schichtnamen, sonst faende ein manueller Wecker ("Frühdienst (Manuell)") seine Regel nicht.
  */

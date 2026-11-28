@@ -1,8 +1,11 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftKategorie
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.typ.OhneEintragTexte
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.typ.ShiftDefinitionTexte
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.ShiftConfigTexte
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.SCHICHTTYPEN_UNTERTITEL
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -14,16 +17,32 @@ import org.junit.Test
 class SchichttypTexteTest {
 
     /**
-     * Seit Etappe 3 (#220) stehen Dimmen und „Nicht stören“ am Typ, der Hinweis nennt sie (SPEC 3.2);
-     * Licht kommt erst mit Etappe 4 und wird bis dahin nicht versprochen. Bewusste Verhaltensaenderung
-     * gegenueber dem Stand von Etappe 1 („verspricht am Typ nur den Wecker“) - kein Kerntest.
+     * Seit Etappe 4 (#254) steht auch das Licht am Typ, der Hinweis ist wieder der ganze Satz der
+     * Vorlage (SPEC 3.2). Bewusste Verhaltensaenderung gegenueber Etappe 3 („noch kein Licht“,
+     * #256) - kein Kerntest.
      */
     @Test
-    fun `Der Einordnen-Hinweis verspricht am Typ Wecker, Dimmen und Nicht stoeren, noch kein Licht`() {
-        val text = EinordnenTexte.KATEGORIE_HINWEIS
-        assertTrue(text, text.startsWith("Die Kategorie sortiert nur."))
-        listOf("Wecker", "Dimmen", "„Nicht stören“").forEach { assertTrue("$it: $text", text.contains(it)) }
-        assertFalse("Licht kommt erst mit Etappe 4: $text", text.contains("Licht"))
+    fun `Der Einordnen-Hinweis ist der Satz der Vorlage und nennt das Licht am Typ`() {
+        assertEquals(
+            "Die Kategorie sortiert nur. Wecker, Dimmen, „Nicht stören“ und Licht stellst du danach " +
+                "am Typ selbst ein.",
+            EinordnenTexte.KATEGORIE_HINWEIS
+        )
+    }
+
+    /** SPEC 3.6, Prototyp `zeigeEinstellungen`. */
+    @Test
+    fun `Die Zeile Schichttypen einrichten nennt das Licht pro Typ`() {
+        assertEquals("Wecker, Dimmen, „Nicht stören“ und Licht pro Typ", SCHICHTTYPEN_UNTERTITEL)
+    }
+
+    /** Seit Etappe 3 steht das Dimmen am Typ: ein Urlaub-Typ ohne Fenster dimmt nicht (#230). */
+    @Test
+    fun `Die Urlaub-Beschreibung nennt Wecker und Dimmer wie die Vorlage`() {
+        assertEquals(
+            "Urlaubstage – auf Wunsch ganz ohne Wecker und Dimmer.",
+            ShiftDefinitionTexte.kategorieBeschreibung(ShiftKategorie.URLAUB)
+        )
     }
 
     /**

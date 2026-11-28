@@ -61,6 +61,9 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.KalenderVorausschauV
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.MasterPauseViewModel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.NotificationSettingsViewModel
 
+/** Untertitel der Zeile „Schichttypen einrichten“ (Prototyp `zeigeEinstellungen`, SPEC 3.6). */
+internal const val SCHICHTTYPEN_UNTERTITEL = "Wecker, Dimmen, „Nicht stören“ und Licht pro Typ"
+
 @Composable
 fun SettingsTabContent(
     authViewModel: AuthViewModel,
@@ -116,7 +119,7 @@ fun SettingsTabContent(
             HorizontalDivider()
             GeraeteZeile(
                 titel = "Schichttypen einrichten",
-                text = "Wecker, Dimmen und „Nicht stören“ pro Typ",
+                text = SCHICHTTYPEN_UNTERTITEL,
                 onClick = onShowShiftConfig
             )
         }

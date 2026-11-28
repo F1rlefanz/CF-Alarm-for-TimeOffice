@@ -84,14 +84,13 @@ object ShiftDefinitionTexte {
 
     // Umbau E1: die Kurzbeschreibungen der Kategorien (Prototyp, `KAT` in Main.dc.html). Ohne `else`:
     // eine achte Kategorie muss hier bewusst beschrieben werden. Der Name der Kategorie kommt aus
-    // `ShiftKategorie.titel()`. Abweichung vom Prototyp: bei Urlaub fehlt „und Dimmer“ - der Dimmer
-    // haengt bis Etappe 3 an Regeln, nicht am Typ, und „Wecker aus“ nimmt ihn nicht weg.
+    // `ShiftKategorie.titel()`.
     fun kategorieBeschreibung(kategorie: ShiftKategorie): String = when (kategorie) {
         ShiftKategorie.DIENST -> "Arbeitstage nach Dienstplan."
         ShiftKategorie.RUFBEREITSCHAFT ->
             "Bereitschaftsdienst. Wird ein Einsatz als Dienst nachgetragen, gilt dessen Wecker."
         ShiftKategorie.FREI -> "Dienstfreie Tage, z. B. „+“."
-        ShiftKategorie.URLAUB -> "Urlaubstage – auf Wunsch ganz ohne Wecker."
+        ShiftKategorie.URLAUB -> "Urlaubstage – auf Wunsch ganz ohne Wecker und Dimmer."
         ShiftKategorie.FORTBILDUNG -> "Intern oder extern, Kongress, Uni."
         ShiftKategorie.KRANK -> "Hebt einen Dienst am selben Tag auf."
         ShiftKategorie.IGNORIEREN -> "Steht im Kalender, ist für die App bedeutungslos."

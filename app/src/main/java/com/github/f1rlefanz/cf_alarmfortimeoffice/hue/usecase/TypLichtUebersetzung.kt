@@ -17,7 +17,9 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.model.TypLicht
  *
  * WER AUFRUFT, uebergibt einen STRIKT gelesenen Bestand: eine leere Liste heisst hier „es gibt keine
  * Regeln“ und setzt [LICHT_STUFE] endgueltig. Eine zu „leer“ degradierte Lesestoerung wuerde so zur
- * Schreibwahrheit, und die Regeln kaemen nie an (Skill cfalarm-persistenz-und-auth).
+ * Schreibwahrheit, und die Regeln kaemen nie an (Skill cfalarm-persistenz-und-auth). Also nicht ueber
+ * den `getConfiguration()`-Flow (faengt zu leer ab), und erst nach der ersten Entsperrung: davor
+ * liefert auch `getScheduleRules()` still `[]`.
  *
  * Die Zuordnung (Festlegungen des Betreuers in #247):
  * - Eine Regel mit Schichtnamen geht an den ERSTEN Typ dieses Namens, ohne Gross/Klein - derselbe

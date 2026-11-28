@@ -7,6 +7,7 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import com.github.f1rlefanz.cf_alarmfortimeoffice.di.qualifiers.MainDataStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.repository.interfaces.IHueConfigRepository
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.scheduling.HueSmartScheduler
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.TypLichtUebersetzung
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IAlarmRepository
@@ -108,7 +109,15 @@ import javax.inject.Singleton
  *    Konfiguration, ueber einen vor dem Entsperren gelesenen Standard waere die echte weg. Die
  *    Betreuer-Reihenfolge in #248 nennt das Tor nicht; ohne es waere genau dieser Fall offen.
  * Der Altbestand im Hue-Store bleibt unveraendert (kopieren statt verschieben). Kein Armieren:
- * Dimmer und DND lesen das Licht nicht. Rest: hat ein anderer Leser `hue_settings` in diesem Prozess
+ * Dimmer und DND lesen das Licht nicht. NEU GEPLANT wird nach einem geschriebenen Licht-Schritt nur
+ * der Vorab-Sonnenaufgang (`HueSmartScheduler.recalculateSchedule()`, #249): seit #249 liest die
+ * Hue-Ausfuehrung die Regeln am Typ, und `scheduleSunriseStarts()` raeumt zuerst ab und liest dann -
+ * eine Planung vor dem Schreiben (etwa beim Prozessstart der Wartung) fand keine Regeln, die Rampe
+ * fehlte bis zum naechsten Anlass (bis zu 24 h). Mit #248 ("zoege den Hue-Graphen") vertraeglich:
+ * ueber `dagger.Lazy` entsteht der Scheduler nie beim Bauen, sondern nur nach Tor 1 in genau dem
+ * einen Anlass, der schreibt - einmal je Geraet. Beim Import plant es dadurch zweimal (hier und am
+ * Ende von `ConfigBackupUseCase.import`) - harmlos, `scheduleSunriseStarts()` raeumt ab und plant
+ * mit `REPLACE`. Ein Fehler beim Neuplanen kippt den Ausgang nicht. Rest: hat ein anderer Leser `hue_settings` in diesem Prozess
  * vor dem Entsperren gelesen, liest der Store danach still leer (Skill cfalarm-persistenz-und-auth),
  * und Tor 1 faengt das nicht - einen Kanarienvogel wie den Dimmer-Marker hat der Hue-Store nicht.
  * Dagegen steht die Regel, dass jeder Leser im Prozessstart vorher `istEntsperrt()` fragt.
@@ -126,7 +135,10 @@ class TypModellMigration @Inject constructor(
     private val alarmRepository: IAlarmRepository,
     // NUR gelesen, im Licht-Schritt (Tor 4) - der Altbestand bleibt unveraendert.
     private val hueConfigRepository: IHueConfigRepository,
-    private val armierer: ZeitkettenArmierer
+    private val armierer: ZeitkettenArmierer,
+    // NUR nach einem geschriebenen Licht-Schritt (#249). `dagger.Lazy`, damit der Scheduler (und
+    // mit ihm der Hue-Graph) nie beim Bauen entsteht - Muster `ConfigBackupUseCase`.
+    private val hueSmartScheduler: dagger.Lazy<HueSmartScheduler>
 ) {
     /** Was die Karte im System-Status anzeigt. Nur im Speicher: kein neuer Preference-Schluessel. */
     sealed interface Stand {
@@ -202,7 +214,8 @@ class TypModellMigration @Inject constructor(
      * keine [TypLichtUebersetzung.LICHT_STUFE] traegt - erst Dimmen und DND, dann das Licht. Wirft nie.
      *
      * @return `true`, wenn einer der beiden Schritte geschrieben hat. Hat der erste geschrieben, sind
-     *   Dimmer und DND schon neu armiert.
+     *   Dimmer und DND schon neu armiert; hat der zweite geschrieben, ist der Vorab-Sonnenaufgang
+     *   schon neu geplant (angestossen, best-effort).
      */
     suspend fun migriereEinmalig(): Boolean = withContext(NonCancellable) {
         // NonCancellable: angestossen wird das auch aus dem lifecycleScope einer Activity.
@@ -352,6 +365,11 @@ class TypModellMigration @Inject constructor(
                     "${z.schonBelegt} entfallen (Typ hatte schon Licht) - Hue-Altbestand unveraendert"
             }
         )
+        // Den Vorab-Sonnenaufgang neu planen (#249, Klassen-KDoc). Best-effort und um `get()` UND
+        // den Aufruf gelegt: ein Wurf hier liesse `schritt()` die geschriebene Uebernahme als
+        // gescheitert melden. Master-Pause und "keine Bridge" prueft der Scheduler selbst.
+        runCatching { hueSmartScheduler.get().recalculateSchedule() }
+            .onFailure { Logger.w(LogTags.DIMMER, "Licht-Migration: Vorab-Sonnenaufgang nicht neu geplant - naechster Anlass plant", it) }
         return Ausgang.Geschrieben
     }
 

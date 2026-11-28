@@ -48,6 +48,7 @@ import org.junit.Before
 import org.junit.Test
 import org.mockito.kotlin.any
 import org.mockito.kotlin.doReturn
+import org.mockito.kotlin.doThrow
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.never
 import org.mockito.kotlin.times
@@ -128,6 +129,8 @@ class TypModellMigrationTest {
     }
 
     private val armierer = mock<ZeitkettenArmierer>()
+    // #249: geteilt ueber alle Instanzen eines Tests - die Licht-Tests bauen je Lauf eine neue.
+    private val scheduler = mock<HueSmartScheduler>()
     private val alarmRepository = mock<IAlarmRepository> { onBlocking { isPersistenceBlocked() } doReturn false }
 
     private fun kontext(entsperrt: Boolean = true): Context {
@@ -143,7 +146,8 @@ class TypModellMigrationTest {
         schicht: IShiftUseCase,
         entsperrt: Boolean = true,
         alarme: IAlarmRepository = alarmRepository,
-        hue: IHueConfigRepository = HueConfigRepository(SpeicherStore())
+        hue: IHueConfigRepository = HueConfigRepository(SpeicherStore()),
+        planer: dagger.Lazy<HueSmartScheduler> = dagger.Lazy { scheduler }
     ) = TypModellMigration(
         context = kontext(entsperrt),
         dataStore = store,
@@ -154,7 +158,8 @@ class TypModellMigrationTest {
         shiftUseCase = schicht,
         alarmRepository = alarme,
         hueConfigRepository = hue,
-        armierer = armierer
+        armierer = armierer,
+        hueSmartScheduler = planer
     )
 
     private fun erwartet(store: SpeicherStore, config: ShiftConfig, dimmenAn: Boolean = true, folgtDimmer: Boolean = true) =
@@ -599,6 +604,70 @@ class TypModellMigrationTest {
         val andere = zweite.konfig.definitions.drop(1).filter { it.kategorie != ShiftKategorie.KRANK && it.kategorie != ShiftKategorie.IGNORIEREN }
         assertTrue("die Standard-Konfiguration hat weitere Typen mit Wecker", andere.isNotEmpty())
         andere.forEach { typ -> assertEquals(listOf(alle.copy(id = TypLichtUebersetzung.kopieId(alle.id, typ.id))), typ.licht.regeln) }
+    }
+
+    // --- Licht: Vorab-Sonnenaufgang neu planen (#249, Betreuer-Entscheidung) --------------------
+
+    /**
+     * `scheduleSunriseStarts()` raeumt zuerst ab und liest dann die Regeln am Typ - vor dem
+     * Licht-Schritt trugen die Typen keine. Ohne Neuplanen fehlte die Rampe bis zum naechsten
+     * Anlass (bis zu 24 h). Geplant wird nur nach einem GESCHRIEBENEN Licht-Schritt, nie nach
+     * Dimmen und DND allein, nie bei "schon erledigt", "verschoben" oder "gescheitert".
+     */
+    @Test
+    fun `Licht - nur ein geschriebener Licht-Schritt plant den Vorab-Sonnenaufgang neu, genau einmal`() = runTest {
+        val regel = hueRegel("r1", "Frueh")
+        val schicht = SchichtSpeicher(vorDemLicht)
+
+        assertTrue(migration(bestandsgeraet(), schicht, hue = HueConfigRepository(hueStore(regel))).migriereEinmalig())
+        verify(scheduler, times(1)).recalculateSchedule()
+        // Zweiter Lauf: schon erledigt - kein weiteres Neuplanen.
+        assertFalse(migration(bestandsgeraet(), schicht, hue = HueConfigRepository(hueStore(regel))).migriereEinmalig())
+        verify(scheduler, times(1)).recalculateSchedule()
+    }
+
+    @Test
+    fun `Licht - Dimmen allein, verschoben oder gescheitert plant nie neu`() = runTest {
+        val regel = hueRegel("r1", "Frueh")
+
+        // Nur der Schritt Dimmen und DND schreibt (Licht schon erledigt).
+        val nurDimmen = SchichtSpeicher(eigeneKonfig)
+        assertTrue(migration(bestandsgeraet(), nurDimmen).migriereEinmalig())
+        assertEquals(1, nurDimmen.gespeichert.size)
+        // Gesperrt: beide Schritte verschoben.
+        val gesperrt = SchichtSpeicher(vorDemLicht)
+        assertFalse(migration(bestandsgeraet(), gesperrt, entsperrt = false, hue = HueConfigRepository(hueStore(regel))).migriereEinmalig())
+        // Standard-Konfiguration ohne Hue-Regeln: Licht verschoben.
+        val ohneAltbestand = SpeicherStore(mutablePreferencesOf().apply { this[KEY_DIMMER_MARKER] = DimmerModellMigration.STAND })
+        assertFalse(migration(ohneAltbestand, SchichtSpeicher(ShiftConfig.getDefaultConfig())).migriereEinmalig())
+        // Hue-Store unlesbar: Licht gescheitert.
+        val kaputt = hueStore(regel).apply { beimLesen = { throw IOException("kaputt") } }
+        assertFalse(migration(bestandsgeraet(), SchichtSpeicher(vorDemLicht), hue = HueConfigRepository(kaputt)).migriereEinmalig())
+        assertLichtFehler(TypModellMigration.Grund.HUE_REGELN_NICHT_LESBAR)
+
+        verify(scheduler, never()).recalculateSchedule()
+    }
+
+    /**
+     * Ein Fehler beim Neuplanen kippt nie den Ausgang: `schritt()` machte aus jedem Wurf
+     * "Gescheitert" - die Karte im System-Status meldete dann eine Uebernahme als gescheitert, die
+     * geschrieben ist. Beide Wege: `recalculateSchedule()` wirft, und schon `Lazy.get()` wirft.
+     */
+    @Test
+    fun `Licht - ein Fehler beim Neuplanen laesst die Stufe geschrieben und den Stand auf Erledigt`() = runTest {
+        doThrow(IllegalStateException("Planung kaputt")).whenever(scheduler).recalculateSchedule()
+        val planerKaputt = dagger.Lazy<HueSmartScheduler> { throw IllegalStateException("Graph kaputt") }
+        for (planer in listOf(dagger.Lazy { scheduler }, planerKaputt)) {
+            TypModellMigration.standZuruecksetzen()
+            val schicht = SchichtSpeicher(vorDemLicht)
+
+            assertTrue(migration(bestandsgeraet(), schicht, hue = HueConfigRepository(hueStore(hueRegel("r1", "Frueh"))), planer = planer).migriereEinmalig())
+
+            assertEquals(TypLichtUebersetzung.LICHT_STUFE, schicht.konfig.lichtStufe)
+            assertEquals(1, schicht.gespeichert.size)
+            assertEquals(TypModellMigration.Stand.Erledigt, TypModellMigration.stand.value)
+        }
+        verify(scheduler, times(1)).recalculateSchedule()
     }
 
     // --- Licht: Import und beide Vorlagen verlustfrei -------------------------------------------

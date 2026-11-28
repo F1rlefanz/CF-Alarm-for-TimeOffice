@@ -24,93 +24,27 @@
     <string name="dim_accessibility_desc">Legt eine abdunkelnde Schicht über den Bildschirm, um dich vor Schichtbeginn zum Herunterfahren zu bringen. Der Dienst liest keine Bildschirminhalte und wertet keine Eingaben aus – er dient ausschließlich der Verdunkelung.</string>
 
     <!-- Dimmer-Tab -->
-    <string name="dimmer_intro">Wann gedimmt wird, stellst du am Schichttyp ein. Bedienungshilfe, Farbwärme und Vorschau findest du in den Einstellungen unter „Bildschirm dimmen“.</string>
-    <string name="dimmer_manage_rules">Regeln verwalten</string>
-    <string name="dimmer_preview_timeline_hint">Zeigt, wann in den nächsten Tagen tatsächlich gedimmt wird.</string>
-    <string name="dimmer_preview_timeline">Vorschau (nächste Tage)</string>
 
     <!-- Dimmer-Vorschau-Zeitleiste -->
-    <string name="dimmer_preview_title">Dimm-Vorschau</string>
-    <string name="dimmer_preview_empty">Kein Dimmen in den nächsten Tagen geplant.</string>
-    <string name="dimmer_preview_row">%1$s · Verdunkelung %2$d\u00A0%%</string>
 
     <!-- Dimm-Regeln: Liste + Editor -->
-    <string name="dimmer_rules_title">Dimm-Regeln</string>
-    <string name="dimmer_rules_empty">Noch keine Regeln. Tippe auf +, um eine anzulegen.</string>
-    <string name="dimmer_rule_unnamed">(ohne Name)</string>
     <!-- Schnellstart: legt eine SICHTBARE Regel an, kein eingebautes Verhalten. Die Texte sagen
          das ausdruecklich ("kannst du danach anpassen oder loeschen") - der abgeloeste
          Nacht-Standard wirkte, ohne in dieser Liste zu stehen, und genau das soll nicht
          zurueckkommen. -->
-    <string name="dimmer_quickstart_title">Schnellstart</string>
-    <string name="dimmer_quickstart_hint">Legt eine fertige Regel an. Sie steht danach in dieser Liste und lässt sich anpassen oder löschen – es entsteht nichts Unsichtbares.</string>
-    <string name="dimmer_quickstart_night">Nacht-Dimmen anlegen</string>
-    <string name="dimmer_quickstart_night_hint">Für alle Tage: 22:00 bis „Weckzeit, spätestens“ 07:00.</string>
-    <string name="dimmer_quickstart_night_rulename">Nacht-Dimmen</string>
-    <string name="dimmer_quickstart_nightshift">Nachtdienst-Rhythmus anlegen</string>
-    <string name="dimmer_quickstart_nightshift_hint">Fragt dich in drei Sätzen, wann du rund um den Nachtdienst schläfst, und baut daraus die Regel. Die Nacht selbst bleibt hell – da bist du im Dienst.</string>
-    <string name="dimmer_nd_dialog_title">Wann schläfst du?</string>
-    <string name="dimmer_nd_dialog_intro">Für „%1$s“. Gedimmt und ruhig ist es in diesen Zeiten – die Regel steht danach in der Liste und lässt sich dort ändern.</string>
-    <string name="dimmer_nd_nach_dienst">Nach dem Dienst schlafe ich bis</string>
-    <string name="dimmer_nd_nach_letzter">Nach der letzten Nacht einer Folge nur bis</string>
-    <string name="dimmer_nd_nach_letzter_hint">Zum Umstellen zurück auf den Tag. Gilt auch nach einem einzelnen Nachtdienst.</string>
-    <string name="dimmer_nd_vor_dienst">Vor dem Dienst schlafe ich ab</string>
-    <string name="dimmer_nd_vor_dienst_hint">Bis zur Weckzeit – an jedem Tag der Folge.</string>
-    <string name="dimmer_nd_anlegen">Regel anlegen</string>
-    <string name="dimmer_quickstart_nightshift_rulename">Nachtdienst-Rhythmus: %1$s</string>
-    <string name="dimmer_quickstart_exclude">Schicht ausnehmen</string>
-    <string name="dimmer_quickstart_exclude_hint">Regel ohne Fenster: an Tagen dieser Schicht wird nicht gedimmt.</string>
-    <string name="dimmer_quickstart_exclude_rulename">Ohne Dimmen: %1$s</string>
-    <string name="dimmer_quickstart_pick_shift">Für welche Schicht?</string>
-    <string name="dimmer_quickstart_no_shifts">Noch keine Schichten erkannt. Lege zuerst unter „Schichten“ eine an – dann kannst du eine Regel darauf setzen.</string>
-    <string name="dimmer_quickstart_cancel">Abbrechen</string>
-    <string name="dimmer_quickstart_exists_title">Dafür gibt es schon eine Regel</string>
-    <string name="dimmer_quickstart_exists_body">»%1$s« gilt bereits für dieselben Tage. Pro Tag wirkt nur eine Regel — eine zweite daneben würde nie greifen. Öffne stattdessen die vorhandene Regel und passe sie an.</string>
-    <string name="dimmer_quickstart_exists_open">Vorhandene Regel öffnen</string>
     <!-- Kein <plurals>: "Fenster" lautet im Deutschen in Singular UND Plural gleich - eine
          Pluralform waere ein kuenstlicher, wortgleicher Zweig ohne Nutzen. -->
-    <string name="dimmer_rule_subtitle" tools:ignore="PluralsCandidate">%1$s · %2$d Fenster</string>
-    <string name="dimmer_rule_off">aus</string>
-    <string name="dimmer_pattern_free">Freie Tage (keine Schicht)</string>
-    <string name="dimmer_pattern_universal">Alle Tage (Universal)</string>
-    <string name="dimmer_rule_editor_title">Regel bearbeiten</string>
-    <string name="dimmer_rule_name">Name</string>
-    <string name="dimmer_rule_shift">Gilt für</string>
-    <string name="dimmer_rule_enabled">Aktiv</string>
-    <string name="dimmer_rule_windows">Zeitfenster</string>
-    <string name="dimmer_rule_add_window">+ Fenster</string>
-    <string name="dimmer_rule_no_windows_hint">Ohne Fenster wird an passenden Tagen NICHT gedimmt – so nimmst du z. B. Nachtdienst-Nächte von einer Universal-Regel aus.</string>
     <string name="dimmer_window_start">Start</string>
     <string name="dimmer_window_end">Ende</string>
     <string name="dimmer_clock_time">Uhrzeit</string>
     <string name="dimmer_end_clock">Feste Uhrzeit</string>
     <string name="dimmer_end_alarm">Zur Weckzeit</string>
     <string name="dimmer_anchor_shiftend">Schichtende</string>
-    <string name="dimmer_rules_master_off_title">Der Dimmer ist ausgeschaltet</string>
-    <string name="dimmer_rules_master_off_body">Regeln hier wirken erst, wenn der Hauptschalter an ist — auch neu angelegte.</string>
-    <string name="dimmer_rules_master_off_action">Dimmen einschalten</string>
     <string name="dimmer_end_alarm_sonst_clock">Weckzeit, spätestens</string>
     <string name="dimmer_end_alarm_sonst_clock_hinweis">Endet an deiner Weckzeit (plus die Minuten danach) — spätestens aber zur eingestellten Uhrzeit. Liegt in diesem Fenster kein Wecker, endet es zur Uhrzeit.</string>
-    <string name="dimmer_end_nachlauf">Minuten nach dem Wecken</string>
-    <string name="dimmer_end_nachlauf_hinweis">So lange bleibt es nach dem Wecken noch gedimmt, 0 bis %1$d Minuten. Das gilt nur, wenn der Wecker vor der eingestellten Uhrzeit klingelt – bei einer Regel für alle Tage also an frühen Weckmorgen, nicht an Tagen mit späterem oder ohne Wecker. Mit „Solange gedimmt wird“ endet „Nicht stören“ trotzdem an der Weckzeit.</string>
     <string name="dimmer_start_offset">Minuten zur Weckzeit (−60 = eine Stunde davor)</string>
     <string name="dimmer_end_offset">Minuten nach Wecker</string>
     <string name="dimmer_shiftend_offset">Minuten nach Schichtende</string>
-    <string name="dimmer_window_remove">Fenster entfernen</string>
-    <string name="dimmer_window_blockposition">Gilt an diesen Tagen einer Dienstfolge</string>
-    <string name="dimmer_window_blockposition_hint">Mehrere gleiche Dienste hintereinander bilden eine Folge. So kann z. B. der Schlaf nach dem letzten Nachtdienst kürzer sein als zwischen zwei Nächten.</string>
-    <string name="dimmer_blockposition_erster">Erster Tag</string>
-    <string name="dimmer_blockposition_mittlerer">Mittlere Tage</string>
-    <string name="dimmer_blockposition_letzter">Letzter Tag</string>
-    <string name="dimmer_blockposition_einzelner">Einzelner Tag</string>
-    <string name="dimmer_rule_intensity">Intensität dieser Regel</string>
-    <string name="dimmer_rule_intensity_hint">Gilt für die Fenster dieser Regel. Jede Regel hat eigene Werte.</string>
-    <string name="dimmer_rule_save">Speichern</string>
-    <string name="dimmer_rule_delete">Regel löschen</string>
-    <string name="dimmer_strength_label">Verdunkelung: %1$d %%</string>
-    <string name="dimmer_warmth_label">Wärme (Amber): %1$d %%</string>
-    <string name="dimmer_preview">Vorschau (5 s dimmen)</string>
-    <string name="dimmer_preview_hint">Zeigt das Dimmen kurz mit den aktuellen Werten – auch ohne Schicht/Alarm.</string>
     <string name="dimmer_open_accessibility">Bedienungshilfen-Dienst aktivieren</string>
     <!-- Fuer die Lage "Schalter an, aber nicht verbunden": dort gibt es nichts zu aktivieren, der
          Nutzer soll aus- und wieder einschalten (Hergang bei DimDiagnostik.DienstLage). -->
@@ -477,7 +411,6 @@
     <string name="tageslicht_standort_abgeschaltet">Die Standortermittlung ist in den Android-Einstellungen ausgeschaltet. Schalte sie unter „Standort-Einstellungen“ ein oder nutze die Postleitzahl.</string>
     <string name="tageslicht_plz_quelle">Postleitzahl-Orte: GeoNames, CC BY 4.0</string>
 
-    <string name="tageslicht_dimmer_titel">Nachlauf nur, solange es dunkel ist</string>
     <string name="tageslicht_wahl_immer">Immer</string>
     <string name="tageslicht_dimmer_bis_daemmerung">Bis Dämmerung</string>
     <string name="tageslicht_dimmer_bis_sonnenaufgang">Bis Sonnenaufgang</string>
@@ -490,7 +423,6 @@
     <string name="tageslicht_dimmer_grund_hell">%1$s um %2$s</string>
     <string name="tageslicht_dimmer_grund_weckzeit">an der Weckzeit, %1$s war schon um %2$s</string>
     <string name="tageslicht_ohne_ort_dimmer">Kein Ort eingestellt – der Nachlauf gilt immer.</string>
-    <string name="tageslicht_vorschau_endet">endet bei %1$s %2$s</string>
 
     <string name="tageslicht_hue_titel">Tageslicht</string>
     <string name="tageslicht_hue_intro">Regel nur ausführen, wenn es beim Wecken morgens draußen noch dunkel ist:</string>

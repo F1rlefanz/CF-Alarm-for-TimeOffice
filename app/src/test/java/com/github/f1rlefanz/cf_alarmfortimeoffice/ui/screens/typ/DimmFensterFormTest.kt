@@ -437,6 +437,37 @@ class DimmFensterFormTest {
         assertEquals(DimFensterAnsicht.NichtDarstellbar(NichtDarstellbarGrund.ANKER, prozent = 55), deute(TypDimmFenster(vorschlaf)))
     }
 
+    /**
+     * #151 ueber den ganzen Regelweg: der Vorschlaf (16:00 bis Weckzeit, nur am Wecktag) darf bei einem
+     * Wecker vor 16:00 nicht ab dem Vortag dimmen - und das andere Fenster derselben Regel bleibt. Ein
+     * Fix, der die ganze Regel verwirft, bestuende die Einzelfenster-Faelle in `DimWindowResolverTest`.
+     */
+    @Test
+    fun vorschlafBeiWeckerVor16Uhr_entfaelltNurEr_derSchlafNachDemDienstBleibt() {
+        val schlafNachDienst = DimWindow(
+            startAnchor = DimAnchor.SHIFT_END, startOffsetMinutes = 0,
+            endAnchor = DimAnchor.CLOCK, endClockMinutes = uhr(12),
+            blockPositionen = setOf(Blockposition.LETZTER, Blockposition.EINZELNER)
+        )
+        val vorschlaf = DimWindow(
+            startAnchor = DimAnchor.CLOCK, startClockMinutes = uhr(16),
+            endAnchor = DimAnchor.ALARM, endOffsetMinutes = 0, startNurAmWecktag = true
+        )
+        val regel = DimRule(name = "r", shiftPattern = "X", windows = listOf(schlafNachDienst, vorschlaf))
+        val dienstende = uhr(24 + 6, 45)
+
+        val spannen = DimWindowResolver.buildRuleSpans(
+            alarms = listOf(DimWindowResolver.AlarmSlot(epoch(uhr(13, 30)), "X", epoch(dienstende))),
+            horizonDays = 3, today = mustertag.minusDays(1), zone = zone,
+            ruleForShift = { regel }, ruleForFreeDay = { null }
+        )
+
+        assertEquals(
+            listOf(dienstende.toLong()..uhr(24 + 12).toLong()),
+            spannen.map { minuten(it.range.first)..minuten(it.range.last) }
+        )
+    }
+
     // ------------------------------------------------------------------------------------------
     // Texte (wie im Prototyp)
     // ------------------------------------------------------------------------------------------

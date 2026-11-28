@@ -4,8 +4,6 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndScheduleUseCase
-import com.github.f1rlefanz.cf_alarmfortimeoffice.model.waehlbareSchichtNamen
-import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IShiftUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -24,8 +22,7 @@ import javax.inject.Inject
 @HiltViewModel
 class DndViewModel @Inject constructor(
     private val prefs: DndPrefs,
-    private val dndSchedule: DndScheduleUseCase,
-    private val shiftUseCase: IShiftUseCase
+    private val dndSchedule: DndScheduleUseCase
 ) : ViewModel() {
 
     /** [gelesen] `false` = [policy] ist noch die Vorgabe, keine Auskunft ueber das Geraet. */
@@ -38,18 +35,6 @@ class DndViewModel @Inject constructor(
         prefs.policy
             .map { DndUiState(policy = it, gelesen = true) }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DndUiState())
-
-    /**
-     * Namen der waehlbaren Schicht-Definitionen. Ohne Bedienoberflaeche seit #225 (die
-     * Ausnahme-Chips sind weg); bleibt bis #226, weil `KrankTypListenTest` und
-     * `SchichttypAuswahlTest` bis dahin darauf bauen.
-     */
-    val shiftNames: StateFlow<List<String>> =
-        shiftUseCase.shiftConfig
-            // #142/#171: ein Krankmeldungs-, Ignorieren- oder ausgeschalteter Typ hat keine
-            // Dienstzeit - als Ausnahme waehlbar, wuerde er nie greifen.
-            .map { config -> config.definitions.waehlbareSchichtNamen() }
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     // Policy-Aenderungen wirken auf die registrierte Zen-Regel, nicht auf die Fenster-Berechnung -
     // applyCurrentState() reicht (aktualisiert die Regel sofort), kein Reschedule noetig.

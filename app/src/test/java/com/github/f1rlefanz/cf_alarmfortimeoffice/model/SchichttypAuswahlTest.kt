@@ -2,36 +2,22 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.model
 
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.AlarmPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.WecktonAnstieg
-import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimOverlayPrefs
-import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimRuleUseCase
-import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimScheduleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.ZeitkettenArmierer
-import com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndPrefs
-import com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndScheduleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.error.ErrorHandler
 import com.github.f1rlefanz.cf_alarmfortimeoffice.freietage.tagFreigabeUseCaseOhneFreigaben
 import com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPausePrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IAlarmRepository
-import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpanStore
-import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.ITageslichtRepository
-import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.TageslichtEinstellungen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.kostprobeTitel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmSkipUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IShiftUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.AlarmViewModel
-import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.DimmerRulesViewModel
-import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.DndViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.flowOf
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
-import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
-import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
@@ -53,7 +39,7 @@ import java.time.LocalTime
 
 /**
  * #171: welche Typen eine Auswahlliste anbieten darf - die EINE Funktion hinter manuellem Wecker,
- * Dimmer-Regel, DND-Ausnahme, Hue-Regel und Uebersicht.
+ * Hue-Regel und Uebersicht.
  */
 class SchichttypAuswahlTest {
 
@@ -170,47 +156,6 @@ class SchichttypAuswahlVerdrahtungTest {
     ).mitKategorie(ShiftKategorie.FREI)
 
     private val definitionen = listOf(dienst, ignoriert, ausgeschaltet, frei)
-
-    private fun shiftUseCase(): IShiftUseCase {
-        val useCase = mock<IShiftUseCase>()
-        whenever(useCase.shiftConfig).thenReturn(flowOf(ShiftConfig(definitions = definitionen)))
-        return useCase
-    }
-
-    private fun TestScope.gesammelt(flow: StateFlow<List<String>>): List<String> {
-        backgroundScope.launch { flow.collect { } }
-        runCurrent()
-        advanceUntilIdle()
-        return flow.value
-    }
-
-    @Test
-    fun `Dimmer-Regeleditor bietet weder Ignorieren- noch ausgeschaltete Typen an`() = runTest(dispatcher) {
-        val ruleUseCase = mock<DimRuleUseCase>()
-        whenever(ruleUseCase.rules).thenReturn(flowOf(emptyList()))
-        val prefs = mock<DimOverlayPrefs>()
-        whenever(prefs.toggles).thenReturn(flowOf(DimOverlayPrefs.Toggles(dimEnabled = true)))
-        val tageslicht = mock<ITageslichtRepository>()
-        whenever(tageslicht.einstellungen).thenReturn(flowOf(TageslichtEinstellungen.LEER))
-        val vm = DimmerRulesViewModel(
-            ruleUseCase, shiftUseCase(), mock<DimScheduleUseCase>(), mock<ZeitkettenArmierer>(),
-            prefs, mock<ShiftSpanStore>(), mock<IAlarmUseCase>(), tageslicht
-        )
-
-        assertEquals(listOf("Frueh", "Frei"), gesammelt(vm.shiftNames))
-    }
-
-    @Test
-    fun `Nicht-stoeren-Ausnahmen bieten weder Ignorieren- noch ausgeschaltete Typen an`() = runTest(dispatcher) {
-        val prefs = mock<DndPrefs>()
-        whenever(prefs.toggles).thenReturn(flowOf(DndPrefs.Toggles(followDimmerEnabled = false, duringShiftEnabled = true)))
-        whenever(prefs.shiftExcludedShifts).thenReturn(flowOf(emptySet()))
-        whenever(prefs.onCallCutoffMinutes).thenReturn(flowOf(DndPrefs.DEFAULT_ONCALL_CUTOFF_MIN))
-        whenever(prefs.policy).thenReturn(flowOf(DndPrefs.Policy()))
-        val vm = DndViewModel(prefs, mock<DndScheduleUseCase>(), shiftUseCase())
-
-        assertEquals(listOf("Frueh", "Frei"), gesammelt(vm.shiftNames))
-    }
 
     private lateinit var alarmUseCase: IAlarmUseCase
     private lateinit var shiftUseCase: IShiftUseCase

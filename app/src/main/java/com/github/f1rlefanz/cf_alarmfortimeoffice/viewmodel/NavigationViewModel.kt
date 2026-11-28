@@ -101,21 +101,6 @@ class NavigationViewModel @Inject constructor() : ViewModel() {
                 NavigationState.HueSettings(action.fromTab)
             }
 
-            is NavigationAction.NavigateToDimmerSettings -> {
-                Logger.d(LogTags.NAVIGATION, "Main -> Dimmer Settings (from ${action.fromTab})")
-                NavigationState.DimmerSettings(action.fromTab)
-            }
-
-            is NavigationAction.NavigateToDimmerRuleConfig -> {
-                Logger.d(LogTags.NAVIGATION, "Main -> Dimmer Rule Config (from ${action.fromTab}, rule: ${action.ruleId}, viaSettingsList: ${action.cameFromSettingsList})")
-                NavigationState.DimmerRuleConfig(action.ruleId, action.fromTab, action.cameFromSettingsList, neueSitzung())
-            }
-
-            is NavigationAction.NavigateToDimmerPreview -> {
-                Logger.d(LogTags.NAVIGATION, "Main -> Dimmer Preview (from ${action.fromTab})")
-                NavigationState.DimmerPreview(action.fromTab)
-            }
-
             is NavigationAction.NavigateToDndSettings -> {
                 Logger.d(LogTags.NAVIGATION, "Main -> DND Settings (from ${action.fromTab})")
                 NavigationState.DndSettings(action.fromTab)
@@ -190,19 +175,6 @@ class NavigationViewModel @Inject constructor() : ViewModel() {
     fun navigateToHueSettings(fromTab: MainTab = MainTab.HUE) =
         handleNavigationAction(NavigationAction.NavigateToHueSettings(fromTab))
 
-    fun navigateToDimmerSettings(fromTab: MainTab = MainTab.DIMMER) =
-        handleNavigationAction(NavigationAction.NavigateToDimmerSettings(fromTab))
-
-    fun navigateToDimmerRuleConfig(
-        ruleId: String? = null,
-        fromTab: MainTab = MainTab.DIMMER,
-        cameFromSettingsList: Boolean = true
-    ) =
-        handleNavigationAction(NavigationAction.NavigateToDimmerRuleConfig(ruleId, fromTab, cameFromSettingsList))
-
-    fun navigateToDimmerPreview(fromTab: MainTab = MainTab.DIMMER) =
-        handleNavigationAction(NavigationAction.NavigateToDimmerPreview(fromTab))
-
     fun navigateToDndSettings(fromTab: MainTab = MainTab.SETTINGS) =
         handleNavigationAction(NavigationAction.NavigateToDndSettings(fromTab))
 
@@ -216,10 +188,10 @@ class NavigationViewModel @Inject constructor() : ViewModel() {
 
     /**
      * Zurueck aus [state] - die EINZIGE Aufloesung des Rueckwegs. System-Zurueck (`BackHandler`
-     * in `MainScreen`), der Zurueck-Pfeil der Regel-Editoren und deren "Speichern" rufen alle
+     * in `MainScreen`), der Zurueck-Pfeil des Regel-Editors und dessen "Speichern" rufen alle
      * hierher; [navigateBackToMain] delegiert mit dem aktuellen Zustand.
      *
-     * Bis Issue #132 stand der Rueckweg aus `HueRuleConfig`/`DimmerRuleConfig` DREIMAL im Code
+     * Bis Issue #132 stand der Rueckweg aus den Regel-Editoren DREIMAL im Code
      * (BackHandler, zwei Screen-Lambdas, hier) - mit genau der Gefahr, die v1.22.0 schon einmal
      * eingeholt hat: zwei Stellen, die fuer denselben Einstiegspfad verschiedene Ziele kennen.
      *
@@ -252,16 +224,11 @@ class NavigationViewModel @Inject constructor() : ViewModel() {
             Logger.d(LogTags.NAVIGATION, "-> Shift Config (${state.returnToTab} tab, aus der Ohne-Kalendereintrag-Seite)")
             return NavigationState.ShiftConfig(state.returnToTab)
         }
-        // HueRuleConfig/DimmerRuleConfig haben zwei Einstiegspfade (siehe cameFromSettingsList) -
-        // ein Zurueck darf hier NICHT blind zu MainContent aufloesen, sonst ueberspringt der
-        // Listen-Pfad HueSettings/DimmerSettings.
+        // HueRuleConfig hat zwei Einstiegspfade (siehe cameFromSettingsList) - ein Zurueck darf
+        // hier NICHT blind zu MainContent aufloesen, sonst ueberspringt der Listen-Pfad HueSettings.
         if (state is NavigationState.HueRuleConfig && state.cameFromSettingsList) {
             Logger.d(LogTags.NAVIGATION, "-> Hue Settings (${state.returnToTab} tab, via settings list)")
             return NavigationState.HueSettings(state.returnToTab)
-        }
-        if (state is NavigationState.DimmerRuleConfig && state.cameFromSettingsList) {
-            Logger.d(LogTags.NAVIGATION, "-> Dimmer Settings (${state.returnToTab} tab, via settings list)")
-            return NavigationState.DimmerSettings(state.returnToTab)
         }
         val returnTab = when (state) {
             is NavigationState.CalendarSelection -> state.returnToTab
@@ -273,9 +240,6 @@ class NavigationViewModel @Inject constructor() : ViewModel() {
             is NavigationState.OEMWarning -> state.returnToTab
             is NavigationState.HueRuleConfig -> state.returnToTab
             is NavigationState.HueSettings -> state.returnToTab
-            is NavigationState.DimmerSettings -> state.returnToTab
-            is NavigationState.DimmerRuleConfig -> state.returnToTab
-            is NavigationState.DimmerPreview -> state.returnToTab
             is NavigationState.DndSettings -> state.returnToTab
             else -> MainTab.HOME
         }

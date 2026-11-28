@@ -98,6 +98,9 @@ internal object TagesleisteTexte {
     const val AUSGESCHALTET = "Dieser Typ ist ausgeschaltet und wird nicht erkannt: kein Wecker, kein Dimmen, " +
         "kein „Nicht stören“ und kein Licht für ihn. Schaltest du ihn oben wieder ein, zeigt die Leiste seinen Ablauf."
 
+    /** Unter der Legende, wenn der Typ weckt, aber keine Bridge eingerichtet ist (#253): die Spur nennt sie. */
+    const val OHNE_BRIDGE = "Licht: keine Hue-Bridge eingerichtet – darum zeigt die Leiste kein Licht."
+
     fun titel(name: String): String = "So läuft ein Tag „$name“"
 
     fun leistenHinweis(hinweis: Hinweis?, typNochNichtAngelegt: Boolean): String? = when {
@@ -145,7 +148,12 @@ internal data class TagesleisteAnzeige(
     /** Der Typ steht noch nicht in der Konfiguration (Neuanlage): es gibt weder Spanne noch Regeln. */
     val typNochNichtAngelegt: Boolean = false,
     /** Der Schalter „Schichtdefinition aktiviert“ steht aus: die Karte zeigt keinen Ablauf, nur den Text dazu. */
-    val typAusgeschaltet: Boolean = false
+    val typAusgeschaltet: Boolean = false,
+    /**
+     * Der Typ weckt, aber es ist gelesen keine Hue-Bridge eingerichtet: die Karte sagt es
+     * ([TagesleisteTexte.OHNE_BRIDGE]). Ein Lesefehler steht dagegen in [unbekannt], nie hier.
+     */
+    val ohneBridge: Boolean = false
 ) {
     companion object {
         val WIRD_GELESEN = TagesleisteAnzeige(gelesen = false, leiste = Tagesleiste.LEER, unbekannt = emptyList())
@@ -225,9 +233,9 @@ internal object TagesleisteKarteLogik {
      * Rechnet die Leiste.
      *
      * @param gespeicherterName der Name des Typs, wie er in der Konfiguration steht; `null` bei der
-     *   Neuanlage. Die gespeicherten Einstellungen, Hue-Regeln und Schichtspannen haengen alle am
+     *   Neuanlage. Die gespeicherten Einstellungen, Lichtregeln und Schichtspannen haengen alle am
      *   GESPEICHERTEN Namen: mit dem Entwurfsnamen verschwaende das Licht, sobald jemand ein Zeichen im
-     *   Namen aendert. Ein Typ, der noch nicht angelegt ist, hat auch keine Spanne.
+     *   Namen aendert. Ein Typ, der noch nicht angelegt ist, hat auch keine Spanne und keine Regel.
      * @param quellen `null` = noch nicht gelesen ([TagesleisteAnzeige.WIRD_GELESEN]). Ein ausgeschalteter
      *   Typ braucht keine Quelle: er wird nicht erkannt, also gibt es nichts zu rechnen.
      */
@@ -292,17 +300,26 @@ internal object TagesleisteKarteLogik {
             eingabe = eingabe.copy(dimmen = ergebnis.dimmen, nichtStoeren = ergebnis.nichtStoeren)
         }
         if (lichtQuelle != null) {
-            // Ein Lesefehler der Hue-Regeln kommt hier nie als leere Liste an: der Adapter wird nur mit
-            // gelesenen Regeln gerufen (KDoc von `licht`).
+            // Ein Lesefehler (Konfiguration oder Bridge-Einrichtung) kommt hier nie als leere Liste an: der
+            // Adapter wird nur mit gelesenen Quellen gerufen (KDoc von `licht`). Ein noch nicht angelegter
+            // Typ hat keine Regeln - auch nicht die eines Typs, der zufaellig so heisst wie sein Entwurf.
+            val regeln = if (gespeicherterName == null) emptyList() else lichtQuelle.regeln
             eingabe = eingabe.copy(
                 licht = licht(
                     eingabe,
-                    LichtEinstellungen(lichtQuelle.konfiguriert, lichtQuelle.regeln, TageslichtAmMustertag(sonnentag, sonne)),
+                    LichtEinstellungen(lichtQuelle.konfiguriert, regeln, TageslichtAmMustertag(sonnentag, sonne)),
                     lichtQuelle.vorlaufMinuten
                 )
             )
         }
-        return TagesleisteAnzeige(gelesen = true, leiste = tagesleiste(eingabe), unbekannt = unbekannt, typNochNichtAngelegt = gespeicherterName == null)
+        return TagesleisteAnzeige(
+            gelesen = true,
+            leiste = tagesleiste(eingabe),
+            unbekannt = unbekannt,
+            typNochNichtAngelegt = gespeicherterName == null,
+            ohneBridge = lichtQuelle?.konfiguriert == false && entwurf.weckerAn &&
+                WeckerAbschnittLogik.zeigtWeckerKarte(entwurf.kategorie)
+        )
     }
 }
 
@@ -449,6 +466,14 @@ internal fun TagesleisteKarte(
             if (anzeige.unbekannt.isNotEmpty()) {
                 Text(
                     TagesleisteTexte.nichtLesbar(anzeige.unbekannt),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = rand.padding(bottom = SpacingConstants.SPACING_MEDIUM)
+                )
+            }
+            if (anzeige.ohneBridge) {
+                Text(
+                    TagesleisteTexte.OHNE_BRIDGE,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = rand.padding(bottom = SpacingConstants.SPACING_MEDIUM)

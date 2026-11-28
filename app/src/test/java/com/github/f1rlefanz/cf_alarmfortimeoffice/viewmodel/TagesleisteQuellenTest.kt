@@ -1,6 +1,10 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel
 
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.emptyPreferences
 import com.github.f1rlefanz.cf_alarmfortimeoffice.di.state.CalendarStateHolder
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.Blockposition
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimOverlayPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimRuleRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimRuleUseCase
@@ -8,35 +12,56 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimWindow
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.ZeitkettenArmierer
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.error.ErrorHandler
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.ActionType
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueLightAction
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueSchedule
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueScheduleRule
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueTimeRange
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.TargetType
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.repository.HueConfigRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.repository.interfaces.HueConfiguration
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.repository.interfaces.IHueConfigRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.HueRuleUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.TypLichtQuelle
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.IHueLightUseCaseAdvanced
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.CalendarEvent
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftKategorie
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.TypDimmFenster
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.TypDimmen
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.TypLicht
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.TypNichtStoeren
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpan
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpanStore
+import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftMatch
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.Dienstzeit
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.LichtEinstellungen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.Quelle
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.Spur
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.SpurStand
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.TagesleisteEingabe
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.TagesleisteQuellen
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.TageslichtAmMustertag
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.alsQuelle
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.fehlerAlsUnbekannt
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.geltendeLichtRegeln
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tagesleiste.weckpunktMin
+import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.HellAb
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.Ort
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.OrtQuelle
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.TageslichtQuelle
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.TageslichtStand
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.typ.TagesleisteKarteLogik
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.typ.TypEntwurf
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IShiftUseCase
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.toList
@@ -67,9 +92,11 @@ import org.mockito.kotlin.stub
 import org.mockito.kotlin.verifyBlocking
 import org.mockito.kotlin.whenever
 import java.io.IOException
+import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.ZoneId
+import java.time.ZoneOffset
 
 /**
  * Die Quellen der Tagesleiste im `ShiftViewModel` (Umbau #196, SPEC 3.3 Punkt 3).
@@ -77,7 +104,8 @@ import java.time.ZoneId
  * Der Kern: ein LESEFEHLER einer Quelle wird [Quelle.Unbekannt], nie eine leere Liste - "kein Typ
  * hat ein Fenster" hiesse "kein Dimmen", "keine Hue-Regel" hiesse "kein Licht" (Pflichtregel "Kein Fehler
  * darf als leeres Erfolgsergebnis durchrutschen"). Und er trifft nur die Spuren, die an der Quelle
- * haengen. Seit #219 liegen Dimmen und "Nicht stoeren" am Typ: beide Spuren haengen an der Konfiguration.
+ * haengen. Seit #219 liegen Dimmen und "Nicht stoeren" am Typ, seit #253 liest die Leiste auch die
+ * Lichtregeln dort; aus dem Hue-Store kommt nur noch "Bridge eingerichtet" (strikt, #210).
  */
 @OptIn(ExperimentalCoroutinesApi::class) // Dispatchers.setMain/resetMain, advanceUntilIdle, runCurrent
 class TagesleisteQuellenTest {
@@ -96,19 +124,39 @@ class TagesleisteQuellenTest {
 
     // --- Bausteine -------------------------------------------------------------------------
 
+    /** Eine Regel, die eine Gruppe [minuten] lang anschaltet. [muster] steht nur im Speicher und zaehlt nicht. */
+    private fun lampeRegel(id: String, minuten: Int, muster: String = "egal") = HueScheduleRule(
+        id = id, name = "Hue $id", shiftPattern = muster, enabled = true,
+        timeRanges = listOf(
+            HueTimeRange(
+                listOf(
+                    HueLightAction(
+                        targetType = TargetType.GROUP, targetId = "1", actionType = ActionType.TURN_ON,
+                        on = true, duration = minuten, isGroup = true
+                    )
+                )
+            )
+        )
+    )
+
+    // "ALL" im Speicher: eine Kopie der frueheren allgemeinen Regel (#247) gehoert trotzdem nur diesem Typ.
+    private val regelAmF = lampeRegel("licht-F", minuten = 20, muster = "ALL")
+
     private val typF = ShiftDefinition(
         id = "id-F", name = "F", keywords = listOf("F"), alarmTime = LocalTime.of(4, 30),
         dimmen = TypDimmen().mitFenster(listOf(TypDimmFenster(DimWindow(), 55))),
-        nichtStoeren = TypNichtStoeren(solangeGedimmt = true, waehrendEintrag = true)
+        nichtStoeren = TypNichtStoeren(solangeGedimmt = true, waehrendEintrag = true),
+        licht = TypLicht().mitRegeln(listOf(regelAmF))
     )
-    private val hueRegel: HueSchedule =
-        HueScheduleRule(id = "h1", name = "Hue h1", shiftPattern = "AD1", enabled = true, timeRanges = emptyList())
+
+    /** Altbestand im Hue-Store, bewusst auf "F" gemuenzt: er darf auf der Leiste nirgends auftauchen. */
+    private val altbestandRegel: HueSchedule = lampeRegel("alt", minuten = 600, muster = "F")
     private val spanne = ShiftSpan("AD1", startTime = 1_000L, endTime = 2_000L, alarmTriggerTime = 500L)
 
     /** Alles, was ein Lauf einstellen kann; der Rest sind gesunde Vorgaben. */
     private class Welt(
         var konfig: Result<ShiftConfig>,
-        var hueRegeln: Result<List<HueSchedule>>,
+        var bridge: Result<Boolean>,
         var spannen: Result<List<ShiftSpan>>
     ) {
         var angefasst = 0
@@ -116,21 +164,24 @@ class TagesleisteQuellenTest {
         var tageslichtGeholt = 0
         val holder = CalendarStateHolder()
         val alarmUseCase = mock<IAlarmUseCase>()
+        /** Der Flow `shiftConfig`: ein neuer Wert ist eine Aenderung von aussen (Regel-Editor, Import). */
+        val konfigFluss = MutableStateFlow(ShiftConfig(definitions = emptyList()))
         lateinit var vm: ShiftViewModel
         lateinit var spanStore: ShiftSpanStore
         lateinit var hueUseCase: HueRuleUseCase
+        lateinit var hueRepo: IHueConfigRepository
     }
 
     private fun welt(
         konfig: Result<ShiftConfig> = Result.success(ShiftConfig(definitions = listOf(typF))),
-        hueRegeln: Result<List<HueSchedule>> = Result.success(listOf(hueRegel)),
+        bridge: Result<Boolean> = Result.success(true),
         spannen: Result<List<ShiftSpan>> = Result.success(listOf(spanne)),
-        tageslicht: TageslichtQuelle = TageslichtQuelle.OHNE
+        tageslicht: TageslichtQuelle = TageslichtQuelle.OHNE,
+        echtesHueRepo: IHueConfigRepository? = null
     ): Welt {
-        val w = Welt(konfig, hueRegeln, spannen)
-        val config = ShiftConfig(definitions = emptyList())
+        val w = Welt(konfig, bridge, spannen)
         val shiftUseCase = mock<IShiftUseCase>()
-        whenever(shiftUseCase.shiftConfig).thenReturn(flowOf(config))
+        whenever(shiftUseCase.shiftConfig).thenReturn(w.konfigFluss)
         shiftUseCase.stub {
             // Der Wert der Tagesleiste kommt aus dem Result - nie aus dem Flow, der auf Standard degradiert.
             onBlocking { getCurrentShiftConfig() } doAnswer { w.konfig }
@@ -140,11 +191,15 @@ class TagesleisteQuellenTest {
         val dimUseCase = DimRuleUseCase(mock<DimRuleRepository>())
         val overlay = mock<DimOverlayPrefs>()
         val dnd = mock<DndPrefs>()
-        val hue = mock<IHueConfigRepository>()
-        whenever(hue.getConfiguration()).thenReturn(
-            flowOf(HueConfiguration(bridgeIp = "1.2.3.4", username = "u", isConfigured = true))
-        )
-        hue.stub { on { getScheduleRules() } doReturn hueRegeln }
+        val hue = echtesHueRepo ?: mock<IHueConfigRepository>().also { hue ->
+            // Der Flow ist nur der Ausloeser; sein Wert sagt bewusst etwas anderes als die strikte Stelle.
+            whenever(hue.getConfiguration()).thenReturn(flowOf(HueConfiguration()))
+            hue.stub {
+                onBlocking { bridgeEingerichtetOderFehler() } doAnswer { w.bridge }
+                onBlocking { getScheduleRules() } doReturn Result.success(listOf(altbestandRegel))
+            }
+        }
+        w.hueRepo = hue
         w.spanStore = mock<ShiftSpanStore>()
         w.spanStore.stub { onBlocking { spansNow() } doReturn spannen }
         w.hueUseCase = mock<HueRuleUseCase>()
@@ -222,10 +277,10 @@ class TagesleisteQuellenTest {
     // --- Der Kern: Lesefehler wird sichtbar, nicht leer -------------------------------------
 
     @Test
-    fun `Lesefehler bei den Hue-Regeln macht NUR die Licht-Spur unbekannt - nicht leer`() = runTest(dispatcher) {
-        val q = lese(welt(hueRegeln = Result.failure(IOException("hue_rules nicht lesbar"))))
+    fun `Lesefehler der Bridge-Einrichtung macht NUR die Licht-Spur unbekannt - nicht keine Bridge`() = runTest(dispatcher) {
+        val q = lese(welt(bridge = Result.failure(IOException("hue_settings nicht lesbar"))))
 
-        assertEquals("Hue-Regeln unlesbar heisst Licht unbekannt, nicht 'keine Regel'", Quelle.Unbekannt, q.licht)
+        assertEquals("Bridge-Einrichtung unlesbar heisst Licht unbekannt, nicht 'keine Bridge'", Quelle.Unbekannt, q.licht)
         assertEquals(
             alleBekannt() + (Spur.LICHT to SpurStand.UNBEKANNT),
             q.staende()
@@ -233,6 +288,171 @@ class TagesleisteQuellenTest {
         // Die uebrigen Quellen sind unberuehrt - ein Fehler schaltet nicht alle Spuren ab.
         assertTrue(q.typen is Quelle.Bekannt)
         assertTrue(q.spannen is Quelle.Bekannt)
+    }
+
+    @Test
+    fun `ein unlesbarer Hue-Store - das echte Repository - macht die Licht-Spur unbekannt`() = runTest(dispatcher) {
+        val q = lese(welt(echtesHueRepo = HueConfigRepository(WerfenderStore())))
+
+        assertEquals(Quelle.Unbekannt, q.licht)
+        assertEquals(alleBekannt() + (Spur.LICHT to SpurStand.UNBEKANNT), q.staende())
+    }
+
+    @Test
+    fun `die strikte Lese-Stelle meldet den Lesefehler - der Flow der Laufzeit degradiert weiter`() = runTest(dispatcher) {
+        val repo = HueConfigRepository(WerfenderStore())
+
+        assertTrue(repo.bridgeEingerichtetOderFehler().isFailure)
+        assertEquals(false, repo.getConfiguration().first().isConfigured)
+    }
+
+    @Test
+    fun `eingerichtet heisst IP und Benutzer - dieselbe Antwort wie der Flow der Laufzeit`() = runTest(dispatcher) {
+        assertEquals(false, HueConfigRepository(SpeicherStore()).bridgeEingerichtetOderFehler().getOrThrow())
+
+        listOf(
+            Triple("1.2.3.4", "u", true),
+            Triple("1.2.3.4", "", false),
+            Triple("", "u", false)
+        ).forEach { (ip, benutzer, erwartet) ->
+            val repo = HueConfigRepository(SpeicherStore())
+            repo.saveBridgeConfig(ip, benutzer).getOrThrow()
+
+            assertEquals("$ip/$benutzer", erwartet, repo.bridgeEingerichtetOderFehler().getOrThrow())
+            assertEquals("$ip/$benutzer", erwartet, repo.getConfiguration().first().isConfigured)
+        }
+    }
+
+    // --- #253: die Lichtregeln kommen vom Typ ------------------------------------------------
+
+    private val zone = ZoneOffset.UTC
+    private val jetzt = LocalDateTime.of(2026, 11, 9, 12, 0).toInstant(zone).toEpochMilli()
+
+    private fun typ(name: String, vararg regeln: HueScheduleRule) = ShiftDefinition(
+        id = "id-$name", name = name, keywords = listOf(name), alarmTime = LocalTime.of(4, 30),
+        licht = TypLicht().mitRegeln(regeln.toList())
+    )
+
+    private fun fruehSpanne(name: String) = ShiftSpan(
+        name,
+        startTime = LocalDateTime.of(2026, 11, 10, 6, 0).toInstant(zone).toEpochMilli(),
+        endTime = LocalDateTime.of(2026, 11, 10, 14, 15).toInstant(zone).toEpochMilli(),
+        alarmTriggerTime = LocalDateTime.of(2026, 11, 10, 4, 30).toInstant(zone).toEpochMilli()
+    )
+
+    /** Die Licht-Balken der Karte eines gespeicherten Typs, gerechnet aus dem Stand des ViewModels. */
+    private fun lichtBalken(q: TagesleisteQuellen, name: String): List<Pair<Int, Int>> = TagesleisteKarteLogik.rechne(
+        TypEntwurf(
+            name = name, muster = listOf(name), weckzeitText = "04:30", isEnabled = true, isSilent = false,
+            weckerAn = true, kategorie = ShiftKategorie.DIENST
+        ),
+        name, q, Blockposition.EINZELNER, jetzt, zone
+    ).leiste.balken.filter { it.spur == Spur.LICHT }.map { it.vonMin to it.bisMin }
+
+    @Test
+    fun `eine Regel am Typ erscheint in der Leiste dieses Typs, nicht in der eines anderen`() = runTest(dispatcher) {
+        // F traegt eine Regel mit gespeichertem "ALL", S eine eigene, N keine. Der Hue-Store traegt eine
+        // Regel auf "F" (600 min) - die alte Quelle zeigte sie.
+        val config = ShiftConfig(definitions = listOf(typ("F", regelAmF), typ("S", lampeRegel("licht-S", 45)), typ("N")))
+        val w = welt(
+            konfig = Result.success(config),
+            spannen = Result.success(listOf(fruehSpanne("F"), fruehSpanne("S"), fruehSpanne("N")))
+        )
+        val q = lese(w)
+
+        // Wecker 04:30 = Minute 630; F schaltet 20 min, S 45 min.
+        assertEquals(listOf(630 to 650), lichtBalken(q, "F"))
+        assertEquals(listOf(630 to 675), lichtBalken(q, "S"))
+        assertEquals(emptyList<Pair<Int, Int>>(), lichtBalken(q, "N"))
+        verifyBlocking(w.hueRepo, never()) { getScheduleRules() }
+    }
+
+    /**
+     * Leiste = Laufzeit (Muster `TagesleisteDimmenDndTest`): fuer jeden Typ und jede Weckzeit waehlt die
+     * Leiste aus den Regeln DES VIEWMODELS genau die Regeln, die der echte `HueRuleUseCase` zur Weckzeit
+     * waehlt - samt Tageslicht-Bedingung. Faellt eine der beiden Seiten auf eine andere Quelle oder eine
+     * andere Auswahl zurueck, wird der Vergleich ungleich.
+     */
+    @Test
+    fun `Leiste und Laufzeit waehlen je Typ und Weckzeit dieselben Regeln`() = runTest(dispatcher) {
+        val berlin = TageslichtStand(Ort(52.52, 13.40, OrtQuelle.PLZ, null), ZoneId.of("Europe/Berlin"))
+        val tagesquelle = object : TageslichtQuelle {
+            override suspend fun stand(): TageslichtStand = berlin
+        }
+        fun regel(id: String, muster: String = "egal", aktiv: Boolean = true, hellAb: HellAb = HellAb.IMMER) =
+            lampeRegel(id, minuten = 20, muster = muster).copy(enabled = aktiv, hellAb = hellAb)
+        // "ALL" im Speicher gehoert nur F; der zweite Typ "f" ist vom ersten verdeckt; N hat keine Regel.
+        val config = ShiftConfig(
+            definitions = listOf(
+                typ(
+                    "F",
+                    regel("f-immer"),
+                    regel("f-aus", aktiv = false),
+                    regel("f-dunkel", hellAb = HellAb.SONNENAUFGANG),
+                    regel("f-all", muster = "ALL")
+                ),
+                typ("S", regel("s-immer"), regel("s-daemmerung", hellAb = HellAb.DAEMMERUNG)),
+                typ("N"),
+                typ("f", regel("verdeckt")).copy(id = "id-zweites-f")
+            )
+        )
+        val laufzeit = HueRuleUseCase(
+            mock<IHueConfigRepository>(), mock<IHueLightUseCaseAdvanced>(),
+            tageslicht = tagesquelle,
+            typLicht = TypLichtQuelle.Leser { Result.success(config) }
+        )
+        val q = lese(welt(konfig = Result.success(config), tageslicht = tagesquelle))
+        val licht = (q.licht as Quelle.Bekannt).wert
+        val tag = LocalDate.of(2026, 12, 21) // Sonnenaufgang in Berlin etwa 08:15
+        val dienstAb14 = Dienstzeit(LocalTime.of(14, 0), 480, ganztaegig = false)
+
+        val gewaehlt = mutableMapOf<Pair<String, LocalTime>, List<String>>()
+        for (name in listOf("F", "S", "N", "f")) {
+            for (weckzeit in listOf(LocalTime.of(4, 30), LocalTime.of(7, 45), LocalTime.of(10, 0))) {
+                val wecken = tag.atTime(weckzeit)
+                val schicht = ShiftMatch(
+                    config.definitions.first { it.name.equals(name, ignoreCase = true) },
+                    CalendarEvent("e", name, tag.atTime(14, 0), tag.atTime(22, 0), "cal"),
+                    wecken
+                )
+                val zurWeckzeit = laufzeit
+                    .findApplicableRules(schicht, weckzeit, wecken.atZone(berlin.zone).toInstant().toEpochMilli())
+                    .getOrThrow().map { it.id }
+
+                // Dienst ab 14:00: der Wecker der Leiste liegt auf dem Mustertag selbst.
+                val eingabe = TagesleisteEingabe(name, ShiftKategorie.DIENST, true, weckzeit, false, dienstAb14)
+                val aufDerLeiste = geltendeLichtRegeln(
+                    eingabe,
+                    LichtEinstellungen(licht.konfiguriert, licht.regeln, TageslichtAmMustertag(tag, q.tageslicht)),
+                    weckpunktMin(eingabe.kategorie, eingabe.weckerAn, eingabe.weckzeit, eingabe.dienstzeit)!!
+                ).map { it.id }
+
+                assertEquals("$name um $weckzeit", zurWeckzeit, aufDerLeiste)
+                gewaehlt[name to weckzeit] = aufDerLeiste
+            }
+        }
+
+        // Kein Vergleich leer gegen leer: die Auswahl haengt am Typ, an "aktiv" und am Tageslicht.
+        assertEquals(listOf("f-immer", "f-dunkel", "f-all"), gewaehlt["F" to LocalTime.of(4, 30)])
+        assertEquals(listOf("f-immer", "f-all"), gewaehlt["F" to LocalTime.of(10, 0)])
+        assertEquals(listOf("s-immer"), gewaehlt["S" to LocalTime.of(7, 45)])
+        assertEquals(emptyList<String>(), gewaehlt["N" to LocalTime.of(4, 30)])
+        assertEquals(gewaehlt["F" to LocalTime.of(4, 30)], gewaehlt["f" to LocalTime.of(4, 30)])
+    }
+
+    @Test
+    fun `eine von aussen gespeicherte Regel am Typ kommt an - ohne Aenderung des Hue-Stores`() = runTest(dispatcher) {
+        val ohne = ShiftConfig(definitions = listOf(typ("F")))
+        val w = welt(konfig = Result.success(ohne), spannen = Result.success(listOf(fruehSpanne("F"))))
+        assertEquals(emptyList<Pair<Int, Int>>(), lichtBalken(lese(w), "F"))
+
+        // Der Regel-Editor schreibt in die Schicht-Konfiguration: der Flow meldet sie, der Hue-Store nicht.
+        val mit = ShiftConfig(definitions = listOf(typ("F", regelAmF)))
+        w.konfig = Result.success(mit)
+        w.konfigFluss.value = mit
+        advanceUntilIdle()
+
+        assertEquals(listOf(630 to 650), lichtBalken(w.vm.tagesleisteQuellen.value!!, "F"))
     }
 
     /**
@@ -246,11 +466,14 @@ class TagesleisteQuellenTest {
         val q = lese(welt(konfig = Result.failure(IOException("shift_config nicht lesbar"))))
 
         assertEquals(Quelle.Unbekannt, q.typen)
+        // Seit #253 liegen auch die Lichtregeln am Typ: ohne Konfiguration weiss die Leiste nichts ueber sie.
+        assertEquals(Quelle.Unbekannt, q.licht)
         assertEquals(
-            alleBekannt() + (Spur.DIMMEN to SpurStand.UNBEKANNT) + (Spur.NICHT_STOEREN to SpurStand.UNBEKANNT),
+            alleBekannt() + (Spur.DIMMEN to SpurStand.UNBEKANNT) + (Spur.NICHT_STOEREN to SpurStand.UNBEKANNT) +
+                (Spur.LICHT to SpurStand.UNBEKANNT),
             q.staende()
         )
-        assertTrue("Hue und Spannen sind vom Konfigurations-Fehler unberuehrt", q.licht is Quelle.Bekannt && q.spannen is Quelle.Bekannt)
+        assertTrue("Die Spannen sind vom Konfigurations-Fehler unberuehrt", q.spannen is Quelle.Bekannt)
     }
 
     @Test
@@ -286,7 +509,8 @@ class TagesleisteQuellenTest {
         assertEquals(listOf(typF), (q.typen as Quelle.Bekannt).wert.definitions)
         val licht = (q.licht as Quelle.Bekannt).wert
         assertEquals(true, licht.konfiguriert)
-        assertEquals(listOf(hueRegel), licht.regeln)
+        // Die Regeln vom Typ, mit dem Typnamen als Muster (dieselbe Naht wie die Laufzeit, TypLichtQuelle).
+        assertEquals(listOf(regelAmF.copy(shiftPattern = "F")), licht.regeln)
         assertEquals(listOf(spanne), (q.spannen as Quelle.Bekannt).wert)
         assertEquals("Das Abo baut den Hue-Graphen nicht", 0, w.hueGraphGebaut)
     }
@@ -298,7 +522,7 @@ class TagesleisteQuellenTest {
         assertEquals(0, w.hueGraphGebaut)
         whenever(w.hueUseCase.getPreAlarmSunriseLeadMinutes(any(), any(), anyOrNullLong(), anyOrNullStand())).thenReturn(7)
 
-        assertEquals(7, licht.vorlaufMinuten(listOf(hueRegel), "AD1", null, null))
+        assertEquals(7, licht.vorlaufMinuten(listOf(altbestandRegel), "AD1", null, null))
         assertEquals(1, w.hueGraphGebaut)
     }
 
@@ -437,7 +661,28 @@ class TagesleisteQuellenTest {
         } catch (erwartet: CancellationException) {
             // richtig
         }
+        try {
+            HueConfigRepository(WerfenderStore(CancellationException("abgebrochen"))).bridgeEingerichtetOderFehler()
+            fail("Die strikte Lese-Stelle darf eine CancellationException nicht in ein Result verpacken")
+        } catch (erwartet: CancellationException) {
+            // richtig
+        }
         val geworfen = flow<Quelle<Int>> { throw IOException("kaputt") }.fehlerAlsUnbekannt("t").toList()
         assertSame(Quelle.Unbekannt, geworfen.single())
+    }
+
+    /** Ein Store, dessen Lesen scheitert - wie eine unlesbare `hue_settings`-Datei. */
+    private class WerfenderStore(private val fehler: Throwable = IOException("hue_settings nicht lesbar")) :
+        DataStore<Preferences> {
+        override val data: Flow<Preferences> = flow { throw fehler }
+        override suspend fun updateData(transform: suspend (t: Preferences) -> Preferences): Preferences = throw fehler
+    }
+
+    /** Ein Store nur im Arbeitsspeicher - genug, um mit dem echten Repository zu schreiben und zu lesen. */
+    private class SpeicherStore : DataStore<Preferences> {
+        private val stand = MutableStateFlow(emptyPreferences())
+        override val data: Flow<Preferences> = stand
+        override suspend fun updateData(transform: suspend (t: Preferences) -> Preferences): Preferences =
+            transform(stand.value).also { stand.value = it }
     }
 }

@@ -326,6 +326,53 @@ class TagesleisteKarteTest {
         assertEquals(630, anzeige.leiste.weckpunkte.single().minute)
     }
 
+    // ── Fehlende Bridge: die Spur nennt sie (#253) ──────────────────────────────────────────
+
+    @Test
+    fun `ohne eingerichtete Bridge nennt die Karte sie, sobald der Typ weckt - auch stumm`() {
+        val anzeige = rechne(q = quellen())
+
+        assertTrue(anzeige.ohneBridge)
+        assertEquals(emptyList<Balken>(), anzeige.leiste.spur(Spur.LICHT))
+        assertEquals(emptyList<Spur>(), anzeige.unbekannt)
+        assertTrue(rechne(entwurf(still = true), q = quellen()).ohneBridge)
+        assertEquals(
+            "Licht: keine Hue-Bridge eingerichtet – darum zeigt die Leiste kein Licht.",
+            TagesleisteTexte.OHNE_BRIDGE
+        )
+    }
+
+    @Test
+    fun `mit Bridge sagt die Karte nichts ueber sie, und ein Lesefehler heisst nicht lesbar statt keine Bridge`() {
+        assertFalse(rechne(q = vollBestueckt()).ohneBridge)
+
+        val unlesbar = rechne(q = quellen(licht = Quelle.Unbekannt))
+        assertFalse(unlesbar.ohneBridge)
+        assertEquals(listOf(Spur.LICHT), unlesbar.unbekannt)
+        assertTrue(TagesleisteTexte.nichtLesbar(unlesbar.unbekannt).startsWith("Gerade nicht lesbar: Licht."))
+    }
+
+    @Test
+    fun `ohne Wecker, bei Krank, Ignorieren, ausgeschaltet und ungelesen ist die Bridge kein Thema`() {
+        // Ohne Weckzeit gibt es kein Licht (E8) - dort waere der Hinweis auf die Bridge irrefuehrend.
+        assertFalse(rechne(entwurf(weckerAn = false)).ohneBridge)
+        assertFalse(rechne(entwurf(kategorie = ShiftKategorie.KRANK)).ohneBridge)
+        assertFalse(rechne(entwurf(kategorie = ShiftKategorie.IGNORIEREN)).ohneBridge)
+        assertFalse(rechne(entwurf(isEnabled = false)).ohneBridge)
+        assertFalse(rechne(q = null).ohneBridge)
+        assertFalse(rechne(q = quellen(spannen = Quelle.Unbekannt)).ohneBridge)
+    }
+
+    @Test
+    fun `eine Neuanlage zeigt kein Licht eines Typs, der zufaellig so heisst`() {
+        // Der neue Typ steht noch nicht in der Konfiguration - er hat keine Regeln, auch wenn sein Entwurfsname
+        // einem anderen Typ gleicht.
+        val neu = rechne(entwurf(name = "F"), gespeichert = null, q = vollBestueckt())
+
+        assertEquals(emptyList<Balken>(), neu.leiste.spur(Spur.LICHT))
+        assertEquals(listOf(Balken(Spur.LICHT, 630, 650)), rechne(q = vollBestueckt()).leiste.spur(Spur.LICHT))
+    }
+
     // ── Verdrahtung der Quellen ──────────────────────────────────────────────────────────────
 
     @Test

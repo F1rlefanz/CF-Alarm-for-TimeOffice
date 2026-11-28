@@ -8,10 +8,11 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.TageslichtStand
 import java.time.LocalDate
 
 /*
- * Licht (Hue) fuer die Tagesleiste (Umbau #195, SPEC E8 und 3.3 Punkt 3) - AUS DEN HEUTIGEN
- * HUE-REGELN, ohne eine zweite Zeitrechnung. Der Adapter waehlt die Regeln mit denselben Funktionen
- * wie die Laufzeit, laesst Beginn und Ende von Hue rechnen und setzt sie um den Weckpunkt der
- * Leiste (`weckpunktMin`, #193) herum in Minuten der Leiste.
+ * Licht (Hue) fuer die Tagesleiste (Umbau #195, SPEC E8 und 3.3 Punkt 3) - AUS DEN LICHTREGELN AM TYP
+ * (seit #253), ohne eine zweite Zeitrechnung. Der Adapter bekommt die Regeln aus der Naht der Laufzeit
+ * (`TypLichtQuelle`), waehlt sie mit denselben Funktionen wie die Laufzeit, laesst Beginn und Ende von
+ * Hue rechnen und setzt sie um den Weckpunkt der Leiste (`weckpunktMin`, #193) herum in Minuten der
+ * Leiste.
  *
  * Die Eingabe ist dieselbe wie bei der Leiste ([TagesleisteEingabe]); `licht` darin ist hier ohne
  * Bedeutung. Der Aufrufer setzt das Ergebnis danach selbst ein: `eingabe.copy(licht = licht(...))`.
@@ -28,14 +29,14 @@ typealias VorlaufMinuten = (regeln: List<HueSchedule>, schichtname: String, weck
 class TageslichtAmMustertag(val datum: LocalDate, val stand: TageslichtStand)
 
 /**
- * Die heutigen Hue-Einstellungen, aus denen die Leiste rechnet.
+ * Die Hue-Einstellungen, aus denen die Leiste rechnet.
  *
- * @param hueKonfiguriert `HueBridgeConnectionManager.hasStoredBridge()` - "eingerichtet", NICHT
- *   "verbunden" (wie `HueSmartScheduler`). Ohne Bridge geht kein Licht an, egal wie viele Regeln es gibt.
- * @param regeln alle Hue-Regeln, wie `IHueConfigRepository.getScheduleRules()` sie liefert. Ein
- *   gescheitertes Lesen DARF hier nicht als `emptyList()` ankommen: "keine Licht-Spur" waere dann eine
- *   Behauptung ueber Regeln, die man nie gesehen hat (Skill cfalarm-persistenz-und-auth). Der Aufrufer
- *   ruft den Adapter bei einem Lesefehler gar nicht auf.
+ * @param hueKonfiguriert "eingerichtet", NICHT "verbunden" (wie `HueSmartScheduler` ueber
+ *   `hasStoredBridge()`). Ohne Bridge geht kein Licht an, egal wie viele Regeln es gibt.
+ * @param regeln die Lichtregeln aller Typen aus der Naht der Laufzeit (`TypLichtQuelle(config).regeln`,
+ *   je Regel `shiftPattern` = Typname). Ein gescheitertes Lesen DARF hier nicht als `emptyList()`
+ *   ankommen: "keine Licht-Spur" waere dann eine Behauptung ueber Regeln, die man nie gesehen hat (Skill
+ *   cfalarm-persistenz-und-auth). Der Aufrufer ruft den Adapter bei einem Lesefehler gar nicht auf.
  * @param tageslicht `null` = kein Standort, keine Sonne: die Tageslicht-Bedingung (`hellAb`) wird dann
  *   NICHT behauptet, jede Regel zaehlt - wie die Laufzeit ohne Ort (fail-safe: Licht).
  */
@@ -59,10 +60,7 @@ data class LichtEinstellungen(
  * `AlarmReceiver` fuehrt die Hue-Regeln auch ohne Ton aus (`fuehreWeckvorgangAus`), und
  * `HueSmartScheduler.sonnenaufgangsKandidaten` plant den Vorab-Sonnenaufgang auch fuer ihn.
  *
- * WELCHE REGEL GILT: `enabled` und `passtAufSchicht` - der eigene Typname ODER "ALL", und beide
- * feuern GEMEINSAM (`findApplicableRules`). Mit [LichtEinstellungen.tageslicht] zusaetzlich
- * `laeuftBeiTageslicht` am Wecktag des Weckpunkts (der Weckpunkt kann am Vortag liegen). Eine Regel
- * ohne schaltbares Ziel (keine Lampe/Gruppe, kein "an", keine Szene) zaehlt nicht.
+ * WELCHE REGEL GILT: siehe [geltendeLichtRegeln].
  *
  * BEGINN UND ENDE:
  * - `SONNENAUFGANG` von Weckzeit minus Vorlauf bis zum Wecker: der Vorlauf kommt aus
@@ -90,14 +88,7 @@ fun licht(
     if (!einstellungen.hueKonfiguriert) return emptyList()
     val wecker = weckpunktMin(eingabe.kategorie, eingabe.weckerAn, eingabe.weckzeit, eingabe.dienstzeit)
         ?: return emptyList()
-    val wecktag = einstellungen.tageslicht?.let { Wecktag(weckMillis(it, wecker), it.stand) }
-
-    val gelten = einstellungen.regeln.filter {
-        it.enabled &&
-            it.passtAufSchicht(eingabe.name) &&
-            (wecktag == null || it.laeuftBeiTageslicht(wecktag.weckMs, wecktag.stand)) &&
-            it.schaltetLicht()
-    }
+    val gelten = geltendeLichtRegeln(eingabe, einstellungen, wecker)
     if (gelten.isEmpty()) return emptyList()
 
     // Die Tageslicht-Bedingung ist oben schon angewandt; die Liste kommt gefiltert, also ohne Weckzeit.
@@ -108,6 +99,29 @@ fun licht(
     return buildList {
         if (vorlauf != null) add(LichtBereich(wecker - vorlauf, wecker, LichtArt.SONNENAUFGANG))
         add(LichtBereich(wecker, ende, LichtArt.AN))
+    }
+}
+
+/**
+ * Die Regeln, die auf der Leiste dieses Mustertags laufen - dieselbe Auswahl wie
+ * `HueRuleUseCase.findApplicableRules`: `enabled` und `passtAufSchicht` (seit #253 traegt jede Regel
+ * der Naht den Namen ihres Typs, so gilt je Typ nur seine eigene), mit [LichtEinstellungen.tageslicht]
+ * zusaetzlich `laeuftBeiTageslicht` am Wecktag des Weckpunkts [weckerMin] (er kann am Vortag liegen).
+ * Nur die Leiste filtert ausserdem Regeln ohne schaltbares Ziel aus ([schaltetLicht]): die Laufzeit
+ * fuehrt sie aus, sie schalten dort nur nichts. `TagesleisteQuellenTest` („Leiste und Laufzeit …“)
+ * haelt beides gegeneinander.
+ */
+internal fun geltendeLichtRegeln(
+    eingabe: TagesleisteEingabe,
+    einstellungen: LichtEinstellungen,
+    weckerMin: Int
+): List<HueSchedule> {
+    val wecktag = einstellungen.tageslicht?.let { Wecktag(weckMillis(it, weckerMin), it.stand) }
+    return einstellungen.regeln.filter {
+        it.enabled &&
+            it.passtAufSchicht(eingabe.name) &&
+            (wecktag == null || it.laeuftBeiTageslicht(wecktag.weckMs, wecktag.stand)) &&
+            it.schaltetLicht()
     }
 }
 

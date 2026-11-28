@@ -13,8 +13,8 @@ import kotlinx.coroutines.flow.catch
 /*
  * Die QUELLEN der Tagesleiste (Umbau #196, SPEC 3.3 Punkt 3): was `ShiftViewModel.tagesleisteQuellen`
  * den Adaptern aus #193 bis #195 in die Hand gibt - die Schicht-Konfiguration (seit #219 liegen
- * Dimmen und "Nicht stoeren" am Typ), Hue-Regeln samt "Bridge eingerichtet", dazu die Schichtspannen
- * und der Tageslicht-Stand.
+ * Dimmen und "Nicht stoeren" am Typ), die Lichtquelle (seit #253 die Regeln am Typ samt "Bridge
+ * eingerichtet"), dazu die Schichtspannen und der Tageslicht-Stand.
  *
  * LESEFEHLER WERDEN SICHTBAR. Jede Quelle ist ein [Quelle]: [Quelle.Bekannt] mit dem Wert, oder
  * [Quelle.Unbekannt], wenn sie sich nicht lesen liess. Eine unlesbare Quelle wird NIE zur leeren
@@ -38,11 +38,14 @@ sealed interface Quelle<out T> {
 }
 
 /**
- * Hue-Regeln und ob eine Bridge eingerichtet ist.
+ * Die Lichtregeln am Typ und ob eine Bridge eingerichtet ist. Bekannt nur, wenn BEIDES gelesen ist.
  *
  * @param konfiguriert "eingerichtet" (IP und Benutzer gespeichert), NICHT "verbunden" - so rechnet auch
  *   `HueSmartScheduler` (`hasStoredBridge()`, dort nur der IP-Schluessel; `saveBridgeConfig` schreibt
- *   beide zusammen). Aus dem `@HueDataStore` gelesen, ohne den Hue-Graphen (OkHttp) zu bauen.
+ *   beide zusammen). Strikt aus dem `@HueDataStore` gelesen (`bridgeEingerichtetOderFehler`, #210),
+ *   ohne den Hue-Graphen (OkHttp) zu bauen.
+ * @param regeln die Regeln aller Typen aus der Naht der Laufzeit (`TypLichtQuelle(config).regeln`,
+ *   #253), aus der strikt gelesenen Konfiguration.
  * @param vorlaufMinuten `IHueRuleUseCase.getPreAlarmSunriseLeadMinutes`, wie `licht()` es verlangt.
  *   Greift erst beim AUFRUF auf den Hue-Use-Case zu: `licht()` ruft sie nur, wenn eine Bridge
  *   eingerichtet ist und eine Regel passt.
@@ -78,7 +81,7 @@ data class TagesleisteQuellen(
      * - Eintrag, Ruf-Abfrage, Wecker: die Schichtspannen.
      * - Dimmen und Nicht stoeren: die Konfiguration ([typen], dort liegen seit #219 beide am Typ,
      *   "Solange gedimmt wird" ueber dieselben Fenster) und die Spannen.
-     * - Licht: Hue-Quelle und Spannen.
+     * - Licht: die Lichtquelle ([licht]; sie braucht Konfiguration UND Bridge-Einrichtung) und die Spannen.
      *
      * DIE SPANNEN HAENGEN AN JEDER SPUR: sie liefern die Dienstzeit des Typs, und die legt fest, WO der
      * Weckpunkt liegt (ein Nachtdienst weckt am Vortag, `weckzeitpunkt()`) - und mit ihm Dimmen, Licht
@@ -111,11 +114,12 @@ internal fun <T> Flow<Quelle<T>>.fehlerAlsUnbekannt(quelle: String): Flow<Quelle
 }
 
 /**
- * Fangstelle fuer eine Quelle, die ein [Result] liefert (Hue-Regeln, Schichtspannen): ein Fehlschlag wird
- * [Quelle.Unbekannt] (und WARN im Release-Log), ein Erfolg [Quelle.Bekannt] mit `wert(it)`.
+ * Fangstelle fuer eine Quelle, die ein [Result] liefert (Konfiguration, Bridge-Einrichtung,
+ * Schichtspannen): ein Fehlschlag wird [Quelle.Unbekannt] (und WARN im Release-Log), ein Erfolg
+ * [Quelle.Bekannt] mit `wert(it)`.
  *
- * Eine `CancellationException` im Fehlschlag wird weitergeworfen: `HueConfigRepository.getScheduleRules()`
- * faengt `Exception` und verpackt auch sie in ein `Result.failure`.
+ * Eine `CancellationException` im Fehlschlag wird weitergeworfen: ein Leser, der `Exception` faengt,
+ * verpackt auch sie in ein `Result.failure`.
  */
 internal fun <T, R> Result<T>.alsQuelle(quelle: String, wert: (T) -> R): Quelle<R> = fold(
     onSuccess = { Quelle.Bekannt(wert(it)) },

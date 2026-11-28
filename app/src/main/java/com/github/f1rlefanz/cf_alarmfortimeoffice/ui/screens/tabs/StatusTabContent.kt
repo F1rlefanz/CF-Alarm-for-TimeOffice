@@ -216,8 +216,9 @@ fun StatusTabContent(
             onWiederAktivieren = onResumeMasterPause
         )
 
-        // Umbau Etappe 3 (#216): nur, wenn die Uebernahme von Dimmen und "Nicht stoeren" auf die
-        // Typen in diesem Prozess gescheitert ist. Kein Zustand ohne Anzeige.
+        // Umbau Etappe 3/4 (#216, #248): nur, wenn die Uebernahme von Dimmen und "Nicht stoeren"
+        // oder der Hue-Regeln auf die Typen in diesem Prozess gescheitert ist; Titel und Text
+        // nennen den gescheiterten Schritt. Kein Zustand ohne Anzeige.
         val typMigration by TypModellMigration.stand.collectAsState()
         TypMigrationFehlgeschlagenCard(typMigration)
 
@@ -492,11 +493,16 @@ private fun VerwaisteWeckerNachAbwahlCard(
 }
 
 /**
- * Nutzertexte der Karte "Uebernahme gescheitert" (#216). Der Text behauptet nur, was gilt: die
- * alten Einstellungen liegen unveraendert da (kopieren statt verschieben), und die App versucht
- * es von selbst erneut - beim naechsten Start (MainActivity) und in der Hintergrund-Wartung.
- * Ob gerade gedimmt wird, sagt er bewusst NICHT: das haengt davon ab, welche Quelle der Dimmer
- * im ausgelieferten Stand liest.
+ * Nutzertexte der Karte "Uebernahme gescheitert", je gescheitertem [TypModellMigration.Schritt]:
+ * Dimmen und DND (#216) und das Licht (#248). Beide behaupten nur, was gilt: die alten
+ * Einstellungen liegen unveraendert da (kopieren statt verschieben), und die App versucht es von
+ * selbst erneut - beim naechsten Start (MainActivity) und in der Hintergrund-Wartung.
+ * Ob gerade gedimmt wird bzw. das Licht schaltet, sagen sie bewusst NICHT: das haengt davon ab,
+ * welche Quelle der ausgelieferte Stand liest.
+ *
+ * Scheitern beide Schritte, nennt die Karte den ersten ([TypModellMigration.Stand.Fehlgeschlagen]).
+ * Das ist unvollstaendig, aber nicht falsch: ist die erste Ursache behoben, zeigt der naechste
+ * Anlass den Licht-Fehler (Betreuer-Entscheidung #248).
  */
 internal const val TYP_MIGRATION_TITEL: String = "Dimmen und „Nicht stören“ nicht übernommen"
 
@@ -504,6 +510,26 @@ internal const val TYP_MIGRATION_TEXT: String =
     "Deine Einstellungen für Dimmen und „Nicht stören“ konnten noch nicht zu den Schichttypen " +
         "übernommen werden. Sie bleiben unverändert gespeichert. Die App versucht es beim " +
         "nächsten Start und bei der regelmäßigen Hintergrund-Wartung von selbst erneut."
+
+/** Licht-Fassung (#248): bei einem reinen Licht-Fehler sind Dimmen und DND uebernommen. */
+internal const val TYP_MIGRATION_LICHT_TITEL: String = "Hue-Regeln nicht übernommen"
+
+internal const val TYP_MIGRATION_LICHT_TEXT: String =
+    "Deine Hue-Regeln konnten noch nicht zu den Schichttypen übernommen werden. Sie bleiben " +
+        "unverändert gespeichert. Die App versucht es beim nächsten Start und bei der " +
+        "regelmäßigen Hintergrund-Wartung von selbst erneut."
+
+/**
+ * Titel und Text der Karte "Uebernahme gescheitert" fuer einen [TypModellMigration.Schritt]. Das
+ * `when` hat bewusst kein `else`: ein kuenftiger Schritt bekommt so einen eigenen Text, statt
+ * still den eines anderen zu zeigen.
+ */
+internal data class TypMigrationKartentext(val titel: String, val text: String)
+
+internal fun typMigrationKartentext(schritt: TypModellMigration.Schritt): TypMigrationKartentext = when (schritt) {
+    TypModellMigration.Schritt.DIMMEN_UND_DND -> TypMigrationKartentext(TYP_MIGRATION_TITEL, TYP_MIGRATION_TEXT)
+    TypModellMigration.Schritt.LICHT -> TypMigrationKartentext(TYP_MIGRATION_LICHT_TITEL, TYP_MIGRATION_LICHT_TEXT)
+}
 
 /**
  * Zeigt, dass die Typ-Modellmigration gescheitert ist, samt Grund. Ohne Knopf: der Nutzer kann
@@ -513,6 +539,7 @@ internal const val TYP_MIGRATION_TEXT: String =
 @Composable
 private fun TypMigrationFehlgeschlagenCard(stand: TypModellMigration.Stand) {
     val fehler = stand as? TypModellMigration.Stand.Fehlgeschlagen ?: return
+    val kartentext = typMigrationKartentext(fehler.schritt)
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -537,7 +564,7 @@ private fun TypMigrationFehlgeschlagenCard(stand: TypModellMigration.Stand) {
                     tint = MaterialTheme.colorScheme.onErrorContainer
                 )
                 Text(
-                    TYP_MIGRATION_TITEL,
+                    kartentext.titel,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onErrorContainer
@@ -545,7 +572,7 @@ private fun TypMigrationFehlgeschlagenCard(stand: TypModellMigration.Stand) {
             }
 
             Text(
-                TYP_MIGRATION_TEXT,
+                kartentext.text,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onErrorContainer
             )

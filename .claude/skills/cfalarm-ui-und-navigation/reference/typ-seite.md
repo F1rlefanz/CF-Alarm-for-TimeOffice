@@ -2,7 +2,7 @@
 
 > Hergang zu den Kurzregeln im Abschnitt „Umbau Schichttyp" der `SKILL.md` daneben: welcher Befund
 > die Regel erzwungen hat, welche Messung sie belegt, welche Alternative verworfen wurde. Stand:
-> Etappe 2 abgeschlossen (1.58.0). Die Datenseite (Kategorie, Ignorieren, Auswahllisten,
+> Etappe 3 abgeschlossen (1.59.0). Die Datenseite (Kategorie, Ignorieren, Auswahllisten,
 > Einordnen-Logik, `tageOhneEintrag`) steht im Skill `cfalarm-kalender-und-schichten`.
 
 ## Inhalt
@@ -18,6 +18,11 @@
 - Karte „So läuft ein Tag" (#197, Gegenprüfung Etappe 2)
 - Textwahrheit statt Prototyp-Wortlaut — und die vorgemerkten Satztausche
 - Layout-Funde
+- Etappe 3: die Zeile der Typ-Liste (#220)
+- Etappe 3: Dimmen und „Nicht stören" im Entwurf der Typ-Seite (#221, #222, #224)
+- Etappe 3: „Weitere Optionen" (#224, #238)
+- Etappe 3: die feste Zeile schreibt sofort (#223, #238)
+- Etappe 3: Geräte-Einstellungen und Menü (#225, #226)
 
 ## Navigation: Gate-`BackHandler`, fünf Stellen je Zustand, Dialog statt Zustand (#187, #188, #191)
 
@@ -100,7 +105,8 @@ gespeicherter `ShiftDefinition`, `definitionId = vorlage.id`) und der Fund-Code 
 - **Die Wahl schreibt beim Tippen** (`ShiftViewModel.waehleOhneEintrag`, genau ein Aufruf je Tipp —
   `OhneEintragAbschnittLogik.tippe`), Festlegung des Betreuers. Gelöscht wird ein Typ nur über
   `ShiftViewModel.loescheSchichttyp()` (Hergang zur Ein-Schreibvorgang-Regel: Kalender-Skill).
-- In Etappe 2 hat die Seite weder Tagesleiste noch Wecker-Abschnitt. Der Kasten nimmt den Warnton des
+- Die Seite hat keine Tagesleiste und keinen Wecker-Abschnitt; seit Etappe 3 trägt sie bei „Eigene
+  Einstellungen" die Karten Dimmen und „Nicht stören" (#223, Abschnitt unten). Der Kasten nimmt den Warnton des
   Neuanlage-Banners (hell Schrift #4D2E00, dunkel `tonPaar(WARNUNG)`), nicht `kategorieFarben(KRANK)`.
 - **Textwahrheit:** „Eigene Einstellungen" sagt „Kein Wecker an diesen Tagen." (Prototyp: „Wecker,
   Dimmen usw. direkt hier einstellen" — die Oberfläche gibt es erst am Typ); „kein Wecker" steht in
@@ -119,9 +125,12 @@ gespeicherter `ShiftDefinition`, `definitionId = vorlage.id`) und der Fund-Code 
   Listenreihenfolge, eine alphabetisch oder nach Kategorie sortierte Speicherung hätte stumm
   geändert, welcher Wecker gilt. Der Code einer Zeile ist das erste nicht leere Muster
   (`listenCode()`), ohne Muster steht „–". Test: `SchichttypGruppenTest`.
-- **Die Kurzform eines Typs mit `weckerAn = false` nennt kein Licht** (`alsTextOhneLicht`): Hue-Regeln
-  laufen nur zu einem Alarm (`AlarmReceiver` → `executeRulesForAlarm`, `HueSmartScheduler` liest nur
-  Alarme), SPEC E8. Dimmen und „Nicht stören" bleiben.
+- **Die Kurzform eines Typs mit `weckerAn = false` nennt kein Licht**: Hue-Regeln laufen nur zu einem
+  Alarm (`AlarmReceiver` → `executeRulesForAlarm`, `HueSmartScheduler` liest nur Alarme), SPEC E8.
+  Dimmen und „Nicht stören" bleiben. Seit #220 baut die Zeile ihre Abschnitte in `kurzform()` über
+  `kurzAbschnitte(dimmen, mitLicht = definition.weckerAn)` (privat, `viewmodel/SchichtFolgen.kt`);
+  das frühere `alsTextOhneLicht()` hat dadurch keinen Aufrufer mehr (nur noch einen KDoc-Verweis) und
+  ist in #228 zum Entfernen vorgemerkt.
 - **Papierkorb in der Namenszeile:** Marke links UND Papierkorb als eigene Spalte rechts ließen der
   Textspalte bei 320 dp 146 statt 208 dp, und die mit geschützten Leerzeichen gebauten Abschnitte
   der Statuszeile (`SchichtFolgen.alsText`, „Dimmen: allgemeine Regel") brachen mitten im Wort.
@@ -208,9 +217,11 @@ Verdrahtung der Adapter aus `tagesleiste/` (#193–#196, Regeln in den Skills Ka
 Hue, Persistenz); es gibt dort keine zweite Fenster-, Licht- oder Dienstzeit-Logik.
 
 1. **Gemischte Eingabe:** Weckzeit, „Wecker an", stumm und Kategorie kommen aus dem ENTWURF (die
-   Leiste rechnet sofort mit), Dimm-Regeln, Hue-Regeln und Schichtspannen hängen am GESPEICHERTEN
-   Namen (`gespeicherterName`) — mit dem Entwurfsnamen verschwänden Dimmen und Licht, sobald jemand
-   ein Zeichen im Namen ändert.
+   Leiste rechnet sofort mit), seit #221/#222 auch Dimmen und „Nicht stören"
+   (`TagesleisteKarteLogik.einstellungenAus(config, gespeicherterName, dimmenEntwurf,
+   nichtStoerenEntwurf)`, auch für die feste Zeile, wenn sie „wie <dieser Typ>" ist). Hue-Regeln und
+   Schichtspannen hängen am GESPEICHERTEN Namen (`gespeicherterName`) — mit dem Entwurfsnamen
+   verschwände das Licht, sobald jemand ein Zeichen im Namen ändert.
 2. **`tagesleisteQuellen == null` heißt „noch nicht gelesen"** und zeigt „Die Leiste wird gelesen …";
    ein Lesefehler einer Quelle macht NUR ihre Spur unbekannt („Gerade nicht lesbar: …"); sind die
    Spannen unlesbar, wird gar nicht gerechnet (kein erfundener Normaltag).
@@ -252,13 +263,20 @@ tauscht, wer die Etappe baut** — sonst lügt der Text in die andere Richtung.
 - **„Stummer Wecker"** sagt „Eine Hue-Lichtregel startet dann nicht" (Prototyp und SPEC 3.3
   versprechen einen Lichtwecker; heute überspringen `AlarmReceiver` und `HueSmartScheduler` bei
   stiller Schicht jede Hue-Regel). **Etappe 4 (E8) tauscht den Satz**, wenn Hue stillen Weckern folgt.
-- **Kasten „Ohne Kalendereintrag"** sagt „Der Wecker richtet sich dann nach dem Typ …" (Prototyp:
-  Wecker, Dimmen, „Nicht stören" und Licht). **Etappe 3/4 tauscht den Satz.**
-- **Einordnen-Hinweis** nennt nur „Wecker und Weckzeit". **Etappe 3/4 tauscht den Satz.**
+- **Kasten „Ohne Kalendereintrag"** sagt seit #223 „Wecker, Dimmen und „Nicht stören" kommen dann
+  vom Typ „X"." (Prototyp: dazu Licht). **Etappe 4 ergänzt Licht.** Der Satz zu freigegebenen Tagen
+  in `OhneEintragTexte.ERKLAERUNG` nennt bewusst nur Dimmen und „Nicht stören": `tageOhneEintrag`
+  stellt an freigegebenen Tagen keinen Wecker „wie <Typ>".
+- **Einordnen-Hinweis** (`EinordnenTexte.KATEGORIE_HINWEIS`) lautet seit #220 „Die Kategorie sortiert
+  nur. Wecker, Dimmen und „Nicht stören" stellst du danach am Typ selbst ein." — noch ohne Licht.
+  **Etappe 4 tauscht den Satz** (dann der Satz der Vorlage, SPEC 3.2). `SchichttypTexteTest` hält
+  „Wecker, Dimmen, „Nicht stören" ja, Licht nein" fest (bewusst umgestellt, kein Kerntest).
 - **Kein Kasten verspricht Licht** (heute überspringt der `AlarmReceiver` bei stummem Wecker jede
   Hue-Regel). **Etappe 4 tauscht den Satz.**
-- **Urlaub-Beschreibung ohne „und Dimmer":** der Dimmer hängt bis Etappe 3 an Regeln, „Wecker aus"
-  nimmt ihn nicht weg (eine ALL-Regel gilt auch für Urlaub).
+- **Urlaub-Beschreibung ohne „und Dimmer":** Grund war, dass der Dimmer bis Etappe 3 an Regeln hing
+  und „Wecker aus" ihn nicht wegnahm. Seit Etappe 3 hat der Urlaub-Typ eigene Fenster; der Satz
+  (`TypTexte.kategorieBeschreibung`) und sein Code-Kommentar sind noch nicht nachgezogen (Stand
+  28.11.2026).
 - **Ruf-Kasten:** übernimmt ein nachgetragener Dienst den Tag, entfällt nur der WECKER des Rufs (#172);
   seine Spanne bleibt. Der Prototyp sagt „dessen Wecker und Einstellungen" — Dimmer und DND des
   Ruf-Typs wirken heute weiter, deshalb nur „die Wecker-Einstellung dieses Dienstes".
@@ -282,3 +300,108 @@ tauscht, wer die Etappe baut** — sonst lügt der Text in die andere Richtung.
 - **Eine Seite mit Textfeldern in einer `LazyColumn` braucht keinen eigenen `imePadding()`**: das
   Fenster schrumpft, der Speichern-Knopf bleibt über der Tastatur (Emulator 17.10.2026, geprüft mit
   `input text` im dritten Musterfeld).
+- **Wer den Text eines `AlertDialog` verlängert, prüft ihn bei 320 dp UND Schrift 1,3** (#220); ein
+  langer Text braucht `Modifier.verticalScroll(rememberScrollState())` im `text`-Slot. Die
+  Reset-Rückfrage der Typ-Liste endete dort nach der Erweiterung mitten im Satz („… „Automatische
+  Alarme" im"), „Das lässt sich nicht rückgängig machen." war unerreichbar. Die Knöpfe bleiben dabei
+  sichtbar, und bei Schrift 1,0 passt der Text — ohne diese Prüfung fällt es nicht auf (Emulator,
+  27.11.2026).
+- **Ein `OutlinedButton`, der einen WERT zeigt (Uhrzeit), bekommt Fläche und Textfarbe ausdrücklich**
+  (#221, `ZeitKnopf` in `ui/screens/dimmer/DimTimeControls.kt` mit `containerColor`/`contentColor`).
+  Mit den Material-Vorgaben stand „22:00" grau mit blassem Rand da und sah am Emulator gesperrt aus,
+  vom wirklich gesperrten Zustand kaum zu unterscheiden.
+- **Ein bildschirmfüllender `Dialog`** (#224, „Weitere Optionen") braucht
+  `DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)` und setzt die
+  Symbolfarbe der Systemleisten am Dialogfenster selbst — mit den Vorgaben lagen Status- und
+  Navigationsleiste grau abgedunkelt neben dem Blatt (Emulator, 27.11.2026). Mit
+  `decorFitsSystemWindows = false` braucht die Liste darin `consumeWindowInsets(padding)` plus
+  `imePadding()` (Befund des Prüfers).
+
+## Etappe 3: die Zeile der Typ-Liste (#220)
+
+- **Die Kurzform ist EINE Zeile:** `kurzform(definition, folgen, dimmKurz)` (`viewmodel/SchichtFolgen.kt`)
+  setzt den Dimm-Text an die Stelle von „Dimmen: …"; die Zeile der Liste ruft
+  `listenKurzform(definition, folgen)` (`ShiftConfigScreen.kt`) = `kurzform(…, dimmKurzform(definition))`.
+  `alsText()` bleibt für `Tagesliste.kt` — „Dimmen: N Fenster" steht NUR dort. `dimmKurzform` bleibt in
+  `ui.`, weil `viewmodel/` kein `ui.` importiert; ihr Wortlaut kommt aus `DimFensterAbbildung.kurzform`
+  (#215), nie nachgebaut.
+- **Reihenfolge:** `kein Wecker` · Dimm-Text · `Licht: …` (nur mit Wecker) · `Nicht stören: …`. Ohne
+  gelesene Folgen steht nur, was die Definition allein sagt (Dimm-Text, „kein Wecker"). Dimm-Texte
+  der Liste: „dimmt 20:00–Wecker" / „dimmt nach Dienst" / „N Dimm-Fenster" / „Dimmen aus"; Krank,
+  Ignorieren, ein ausgeschalteter Typ und ein Typ ohne Fenster: nichts.
+- **Hergang:** Lauf 1 stellte die Dimm-Kurzform als eigene Zeile über die Statuszeile, deren Abschnitt
+  „Dimmen: …" blieb — jede Zeile sagte es doppelt, und alle sieben Tests der Kurzform waren grün, weil
+  keiner die ganze Zeile prüfte. `TypListeKurzformTest` geht deshalb durch `listenKurzform` und prüft
+  den ganzen Text samt `assertFalse(contains("Dimmen:"))`.
+
+## Etappe 3: Dimmen und „Nicht stören" im Entwurf der Typ-Seite (#221, #222, #224)
+
+Was der Entwurf vom Dimmen trägt und wann er schreibt (`DimmenEntwurf`, `null` = unberührt, die
+Farbwärme): Skill `cfalarm-persistenz-und-auth`, `reference/persistenz.md`. Hier steht, was die Seite
+damit tut.
+
+- **Ein unberührter Teil folgt dem Gespeicherten** (#221, `TypSeiteEntwurf.nachgezogen`,
+  `LaunchedEffect(definition.dimmen)`; Schalter und Fenster je für sich) — das ergänzt „Ausgangsstand
+  wird beim Öffnen eingefroren". **Hergang:** `TypModellMigration` läuft bei jedem
+  `MainActivity.onCreate` (Drehen, Dunkelmodus) und in der Wartung. Schrieb sie unter der offenen Seite
+  Fenster, verglich `DimmenEntwurf.anwenden()` den Stand vom Öffnen mit dem neuen, hielt die nie
+  angefasste Karte für geändert, und „Speichern" löschte die Fenster (Befund des Prüfers;
+  `TypEntwurfDimmenTest`, vorher drei rot). „Nicht stören" (#222), das die Migration ebenfalls
+  schreibt, zieht genauso nach — und so jedes weitere Feld, das ein Hintergrund-Schreiber ändern kann.
+- **Dimmen und „Nicht stören" reisen als EIN JSON-Element an achter Stelle des Bundles** (#222,
+  `EntwurfTeile`, beide Teile einzeln `null` = gespeicherter Stand); ein weiteres strukturiertes Feld
+  kommt dort hinein, nicht als neunte Stelle. Mit `listOfNotNull` rückte eine neunte Stelle nach,
+  sobald der Dimm-Teil fehlt; `TypEntwurfDimmenTest` hält die Länge 8 samt „unlesbar verwirft den
+  ganzen Entwurf".
+- **Die Tagesleiste bekommt jeden Teil des Entwurfs als Parameter von
+  `TagesleisteKarteLogik.einstellungenAus`** (Dimmen, „Nicht stören"; `null` = gespeicherter Stand),
+  nie als vorab veränderte `TagesleisteQuellen`. Der erste Bau von #222 legte den Entwurf in die
+  Quellen: bei der Neuanlage gibt es dort keinen Typ zum Ersetzen, die Spur „Nicht stören" blieb bis
+  „Erstellen" leer (Befund des Prüfers; Test „die Neuanlage zeigt Nicht stoeren aus dem Entwurf").
+- **Hinweise:** „Nach dem Dienst" und „Nacht davor" mit Von < Bis erzeugen an „Ohne Kalendereintrag"
+  kein Fenster; die Typ-Seite weist darauf hin (#221; Kodierung im Dimmer-Skill,
+  `reference/typ-fenster.md`).
+
+## Etappe 3: „Weitere Optionen" (#224, #238)
+
+- **Ein bildschirmfüllender `Dialog` der Typ-Seite auf demselben Entwurf** — kein `NavigationState`;
+  der Offen-Zustand liegt `rememberSaveable` in `TypSeiteFormular`, weil die Karte ein Listenelement
+  ist. Dialog-Eigenschaften und Insets: Layout-Funde oben.
+- **Was nur dort einstellbar ist und die Aussage der Karte ändert, steht auch auf der Karte**
+  (`DimmenAbschnittLogik.blattHinweis`): ein Nachlauf (Titel und Schalter sagen sonst „bis Wecker")
+  und der Weg zu einem Fenster ohne „Wann". Befund der Prüfer zu #224.
+- **An der festen Zeile (#238)** gibt es das Blatt nur bei „Eigene Einstellungen", und jede Änderung
+  schreibt sofort (nächster Abschnitt). Ein Regler, dessen Wert sofort gespeichert werden kann, gibt
+  ihn erst mit `onValueChangeFinished` weiter (Zwischenstand lokal in der Composable):
+  `onValueChange` feuert bei jedem Zwischenwert, und dort ist jeder Schreibaufruf ein Speichern samt
+  Alarm-Abgleich. Gemessen am Emulator (28.11.2026): ein Zug von 12 auf 71 % = eine
+  `SINGLETON-SAVE`-Zeile.
+
+## Etappe 3: die feste Zeile schreibt sofort (#223, #238)
+
+- **Die Seite „Ohne Kalendereintrag" schreibt JEDE Änderung sofort**, nicht nur die Wahl: die Karten
+  reichen eine UMFORMUNG an `ShiftViewModel.aendereOhneEintrag`, gerechnet wird auf
+  `ShiftUiState.ohneEintragStand` (beauftragt, noch nicht gespeichert), nie auf
+  `currentShiftConfig`, und armiert wird gegen den Vorgänger-AUFTRAG, nicht gegen den gespeicherten
+  Stand. Sonst überschrieb die zweite Änderung vor dem Ende des Speicherns die erste
+  (`OhneEintragEinstellungenTest`, vor der Korrektur drei Fälle rot). **Falle im Test:** ein Mock, der
+  beim Speichern nicht unterbricht (`doReturn` statt `doSuspendableAnswer`), zeigt den
+  Vorgänger-Fehler nicht.
+- **Die Kurzform der festen Zeile** nennt bei „Eigene Einstellungen" die Dimm-Kurzform (ohne Wecker),
+  mit geschützten Leerzeichen wie in den Typ-Zeilen — sonst bricht „dimmt | 22:00–07:00" bei 320 dp.
+- Wie Dimm- und DND-Karte dort ihre Werte bekommen (`OhneEintragAbschnittLogik`): Dimmer-Skill.
+
+## Etappe 3: Geräte-Einstellungen und Menü (#225, #226)
+
+- **Die Play-Pflicht-Offenlegung gibt es einmal:**
+  `BedienungshilfeOffenlegung(offen: MutableState<Boolean>, eingeschaltetNichtVerbunden)` in
+  `StatusPermissionCards.kt`, gerufen von der Karte im System-Status und der Zeile „Bedienungshilfe"
+  in den Einstellungen; nur sie ruft `openAccessibilitySettings`. Sie schließt sich selbst über den
+  übergebenen Zustand — so bleibt `DimBedienungshilfenWunschTest` („Sprung hängt am Bestätigen")
+  unverändert gültig.
+- **Ein Sammelhinweis über mehreren Schaltern („Eingeschaltet = bleibt stumm") wird gegen JEDEN
+  Schalter der Liste geprüft**, auch gegen bedingt sichtbare Unteroptionen mit umgekehrter Polung. Der
+  erste Satz galt für „Wiederholte Anrufer durchlassen" gerade nicht (Befund des Prüfers; Test
+  `GeraeteDimmenNichtStoerenTest`).
+- **Der Dimmer-Bereich ist weg (#226):** Menü und Rückwege im Abschnitt Navigation der `SKILL.md`
+  und in `reference/navigation.md`.

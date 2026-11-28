@@ -6,9 +6,10 @@ betreffen beide Stellen.
 
 ## Dimmer, DND, Hue
 
-- **Es gibt GENAU EINE Dimm-Fenster-Quelle: die Regeln** (seit v1.34.0, ein Schalter `dim_enabled`).
-  Wer eine zweite, „eingebaute" Quelle daneben stellt, koppelt Schalter aneinander (Hergang im
-  Dimmer-Skill).
+- **Es gibt GENAU EINE Dimm-Fenster-Quelle: die Fenster am Schichttyp** (`TypDimmQuelle`, seit
+  1.59.0; davor seit v1.34.0 die Regeln mit dem Schalter `dim_enabled`). Einen Hauptschalter gibt es
+  nicht mehr. Wer eine zweite, „eingebaute" Quelle daneben stellt, koppelt Schalter aneinander
+  (Hergang im Dimmer-Skill, `reference/dimmer.md` und `reference/typ-fenster.md`).
 - **Leere Fensterliste = Unterdrückung dieser Nacht**, NICHT „keine Regel". Nicht wegoptimieren.
 - **Die Tick-Kette darf nicht abreißen** — Keep-alive (6 h) plus Retry (15 min) nach Lesefehler.
 - **Das Aufräumen der Dimm-VORSCHAU darf nicht am `viewModelScope` hängen** — sonst bleibt der

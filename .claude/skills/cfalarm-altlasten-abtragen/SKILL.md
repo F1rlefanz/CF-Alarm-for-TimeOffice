@@ -70,6 +70,14 @@ ohne Grund.
 - **Ein `except`-Tupel über einen fremden Parser ist eine Wette** — nur den Fremdaufruf umschließen
   und breit fangen. **Teste die Verdrahtung, nicht nur die reine Funktion.**
 - **Datumsangaben misst man** (`git log -S`, jede Fassung parsen), statt zu schätzen.
+- **Eine Prüfung in `pruefe_reste.py` zerlegt jeden Text EINMAL und schlägt danach nach** — nie ein
+  eigener regulärer Ausdruck je Name über alle Dateien; die Schleuse bricht das Skript nach 60 s
+  ab. Beim Sammeln steht der Name in einer Vorausschau `(?=...)` (ein `findall` mit Fanggruppe
+  verschluckte in `val class Foo` den Namen `Foo`). Eine Beschleunigung hält zuerst
+  Charakterisierungstests grün und vergleicht dann alte und neue Fassung auf demselben Stand per `==`.
+  Hergang (#236): je Name gesucht waren es am 28.11.2026 76,6 s (Doku-Verweise 36,3, Compose-Karten
+  24,9, Strings 13,5), danach 2,5 s; der Messstand enthielt kein einziges `@Preview`, den
+  Vorschau-Zweig deckt nur `ComposableOhneVerbraucher` in `test_pruefe_reste.py` ab.
 - **`.claude/**` ist unbeaufsichtigt nicht schreibbar** (eingebauter Schutz, am 03.09.2026 headless
   nachgestellt). Nicht umgehen; Lehren für Skills dem Eigentümer vorlegen.
 

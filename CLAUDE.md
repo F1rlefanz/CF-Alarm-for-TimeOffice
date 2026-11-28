@@ -310,7 +310,8 @@ Wortlaut: Skill `cfalarm-persistenz-und-auth`.
 
 Wortlaut: Skill `cfalarm-dimmer-und-dnd` / `cfalarm-hue`.
 
-- **Es gibt GENAU EINE Dimm-Fenster-Quelle: die Regeln** (seit v1.34.0, ein Schalter `dim_enabled`).
+- **Es gibt GENAU EINE Dimm-Fenster-Quelle: die Fenster am Schichttyp** (`TypDimmQuelle`, seit
+  1.59.0; kein Hauptschalter, `dim_enabled` wird nicht gelesen).
 - **Leere Fensterliste = Unterdrückung dieser Nacht**, NICHT „keine Regel".
 - **Die Tick-Kette darf nicht abreißen**
 - **Das Aufräumen der Dimm-VORSCHAU darf nicht am `viewModelScope` hängen**

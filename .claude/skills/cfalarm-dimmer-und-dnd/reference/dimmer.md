@@ -3,6 +3,13 @@
 > Hergang zu den Kurzregeln in `CLAUDE.md` und in der `SKILL.md` daneben: welcher Bug die
 > Regel erzwungen hat, welche Messung sie belegt, welche Alternative verworfen wurde.
 > Jede Zeile hier hat einmal echten Schaden verhindert — im Zweifel gilt sie, nicht die Intuition.
+>
+> **Stand seit Etappe 3 des Umbaus (1.59.0):** Die Fenster liegen am Schichttyp, nicht mehr in
+> Regeln; Regelliste, Regel-Editor, Dimmer-Bereich, `DimmerRulesViewModel`, die Klasse
+> `DimmerViewModel` und der Schalter `dim_enabled` als Hauptschalter sind entfallen
+> (`reference/typ-fenster.md`). Die Abschnitte unten erzählen, wie das Regel-Modell entstand und
+> welche Fallen es hatte — die Fallen der Fensterauflösung gelten unverändert, weil `TypDimmQuelle`
+> je Typ weiter eine `DimRule` baut.
 
 ## Inhalt
 
@@ -53,7 +60,7 @@
   Bequemlichkeitsschicht duplizierte eine vorhandene Fähigkeit als eigene Quelle mit eigenem
   Zustand, statt sie als Vorlage auf diese Fähigkeit zu setzen. Wer das nächste Mal „das geht mit
   den Regeln zwar, ist aber umständlich" denkt: die Antwort ist eine Vorlage, die eine gewöhnliche
-  Regel anlegt (heute `SchnellstartVorlage`), nie eine zweite Quelle.
+  Regel anlegt (bis #226 `SchnellstartVorlage`, entfallen; heute „Wann" am Typ), nie eine zweite Quelle.
 
   **Der Konstruktionsfehler war die KOPPLUNG der drei Schalter, nicht ihre Zahl.** Der Nacht-Standard
   wirkte NUR an Tagen, die keine aktivierte Regel ohnehin abdeckte, **und nur solange die Quelle
@@ -845,10 +852,11 @@ dann sinnlos ab. Gewaehlt wurde je Dimm-Fenster `HellAb { IMMER, DAEMMERUNG, SON
 - **Fail-safe = voller Nachlauf**: lieber 30 Minuten zu lange gedimmt als ein Dimmer, der wegen
   eines Lesefehlers ploetzlich anders arbeitet.
 - **Wanduhr- und Kalendertag-Arithmetik**, kein `+ 24 h` in Millisekunden (Zeitumstellung).
-- Die Vorschau nennt den Grund nur, wenn wirklich gekuerzt wurde
-  (`DimmerPreviewScreen.tageslichtGrundZeile`: „endet bei Sonnenaufgang 07:31“ aus
-  `tageslicht_vorschau_endet`, bzw. „an der Weckzeit, Sonnenaufgang war schon um 07:31“ aus
-  `tageslicht_dimmer_grund_weckzeit`); der Editor zeigt fuer den naechsten Wecker live, was passiert (`tageslicht_dimmer_grund_*`).
+- Die Vorschau nannte den Grund nur, wenn wirklich gekuerzt wurde
+  (`DimmerPreviewScreen.tageslichtGrundZeile`, mit dem Bildschirm in #226 entfallen); der Editor
+  zeigte fuer den naechsten Wecker live, was passiert. Heute traegt nur noch das Blatt „Weitere
+  Optionen“ eine Beispielzeile mit derselben Begruendung (`tageslicht_dimmer_grund_*`,
+  `nachlaufBeispielText`).
 
 ## Umbau Schichttyp: Vorschlaf nur am Wecktag (#151) und die Tagesleiste (#193/#194)
 
@@ -859,11 +867,12 @@ Hergang: Wecker 13:30 → das Vorschlaf-Fenster „16:00 bis Wecker" der Nachtdi
 zielt auf die Uhrzeit VOR der Weckzeit) ist für alle übrigen Fenster richtig — ihn zu ändern bräche
 „20:00 vor Wecker 05:30" (Test „CLOCK-Start zielt auf die Uhrzeit VOR der Weckzeit"). Deshalb ein
 Feld je Fenster, Default `false`: gesetzt zeigt der Start auf den Kalendertag der Weckzeit, liegt die
-Weckzeit davor, entfällt das Fenster. Nur das Vorschlaf-Fenster der Nachtdienst-Vorlage setzt es
-(`DimmerRulesViewModel`). Bestehende Regeln aus der Vorlage tragen das Feld nicht und wirken weiter
-wie bisher — bewusst, bis Etappe 3 die Fenster an den Typ hängt; eine Oberfläche dafür gibt es
-nicht, weil der Umbau dort „Nacht davor / Abend danach / Nach dem Dienst" wählen lässt. Tests:
-`NachtdienstVorlageVorschlafFensterTest`, `DimWindowResolverTest`.
+Weckzeit davor, entfällt das Fenster. Damals setzte es nur das Vorschlaf-Fenster der
+Nachtdienst-Vorlage (im inzwischen entfallenen `DimmerRulesViewModel`); bestehende Regeln aus der
+Vorlage tragen das Feld nicht und wirken weiter wie bisher. Seit Etappe 3 schreibt es „Nacht davor"
+mit Von < Bis (`DimFensterAbbildung`, `reference/typ-fenster.md`). Tests: `DimWindowResolverTest`,
+`DimmFensterFormTest` (der Vorlagen-Test `NachtdienstVorlageVorschlafFensterTest` ist mit der Vorlage
+entfallen).
 
 ### Die Tagesleiste zeigt Dimmen und „Nicht stören" über die echten Resolver (#193, #194)
 

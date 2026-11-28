@@ -61,6 +61,17 @@ Fallen und Belege im Einzelnen: `reference/emulator-fallen.md`.
 - Zustände wie Krank/Ignorieren im ENTWURF einer bestehenden Typ-Seite prüfen (Kategorie wechseln,
   danach Zurück → „Verwerfen"), statt Typen anzulegen. Die Tagesleiste ist ein Canvas: belegt wird
   sie über die Ereignisliste darunter.
-- Das Overlay des Dimmers erscheint nicht im Screenshot; Nachweis über `dumpsys SurfaceFlinger`.
+- Das Overlay des Dimmers erscheint nicht im Screenshot; Nachweis über
+  `dumpsys SurfaceFlinger --list` (Zeilen `CFAlarmDimLayer` mit `parentId=`). Den Dimm-Dienst erst NACH dem letzten
+  `am force-stop` einschalten — `force-stop` nimmt ihn wieder aus der Liste.
+- **Gerätezustand (Dichte, Dunkelmodus, Schrift) bleibt über Bash-Aufrufe hinweg stehen:** jedes
+  Zustands-Skript setzt ihn am Anfang selbst und gibt `wm density` aus, nicht nur am Ende zurück.
+- **Neben einer zweizeiligen Beschriftung liest `pruefe_texte.py` den WERT vor der Unterzeile**
+  (Sortierung nach Oberkante): die Erwartungsdatei folgt der Geometrie, die Pflichttexte bleiben.
+- **„Nicht stören"-Zugriff umschalten:** `adb shell cmd notification disallow_dnd <paket>` /
+  `allow_dnd <paket>` (Rückgabe im `trap`). Ob ein Knopf gesperrt ist, steht nicht am Text-Knoten
+  (`enabled="true"` auch gesperrt) — am Schalter bzw. am Bild ablesen.
+- **Zustände, die die Oberfläche nicht anlegen kann** (z. B. ein Dimm-Fenster ohne „Wann"): den
+  Store bei angehaltener App per `run-as` sichern, ändern, danach das Original zurückkopieren.
 - Hängt mobile-mcp am Gerät, ist die Bedienungshilfe still aus (Memory
   `env_mobile_mcp_legt_bedienungshilfen_lahm`).

@@ -33,14 +33,21 @@ das baut man dieselbe Falle in neuer Form nach.
 - **Die Navigationsschublade gehoert in `MainContentScreen`** - nur dort ist sie waehrend der
   Onboarding-Gates nicht komponiert. Und sie braucht `ModalDrawerSheet(drawerState = ...)`: nur
   diese Ueberladung behandelt Zurueck, sonst beendet ein Zurueck auf dem Home-Tab die App.
-- **`HueRuleConfig`/`DimmerRuleConfig` brauchen `cameFromSettingsList`**, nicht nur `returnToTab`:
-  System-Back und screen-eigener Zurück-Pfeil MÜSSEN für denselben Einstiegspfad zum selben Ziel führen.
+- **`HueRuleConfig` braucht `cameFromSettingsList`**, nicht nur `returnToTab`: System-Back und
+  screen-eigener Zurück-Pfeil MÜSSEN für denselben Einstiegspfad zum selben Ziel führen. (Der
+  Zwilling `DimmerRuleConfig` ist mit dem Dimmer-Bereich entfallen, #226.)
+- **Das Menü hat fünf Ziele** (`MainTab`: Übersicht, Wecker, Philips Hue, System-Status,
+  Einstellungen; SPEC 3.7, Test `MainTabZieleTest`). `MainTab.DIMMER` und die Zustände
+  `DimmerSettings`, `DimmerRuleConfig`, `DimmerPreview` samt Aktionen sind seit #226 entfallen;
+  Dimm-Fenster stellt man am Typ ein, die Geräte-Werte unter Einstellungen. Ein gespeicherter Reiter
+  existiert nicht (nach Prozesstod startet die App auf der Übersicht).
 - **„Später“ setzt die Gate-Kette SOFORT fort** (seit 1.46.0): erst das Dismissed-Flag abgewartet
   schreiben, dann weiterlesen; ein `SPAETER_*`-Einstieg schaut nur nach vorne (keine Schleife, auch
   bei degradiertem Read). Die Entscheidung ist die reine Funktion `naechsterGateSchritt()` in
   `navigation/OnboardingGates.kt`; gelesen wird nur in `MainScreen.leseGateLage()`.
-- **Der Rückweg aus den Regel-Editoren wird NUR in `NavigationViewModel.navigateBackFrom()` aufgelöst.**
-- **`OrtFuerTageslicht` (#140) traegt sein `zurueckZu`** (Einstellungen, Dimmer- oder Hue-Editor)
+- **Der Rückweg aus dem Hue-Regel-Editor wird NUR in `NavigationViewModel.navigateBackFrom()` aufgelöst.**
+- **`OrtFuerTageslicht` (#140) traegt sein `zurueckZu`** (seit #226 zwei Einstiege: Einstellungen
+  und Hue-Regel-Editor)
   und hat einen eigenen Zweig in `rueckwegZiel`. Die Editoren ueberleben den Umweg ueber den
   `SaveableStateHolder` in `MainScreen`, verschluesselt mit `sitzung` (`editorFormularSchluessel`);
   jedes frische Oeffnen bekommt eine neue `sitzung`, beim endgueltigen Verlassen wird der Zustand
@@ -189,10 +196,17 @@ das baut man dieselbe Falle in neuer Form nach.
   brechen dort mitten im Wort um.
 
 ---
-- **Die Statuszeile je Schicht (#70, `viewmodel/SchichtFolgen.kt`) zählt über DIESELBEN Funktionen wie
-  die Laufzeit**: `findRuleForShift` (eine wirksame Dimm-Regel, weitere = „+N ohne Wirkung“),
-  `passtAufSchicht` (eigene und ALL-Regeln feuern gemeinsam), exakter DND-Abgleich. Keine Nachbildung.
-  Hue nur über `IHueConfigRepository`, gelesen nur bei Abo. Umbruch nur hinter dem Trenner (NBSP).
+- **Die Statuszeile je Schicht (#70, `viewmodel/SchichtFolgen.kt`) liest, was die Laufzeit liest**:
+  seit #219 Dimmen und „Nicht stören" am Typ (`ShiftDefinition.dimmen`/`.nichtStoeren`,
+  Rufbereitschaft über die Kategorie), Hue über `passtAufSchicht` (eigene und ALL-Regeln feuern
+  gemeinsam). Keine Nachbildung. Hue nur über `IHueConfigRepository`, gelesen nur bei Abo. Umbruch
+  nur hinter dem Trenner (NBSP).
+- **Die Zeile der Typ-Liste ist EINE Zeile** (#220): `listenKurzform(definition, folgen)`
+  (`ShiftConfigScreen.kt`) = `kurzform(…, dimmKurzform(definition))` (`viewmodel/SchichtFolgen.kt`)
+  setzt den Dimm-Text an die Stelle von „Dimmen: …". Reihenfolge: `kein Wecker` · Dimm-Text ·
+  `Licht: …` (nur mit Wecker) · `Nicht stören: …`. Der Dimm-Wortlaut kommt aus
+  `DimFensterAbbildung.kurzform`, nie nachgebaut; „Dimmen: N Fenster" (`alsText()`) steht NUR in der
+  Tagesliste. Ein Test der Zeile prüft den GANZEN Text (`TypListeKurzformTest`).
 - **Texte, die das Kalenderfenster nennen, lesen `CalendarUiState.vorausschauTage`**, nie eine feste 14.
 - **Der Ladetext der Start-Wiederherstellung sagt „Suche nach einer Anmeldung …“**, nicht „wird
   übernommen“ — er steht bei JEDER frischen Installation da.
@@ -220,12 +234,22 @@ Hergang, Textwahrheits-Entscheidungen und Tests: `reference/typ-seite.md`.
   zurück. „Geändert" heißt `ausgang != entwurf`. Eingabe-Callbacks sind Umformungen
   (`aendere { it.copy(...) }`), keine fertigen Werte. Gespeichert wird höchstens einmal
   (`TypSeiteSpeicherung`); ein verschwundener Typ wird nie neu angelegt.
+- **Ein Teil des Entwurfs, den ein Hintergrund-Schreiber ändern kann, folgt dem Gespeicherten,
+  solange er unberührt ist** (#221/#222, `TypSeiteEntwurf.nachgezogen`, `LaunchedEffect`; Dimmen und
+  „Nicht stören", Schalter und Fenster je für sich). Sonst hält `anwenden()` nach einer Migration
+  unter der offenen Seite die nie angefasste Karte für geändert, und „Speichern" löscht die Fenster.
+- **Dimmen und „Nicht stören" reisen im Bundle als EIN JSON-Element an achter Stelle**
+  (`EntwurfTeile`, beide Teile einzeln `null` = gespeicherter Stand); ein weiteres strukturiertes
+  Feld kommt dort hinein, nicht an eine neunte Stelle.
 - **Neuanlage läuft über die Typ-Seite** (#190): `navigateToNeuerTyp(vorlage, fundCode, tab)`, Vorlage und
   Fund-Code reisen im `NavigationState.TypSeite`, geschrieben wird NUR mit „Erstellen"
   (`TypSeiteSpeicherung.erstelle`, höchstens einmal für BEIDE Wege).
 - **„Ohne Kalendereintrag" ist eine EIGENE Seite** (`NavigationState.OhneEintragSeite`), keine
   `TypSeite` mit Sonderkennung; ihre Wahl schreibt beim Tippen (`waehleOhneEintrag`, einziger
-  Aufruf je Tipp) — die einzige Ausnahme vom Entwurf mit Speichern.
+  Aufruf je Tipp) — die einzige Ausnahme vom Entwurf mit Speichern, und seit #223 gilt sie für die
+  GANZE Seite: jede Änderung (auch Dimmen, „Nicht stören", „Weitere Optionen") geht sofort als
+  UMFORMUNG an `aendereOhneEintrag`, gerechnet wird auf `ShiftUiState.ohneEintragStand` (beauftragt,
+  noch nicht gespeichert), nie auf `currentShiftConfig`, und armiert gegen den Vorgänger-AUFTRAG.
 - **Die Schichttypen-Liste ist NUR in der Anzeige nach Kategorien gruppiert** (`schichttypBloecke`):
   die gespeicherte Reihenfolge wird nie umsortiert (die Erkennung nimmt den ersten Treffer),
   Bearbeiten und Löschen arbeiten per `id`, nie per Index einer Anzeigeliste.
@@ -239,10 +263,32 @@ Hergang, Textwahrheits-Entscheidungen und Tests: `reference/typ-seite.md`.
   Größe wie der Knopf** (`TypAbschnittLogik.fehltMuster` = Chips MIT dem Text im „+"-Feld).
 - **WAS ein Sonderfall-Kasten sagt, entscheidet EINE Funktion: `ShiftDefinitionTexte.sonderfall()`**;
   ein ausgeschalteter Typ hat keinen Kasten, Krank und Ignorieren haben keine Karte „Wecker".
-- **Kein Text am Typ verspricht, was der Typ (noch) nicht steuert**: Dimmen und Licht hängen bis
-  Etappe 3/4 an Regeln, nicht am Typ; ein stummer Wecker startet kein Licht. **Wer Etappe 3 oder 4
-  baut, tauscht die vorgemerkten Sätze** (Liste in `reference/typ-seite.md`).
+- **Kein Text am Typ verspricht, was der Typ (noch) nicht steuert**: seit Etappe 3 stehen Dimmen und
+  „Nicht stören" am Typ, Licht hängt bis Etappe 4 an Regeln; ein stummer Wecker startet kein Licht.
+  **Wer Etappe 4 baut, tauscht die vorgemerkten Sätze** (Liste in `reference/typ-seite.md`).
 - **Die Karte „So läuft ein Tag" ist nur Verdrahtung** der Adapter aus `tagesleiste/` und zeigt nur,
   was zur Laufzeit wirklich passiert: ein ausgeschalteter Typ hat keinen Ablauf, Tageslicht-
-  Bedingungen werden übergeben. Weckzeit/Wecker/Kategorie kommen aus dem ENTWURF, Regeln und Spannen
-  hängen am GESPEICHERTEN Namen; `tagesleisteQuellen == null` heißt „wird gelesen", nie leere Leiste.
+  Bedingungen werden übergeben. Weckzeit/Wecker/Kategorie, Dimmen und „Nicht stören" kommen aus dem
+  ENTWURF (#221/#222, als Parameter von `TagesleisteKarteLogik.einstellungenAus`, nie als vorab
+  veränderte `TagesleisteQuellen`), Licht und Spannen hängen am GESPEICHERTEN Namen;
+  `tagesleisteQuellen == null` heißt „wird gelesen", nie leere Leiste.
+- **„Weitere Optionen" ist ein bildschirmfüllender `Dialog` auf demselben Entwurf** (#224, kein
+  `NavigationState`; offen-Zustand `rememberSaveable` in `TypSeiteFormular`). So ein Dialog braucht
+  `DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)`, setzt die
+  Symbolfarbe der Systemleisten am Dialogfenster selbst, und seine Liste braucht
+  `consumeWindowInsets(padding)` plus `imePadding()`.
+- **Was nur unter „Weitere Optionen" einstellbar ist und die Aussage der Karte ändert, steht auch auf
+  der Karte** (`DimmenAbschnittLogik.blattHinweis`): ein Nachlauf (Titel und Schalter sagen sonst
+  „bis Wecker") und der Weg zu einem Fenster ohne „Wann".
+- **Ein Regler, dessen Wert sofort gespeichert wird, gibt ihn erst mit `onValueChangeFinished`
+  weiter** (#238; Zwischenstand lokal) — `onValueChange` feuert bei jedem Zwischenwert, und an der
+  festen Zeile ist jeder Schreibaufruf ein Speichern samt Alarm-Abgleich.
+- **Ein `OutlinedButton`, der einen WERT zeigt (Uhrzeit), bekommt Fläche und Textfarbe ausdrücklich**
+  (`ZeitKnopf`): mit den Material-Vorgaben sah „22:00" gesperrt aus.
+- **Wer den Text eines `AlertDialog` verlängert, prüft ihn bei 320 dp UND Schrift 1,3**; ein langer
+  Text braucht `Modifier.verticalScroll(rememberScrollState())` im `text`-Slot.
+- **Ein Sammelhinweis über mehreren Schaltern wird gegen JEDEN Schalter geprüft**, auch gegen bedingt
+  sichtbare Unteroptionen mit umgekehrter Polung (#225, „Wiederholte Anrufer durchlassen").
+- **Die Play-Pflicht-Offenlegung der Bedienungshilfe gibt es EINMAL** (#225):
+  `BedienungshilfeOffenlegung` in `StatusPermissionCards.kt`, gerufen von der Status-Karte und der
+  Zeile „Bedienungshilfe" in den Einstellungen; nur sie ruft `openAccessibilitySettings`.

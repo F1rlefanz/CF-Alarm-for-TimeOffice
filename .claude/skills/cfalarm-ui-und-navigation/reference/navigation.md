@@ -9,6 +9,7 @@
 - Zurueck, BackHandler und die Onboarding-Gates
 - Navigationsschublade statt unterer Leiste (v1.38.0)
 - Gate-Kette als reine Funktion, „Später“ führt weiter (#132, 1.46.0)
+- Der Dimmer-Bereich entfällt (#226, Etappe 3)
 
 - **Zurueck gehoert dem `BackHandler` in `MainScreen`.** Die App navigiert ueber einen eigenen
   `NavigationState`, nicht ueber Navigation-Compose — es gibt **keinen Backstack**, der Zurueck
@@ -37,16 +38,16 @@
   Der Kurzschluss in `MainScreen` (spart den Async-Call, solange das Gate noch offen ist) rechnet
   mit demselben `GateLage.akkuGateErledigt` (früher `batteryGateResolved`). Eine Ablehnung des Akku-Gates ist eine Aussage über die
   Akku-Ausnahme, keine über die davon unabhängigen Gates dahinter.
-- **`NavigationState.HueRuleConfig`/`DimmerRuleConfig` brauchen `cameFromSettingsList`, nicht nur
-  `returnToTab`.** `HueRuleConfig` ist auf zwei Wegen erreichbar (direkt vom **HUE-Tab** „Neue
+- **`NavigationState.HueRuleConfig` braucht `cameFromSettingsList`, nicht nur `returnToTab`**
+  (bis #226 auch der Zwilling `DimmerRuleConfig`, der mit dem Dimmer-Bereich entfallen ist). `HueRuleConfig` ist auf zwei Wegen erreichbar (direkt vom **HUE-Tab** „Neue
   Regel" ODER über `HueSettings` „Bearbeiten"), und der System-Back (`BackHandler`) UND der
   Screen-eigene Zurück-Pfeil/Speichern-Button MÜSSEN für denselben Einstiegspfad zum selben
   Ziel führen. Vor v1.22.0 taten sie das nicht: der Screen-eigene Weg ging immer zur Settings-Liste
   (falsch bei Direkteinstieg vom Tab), der System-Back-Weg ging immer direkt zum Tab (falsch bei
   Einstieg über die Settings-Liste) — zwei sich widersprechende, feste Annahmen statt einer
   gemeinsamen. Real am Fairphone verifiziert (05.08.2026, alle 4 Hue-Kombinationen).
-  `DimmerRuleConfig` hat heute nur den Weg über `DimmerSettings` (Default `true`), trägt das Flag
-  aber gleich mit, damit ein späterer Direktpfad automatisch korrekt zurückführt.
+  `DimmerRuleConfig` hatte damals nur den Weg über `DimmerSettings` (Default `true`) und trug das
+  Flag gleich mit; beide Zustände sind seit #226 entfallen.
 
 ## Navigationsschublade statt unterer Leiste (v1.38.0)
 
@@ -97,15 +98,15 @@
   an. `MainTabZieleTest` haelt fest, dass jeder Enum-Wert genau einmal vorkommt - ein
   vergessener siebter Bereich waere sonst schlicht unerreichbar.
 
-- **Keine Direkteinstiege aus der Schublade zu den Regel-Editoren.** `HueRuleConfig` und
-  `DimmerRuleConfig` unterscheiden ihren Rueckweg ueber ein einzelnes `cameFromSettingsList`-
-  Boolean, das an drei Stellen dupliziert ist. Ein dritter Einstiegspfad sprengt es und
-  braeuchte erst einen `Herkunft`-Enum. Die Schublade enthaelt genau die sechs Bereiche.
+- **Keine Direkteinstiege aus der Schublade zum Hue-Regel-Editor.** `HueRuleConfig` unterscheidet
+  seinen Rueckweg ueber ein einzelnes `cameFromSettingsList`-Boolean (bis #226 ebenso der
+  entfallene `DimmerRuleConfig`). Ein dritter Einstiegspfad sprengt es und braeuchte erst einen
+  `Herkunft`-Enum. Die Schublade enthaelt genau die Bereiche aus `MainTab` (seit #226 fuenf).
 
 ## Gate-Kette als reine Funktion, „Später“ führt weiter (#132, 1.46.0)
 
-**Schritt 1, verhaltensgleich.** Der Rückweg aus `HueRuleConfig`/`DimmerRuleConfig` stand dreimal im
-Code (BackHandler, zwei Screen-Lambdas, `navigateBackToMain()`) — die Falle von v1.22.0 in neuer Form.
+**Schritt 1, verhaltensgleich.** Der Rückweg aus den damals zwei Regel-Editoren (`HueRuleConfig`, der
+inzwischen entfallene `DimmerRuleConfig`) stand dreimal im Code (BackHandler, zwei Screen-Lambdas, `navigateBackToMain()`) — die Falle von v1.22.0 in neuer Form.
 Heute löst nur `navigateBackFrom(state)` auf; Screens übergeben den GERENDERTEN Zustand, damit ein
 zweiter Tipp auf Speichern zum selben Ziel führt. Die Gate-Entscheidung liegt in
 `naechsterGateSchritt(GateLage, GateEinstieg)`; gelesen wird lazy in Kettenreihenfolge in
@@ -126,3 +127,16 @@ IOException hätte die App sonst bei jedem Start abstürzen lassen).
 Unused-Gate; Zurück dort → Home, 6h-Kette gestellt. Damit das Unused-Gate offen ist, muss die
 Ausnahme auf Uid- UND Paketebene stehen: `cmd appops set --uid <pkg> AUTO_REVOKE_PERMISSIONS_IF_UNUSED
 allow` (der Uid-Modus hat Vorrang). TimeOffice-Gate erscheint nur, wenn TimeOffice installiert ist.
+
+## Der Dimmer-Bereich entfällt (#226, Etappe 3, 1.59.0)
+
+- **`MainTab.DIMMER` entfällt**, mit ihm die Zustände `DimmerSettings`, `DimmerRuleConfig` und
+  `DimmerPreview` samt Aktionen und `navigateTo…`-Funktionen. Das Menü zeigt „Übersicht", „Wecker",
+  „Philips Hue", „System-Status", „Einstellungen" (SPEC 3.7, Test `MainTabZieleTest`). Dimm-Fenster
+  stellt man allein auf der Typ-Seite ein, die Geräte-Werte (Verdunkelung, Farbwärme, Vorschau,
+  Bedienungshilfe) unter Einstellungen.
+- **Die Rückweg-Regeln** (`cameFromSettingsList`, `sitzung`, `editorFormularSchluessel`) gelten nur
+  noch für `HueRuleConfig`. `OrtFuerTageslicht` hat zwei Einstiege (Einstellungen, Hue-Regel-Editor).
+- **Ein gespeicherter Reiter existiert nicht**: nach Prozesstod startet die App auf der Übersicht —
+  es gibt also keinen alten Reiterwert `DIMMER`, der nach dem Update ins Leere zeigen könnte.
+- `HilfeThema.ANLEITUNG_DIMMER` ging mit den Bildschirmen.

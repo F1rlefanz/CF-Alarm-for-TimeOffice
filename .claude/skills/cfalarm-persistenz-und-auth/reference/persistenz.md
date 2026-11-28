@@ -17,6 +17,7 @@
 - `isPersistenceBlocked()` heisst NUR "der Bestand ist in diesem Prozess unlesbar"
 - `saveAlarm()` meldete Erfolg, obwohl nichts geschrieben wurde
 - Die Quellen der Tagesleiste: Unbekannt statt leer, je Quelle einzeln (#196)
+- Dimmen und „Nicht stören" am Typ: Speicherform, Marker, Migration, Entwurf (Umbau Etappe 3)
 
 ---
 
@@ -165,12 +166,18 @@ liest Spannen, Dimm-Regeln, Dimm- und DND-Schalter, Hue-Regeln und Hue-Konfigura
   `emit(emptyMap())`) ist hier genau das verbotene Muster und ließe bei einem Fehler alle Spuren
   zugleich ausfallen.
 - **`TagesleisteQuellen.stand(spur)` sagt je Spur BEKANNT/UNBEKANNT:** die Spannen hängen an JEDER
-  Spur (die Dienstzeit legt den Weckpunkt fest, ein Nachtdienst weckt am Vortag), „Nicht stören"
-  hängt an der Dimm-Quelle nur, solange „folgt dem Dimmer" an ist.
-- **Grenze (belegt, #210):** Dimm-Regeln (`DimRuleRepository.rules`), Dimm-Schalter und DND-Schalter
-  (`safeData`) sowie `HueConfigRepository.getConfiguration()` degradieren in ihren Stores selbst auf
-  leer/aus und melden den Fehler nicht weiter; unbekannt werden dort nur Würfe, in Produktion also
-  nur Hue-Regeln und Spannen (beide `Result`).
+  Spur (die Dienstzeit legt den Weckpunkt fest, ein Nachtdienst weckt am Vortag). Dimmen und „Nicht
+  stören" hängen seit #219 beide an `typen` (bis dahin hing „Nicht stören" an der Dimm-Quelle nur,
+  solange „folgt dem Dimmer" an war).
+- **Grenze (belegt, #210), für Dimmen und DND seit #219 erledigt:** Damals lasen Dimm-Regeln
+  (`DimRuleRepository.rules`), Dimm-Schalter und DND-Schalter (`safeData`) über Stores, die selbst
+  auf leer/aus degradieren und den Fehler nicht weitermelden. Seit #219 liest die Tagesleiste
+  Dimmen und „Nicht stören" aus der Konfiguration (`TagesleisteQuellen.typen`) über
+  `IShiftUseCase.getCurrentShiftConfig()` — ein `Result`, neu gelesen bei jedem neuen
+  `currentShiftConfig`, nie über den Flow `shiftConfig`, der auf Standardwerte degradiert. Ein
+  Lesefehler macht BEIDE Spuren `Quelle.Unbekannt` (Test `TagesleisteQuellenTest`). Offen bleibt der
+  Hue-Teil: `HueConfigRepository.getConfiguration()` („Bridge eingerichtet") degradiert weiter
+  selbst; das holt Etappe 4.
 - **Falle `getScheduleRules()`:** fängt `Exception`, also auch `CancellationException`, und verpackt
   sie in `Result.failure` — `alsQuelle` wirft sie weiter.
 - **Spannen werden bei ZWEI Anlässen neu gelesen** (Prüfer-Befund): neue Eventliste UND das Ende von
@@ -188,3 +195,54 @@ liest Spannen, Dimm-Regeln, Dimm- und DND-Schalter, Hue-Regeln und Hue-Konfigura
   Hue-Fehlschlag als leere Liste, ein Fang hinter dem `combine`, `CancellationException`
   geschluckt, Spannen-Fehlschlag als leere Liste, kein Neu-Lese-Auslöser nach dem Speichern,
   Auslöser nur im Erfolgszweig des Syncs).
+
+## Dimmen und „Nicht stören" am Typ: Speicherform, Marker, Migration, Entwurf (Umbau Etappe 3, November 2026)
+
+Wie Dimmer und DND die Felder LESEN: Skill `cfalarm-dimmer-und-dnd`, `reference/typ-fenster.md`.
+Hier steht, wie sie gespeichert und übertragen werden.
+
+- **Die Fenster am Typ liegen roh** (#213, `model/TypEinstellungen.kt`):
+  `TypDimmen.fensterGespeichert: List<JsonElement>` (privat), gedeutet in `fenster`; Leser nehmen `fenster`, Schreiber
+  `mitFenster(...)`, nie `copy(fensterGespeichert = ...)`. **Warum:** `DimWindow` trägt
+  kotlinx-Enums, und `ShiftConfigRepository.json` hat kein `coerceInputValues`. Ein unbekannter
+  Anker (spätere Version, dann Revert) machte sonst die ganze Schicht-Konfiguration `Broken` und mit
+  ihr den Wecker-Abgleich; so bleibt das undeutbare Fenster wortgleich gespeichert und dimmt nur
+  nicht. Test: `TypEinstellungenModellTest`. Dieselbe Überlegung trägt `DimWindow.startAmVorabend`
+  als Feld statt eines neuen Ankers (#227).
+- **`ShiftConfig.modellStufe` ist der Migrations-Marker** (#213). Er liegt bewusst im JSON und nicht
+  als eigener Schlüssel: ein Revert verliert ihn zusammen mit den neuen Feldern, und die Migration
+  läuft dann erneut aus dem Altbestand. Wer eine `ShiftConfig` neu baut statt per `copy()`, übernimmt
+  ihn. **Hergang:** Beim Bau von #213 fiel die Stufe beim Zurücksetzen auf 0, weil das Zurücksetzen
+  nicht in `ShiftConfig.kt` lebt, sondern in `resetToDefaultsPreservingAutoAlarm`
+  (`ShiftConfigScreen.kt`). Seither geht es über `ShiftConfig.aufStandardZurueckgesetzt()`; nur der
+  Zweig ohne geladene Konfiguration bleibt bei Stufe 0. Der Test geht über die echte Funktion.
+- **Die Migration liest den Altbestand STRIKT** (#216): `DimRuleRepository.regelnOderFehler()`,
+  `DimOverlayPrefs.dimmenAnOderFehler()`, `DndPrefs.altbestandOderFehler()`. Über die Anzeige-Wege
+  (`rules`, `safeData`), die auf leer bzw. aus degradieren, hätte `TypModellMigration` einen
+  unlesbaren Regelbestand als „keine Regeln" an jeden Typ geschrieben und die Stufe gesetzt. Die
+  Mutation „Regeln über `getRules()`" macht `TypModellMigrationTest` rot. Prüfreihenfolge und
+  Anlässe: Dimmer-Skill.
+- **Die Migration übersetzt nur, was noch dem Standard entspricht, je Einstellungs-OBJEKT** (#234).
+  Körnung: `TypDimmen`, `TypNichtStoeren` samt Ruf-Cutoff, an der festen Zeile ihr Dimmen und ein
+  eingeschaltetes „Solange gedimmt wird". Bei leerem Altbestand
+  (`TypEinstellungenUebersetzung.Altbestand.istLeer`: keine Regel, auch keine deaktivierte, beide
+  DND-Schalter aus, Cutoff 05:00) setzt sie nur die Stufe. **Hergang:** Tor 7 hält die
+  Standard-Konfiguration auf Stufe 0 an. Ein auf der Typ-Seite gespeichertes Fenster hob das Tor auf,
+  und `TypModellMigration` ersetzte beim nächsten Anlass Fenster, Schalter und Wärme durch den
+  Altbestand (ohne Regel: keine Fenster). Je FELD übersetzt käme das Fenster aus dem fehlenden
+  `dim_enabled` ausgeschaltet zurück — deshalb das Objekt als Einheit. Befund aus #221, Test
+  `TypModellMigrationTest` „frische Installation …". **Restfall akzeptiert:** eine Eingabe gleich
+  dem Standard („Dimmen an" ohne Fenster) gilt als unberührt und wird übersetzt.
+- **Der Entwurf der Typ-Seite trägt vom Dimmen nur, was die Seite zeigt** (#221):
+  `DimmenEntwurf(an, fenster, farbwaerme)`, nullable in `TypEntwurf`. `null` heißt „kein Stand, es
+  gilt das Gespeicherte", nie „keine Fenster". `anwenden()` geht auf den GERADE gespeicherten Typ und
+  kodiert Fenster nur neu, wenn sie sich unterscheiden — so bleiben undeutbare und nicht darstellbare
+  Fenster beim Speichern stehen. Ein unlesbarer Dimm-Teil im Bundle verwirft den ganzen Entwurf.
+  Tests: `TypEntwurfDimmenTest` (Mutationsprobe: `TypDimmen(an = an)` statt `gespeichert.copy` macht
+  fünf rot).
+- **Die Farbwärme reist seit #224 mit** (`DimmenEntwurf.farbwaerme: FarbwaermeWahl?`): `null` =
+  unberührt, `FarbwaermeWahl(null)` = „wie in den Einstellungen". Geschrieben wird sie nur, wenn das
+  Blatt „Weitere Optionen" sie geändert hat; die gespeicherte Wahl erneut zu wählen setzt wieder
+  „unberührt". Das ersetzt die #221-Aussage, die Farbwärme bleibe beim Speichern immer stehen. Ein
+  Bundle ohne den Schlüssel liest sich unverändert (Test `DimmenWeitereOptionenTest`). Wie Dimmen und
+  „Nicht stören" im Bundle liegen (ein JSON-Element an achter Stelle): UI-Skill, `typ-seite.md`.

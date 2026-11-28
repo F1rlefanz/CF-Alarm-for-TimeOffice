@@ -1,4 +1,4 @@
-# UI-Prüfung am Emulator — Fallen und Belege aus Etappe 1 und 2
+# UI-Prüfung am Emulator — Fallen und Belege aus den Etappen 1 bis 3
 
 > Hergang zu den Regeln der `SKILL.md` daneben. Gesammelt aus den Abnahmen der Pakete #170–#197
 > (Oktober/November 2026). Jede Falle hat mindestens eine Abnahme Zeit oder ein Scheinergebnis gekostet.
@@ -12,6 +12,7 @@
 - Nachweise, die nicht im Dump stehen
 - Der Bewerter
 - Die Abnahme als Skript
+- Etappe 3: Dimm-Karten, „Nicht stören", Dimm-Dienst
 
 ## `pruefe_texte.py` richtig füttern
 
@@ -111,3 +112,31 @@
 im `finally` zurück), nicht Einzel-Taps. Lauf 1 von #197 verbrauchte ~25 seiner 81 Turns mit
 Einzel-Taps und endete mitten in der Abnahme; sein Log hielt die Ergebnisse nur als Prosa fest („B3r
 BESTANDEN"), und ein Folgelauf musste die Abnahme neu fahren, weil das Issue die AUSGABE verlangt.
+
+## Etappe 3: Dimm-Karten, „Nicht stören", Dimm-Dienst
+
+- **Gerätezustand bleibt über Bash-Aufrufe hinweg stehen** (#221): Dichte, Dunkelmodus und Schrift
+  gehören dem Gerät, nicht dem Aufruf. Jedes Zustands-Skript setzt ihn am Anfang selbst und gibt
+  `wm density` aus, nicht nur am Ende zurück. Hergang: ein Aufruf endete ohne Zurücksetzen auf
+  320 dp, die folgenden „Normalbreite"-Bilder samt Textprüfung liefen schmal; erst der Bewerter sah
+  es an der Höhe der App-Leiste.
+- **Ein Feld rechts neben einer zweizeiligen Beschriftung** (#221): `pruefe_texte.py` sortiert nach
+  Oberkante und liest deshalb den WERT vor der Unterzeile. Die Erwartungsdatei folgt der Geometrie,
+  die Pflichttexte bleiben, wie sie in `BILDSCHIRME.md` stehen. Auf der Dimm-Karte: „Bis" · „07:00" ·
+  „am Tag selbst" · „40" · „Mit %". Migrierte Typen starten mit „Dimmen an diesem Tag" aus, „+
+  Weiteres Fenster" ist dann gesperrt.
+- **Den Zugriff auf „Nicht stören" umschalten** (#222):
+  `adb shell cmd notification disallow_dnd <paket>` / `allow_dnd <paket>`, die Rückgabe im `trap`; die Seite liest den Zugriff beim nächsten
+  `am start` neu. `settings get secure enabled_notification_policy_access_packages` liefert auf API
+  37 `null`, obwohl der Zugriff erteilt ist (Emulator, 27.11.2026) — taugt nicht als Beleg.
+- **Ob ein Knopf gesperrt ist, steht nicht am Text-Knoten darin** (#222): der trägt
+  `enabled="true"` auch bei gesperrtem Knopf. Am Schalter (`checkable`) bzw. am Bild ablesen.
+- **Ein Dimm-Fenster ohne „Wann" lässt sich in der Oberfläche nicht anlegen** (#224). Für die Abnahme
+  `files/datastore/shift_prefs.preferences_pb` bei angehaltener App per `run-as` sichern, den
+  JSON-Wert `shift_config` ersetzen und danach das Original zurückkopieren.
+- **Den Dimm-Dienst erst NACH dem letzten `am force-stop` einschalten** (#225):
+  `settings put secure enabled_accessibility_services <paket>/<paket>.dimmer.DimAccessibilityService`
+  und `accessibility_enabled 1`. `force-stop` nimmt den Dienst wieder aus der Liste (die Zeile stand
+  danach weiter auf „Nicht erlaubt"). Das Overlay ab API 34 über `dumpsys SurfaceFlinger --list`
+  belegen: die hängende Ebene sind die Zeilen `CFAlarmDimLayer` mit `parentId=` (vorher 0, an 2,
+  abgehängt 1). Ein Fenster `TYPE_ACCESSIBILITY_OVERLAY` gibt es dort nicht.

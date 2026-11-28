@@ -93,3 +93,9 @@ das baut man dieselbe Falle in neuer Form nach.
   LITERALE, nie `x() == y()` — sonst ändern sich beide Seiten mit. Hergang: `reference/umgebung-und-tests.md`.
 - **`internal` verziert den JVM-Namen** (`performAlarmRecovery$app`): eine per Reflection geholte
   private Funktion „für Tests“ auf `internal` zu stellen, macht den Reflection-Test rot (#182).
+- **Ein `adb install -r` startet über `MY_PACKAGE_REPLACED` die Wartung, und die führt Migrationen
+  schon VOR dem ersten Öffnen aus** (#216). Wer einen Migrationsfehler am Emulator erzwingen will,
+  ändert den Store erst NACH dem Install (App per `am force-stop` anhalten, dann umschreiben).
+- **Code, der einen `PendingIntent` baut, ist im JVM-Test nur mit `mockConstruction(Intent)` PLUS
+  `mockStatic(PendingIntent)` prüfbar** (Vorlage `mitDimmTick` in `DimScheduleUseCaseTest.kt`, #217):
+  `Intent.setAction()` liefert im Android-Stub `null`, und Kotlin wirft „setAction(...) must not be null“.

@@ -3,6 +3,12 @@
 > Hergang zu den Kurzregeln in `CLAUDE.md` und in der `SKILL.md` daneben: welcher Bug die
 > Regel erzwungen hat, welche Messung sie belegt, welche Alternative verworfen wurde.
 > Jede Zeile hier hat einmal echten Schaden verhindert — im Zweifel gilt sie, nicht die Intuition.
+>
+> **Stand seit #218 (Etappe 3, 1.59.0):** Die beiden Fenster-Trigger und der Ruf-Cutoff sind
+> Schalter AM TYP (`DndTypSchalter`, `TypNichtStoeren`); die globalen Schalter `DndPrefs.Toggles`
+> und `onCallCutoffMinutes` liest `DndScheduleUseCase` nicht mehr. Wo unten von ihnen die Rede ist,
+> beschreibt das den Stand davor — das Prinzip (zwei Trigger, ein Klipp-Schritt) gilt weiter, nur je
+> Typ. Hergang des Umbaus: `reference/typ-fenster.md`.
 
 ## Inhalt
 
@@ -233,7 +239,8 @@ Seit **1.39.6** (05.09.2026). Betrifft `DndDiagnostik` und `DndScheduleUseCase.a
 
 **Der Anlass war eine Frage, die sich nicht beantworten ließ.** Am Morgen des 05.09.2026 lief auf
 dem Fairphone der Frühschicht-Wecker (05:30). Für den Dimmer war der Fall in einer Zeile geklärt —
-`Dimmen aus - Grund=KEIN_FENSTER_TROTZ_REGELN`, also endete das Dimmen mit der Weckzeit statt erst
+`Dimmen aus - Grund=KEIN_FENSTER_TROTZ_REGELN` (seit #217 heißt der Grund
+`KEIN_FENSTER_TROTZ_TYP_FENSTERN`), also endete das Dimmen mit der Weckzeit statt erst
 um 06:00, genau wie der Anker `ALARM_SONST_CLOCK` es soll. Für DND stand im Datei-Log des ganzen
 Tages **nur viermal** `Naechster DND-Wechsel geplant: …`. Ob „Nicht stören" um 05:30 tatsächlich
 ausging, war daraus nicht zu lesen, nur zu erschließen: aus der Lage der Grenzen (05:30 → 06:00 →

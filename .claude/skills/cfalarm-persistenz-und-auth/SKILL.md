@@ -14,7 +14,8 @@ das baut man dieselbe Falle in neuer Form nach.
 
 ## Hergang und Belege
 
-- `reference/persistenz.md` — DataStore-Degradation, Direct-Boot-Spiegel, Reihenfolge von catch und map
+- `reference/persistenz.md` — DataStore-Degradation, Direct-Boot-Spiegel, Reihenfolge von catch und map,
+  Speicherform und Migration der Typ-Einstellungen (Umbau Etappe 3)
 - `reference/auth-und-token.md` — Token-Rotation, Verlust-Signal, Abmelden
 - `reference/fehlerbehandlung.md` — SafeExecutor, CancellationException, Fehlerklassifizierung
 - `reference/geraetewechsel-und-export.md` — DeviceLocalFlagsGuard, Export/Import-Filter
@@ -53,6 +54,9 @@ das baut man dieselbe Falle in neuer Form nach.
     heißt nur „noch nicht gelesen". Ein einziger Fang HINTER dem `combine` (wie `schichtFolgen` mit
     `emit(emptyMap())`) ließe bei einem Fehler alle Spuren zugleich ausfallen. `alsQuelle` wirft
     `CancellationException` weiter (`getScheduleRules()` verpackt sie in `Result.failure`).
+    **Dimmen und „Nicht stören" liest sie seit #219 über `IShiftUseCase.getCurrentShiftConfig()`**
+    (ein `Result`, neu gelesen bei jedem neuen `currentShiftConfig`), nie über den Flow
+    `shiftConfig`, der auf Standardwerte degradiert; ein Lesefehler macht BEIDE Spuren unbekannt.
 - **Ein CE-DataStore-Read VOR der ersten Entsperrung wirft NICHT — er liefert still leere
   Preferences.** Deshalb fragt `AlarmRepository` VOR dem Read den `UserManager`, akzeptiert bei
   gesperrtem Nutzer KEIN Ergebnis und lädt beim ersten Zugriff nach dem Entsperren nach —
@@ -116,6 +120,28 @@ das baut man dieselbe Falle in neuer Form nach.
   Konfiguration `Broken`. `formatVersion` der Sicherung bleibt 1, sonst lehnt die Vorversion jede
   neue Datei ab. Gespeichert wird ein Typ vom bestehenden aus (`copy`), nie über einen neuen
   `ShiftDefinition(...)`-Aufruf — der ließe jedes künftige Feld still auf den Default fallen.
+- **Die Dimm-Fenster am Typ liegen ROH und werden beim Lesen gedeutet** (#213,
+  `TypDimmen.fensterGespeichert: List<JsonElement>`): Leser nehmen `fenster`, Schreiber
+  `mitFenster(...)`, nie `copy(fensterGespeichert = ...)`. `DimWindow` trägt kotlinx-Enums; ein
+  unbekannter Anker machte sonst die ganze Konfiguration `Broken` — so bleibt das undeutbare Fenster
+  wortgleich gespeichert und dimmt nur nicht.
+- **`ShiftConfig.modellStufe` ist der Migrations-Marker, und er liegt bewusst IM JSON** (ein Revert
+  verliert ihn mit den neuen Feldern, die Migration läuft dann erneut). Wer eine `ShiftConfig` neu
+  baut statt per `copy()`, übernimmt ihn — „Auf Standardwerte zurücksetzen" geht über
+  `ShiftConfig.aufStandardZurueckgesetzt()`.
+- **Eine Migration liest den Altbestand über STRIKTE Lese-Stellen** (`regelnOderFehler()`,
+  `dimmenAnOderFehler()`, `altbestandOderFehler()`), nie über die Anzeige-Flows (`rules`,
+  `safeData`), die auf leer bzw. aus degradieren — sonst wird ein unlesbarer Bestand als „keine
+  Regeln" an jeden Typ geschrieben und der Marker gesetzt.
+- **Eine Migration in Felder, die die Oberfläche schon VOR ihr beschreiben kann, übersetzt nur, was
+  noch dem Standard entspricht — je Einstellungs-OBJEKT, nicht je Feld** (#234: `TypDimmen`,
+  `TypNichtStoeren` samt Ruf-Cutoff, an der festen Zeile ihr Dimmen und „Solange gedimmt wird"). Bei
+  leerem Altbestand (`Altbestand.istLeer`) setzt sie nur die Stufe.
+- **Ein Entwurf trägt von einem strukturierten Teil nur, was die Seite zeigt, und `null` heißt
+  „unberührt, es gilt das Gespeicherte"** (#221/#224: `DimmenEntwurf(an, fenster, farbwaerme)`):
+  angewendet wird auf den GERADE gespeicherten Typ, Fenster werden nur neu kodiert, wenn sie sich
+  unterscheiden, die Farbwärme nur geschrieben, wenn das Blatt sie geändert hat. Ein unlesbarer
+  Teil im Bundle verwirft den ganzen Entwurf.
 
 ## Auth — Kurzregeln
 

@@ -327,3 +327,14 @@ muss rot werden). Was dabei gelernt wurde:
 - **Testvorlagen des Umbaus:** `UmbauTestvorlageTest` findet `..Projektdateien/umbau/testvorlagen/`
   auch aus einem Worktree (über `gitdir:` der `.git`-Datei zum Hauptbaum); fehlt sie, `Assume` mit
   Meldung (#166).
+- **Ein Migrationsfehler lässt sich am Emulator nicht „vor dem Öffnen“ vorbereiten** (#216, Etappe 3):
+  `adb install -r` löst `MY_PACKAGE_REPLACED` aus, der startet die Wartung, und die führt
+  `DimmerModellMigration` und `TypModellMigration` schon aus, bevor jemand die App öffnet — am
+  22.11.2026 stand die Stufe so schon auf 1, bevor die App offen war. Vorgehen: erst installieren,
+  dann die App per `am force-stop` anhalten, `settings.preferences_pb` über `run-as` umschreiben
+  (Proto-Map-Eintrag ersetzen) und die Stufe zurücksetzen, indem man `shift_prefs.preferences_pb`
+  entfernt (dann gilt die Standard-Konfiguration mit Stufe 0).
+- **`PendingIntent`-Planung im JVM-Test** (#217): `scheduleNextTransition()` und `enable()` des
+  Dimmers prüft `DimScheduleUseCaseTest.kt` über die Hilfe `mitDimmTick` — `mockConstruction(Intent)`
+  plus `mockStatic(PendingIntent)`. Nur `mockStatic` reicht nicht: `Intent.setAction()` liefert im
+  Android-Stub `null`, und Kotlin wirft beim Aufruf „setAction(...) must not be null“.

@@ -416,8 +416,11 @@ fun MainScreen(
         verworfeneAblagen(vorher, navigationState).forEach { editorFormulare.removeState(it) }
         // #252: Ein Fehler aus dem Editor am Typ ist erledigt, sobald dieser verlassen ist - sonst
         // staende er beim naechsten Oeffnen und im Hue-Bereich ueber etwas, das niemand mehr sieht.
-        if ((vorher as? NavigationState.HueRuleConfig)?.typId != null &&
-            verworfenesEditorFormular(vorher, navigationState) != null
+        // #254: Die Typ-Seite zeigt Hue-Fehler in ihrer Karte „Licht“. Beim Betreten und Verlassen
+        // wird geraeumt: dort steht nie ein Fehler von anderswo, und ihr eigener folgt niemandem.
+        if (((vorher as? NavigationState.HueRuleConfig)?.typId != null &&
+                verworfenesEditorFormular(vorher, navigationState) != null) ||
+            vorher is NavigationState.TypSeite || navigationState is NavigationState.TypSeite
         ) {
             hueViewModel.clearError()
         }
@@ -465,10 +468,15 @@ fun MainScreen(
                     com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.typ.TypSeite(
                         definitionId = state.definitionId,
                         shiftViewModel = shiftViewModel,
+                        hueViewModel = hueViewModel,
                         onZurueck = { navigationViewModel.navigateBackFrom(state) },
                         // Link der Tagesleiste: in den Tab „Wecker“ (die Tagesliste); die Seite fragt vorher bei
                         // ungespeicherten Aenderungen, wie bei Zurueck.
                         onZurWoche = { navigationViewModel.navigateToMainWithTab(MainTab.WECKER) },
+                        // Karte „Licht“ (#254): ohne Bridge in den Bereich „Philips Hue“ (gleiche Rueckfrage),
+                        // sonst in den Regel-Editor fuer genau diese Seite (#252, Entwurf bleibt).
+                        onZurHue = { navigationViewModel.navigateToMainWithTab(MainTab.HUE) },
+                        onLichtregel = { regelId -> navigationViewModel.navigateToTypLichtregel(state, regelId) },
                         vorlage = state.vorlage,
                         fundCode = state.fundCode
                     )

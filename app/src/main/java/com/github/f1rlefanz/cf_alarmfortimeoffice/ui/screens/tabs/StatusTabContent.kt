@@ -216,8 +216,9 @@ fun StatusTabContent(
             onWiederAktivieren = onResumeMasterPause
         )
 
-        // Umbau Etappe 3 (#216): nur, wenn die Uebernahme von Dimmen und "Nicht stoeren" auf die
-        // Typen in diesem Prozess gescheitert ist. Kein Zustand ohne Anzeige.
+        // Umbau Etappe 3/4 (#216, #248): nur, wenn die Uebernahme von Dimmen und "Nicht stoeren"
+        // oder der Hue-Regeln auf die Typen in diesem Prozess gescheitert ist; Titel und Text
+        // nennen den gescheiterten Schritt. Kein Zustand ohne Anzeige.
         val typMigration by TypModellMigration.stand.collectAsState()
         TypMigrationFehlgeschlagenCard(typMigration)
 

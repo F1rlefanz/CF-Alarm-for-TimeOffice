@@ -578,9 +578,25 @@ class HueViewModel @Inject constructor(
     ) { hueRuleUseCase.deleteRule(ruleId) }
 
     /**
+     * „Speichern“ im Editor am Typ (#252). [nachErfolg] laeuft erst, wenn die Regel geschrieben ist:
+     * die Typ-Seite zeigt keine Hue-Fehler, deshalb bleibt der Editor bei einem Fehlschlag offen und
+     * zeigt ihn. Immer der Upsert [IHueRuleUseCase.updateRule] (neu oder geaendert) - der Editor
+     * haelt eine id je Sitzung, ein zweiter Tipp legt so keine zweite Regel an.
+     */
+    fun speichereRegelAmTyp(rule: HueSchedule, nachErfolg: () -> Unit) = regelAktion(
+        eintrittsLog = "Saving rule at shift type: ${rule.id}",
+        erfolgsLog = "Rule saved at shift type: ${rule.id}",
+        standardFehler = "Die Regel konnte nicht gespeichert werden.",
+        fehlerLog = "Saving rule at shift type failed",
+        ausnahmeLog = "Saving rule at shift type exception",
+        nachErfolg = nachErfolg
+    ) { hueRuleUseCase.updateRule(rule) }
+
+    /**
      * Gemeinsamer Ablauf von Anlegen, Aendern und Loeschen einer Regel. Im Erfolg werden die
-     * Regelliste und die vorgeplanten Hue-Jobs sofort nachgezogen. Eine Ausnahme zeigt nur
-     * [standardFehler]; ihre technische Meldung steht im Log, nicht in der Oberflaeche.
+     * Regelliste und die vorgeplanten Hue-Jobs sofort nachgezogen, danach [nachErfolg]. Eine
+     * Ausnahme zeigt nur [standardFehler]; ihre technische Meldung steht im Log, nicht in der
+     * Oberflaeche.
      */
     private fun regelAktion(
         eintrittsLog: String,
@@ -588,6 +604,7 @@ class HueViewModel @Inject constructor(
         standardFehler: String,
         fehlerLog: String,
         ausnahmeLog: String,
+        nachErfolg: () -> Unit = {},
         block: suspend () -> Result<*>
     ) {
         Logger.i(LogTags.HUE_VIEWMODEL, eintrittsLog)
@@ -603,6 +620,7 @@ class HueViewModel @Inject constructor(
                     refreshRules()
                     recalculateHueSchedule()
                     Logger.i(LogTags.HUE_VIEWMODEL, erfolgsLog)
+                    nachErfolg()
                 } else {
                     val error = result.exceptionOrNull()?.message ?: standardFehler
                     _uiState.update { it.copy(isLoading = false, error = error) }

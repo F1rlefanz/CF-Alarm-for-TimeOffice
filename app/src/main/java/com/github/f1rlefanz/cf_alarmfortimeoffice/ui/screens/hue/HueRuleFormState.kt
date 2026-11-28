@@ -14,6 +14,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.aufgerundeteMinute
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.hellNachWeckzeit
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.kuerzeAutoAus
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.util.HueColorConverter
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.HellAb
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.TageslichtStand
 import kotlinx.serialization.Serializable
@@ -38,6 +39,9 @@ import java.util.Locale
 internal data class HueRuleFormState(
     val name: String = "",
     val shiftPattern: String = "",
+    // Umbau E8 (#252): die id des Typs, an dem der Editor offen ist - dann gibt es keine
+    // Schicht-Auswahl ([amTyp]). `null` = Einstieg im Hue-Bereich.
+    val typId: String? = null,
     val enabled: Boolean = true,
     val modus: HueRuleModus = HueRuleModus.MANUELL,
 
@@ -251,8 +255,45 @@ internal fun HueScheduleRule.toFormState(): HueRuleFormState {
 /** Was noch fehlt, damit gespeichert werden kann. Leer = speicherbar. */
 internal fun HueRuleFormState.validate(): List<HueRuleFormFehler> = buildList {
     if (name.isBlank()) add(HueRuleFormFehler.NAME_FEHLT)
-    if (shiftPattern.isBlank()) add(HueRuleFormFehler.SCHICHT_FEHLT)
+    // Am Typ (#252) waehlt niemand eine Schicht - sie ist der Typ.
+    if (typId == null && shiftPattern.isBlank()) add(HueRuleFormFehler.SCHICHT_FEHLT)
     if (!hatZiel) add(HueRuleFormFehler.ZIEL_FEHLT)
+}
+
+// --- Editor am Typ (#252) --------------------------------------------------------------------
+
+/** Name der Vorbelegung fuer die erste Regel eines Typs (Prototyp `lichtDazu`). */
+private const val VORBELEGUNG_SONNENAUFGANG = "Sonnenaufgang 30 min vor Wecker"
+private const val VORBELEGUNG_SONNENAUFGANG_MINUTEN = 30
+
+/** Name der Vorbelegung fuer jede weitere Regel eines Typs. */
+private const val VORBELEGUNG_LICHT_AN = "Licht an zum Wecker"
+
+/**
+ * Das Formular, wie der Editor am Typ es liest: die Schicht ist der GESPEICHERTE Name des Typs
+ * [typ] - keine Auswahl und nicht der ungespeicherte Name aus dem Entwurf der Typ-Seite, denn
+ * geschrieben wird ueber den Namen (`TypLichtSchreiben.zielTyp`).
+ */
+internal fun HueRuleFormState.amTyp(typ: ShiftDefinition): HueRuleFormState =
+    copy(typId = typ.id, shiftPattern = typ.name)
+
+/**
+ * Der Anfangsstand des Editors am Typ [typ]. Eine neue Regel ist vorbelegt wie im Prototyp
+ * (`lichtDazu`): die erste als Sonnenaufgang 30 min vor dem Wecker, jede weitere als „Licht an zum
+ * Wecker“ - nur das Formular: gespeichert wird erst mit „Speichern“, die Ziele waehlt der Nutzer.
+ * Beim Bearbeiten ([neueRegel] = false) fuellt die geladene Regel das Formular.
+ */
+internal fun anfangsFormular(typ: ShiftDefinition, neueRegel: Boolean): HueRuleFormState {
+    val leer = HueRuleFormState().amTyp(typ)
+    return when {
+        !neueRegel -> leer
+        typ.licht.regeln.isEmpty() -> leer.copy(
+            name = VORBELEGUNG_SONNENAUFGANG,
+            modus = HueRuleModus.SONNENAUFGANG,
+            sunrise = SunriseConfig(durationMinutes = VORBELEGUNG_SONNENAUFGANG_MINUTEN, startBeforeAlarm = true)
+        )
+        else -> leer.copy(name = VORBELEGUNG_LICHT_AN, modus = HueRuleModus.MANUELL, on = true)
+    }
 }
 
 /** Saver fuer die Rotation: der ganze Zustand als EIN kotlinx-String (kein listSaver je Feld). */

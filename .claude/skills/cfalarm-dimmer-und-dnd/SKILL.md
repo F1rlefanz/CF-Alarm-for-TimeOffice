@@ -55,8 +55,8 @@ das baut man dieselbe Falle in neuer Form nach.
   (scheitert etwas: Dimmer aus, Marker ungesetzt, WARN, Retry), und der **Konfigurations-Import
   nimmt den Marker zurück** — aber nur, wenn die Datei die ALTEN Schlüssel mitbringt UND kein
   `dim_enabled`. Die alten Preference-Schlüssel werden bewusst NICHT gelöscht (eine Version Rückweg).
-  **Dasselbe Muster hat `TypModellMigration` (#216)**, aus denselben drei Anlässen (MainActivity,
-  Wartung, Import), in fester Reihenfolge: entsperrt → `modellStufe` schon gesetzt (dann NIE ein
+  **Dasselbe Muster hat `TypModellMigration` (#216)**: dieselben beiden Anlässe, dazu läuft sie wie
+  die Dimmer-Migration nach einem Konfigurations-Import, und sie prüft in fester Reihenfolge: entsperrt → `modellStufe` schon gesetzt (dann NIE ein
   Fehler) → `isPersistenceBlocked()` → `dim_modell_migration` gesetzt → Ruf-Altliste weg →
   Altbestand STRIKT → Konfiguration ERNEUT lesen → ein Schreibvorgang über `IShiftUseCase` →
   `ZeitkettenArmierer.armiere()`. Ein Fehlschlag steht nur im Speicher (`TypModellMigration.stand`,
@@ -79,7 +79,9 @@ das baut man dieselbe Falle in neuer Form nach.
 - **Ein Kalendertag kann ZWEI Schichten haben.** `buildRuleSpans`
   fragt JEDE Schicht des Tages (`slotsByDate`), nie nur die früheste. Wirksam wird trotzdem
   **pro Kalendertag GENAU eine Regel**; eine spezifische Regel **überschreibt** UNIVERSAL komplett,
-  nicht additiv. UNIVERSAL heißt „alle **Tage**", nicht „alle Schichten".
+  nicht additiv. UNIVERSAL heißt „alle **Tage**", nicht „alle Schichten". (Seit #217 kommt UNIVERSAL
+  zur Laufzeit nicht mehr vor: `TypDimmQuelle` liefert je Typ eine Regel und die feste Zeile als
+  FREI-Regel; eine Regel OHNE Fenster unterdrückt den ganzen Tag, auch neben einer dimmenden.)
 - **Zwei VERSCHIEDENE Typen an einem Tag: es gewinnt der Typ der FRÜHESTEN Schicht** — plus WARN
   im Release-Log. Den Tag stattdessen auszulassen ist verboten (schaltet das Dimmen dort komplett
   ab — es gibt keine zweite Quelle, die einspränge), die Fenster zu vereinigen ebenfalls (additiv).

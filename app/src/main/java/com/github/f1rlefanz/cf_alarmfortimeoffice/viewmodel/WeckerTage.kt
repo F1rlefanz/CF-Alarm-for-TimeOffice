@@ -350,8 +350,8 @@ private fun artVon(datum: LocalDate, freigaben: FreigabeQuellen): FreigabeArt {
  *   AUSGENOMMEN ohne Dimmer-Quelle ist `aus` false, fuer diese Schicht wirkt aber keine Quelle -
  *   das Kaertchen versprache ein „Nicht stören“, das nie kommt.
  * - „Dimmen“: eine wirksame Regel, die nicht UNTERDRUECKT (leere Fensterliste = kein Dimmen).
- * - „Licht“: mindestens eine Hue-Regel; nicht lesbar / keine Bridge / stille Schicht = keins.
- *   Auf Tagesebene zusaetzlich nur mit klingelndem Wecker ([lichtMoeglich]).
+ * - „Licht“: mindestens eine Hue-Regel; nicht lesbar / keine Bridge = keins. Auf Tagesebene
+ *   zusaetzlich nur mit einem Wecker, auch einem stummen ([lichtMoeglich]).
  * - „Rufbereitschaft“: [ShiftDefinition.isOnCall] DIREKT. NICHT `DndStatus.rufbereitschaft` -
  *   das ist der DND-Cutoff und ist `false`, sobald beide DND-Quellen aus sind; die stuendliche
  *   Kalender-Abfrage laeuft trotzdem.
@@ -367,9 +367,9 @@ internal fun kaertchenFuer(wirkung: SchichtWirkung): Set<Kaertchen> = buildSet {
 }
 
 /**
- * Geht an diesem Tag noch ein Licht an? Nur mit einem Wecker, der klingelt: Hue laeuft
- * ausschliesslich ueber den Weckzeit-Pfad im `AlarmReceiver` und den Vorab-Sonnenaufgang, und
- * beide haengen am Wecker. „Nicht wecken“ und „Dienst fällt aus“ loeschen ihn, der Sonnenaufgang
+ * Geht an diesem Tag noch ein Licht an? Nur mit einem Wecker: Hue laeuft ausschliesslich ueber
+ * den Weckzeit-Pfad im `AlarmReceiver` und den Vorab-Sonnenaufgang, und beide haengen am Wecker -
+ * auch an einem STUMMEN (#251, „Lichtwecker“: die Stille nimmt nur Ton, Vibration und Vollbild). „Nicht wecken“ und „Dienst fällt aus“ loeschen ihn, der Sonnenaufgang
  * prueft das beim Start (`HueSmartScheduler.sonnenaufgangNochGedeckt`) - die Schicht kommt dann
  * nur noch aus dem `ShiftSpanStore`, das Licht nicht.
  *
@@ -378,12 +378,11 @@ internal fun kaertchenFuer(wirkung: SchichtWirkung): Set<Kaertchen> = buildSet {
  * bleiben.
  */
 private fun lichtMoeglich(eintraege: List<WeckerEintrag>): Boolean =
-    eintraege.any { it is WeckerEintrag.Wecker && !it.still }
+    eintraege.any { it is WeckerEintrag.Wecker }
 
-/** Hat der Typ eines klingelnden Weckers an einem Tag ohne Eintrag Licht? (siehe [lichtMoeglich]) */
+/** Hat der Typ eines Weckers (auch eines stummen) an einem Tag ohne Eintrag Licht? (siehe [lichtMoeglich]) */
 private fun lichtOhneEintrag(ohneEintrag: List<WeckerEintrag>, wirkungen: Map<String, SchichtWirkung>): Boolean =
     ohneEintrag.filterIsInstance<WeckerEintrag.Wecker>()
-        .filter { !it.still }
         .mapNotNull { wirkungen[reinerSchichtname(it.alarm.shiftName)] }
         .any { Kaertchen.LICHT in kaertchenFuer(it) }
 

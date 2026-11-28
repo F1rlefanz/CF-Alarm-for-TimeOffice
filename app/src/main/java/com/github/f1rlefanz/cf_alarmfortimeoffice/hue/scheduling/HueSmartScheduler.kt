@@ -150,7 +150,7 @@ class HueSmartScheduler private constructor() {
          * Laeuft die Rampe beim Tippen SCHON, greift diese Pruefung nicht mehr - dafuer legt die
          * Rampe ihr Auto-Aus gleich mit an (`HueRuleUseCase.vorabAutoAusZiele`).
          *
-         * Dieselben Bedingungen wie [sonnenaufgangsKandidaten] (aktiv, nicht still), dazu
+         * Dieselben Bedingungen wie [sonnenaufgangsKandidaten] (aktiv), dazu
          * derselbe Schichtname und dieselbe Weckzeit, verglichen als Ortszeit wie beim Planen.
          * Keine zweite Wahrheit: es ist die Frage „waere er heute noch ein Kandidat?“.
          */
@@ -160,7 +160,7 @@ class HueSmartScheduler private constructor() {
             weckzeit: LocalDateTime,
             zone: ZoneId = ZoneId.systemDefault()
         ): Boolean = alarms.any {
-            it.isActive && !it.isSilent && it.shiftName == shiftName &&
+            it.isActive && it.shiftName == shiftName &&
                 Instant.ofEpochMilli(it.triggerTime).atZone(zone).toLocalDateTime() == weckzeit
         }
 

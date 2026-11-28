@@ -62,13 +62,6 @@ sealed interface LichtStatus {
     /** Die Hue-Regeln liessen sich nicht lesen - "keine" waere hier eine Behauptung. */
     data object NichtLesbar : LichtStatus
 
-    /**
-     * Stille Schicht: kein Hue auf BEIDEN Pfaden - der `AlarmReceiver` ueberspringt die Regeln zur
-     * Weckzeit, und `HueSmartScheduler.sonnenaufgangsKandidaten` plant keinen Vorab-Sonnenaufgang.
-     * Wer einen dritten Hue-Pfad baut, muss die Stille dort ebenfalls pruefen, sonst luegt diese Zeile.
-     */
-    data object StilleSchicht : LichtStatus
-
     /** Keine Bridge eingerichtet - es geht kein Licht an, egal wie viele Regeln es gibt. */
     data object KeineBridge : LichtStatus
 
@@ -127,7 +120,8 @@ private fun lichtStatus(
     hueKonfiguriert: Boolean
 ): LichtStatus {
     val regeln = hueRegeln.getOrElse { return LichtStatus.NichtLesbar }
-    if (definition.isSilent) return LichtStatus.StilleSchicht
+    // Kein Ausstieg fuer die stille Schicht (#251): der stumme Wecker ist ein Lichtwecker, der
+    // `AlarmReceiver` fuehrt seine Regeln aus, und der Vorab-Sonnenaufgang wird fuer ihn geplant.
     if (!hueKonfiguriert) return LichtStatus.KeineBridge
     // Dieselbe Auswahl wie `HueRuleUseCase.findApplicableRules`: aktiv UND passtAufSchicht.
     //
@@ -253,7 +247,6 @@ private fun DimmStatus.teile(): List<String> = when (this) {
 
 private fun LichtStatus.teile(): List<String> = when (this) {
     LichtStatus.NichtLesbar -> listOf(Texte.NICHT_LESBAR)
-    LichtStatus.StilleSchicht -> listOf(Texte.STILLE_SCHICHT)
     LichtStatus.KeineBridge -> listOf(Texte.KEINE_BRIDGE)
     is LichtStatus.Regeln -> buildList {
         add(
@@ -304,7 +297,6 @@ private object Texte {
     const val KEINE = "keine"
     const val ALLGEMEINE_REGEL = "allgemeine Regel"
     const val NICHT_LESBAR = "nicht lesbar"
-    const val STILLE_SCHICHT = "aus (stille Schicht)"
     const val KEINE_BRIDGE = "keine Bridge"
     /** Gleicher Wortlaut wie das Etikett `tageslicht_etikett_dunkel` in der Hue-Regelliste. */
     const val NUR_BEI_DUNKELHEIT = "nur bei Dunkelheit"

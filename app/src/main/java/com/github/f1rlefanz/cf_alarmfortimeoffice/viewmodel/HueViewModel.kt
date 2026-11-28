@@ -660,8 +660,8 @@ class HueViewModel @Inject constructor(
  * PURE: die Weckzeit des naechsten Weckers nach [jetzt], bei dem eine Regel mit [shiftPattern]
  * liefe - oder `null`.
  *
- * Gezaehlt wird, was der `AlarmReceiver` mit Hue-Regeln ausfuehrt: aktiv und NICHT still (stille
- * Schicht = kein Hue). Die Schichtzuordnung ist KEINE Nachbildung, sondern dieselbe Funktion wie
+ * Gezaehlt wird, was der `AlarmReceiver` mit Hue-Regeln ausfuehrt: jeder aktive Wecker, auch ein
+ * stiller (#251, „Lichtwecker“: die Stille nimmt nur Ton, Vibration und Vollbild). Die Schichtzuordnung ist KEINE Nachbildung, sondern dieselbe Funktion wie
  * zur Laufzeit (`passtAufSchicht`, exakter Name ODER Universalmuster) - ueber den REINEN
  * Schichtnamen, sonst faende ein manueller Wecker ("Frühdienst (Manuell)") seine Regel nicht.
  */
@@ -670,7 +670,7 @@ internal fun naechsteWeckzeitFuer(alarme: List<AlarmInfo>, shiftPattern: String,
     val muster = HueScheduleRule(name = "", shiftPattern = shiftPattern, timeRanges = emptyList())
     return alarme
         .asSequence()
-        .filter { it.isActive && !it.isSilent && it.triggerTime > jetzt }
+        .filter { it.isActive && it.triggerTime > jetzt }
         .filter { muster.passtAufSchicht(reinerSchichtname(it.shiftName)) }
         .minOfOrNull { it.triggerTime }
 }

@@ -56,6 +56,9 @@ internal enum class LichtFuss {
     /** „+“ gesperrt, darunter der Grund. */
     HOECHSTZAHL,
     OHNE_WECKER,
+
+    /** Krank und Ignorieren: die Regeln stehen nur noch da, um sie zu entfernen (#255). */
+    KATEGORIE_WECKT_NICHT,
     VERDECKT,
     WIRD_GELESEN,
     OHNE_BRIDGE,
@@ -107,8 +110,13 @@ internal object LichtAbschnittLogik {
      */
     const val HOECHSTZAHL = 10
 
-    /** Wie die Karte „Wecker“: nicht bei Krank und Ignorieren - ohne Weckzeit gibt es kein Licht (E8). */
-    fun zeigtAbschnitt(kategorie: ShiftKategorie): Boolean = WeckerAbschnittLogik.zeigtWeckerKarte(kategorie)
+    /**
+     * Wie die Karte „Wecker“ nicht bei Krank und Ignorieren (ohne Weckzeit gibt es kein Licht, E8) - ausser
+     * der GESPEICHERTE Typ traegt dort Lichtregeln (aus der Migration oder von vor einem Kategoriewechsel,
+     * #255): die brauchen einen Ort, an dem man sie sieht und entfernt. [kategorie] ist die des Entwurfs.
+     */
+    fun zeigtAbschnitt(kategorie: ShiftKategorie, definition: ShiftDefinition, neu: Boolean): Boolean =
+        WeckerAbschnittLogik.zeigtWeckerKarte(kategorie) || (!neu && definition.licht.regeln.isNotEmpty())
 
     /** Ein Lesefehler ist „nicht lesbar“, nie „keine Bridge“ (#253); `null` = noch nicht gelesen. */
     fun bridgeStand(quellen: TagesleisteQuellen?): BridgeStand = when (val licht = quellen?.licht) {
@@ -122,12 +130,14 @@ internal object LichtAbschnittLogik {
      * Die Karte zum Typ [definition]. Welche Zeile bedienbar ist, sagen dieselben Funktionen wie beim Schreiben
      * ([TypLichtSchreiben]): geschrieben wird an den ERSTEN Typ eines Namens. An einem verdeckten Typ gleichen
      * Namens zoege der Schalter die Regel sonst dorthin (#261); entfernen laesst sie sich, weil das ueber die
-     * id geht.
+     * id geht. Weckt die [kategorie] nie (Krank, Ignorieren), bleibt nur das Entfernen - auch bei „Wecker aus“,
+     * denn den Schalter gibt es auf dieser Seite nicht (#255).
      */
     fun karte(
         config: ShiftConfig?,
         definition: ShiftDefinition,
         neu: Boolean,
+        kategorie: ShiftKategorie,
         weckerAn: Boolean,
         bridge: BridgeStand,
         unaufgeloest: List<UnresolvedRuleTarget>
@@ -136,19 +146,21 @@ internal object LichtAbschnittLogik {
         val wirksam = config != null && stelle >= 0 &&
             TypLichtSchreiben.zielTyp(config, config.definitions[stelle].name) == stelle
         val regeln = if (neu) emptyList() else definition.licht.regeln
+        val weckt = WeckerAbschnittLogik.zeigtWeckerKarte(kategorie)
         val zeilen = regeln.map { regel ->
             val traegt = config != null && stelle >= 0 && TypLichtSchreiben.traeger(config, regel.id) == stelle
-            val bedienbar = weckerAn && wirksam && traegt
+            val bedienbar = weckt && weckerAn && wirksam && traegt
             val unbekannt = unaufgeloest.filter { it.ruleId == regel.id }.map { it.label }.distinct()
             LichtZeile(
                 regel = regel,
                 unterzeile = unterzeile(regel),
                 zielHinweis = if (unbekannt.isEmpty()) null else LichtTexte.unbekannteZiele(unbekannt, bedienbar),
                 bedienbar = bedienbar,
-                entfernbar = weckerAn && traegt
+                entfernbar = (weckerAn || !weckt) && traegt
             )
         }
         val fuss = when {
+            !weckt -> LichtFuss.KATEGORIE_WECKT_NICHT
             !weckerAn -> LichtFuss.OHNE_WECKER
             !neu && !wirksam -> LichtFuss.VERDECKT
             else -> when (bridge) {
@@ -162,7 +174,7 @@ internal object LichtAbschnittLogik {
                 }
             }
         }
-        return LichtKarte(zeilen = zeilen, ausgegraut = !weckerAn, fuss = fuss)
+        return LichtKarte(zeilen = zeilen, ausgegraut = !weckt || !weckerAn, fuss = fuss)
     }
 
     /** „Ziele · Modus“, etwa „Bad und Flur · Sonnenaufgang 30 min“. */
@@ -202,7 +214,8 @@ internal object LichtAbschnittLogik {
  * ([LichtEntfernenDialog]).
  *
  * Abweichung vom Prototyp (Festlegung in #254): der Schalter je Regel, und ohne Wecker bleiben die Regeln
- * sichtbar (ausgegraut, gesperrt wie „Weckzeit“), statt zu verschwinden.
+ * sichtbar (ausgegraut, gesperrt wie „Weckzeit“), statt zu verschwinden. Bei Krank und Ignorieren steht die
+ * Karte nur, wenn der Typ Regeln traegt - dann ausgegraut, ohne „+“, entfernbar (#255).
  */
 @Composable
 internal fun LichtAbschnitt(
@@ -266,6 +279,7 @@ internal fun LichtAbschnitt(
                     Hinweis(LichtTexte.hoechstzahl(LichtAbschnittLogik.HOECHSTZAHL))
                 }
                 LichtFuss.OHNE_WECKER -> Hinweis(LichtTexte.OHNE_WECKER)
+                LichtFuss.KATEGORIE_WECKT_NICHT -> Hinweis(LichtTexte.KATEGORIE_WECKT_NICHT)
                 LichtFuss.VERDECKT -> Hinweis(LichtTexte.verdeckt(typName))
                 LichtFuss.WIRD_GELESEN -> Unit
                 LichtFuss.OHNE_BRIDGE -> {

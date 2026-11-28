@@ -110,34 +110,16 @@ class HueSmartScheduler private constructor() {
         private val ALARM_CHANGE_DEBOUNCE = 1500.milliseconds
 
         /**
-         * Echte verstrichene Dauer zwischen zwei LOKALEN Zeiten - ueber die Zeitachse, nicht ueber
-         * die Wanduhr.
+         * Welche Wecker einen Vorab-Sonnenaufgang bekommen duerfen: aktiv und im Vorschaufenster -
+         * auch STILLE (#251, SPEC E8 „Lichtwecker“).
          *
-         * `JavaDuration.between()` auf zwei LocalDateTime rechnet auf der lokalen Zeitachse und
-         * kennt den DST-Sprung nicht; `setInitialDelay()` erwartet aber real verstreichende
-         * Millisekunden. Bis v1.26.2 stand hier genau diese Rechnung, und zweimal im Jahr lag sie
-         * eine Stunde daneben: im Maerz startete der Worker eine Stunde ZU FRUEH, im Oktober eine
-         * Stunde ZU SPAET - im Herbstfall also NACH der Weckzeit, womit der Sonnenaufgang
-         * wirkungslos blieb und der Pre-Alarm-Health-Check die Bridge zu spaet prueft.
-         *
-         * Die Schwesterklasse `CalendarPreAlarmRefreshScheduler` rechnet seit jeher in
-         * Epoch-Millis - hier ist jetzt dieselbe Bauart.
-         *
-         * WARUM IM COMPANION UND `internal`: die Klasse hat einen privaten Konstruktor, ein Test
-         * kommt also an keine Instanz. Als Instanzmethode hing diese Rechnung an keinem einzigen
-         * Test - und am Geraet ist der DST-Fall nicht erreichbar, ohne die Systemuhr um Monate zu
-         * verstellen (was die OAuth-Sitzung zerlegt). Hier ist sie ohne Android pruefbar.
-         */
-        /**
-         * Welche Wecker einen Vorab-Sonnenaufgang bekommen duerfen: aktiv, im Vorschaufenster und
-         * NICHT still.
-         *
-         * WARUM `!isSilent`: der `AlarmReceiver` ueberspringt bei einer stillen Schicht saemtliche
-         * Hue-Regeln, und die Statuszeile je Schicht (`SchichtFolgen`, #70) sagt deshalb „Licht:
-         * aus (stille Schicht)". Dieser Vorab-Pfad kannte die Stille bis dahin nicht: der
-         * `SunriseStartWorker` fuhr das Licht 15 min vor der Weckzeit trotzdem hoch - und weil der
-         * Weckzeit-Pfad bei Stille ausfaellt, entstand auch kein Auto-Aus, das Licht blieb an.
-         * Die Zusicherung „stille Schicht: kein Hue" gilt damit auf BEIDEN Pfaden.
+         * Bis #251 stand hier `!isSilent`: der `AlarmReceiver` uebersprang bei einer stillen Schicht
+         * saemtliche Hue-Regeln, und ohne den Filter fuhr der `SunriseStartWorker` das Licht 15 min
+         * vor der Weckzeit trotzdem hoch - ohne Auto-Aus, weil der Weckzeit-Pfad ausfiel (#70).
+         * Seit #251 fuehrt der Receiver die Regeln auch beim stillen Wecker aus (Rampe finalisieren,
+         * Auto-Aus als Bridge-Zeitplan). Die Zusicherung „beide Pfade gleich“ gilt weiter, jetzt
+         * mit Licht: wer hier wieder nach Stille filtert, filtert auch im Receiver, sonst springt der
+         * Lichtwecker ohne Rampe aufs volle Licht.
          *
          * Im Companion und `internal` aus demselben Grund wie [realeVerzoegerungMillis]: ohne
          * Instanz testbar.
@@ -147,7 +129,7 @@ class HueSmartScheduler private constructor() {
             now: LocalDateTime,
             maxTime: LocalDateTime
         ): List<Pair<String, LocalDateTime>> = alarms
-            .filter { it.isActive && !it.isSilent }
+            .filter { it.isActive }
             .map {
                 it.shiftName to Instant.ofEpochMilli(it.triggerTime)
                     .atZone(ZoneId.systemDefault()).toLocalDateTime()
@@ -168,7 +150,7 @@ class HueSmartScheduler private constructor() {
          * Laeuft die Rampe beim Tippen SCHON, greift diese Pruefung nicht mehr - dafuer legt die
          * Rampe ihr Auto-Aus gleich mit an (`HueRuleUseCase.vorabAutoAusZiele`).
          *
-         * Dieselben Bedingungen wie [sonnenaufgangsKandidaten] (aktiv, nicht still), dazu
+         * Dieselben Bedingungen wie [sonnenaufgangsKandidaten] (aktiv), dazu
          * derselbe Schichtname und dieselbe Weckzeit, verglichen als Ortszeit wie beim Planen.
          * Keine zweite Wahrheit: es ist die Frage „waere er heute noch ein Kandidat?“.
          */
@@ -178,7 +160,7 @@ class HueSmartScheduler private constructor() {
             weckzeit: LocalDateTime,
             zone: ZoneId = ZoneId.systemDefault()
         ): Boolean = alarms.any {
-            it.isActive && !it.isSilent && it.shiftName == shiftName &&
+            it.isActive && it.shiftName == shiftName &&
                 Instant.ofEpochMilli(it.triggerTime).atZone(zone).toLocalDateTime() == weckzeit
         }
 
@@ -190,6 +172,25 @@ class HueSmartScheduler private constructor() {
         internal fun weckzeitMillis(weckzeit: LocalDateTime, zone: ZoneId = ZoneId.systemDefault()): Long =
             weckzeit.atZone(zone).toInstant().toEpochMilli()
 
+        /**
+         * Echte verstrichene Dauer zwischen zwei LOKALEN Zeiten - ueber die Zeitachse, nicht ueber
+         * die Wanduhr.
+         *
+         * `JavaDuration.between()` auf zwei LocalDateTime rechnet auf der lokalen Zeitachse und
+         * kennt den DST-Sprung nicht; `setInitialDelay()` erwartet aber real verstreichende
+         * Millisekunden. Bis v1.26.2 stand hier genau diese Rechnung, und zweimal im Jahr lag sie
+         * eine Stunde daneben: im Maerz startete der Worker eine Stunde ZU FRUEH, im Oktober eine
+         * Stunde ZU SPAET - im Herbstfall also NACH der Weckzeit, womit der Sonnenaufgang
+         * wirkungslos blieb und der Pre-Alarm-Health-Check die Bridge zu spaet prueft.
+         *
+         * Die Schwesterklasse `CalendarPreAlarmRefreshScheduler` rechnet seit jeher in
+         * Epoch-Millis - hier ist jetzt dieselbe Bauart.
+         *
+         * WARUM IM COMPANION UND `internal`: die Klasse hat einen privaten Konstruktor, ein Test
+         * kommt also an keine Instanz. Als Instanzmethode hing diese Rechnung an keinem einzigen
+         * Test - und am Geraet ist der DST-Fall nicht erreichbar, ohne die Systemuhr um Monate zu
+         * verstellen (was die OAuth-Sitzung zerlegt). Hier ist sie ohne Android pruefbar.
+         */
         internal fun realeVerzoegerungMillis(von: LocalDateTime, bis: LocalDateTime): Long {
             val zone = ZoneId.systemDefault()
             return bis.atZone(zone).toInstant().toEpochMilli() -

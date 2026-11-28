@@ -7,15 +7,16 @@ import java.time.LocalDateTime
 import java.time.ZoneId
 
 /**
- * Eine stille Schicht bekommt keinen Vorab-Sonnenaufgang.
+ * Eine stille Schicht bekommt den Vorab-Sonnenaufgang wie eine laute (#251, SPEC E8 „Lichtwecker“).
  *
- * Hergang (#70-Review): die Statuszeile je Schicht sagt bei einer stillen Schicht „Licht: aus
- * (stille Schicht)", weil der `AlarmReceiver` dort alle Hue-Regeln ueberspringt. Der Vorab-Pfad
- * ([HueSmartScheduler.sonnenaufgangsKandidaten] -> `SunriseStartWorker`) filterte aber nur nach
- * `isActive` - das Licht fuhr vor der Weckzeit trotzdem hoch und blieb ohne Auto-Aus an.
+ * Hergang: Bis #251 sprang der `AlarmReceiver` bei einer stillen Schicht an allen Hue-Regeln vorbei,
+ * und dieser Vorab-Pfad ([HueSmartScheduler.sonnenaufgangsKandidaten] -> `SunriseStartWorker`) filterte
+ * deshalb `!isSilent` (#70-Review: sonst fuhr das Licht hoch und blieb ohne Auto-Aus an). Seit #251
+ * fuehrt der Receiver die Regeln auch beim stillen Wecker aus - beide Pfade gelten wieder gleich, jetzt
+ * mit Licht. Ein stiller Wecker ohne Vorlauf waere ein Lichtwecker, der zur Weckzeit aufs volle Licht
+ * springt.
  *
- * Mutationsprobe: ohne `!it.isSilent` im Filter liefert der erste Test zwei Kandidaten statt
- * einem.
+ * Mutationsprobe: mit `!it.isSilent` im Filter ist der erste Test rot.
  */
 class HueSmartSchedulerStilleSchichtTest {
 
@@ -34,7 +35,7 @@ class HueSmartSchedulerStilleSchichtTest {
         )
 
     @Test
-    fun `stille Schicht plant keinen Vorab-Sonnenaufgang`() {
+    fun `stille Schicht bekommt den Vorab-Sonnenaufgang wie eine laute`() {
         val morgen = now.plusDays(1).withHour(5)
         val kandidaten = HueSmartScheduler.sonnenaufgangsKandidaten(
             listOf(
@@ -43,16 +44,7 @@ class HueSmartSchedulerStilleSchichtTest {
             ),
             now, maxTime
         )
-        assertEquals(listOf("Fruehschicht" to morgen.plusDays(1)), kandidaten)
-    }
-
-    @Test
-    fun `nur stille Schichten ergibt keine Kandidaten`() {
-        val kandidaten = HueSmartScheduler.sonnenaufgangsKandidaten(
-            listOf(alarm(1, "Rufbereitschaft", now.plusHours(9), isSilent = true)),
-            now, maxTime
-        )
-        assertEquals(emptyList<Pair<String, LocalDateTime>>(), kandidaten)
+        assertEquals(listOf("Rufbereitschaft" to morgen, "Fruehschicht" to morgen.plusDays(1)), kandidaten)
     }
 
     @Test

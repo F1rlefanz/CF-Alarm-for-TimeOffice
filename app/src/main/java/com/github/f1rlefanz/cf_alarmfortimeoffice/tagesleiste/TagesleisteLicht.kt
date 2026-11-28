@@ -50,13 +50,14 @@ data class LichtEinstellungen(
  * Eingabe, gleiches Ergebnis.
  *
  * WANN ES KEINE SPUR GIBT (jeweils `emptyList()`):
- * - `still`: der `AlarmReceiver` ueberspringt bei einem stillen Wecker saemtliche Hue-Regeln
- *   (`AlarmReceiver`, `isSilentAlarm`), und `HueSmartScheduler` plant keinen Vorab-Sonnenaufgang
- *   (`sonnenaufgangsKandidaten`). Erst Etappe 4 aendert das ("Lichtwecker").
  * - Wecker aus, Krank, Ignorieren, ungueltige Weckzeit: `weckpunktMin()` liefert keinen Punkt. Das
  *   unterscheidet sich von #194: Dimmer und DND behalten die Weckzeit als Anker, Hue-Regeln laufen nur
  *   zu einem ALARM (SPEC E8: "Ohne Weckzeit gibt es kein Licht").
  * - keine Bridge eingerichtet.
+ *
+ * Ein STUMMER Wecker (`still`) aendert daran nichts (#251, SPEC E8 "Lichtwecker"): der
+ * `AlarmReceiver` fuehrt die Hue-Regeln auch ohne Ton aus (`fuehreWeckvorgangAus`), und
+ * `HueSmartScheduler.sonnenaufgangsKandidaten` plant den Vorab-Sonnenaufgang auch fuer ihn.
  *
  * WELCHE REGEL GILT: `enabled` und `passtAufSchicht` - der eigene Typname ODER "ALL", und beide
  * feuern GEMEINSAM (`findApplicableRules`). Mit [LichtEinstellungen.tageslicht] zusaetzlich
@@ -86,7 +87,7 @@ fun licht(
     einstellungen: LichtEinstellungen,
     vorlaufMinuten: VorlaufMinuten
 ): List<LichtBereich> {
-    if (eingabe.still || !einstellungen.hueKonfiguriert) return emptyList()
+    if (!einstellungen.hueKonfiguriert) return emptyList()
     val wecker = weckpunktMin(eingabe.kategorie, eingabe.weckerAn, eingabe.weckzeit, eingabe.dienstzeit)
         ?: return emptyList()
     val wecktag = einstellungen.tageslicht?.let { Wecktag(weckMillis(it, wecker), it.stand) }

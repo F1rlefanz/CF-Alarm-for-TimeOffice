@@ -24,9 +24,9 @@ data class AlarmInfo(
     val shiftStartTime: Long = 0,
 
     // "Stille Schicht" (ShiftDefinition.isSilent), uebernommen beim Erstellen aus dem ShiftMatch.
-    // true = beim Feuern kein AlarmSoundService-Start, kein Vollbild, keine Hue-Regeln - nur der
-    // Zeit-Anker fuer DND/Dimmer bleibt. Siehe AlarmReceiver.isSilentAlarm() und CLAUDE.md
-    // "Stille Schicht".
+    // true = beim Feuern kein AlarmSoundService-Start (kein Ton, keine Vibration, kein Vollbild);
+    // die Hue-Regeln laufen trotzdem ("Lichtwecker", #251), und der Zeit-Anker fuer DND/Dimmer
+    // bleibt. Siehe AlarmReceiver.isSilentAlarm()/fuehreWeckvorgangAus() und CLAUDE.md "Stille Schicht".
     val isSilent: Boolean = false
 )
 

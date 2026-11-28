@@ -89,14 +89,55 @@ class AlarmReceiver : BroadcastReceiver() {
          * und einer nicht antwortenden Bridge kann der Schnitt weiterhin zwischen "an" und
          * "Auto-Aus" fallen; dann bleibt das Licht an und der Nutzer braucht die Hue-App. Die
          * saubere Loesung waere, die Hue-Ausfuehrung in den `AlarmSoundService` zu verlegen (ein
-         * Vordergrunddienst hat kein Broadcast-Fenster) (Umbau am Weckpfad).
+         * Vordergrunddienst hat kein Broadcast-Fenster) (Umbau am Weckpfad) - fuer den stummen
+         * Wecker (#251) braeuchte sie dann einen eigenen Dienst, denn der Ton-Dienst startet dort nicht.
          */
-        private const val HUE_EXECUTION_BUDGET_MS = 45_000L
+        internal const val HUE_EXECUTION_BUDGET_MS = 45_000L
         const val EXTRA_SHIFT_NAME = "shift_name"
 
         /**
-         * STILLE SCHICHT: true, wenn dieser Alarm keinen Ton/Vibration/Vollbild/Hue ausloesen
-         * darf (ShiftDefinition.isSilent, uebernommen in AlarmInfo.isSilent). Reine Funktion,
+         * Was ein Weckvorgang nach Skip-, Freigabe- und Stille-Pruefung TUT, in dieser Reihenfolge:
+         * Ton-Dienst, Neubewertung von Dimmer/DND, Hue-Regeln. Reine Funktion mit Lambdas (Muster
+         * [starteWeckerMitNotausgang]), damit die Verzweigung ohne Android-Kontext pruefbar ist;
+         * `onReceive` ruft genau diese Funktion.
+         *
+         * STUMMER WECKER = LICHTWECKER (#251, SPEC E8 und 3.3 Punkt 5): [still] nimmt NUR den
+         * Ton-Dienst weg - Ton, Vibration, Vollbild und die Wecker-Notification gehoeren dem
+         * [AlarmSoundService], und der startet nicht. Die Hue-Regeln laufen wie im lauten Zweig:
+         * hinter [userUnlocked] (Netz + CE/Hue-Storage), unter demselben [HUE_EXECUTION_BUDGET_MS]
+         * (weil `pendingResult.finish()` erst danach kommt), mit derselben Weckzeit
+         * ([weckzeitFuerHue], Sache des Aufrufers). Bis #251 stieg `onReceive` bei `isSilent` vor
+         * beidem aus. Wach haelt den Prozess im stillen Zweig dasselbe wie im lauten bis zum Ende
+         * der Hue-Regeln: `goAsync()` und der PARTIAL-Wake-Lock in `onReceive`. Danach braucht es
+         * nichts mehr - Rampe (Bridge-Uebergang) und Auto-Aus (Bridge-Zeitplan) laufen auf der Bridge.
+         *
+         * Die Neubewertung von Dimmer/DND ([armiereNebenketten]) bleibt dem lauten Zweig vorbehalten,
+         * wie vor #251: eine stille Schicht beendet das Dimm-Fenster ueber ihre Schichtspanne
+         * (Kommentar an `GeklingelteWeckzeiten.merke` in `onReceive`), und #251 aendert nur das Licht.
+         *
+         * @return `false`, wenn das Hue-Budget abgelaufen ist; sonst `true` (auch ohne Hue-Lauf).
+         */
+        internal suspend fun fuehreWeckvorgangAus(
+            still: Boolean,
+            userUnlocked: Boolean,
+            starteTon: suspend () -> Unit,
+            armiereNebenketten: suspend () -> Unit,
+            fuehreHueAus: suspend () -> Unit
+        ): Boolean {
+            if (!still) starteTon()
+            if (!userUnlocked) return true
+            if (!still) armiereNebenketten()
+            val hueDone = withTimeoutOrNull(HUE_EXECUTION_BUDGET_MS) {
+                fuehreHueAus()
+                true
+            }
+            return hueDone != null
+        }
+
+        /**
+         * STILLE SCHICHT: true, wenn dieser Alarm keinen Ton/Vibration/Vollbild ausloesen darf
+         * (ShiftDefinition.isSilent, uebernommen in AlarmInfo.isSilent); das Licht folgt ihm seit
+         * #251 trotzdem ([fuehreWeckvorgangAus], "Lichtwecker"). Reine Funktion,
          * damit die eigentliche Gate-Entscheidung ohne Android-Kontext testbar ist - der
          * umgebende onReceive-Fluss bleibt wegen goAsync()/Hilt Android-gebunden und ungetestet
          * (gleiche Konvention wie AlarmSoundService).
@@ -399,16 +440,18 @@ class AlarmReceiver : BroadcastReceiver() {
                     zuMerkendeWeckzeit(intent.getLongExtra(EXTRA_TRIGGER_TIME, -1L), System.currentTimeMillis())
                 )
 
-                // STILLE SCHICHT: Ton/Vibration/Vollbild-Wecker UND Hue bleiben aus, wenn diese
-                // Schicht als still markiert ist. Der Zeit-Anker selbst (dieser Broadcast) feuert
-                // trotzdem normal weiter - DND/Dimmer/Feature A und die AlarmInfo in
-                // getAllAlarms() sind davon unberuehrt, nur die Wecker-Instanz
-                // (AlarmSoundService) und executeHueRulesForAlarm() werden nicht angestossen.
+                // STUMMER WECKER (#251, "Lichtwecker"): Ton, Vibration, Vollbild und Wecker-Notification
+                // bleiben aus, wenn diese Schicht als still markiert ist - die Wecker-Instanz
+                // (AlarmSoundService) wird nicht angestossen. Das Licht (Hue) folgt der Weckzeit
+                // trotzdem, siehe [fuehreWeckvorgangAus]. Der Zeit-Anker selbst (dieser Broadcast)
+                // feuert normal weiter - DND/Dimmer und die AlarmInfo in getAllAlarms() sind davon
+                // unberuehrt.
                 // Die AlarmInfo ist unten nur noch Rueckfall fuer die Hue-Weckzeit (#140), siehe
                 // [geplanteWeckzeit]. Im kalt gestarteten Prozess fehlt sie hier (der Bestand wirft
                 // den gerade verstrichenen Wecker beim Laden weg) - die Stille-Pruefung faellt dann
                 // auf die aktuelle Schichtdefinition zurueck (siehe [isSilentAlarm]).
                 var alarmInfo: AlarmInfo? = null
+                var still = false
                 if (userUnlocked) {
                     alarmInfo = try {
                         alarmUseCase.getAllAlarms().getOrNull()?.find { it.id == alarmId }
@@ -436,16 +479,19 @@ class AlarmReceiver : BroadcastReceiver() {
                         null
                     }
 
-                    if (isSilentAlarm(alarmInfo, shiftName, definitionen)) {
+                    still = isSilentAlarm(alarmInfo, shiftName, definitionen)
+                    if (still) {
                         Logger.business(
                             LogTags.ALARM_RECEIVER,
-                            "🔕 STILLE SCHICHT: Alarm $alarmId ($shiftName) ist als still markiert - kein Ton/Vibration/Vollbild/Hue"
+                            "🔕 STUMMER WECKER: Alarm $alarmId ($shiftName) ist als still markiert - " +
+                                "kein Ton/Vibration/Vollbild, das Licht (Hue) folgt der Weckzeit"
                         )
-                        return@launch
                     }
                 }
 
-                // Wake Lock to ensure device wakes up
+                // Wake Lock: haelt das Geraet wach, bis Ton-Start und Hue-Regeln durch sind - im
+                // stillen Zweig genauso, dort traegt kein Vordergrunddienst den Prozess, nur
+                // goAsync() (bis pendingResult.finish()) und dieser Wake-Lock.
                 val powerManager = context.getSystemService(Context.POWER_SERVICE) as PowerManager
                 val wakeLock = powerManager.newWakeLock(
                     PowerManager.PARTIAL_WAKE_LOCK,
@@ -457,79 +503,76 @@ class AlarmReceiver : BroadcastReceiver() {
                 try {
                     val shiftStartTime = intent.getStringExtra(EXTRA_SHIFT_START_TIME).orEmpty()
 
-                    // Einziger Einstiegspunkt fuer Ton und Sichtbarkeit - keine eigene Notification, kein
-                    // startActivity (Klassen-KDoc); Ausnahme Notausgang 2003.
-                    val dienstLaeuft = startAlarmSoundService(
-                        context, shiftName, shiftStartTime, alarmId, userUnlocked
-                    )
+                    val hueImBudget = fuehreWeckvorgangAus(
+                        still = still,
+                        userUnlocked = userUnlocked,
+                        starteTon = {
+                            // Einziger Einstiegspunkt fuer Ton und Sichtbarkeit - keine eigene Notification,
+                            // kein startActivity (Klassen-KDoc); Ausnahme Notausgang 2003.
+                            val dienstLaeuft = startAlarmSoundService(
+                                context, shiftName, shiftStartTime, alarmId, userUnlocked
+                            )
 
-                    // Erfolgsmeldung nur bei tatsaechlich gestartetem Dienst, siehe [starteWeckerMitNotausgang].
-                    if (dienstLaeuft) {
-                        Logger.business(
-                            LogTags.ALARM_RECEIVER,
-                            "✅ Alarm $alarmId for $shiftName triggered successfully!"
-                        )
-                    } else {
+                            // Erfolgsmeldung nur bei tatsaechlich gestartetem Dienst, siehe [starteWeckerMitNotausgang].
+                            if (dienstLaeuft) {
+                                Logger.business(
+                                    LogTags.ALARM_RECEIVER,
+                                    "✅ Alarm $alarmId for $shiftName triggered successfully!"
+                                )
+                            } else {
+                                Logger.w(
+                                    LogTags.ALARM_RECEIVER,
+                                    "⚠️ Alarm $alarmId for $shiftName: Weckton-Dienst kam nicht hoch - " +
+                                        "es weckt nur der Notausgang"
+                                )
+                            }
+                        },
+                        armiereNebenketten = {
+                            // DIMMER/DND NACH DEM MERKEN NEU BEWERTEN (Review 13.10.2026): Der Dimm-Tick an
+                            // der Weckzeit und dieser Broadcast feuern im selben Augenblick. Rechnete der
+                            // Tick, nachdem der verstrichene Wecker aus dem Bestand gefallen ist, aber BEVOR
+                            // merke() geschrieben hat, oeffnete er die Nacht bis zur Uhrzeit-Grenze und
+                            // plante den naechsten Wechsel erst dort. Erst NACH dem Weckton-Start - der
+                            // Wecker wartet auf nichts hiervon. Nur entsperrt (Dimmer und DND lesen
+                            // CE-Speicher) und nur im lauten Zweig - siehe [fuehreWeckvorgangAus].
+                            try {
+                                zeitkettenArmierer.get().armiere("WECKER AUSGELOEST")
+                            } catch (e: Exception) {
+                                Logger.w(LogTags.ALARM_RECEIVER, "Dimmer/DND nach dem Wecker nicht neu bewertet", e)
+                            }
+                        },
+                        fuehreHueAus = {
+                            // 🎨 HUE: Laeuft NACH dem Ton-Start, damit ein langsamer Netzwerkaufruf Sound und
+                            // Full-Screen-Intent nicht verzoegert; beim stillen Wecker ist es der ganze
+                            // Weckvorgang. Tageslicht-Bedingung (#140): Weckzeit dieses Weckvorgangs. Der
+                            // Snooze-Merker ist CE-Storage - deshalb nur im entsperrten Zweig (dafuer sorgt
+                            // [fuehreWeckvorgangAus]). Jeder Fehler = kein Filter (im Zweifel Licht).
+                            val istSnooze = intent.action == AlarmManagerService.snoozeAlarmAction(alarmId)
+                            val hueWeckzeit = try {
+                                weckzeitFuerHue(
+                                    istSnooze = istSnooze,
+                                    snoozeWeckzeit = if (istSnooze) AlarmManagerService.snoozeEintrag(context, alarmId)?.weckzeit else null,
+                                    alarmTrigger = geplanteWeckzeit(
+                                        extraWert = intent.getLongExtra(EXTRA_TRIGGER_TIME, -1L),
+                                        ausBestand = alarmInfo?.triggerTime
+                                    )
+                                )
+                            } catch (e: Exception) {
+                                Logger.w(LogTags.ALARM_RECEIVER, "⚠️ HUE: Weckzeit fuer die Tageslicht-Bedingung nicht lesbar - kein Filter", e)
+                                null
+                            }
+                            executeHueRulesForAlarm(shiftName, hueWeckzeit)
+                        }
+                    )
+                    if (!hueImBudget) {
                         Logger.w(
                             LogTags.ALARM_RECEIVER,
-                            "⚠️ Alarm $alarmId for $shiftName: Weckton-Dienst kam nicht hoch - " +
-                                "es weckt nur der Notausgang"
+                            "⚠️ HUE: Regelausfuehrung nach ${HUE_EXECUTION_BUDGET_MS / 1000}s " +
+                                "abgebrochen (Bridge nicht erreichbar?) - Ton und Vollbild sind " +
+                                "davon unberuehrt (AlarmSoundService). ACHTUNG: faellt der " +
+                                "Abbruch zwischen Einschalten und Auto-Aus-Zeitplan, bleibt das " +
+                                "Licht an und muss von Hand ausgeschaltet werden."
                         )
-                    }
-
-                    // DIMMER/DND NACH DEM MERKEN NEU BEWERTEN (Review 13.10.2026): Der Dimm-Tick an der
-                    // Weckzeit und dieser Broadcast feuern im selben Augenblick. Rechnete der Tick,
-                    // nachdem der verstrichene Wecker aus dem Bestand gefallen ist, aber BEVOR
-                    // merke() geschrieben hat, oeffnete er die Nacht bis zur Uhrzeit-Grenze und
-                    // plante den naechsten Wechsel erst dort. Erst NACH dem Weckton-Start - der
-                    // Wecker wartet auf nichts hiervon. Nur entsperrt: Dimmer und DND lesen
-                    // CE-Speicher; im Direct Boot bleibt es beim Verhalten ohne Nachzug.
-                    if (userUnlocked) {
-                        try {
-                            zeitkettenArmierer.get().armiere("WECKER AUSGELOEST")
-                        } catch (e: Exception) {
-                            Logger.w(LogTags.ALARM_RECEIVER, "Dimmer/DND nach dem Wecker nicht neu bewertet", e)
-                        }
-                    }
-
-                    // 🎨 HUE INTEGRATION - Execute matching light rules
-                    // Läuft NACH dem Alarm-Start, damit ein langsamer Netzwerkaufruf
-                    // Sound + Full-Screen-Intent nicht verzögert.
-                    // Direct Boot: Hue braucht Netz + CE/Hue-Storage - vor Entsperrung ueberspringen.
-                    if (userUnlocked) {
-                        // Tageslicht-Bedingung (#140): Weckzeit dieses Weckvorgangs. Der Snooze-Merker
-                        // ist CE-Storage - deshalb erst hier, im entsperrten Zweig. Jeder Fehler =
-                        // kein Filter (im Zweifel Licht).
-                        val istSnooze = intent.action == AlarmManagerService.snoozeAlarmAction(alarmId)
-                        val hueWeckzeit = try {
-                            weckzeitFuerHue(
-                                istSnooze = istSnooze,
-                                snoozeWeckzeit = if (istSnooze) AlarmManagerService.snoozeEintrag(context, alarmId)?.weckzeit else null,
-                                alarmTrigger = geplanteWeckzeit(
-                                    extraWert = intent.getLongExtra(EXTRA_TRIGGER_TIME, -1L),
-                                    ausBestand = alarmInfo?.triggerTime
-                                )
-                            )
-                        } catch (e: Exception) {
-                            Logger.w(LogTags.ALARM_RECEIVER, "⚠️ HUE: Weckzeit fuer die Tageslicht-Bedingung nicht lesbar - kein Filter", e)
-                            null
-                        }
-                        // GEDECKELT, weil `pendingResult.finish()` erst danach kommt - Begruendung an
-                        // [HUE_EXECUTION_BUDGET_MS]; der Wecker selbst haengt nicht daran.
-                        val hueDone = withTimeoutOrNull(HUE_EXECUTION_BUDGET_MS) {
-                            executeHueRulesForAlarm(shiftName, hueWeckzeit)
-                            true
-                        }
-                        if (hueDone == null) {
-                            Logger.w(
-                                LogTags.ALARM_RECEIVER,
-                                "⚠️ HUE: Regelausfuehrung nach ${HUE_EXECUTION_BUDGET_MS / 1000}s " +
-                                    "abgebrochen (Bridge nicht erreichbar?) - der Wecker selbst ist " +
-                                    "davon unberuehrt (AlarmSoundService). ACHTUNG: faellt der " +
-                                    "Abbruch zwischen Einschalten und Auto-Aus-Zeitplan, bleibt das " +
-                                    "Licht an und muss von Hand ausgeschaltet werden."
-                            )
-                        }
                     }
 
                 } catch (e: Exception) {

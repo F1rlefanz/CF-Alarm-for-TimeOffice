@@ -153,14 +153,16 @@ class TageslichtUrteilTest {
     }
 
     @Test
-    fun `vergangene, inaktive und stille Wecker zaehlen nicht`() {
+    fun `vergangene und inaktive Wecker zaehlen nicht, stille schon`() {
+        // #251: ein stiller Wecker fuehrt seine Hue-Regeln aus (Lichtwecker) - er ist die naechste
+        // Weckzeit, zu der die Regel liefe.
         val alarme = listOf(
             alarm(1, "Frühdienst", ms(3, 0)),
             alarm(2, "Frühdienst", ms(5, 0), aktiv = false),
             alarm(3, "Frühdienst", ms(5, 15), still = true),
             alarm(4, "Frühdienst", ms(5, 30))
         )
-        assertEquals(ms(5, 30), naechsteWeckzeitFuer(alarme, "Frühdienst", jetzt))
+        assertEquals(ms(5, 15), naechsteWeckzeitFuer(alarme, "Frühdienst", jetzt))
     }
 
     @Test

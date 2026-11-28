@@ -83,12 +83,17 @@ class TagesleisteLichtTest {
 
     // ── Wann es keine Spur gibt ──────────────────────────────────────────────────────────────
 
+    /**
+     * Stummer Wecker = Lichtwecker (#251, SPEC E8): Hue folgt auch dem stillen Wecker, die Leiste zeigt
+     * deshalb dieselbe Licht-Spur wie mit Ton - Sonnenaufgang davor eingeschlossen. Bis #251 war sie leer.
+     */
     @Test
-    fun `stummer Wecker gibt keine Licht-Spur - dieselben Regeln mit Ton schon`() {
+    fun `stummer Wecker gibt dieselbe Licht-Spur wie mit Ton - auch den Sonnenaufgang davor`() {
         val regeln = arrayOf(regel("F", lampe(dauer = 20), sonnenaufgang = 30), regel("ALL", lampe(dauer = 45)))
 
-        assertEquals(emptyList<LichtBereich>(), rechne(eingabe(still = true), *regeln))
-        assertTrue(rechne(eingabe(still = false), *regeln).isNotEmpty())
+        val mitTon = rechne(eingabe(still = false), *regeln)
+        assertEquals(LichtArt.SONNENAUFGANG, mitTon.first().art)
+        assertEquals(mitTon, rechne(eingabe(still = true), *regeln))
     }
 
     @Test

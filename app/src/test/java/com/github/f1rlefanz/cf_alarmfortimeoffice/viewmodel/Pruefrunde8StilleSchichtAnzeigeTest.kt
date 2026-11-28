@@ -37,7 +37,8 @@ import org.mockito.kotlin.whenever
  * DER FEHLER: `computeNextAlarmTime()` filterte nur nach `triggerTime` und Skip-Merker. Eine
  * STILLE Schicht (Rufbereitschaft, `AlarmInfo.isSilent`) liegt aber ganz normal im Bestand und
  * gewinnt damit das `minByOrNull` - waehrend der `AlarmReceiver` zur Weckzeit bei `isSilent`
- * aussteigt, bevor Ton, Vibration, Vollbild oder Hue angestossen werden. Die Karte sagte also
+ * weder Ton noch Vibration noch Vollbild anstoesst (nur das Licht folgt seit #251 der Weckzeit,
+ * „Lichtwecker“). Die Karte sagte also
  * einen Weckzeitpunkt zu, an dem die App per Konstruktion stumm bleibt, faerbte das Icon gruen
  * und zaehlte den stillen Eintrag unter "N aktive Alarme" mit. Der naechste WIRKLICH klingelnde
  * Wecker war aus der Oberflaeche gar nicht ablesbar, weil der stille ihn verdeckte.

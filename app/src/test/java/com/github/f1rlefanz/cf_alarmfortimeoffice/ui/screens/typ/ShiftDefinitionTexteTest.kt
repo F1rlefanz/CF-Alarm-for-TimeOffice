@@ -102,15 +102,16 @@ class ShiftDefinitionTexteTest {
     }
 
     /**
-     * SPEC 3.3 verspricht beim stummen Wecker auch Licht. Heute ueberspringen AlarmReceiver und
-     * HueSmartScheduler bei einer stillen Schicht jede Hue-Regel - der Text darf es nicht zusagen.
+     * SPEC 3.3 Punkt 5: der stumme Wecker ist ein Lichtwecker - seit #251 folgt Hue auch ihm. Wortlaut
+     * aus dem Issue (Prototyp plus „keine Vibration“, weil es stimmt), deshalb als Literal.
      */
     @Test
-    fun `Der Stummer-Wecker-Hinweis verspricht kein Licht, das heute nicht startet`() {
-        val text = ShiftDefinitionTexte.STUMMER_WECKER_HINWEIS
-        assertFalse(text, text.contains("Lichtwecker"))
-        assertTrue("Dimmer und DND richten sich weiter nach der Weckzeit", text.contains("Dimmer"))
-        assertTrue(text.contains("startet dann nicht"))
+    fun `Der Stummer-Wecker-Hinweis sagt den Lichtwecker zu`() {
+        assertEquals(
+            "Kein Ton, keine Vibration, kein Vollbild. Licht, Dimmer und „Nicht stören“ richten sich " +
+                "trotzdem nach der Weckzeit – ein Lichtwecker.",
+            ShiftDefinitionTexte.STUMMER_WECKER_HINWEIS
+        )
     }
 
     @Test

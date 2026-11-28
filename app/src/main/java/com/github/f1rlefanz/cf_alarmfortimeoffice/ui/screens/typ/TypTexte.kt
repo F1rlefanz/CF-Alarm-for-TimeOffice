@@ -111,14 +111,14 @@ object ShiftDefinitionTexte {
     const val WECKZEIT_HINWEIS = "Als Uhrzeit eingeben, z. B. 06:30."
     const val WECKZEIT_FEHLER = "Das ist keine Uhrzeit – bitte als HH:mm eingeben, z. B. 06:30."
 
-    // „Stummer Wecker“ (B3). Der Prototyp verspricht hier auch „Licht … richtet sich trotzdem nach
-    // der Weckzeit – ein Lichtwecker“. Heute stimmt das NICHT: der AlarmReceiver und der
-    // HueSmartScheduler ueberspringen bei einer stillen Schicht jede Hue-Regel. Der Satz kommt mit
-    // Etappe 4 (E8), wenn Hue stillen Weckern folgt.
+    // „Stummer Wecker“ (B3, SPEC 3.3 Punkt 5). Seit #251 folgt Hue auch dem stillen Wecker
+    // (AlarmReceiver.fuehreWeckvorgangAus, Vorab-Sonnenaufgang im HueSmartScheduler). „keine
+    // Vibration“ steht ueber den Prototyp hinaus, weil es stimmt: die Vibration gehoert dem
+    // AlarmSoundService, und der startet beim stillen Wecker nicht.
     const val STUMMER_WECKER_TITEL = "Stummer Wecker"
     const val STUMMER_WECKER_HINWEIS =
-        "Kein Ton, keine Vibration, kein Vollbild. Dimmer und „Nicht stören“ richten sich " +
-            "trotzdem nach der Weckzeit. Eine Hue-Lichtregel startet dann nicht."
+        "Kein Ton, keine Vibration, kein Vollbild. Licht, Dimmer und „Nicht stören“ richten sich " +
+            "trotzdem nach der Weckzeit – ein Lichtwecker."
 
     /** Ein Ignorieren-Typ ergibt keine Schicht (#167); ein Dienst im selben Termin gewinnt. */
     const val IGNORIEREN_STATT_WECKER =

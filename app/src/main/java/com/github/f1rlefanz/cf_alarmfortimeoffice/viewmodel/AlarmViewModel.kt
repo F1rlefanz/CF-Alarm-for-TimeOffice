@@ -57,7 +57,7 @@ data class AlarmUiState(
     /**
      * Der naechste Eintrag, der wirklich klingelt (Anzeigetext) - `null`, wenn keiner ansteht. Ein
      * STILLER Eintrag zaehlt nie: die App bleibt zu seiner Zeit per Konstruktion stumm
-     * (AlarmReceiver steigt bei `isSilent` vor Ton, Vibration, Vollbild und Hue aus). Gezeigt
+     * (AlarmReceiver startet bei `isSilent` weder Ton noch Vibration noch Vollbild). Gezeigt
      * werden stille Eintraege trotzdem - gekennzeichnet, nicht versteckt - in der Karte "Nächster
      * Wecker" (Zaehlung) und in der Tagesliste ("Still").
      *
@@ -1846,8 +1846,8 @@ internal data class WeckerAnzeige(
  * WELCHE ANZEIGE WAR FALSCH: "Nächster Alarm: 05:30" stand fuer den fruehesten Eintrag in der
  * Zukunft, egal ob er klingelt. Eine STILLE Schicht (Rufbereitschaft; `AlarmInfo.isSilent`) ist
  * aber genau der Fall, in dem die App zur angezeigten Zeit per Konstruktion stumm bleibt: der
- * `AlarmReceiver` steigt bei `isSilent` aus, bevor Ton, Vibration, Vollbild oder Hue ueberhaupt
- * angestossen werden. Wer die Zeile las und darauf vertraute, verschlief - ohne Icon, ohne Text,
+ * `AlarmReceiver` stoesst bei `isSilent` weder Ton noch Vibration noch Vollbild ueberhaupt an
+ * (das Licht folgt seit #251 trotzdem, ein Wecker ist es nicht). Wer die Zeile las und darauf vertraute, verschlief - ohne Icon, ohne Text,
  * ohne abweichende Faerbung. Dasselbe galt fuer "N aktive Alarme": bei genau einer stillen Schicht
  * stand dort in Gruen "1 aktive Alarme", obwohl kein einziger klingelt. Das Projekt hat denselben
  * Fehlertyp fuer `isEnabled` bereits behandelt (ShiftConfigScreen: "EINE ANGEZEIGTE WECKZEIT, DIE

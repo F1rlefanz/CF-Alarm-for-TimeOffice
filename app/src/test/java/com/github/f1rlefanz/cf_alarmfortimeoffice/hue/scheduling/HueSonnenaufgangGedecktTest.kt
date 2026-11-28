@@ -51,8 +51,10 @@ class HueSonnenaufgangGedecktTest {
     }
 
     @Test
-    fun `inaktiv oder still deckt ihn nicht - dieselben Bedingungen wie beim Planen`() {
+    fun `inaktiv deckt ihn nicht, still deckt ihn - dieselben Bedingungen wie beim Planen`() {
         assertFalse(gedeckt(alarm(isActive = false)))
-        assertFalse(gedeckt(alarm(isSilent = true)))
+        // Stummer Wecker = Lichtwecker (#251): geplant wird die Rampe auch fuer ihn, also muss sie
+        // beim Feuern auch laufen - sonst springt das Licht zur Weckzeit ohne Rampe aufs Ende.
+        assertTrue(gedeckt(alarm(isSilent = true)))
     }
 }

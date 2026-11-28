@@ -411,7 +411,7 @@ class WeckerTageTest {
         val stumm = listOf(
             wirkung(dimmen = DimmStatus.Aus, licht = LichtStatus.NichtLesbar),
             wirkung(dimmen = DimmStatus.Wirksam(DimmArt.UNTERDRUECKT, 0), licht = LichtStatus.KeineBridge),
-            wirkung(dimmen = DimmStatus.Keine, licht = LichtStatus.StilleSchicht)
+            wirkung(dimmen = DimmStatus.Keine, licht = LichtStatus.Regeln(0, 0))
         )
         stumm.forEach { assertTrue(kaertchenFuer(it).isEmpty()) }
     }
@@ -642,8 +642,9 @@ class WeckerTageTest {
         assertTrue("Kein Dienst an einem Tag ohne Kalendereintrag: ${tag.schichten}", tag.schichten.isEmpty())
         assertEquals(listOf(Kaertchen.LICHT), tag.kaertchen)
 
-        // Stumm: auch das Licht startet nicht.
+        // Stumm: das Licht startet trotzdem (#251, Lichtwecker). Faengt beide Filter: den Licht-Zusatz
+        // ohne Eintrag (lichtOhneEintrag) UND die Tagesschranke (lichtMoeglich), die jeden Tag trifft.
         val stumm = tage(listOf(ohneEintrag.copy(isSilent = true)), wirkungen = wirkungen).single()
-        assertTrue(stumm.kaertchen.isEmpty())
+        assertEquals(listOf(Kaertchen.LICHT), stumm.kaertchen)
     }
 }

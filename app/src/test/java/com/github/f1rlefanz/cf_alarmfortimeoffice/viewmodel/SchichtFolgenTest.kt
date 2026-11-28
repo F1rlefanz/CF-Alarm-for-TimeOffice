@@ -150,9 +150,10 @@ class SchichtFolgenTest {
     }
 
     @Test
-    fun `Licht - stille Schicht fuehrt keine Hue-Regel aus`() {
+    fun `Licht - stille Schicht fuehrt ihre Hue-Regel aus wie eine laute (Lichtwecker)`() {
+        // #251: der stumme Wecker ist ein Lichtwecker, die Stille nimmt nur Ton, Vibration, Vollbild.
         val f = folgen(definition = def(silent = true), hueRegeln = Result.success(listOf(hueRegel("h1", "AD1"))))
-        assertEquals("Licht: aus (stille Schicht)", licht(f))
+        assertEquals("Licht: 1 Regel", licht(f))
     }
 
     @Test

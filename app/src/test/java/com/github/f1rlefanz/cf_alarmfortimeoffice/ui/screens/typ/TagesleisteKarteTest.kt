@@ -200,6 +200,15 @@ class TagesleisteKarteTest {
         assertEquals(listOf(Balken(Spur.LICHT, 630, 650)), an.leiste.spur(Spur.LICHT))
     }
 
+    /** #251: „Stummer Wecker“ an der Typ-Seite nimmt der Leiste das Licht nicht - ein Lichtwecker. */
+    @Test
+    fun `mit Stummer Wecker zeigt die Leiste dasselbe Licht wie mit Ton`() {
+        val still = rechne(entwurf(still = true), q = vollBestueckt())
+        assertEquals(listOf(Balken(Spur.LICHT, 630, 650)), still.leiste.spur(Spur.LICHT))
+        assertTrue(still.leiste.weckpunkte.single().still)
+        assertEquals(rechne(entwurf(still = false), q = vollBestueckt()).leiste.spur(Spur.LICHT), still.leiste.spur(Spur.LICHT))
+    }
+
     @Test
     fun `ein ausgeschalteter Typ braucht keine Quelle - unlesbar und noch nicht gelesen sagen nichts`() {
         assertAusgeschaltet(rechne(entwurf(isEnabled = false), q = null))

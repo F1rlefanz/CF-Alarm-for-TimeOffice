@@ -140,8 +140,12 @@ class HueRuleMatchingTest {
         )
     }
 
+    // #249: die Regeln liegen am Typ (Hue-Store leer). Eine allgemeine Regel kommt dort als Kopie an
+    // jedem Typ an - deshalb braucht jede Schicht, die ein Test befragt, einen Typ.
+    private val SCHICHTEN = arrayOf("Frühschicht", "Nachtschicht", "S2", "Zwischendienst", "IMCF")
+
     private fun useCase(rules: List<HueSchedule>, light: FakeLightUseCase = FakeLightUseCase()) =
-        HueRuleUseCase(FakeConfigRepository(rules), light)
+        HueRuleUseCase(FakeConfigRepository(emptyList()), light, typLicht = lichtAmTyp(rules, *SCHICHTEN))
 
     @Test
     fun `exakter Definitionsname trifft, unabhaengig von Gross-Kleinschreibung`() = runTest {

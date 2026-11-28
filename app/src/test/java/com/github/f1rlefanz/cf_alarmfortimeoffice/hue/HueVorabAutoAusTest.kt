@@ -109,7 +109,7 @@ class HueVorabAutoAusTest {
     @Test
     fun `die Vorab-Rampe legt das Auto-Aus gleich mit an`() = runTest {
         val licht = FakeLightUseCase()
-        val useCase = HueRuleUseCase(FakeConfigRepository(listOf(sonnenaufgang(dauer = 30))), licht)
+        val useCase = HueRuleUseCase(FakeConfigRepository(emptyList()), licht, typLicht = lichtAmTyp(listOf(sonnenaufgang(dauer = 30))))
 
         useCase.executeSunrisePreAlarm("Frühdienst", minutenBisWecker = 15)
 
@@ -120,19 +120,19 @@ class HueVorabAutoAusTest {
     fun `ohne Weckzeit, ohne Auto-Aus-Dauer oder ohne angegangenes Licht kein Vorab-Auto-Aus`() = runTest {
         // Auftrag aus einer aelteren Version (keine Weckzeit): wie bisher.
         FakeLightUseCase().also { licht ->
-            HueRuleUseCase(FakeConfigRepository(listOf(sonnenaufgang(dauer = 30))), licht)
+            HueRuleUseCase(FakeConfigRepository(emptyList()), licht, typLicht = lichtAmTyp(listOf(sonnenaufgang(dauer = 30))))
                 .executeSunrisePreAlarm("Frühdienst", minutenBisWecker = null)
             assertTrue(licht.autoOffCalls.isEmpty())
         }
         // Rampe gescheitert: es ist nichts angegangen, das ausgehen muesste.
         FakeLightUseCase(sunriseGelingt = false).also { licht ->
-            HueRuleUseCase(FakeConfigRepository(listOf(sonnenaufgang(dauer = 30))), licht)
+            HueRuleUseCase(FakeConfigRepository(emptyList()), licht, typLicht = lichtAmTyp(listOf(sonnenaufgang(dauer = 30))))
                 .executeSunrisePreAlarm("Frühdienst", minutenBisWecker = 15)
             assertTrue(licht.autoOffCalls.isEmpty())
         }
         // Regel ohne Auto-Aus: leere Zielliste - `scheduleBridgeAutoOff` legt dann nichts an.
         FakeLightUseCase().also { licht ->
-            HueRuleUseCase(FakeConfigRepository(listOf(sonnenaufgang(dauer = null))), licht)
+            HueRuleUseCase(FakeConfigRepository(emptyList()), licht, typLicht = lichtAmTyp(listOf(sonnenaufgang(dauer = null))))
                 .executeSunrisePreAlarm("Frühdienst", minutenBisWecker = 15)
             assertTrue(licht.autoOffCalls.all { it.isEmpty() })
         }

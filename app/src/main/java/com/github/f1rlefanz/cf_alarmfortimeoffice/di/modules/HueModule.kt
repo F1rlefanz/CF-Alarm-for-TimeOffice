@@ -3,6 +3,8 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.di.modules
 import android.content.Context
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.connection.HueBridgeConnectionManager
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.scheduling.HueSmartScheduler
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.TypLichtQuelle
+import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IShiftConfigRepository
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -38,4 +40,15 @@ object HueModule {
     fun provideHueSmartScheduler(
         @ApplicationContext context: Context
     ): HueSmartScheduler = HueSmartScheduler.getInstance(context)
+
+    /**
+     * Woher die Hue-Ausfuehrung die Lichtregeln am Typ liest (#249): STRIKT ueber
+     * [IShiftConfigRepository.getCurrentShiftConfig] - ein Fehler ist ein Fehlschlag, nie die
+     * Standard-Konfiguration. Gelesen wird erst beim Aufruf, nie beim Bauen des Graphen
+     * (Pflichtregel: nichts am Application-Graphen fasst CE-Storage beim Bauen an).
+     */
+    @Provides
+    fun provideTypLichtLeser(
+        shiftConfigRepository: IShiftConfigRepository
+    ): TypLichtQuelle.Leser = TypLichtQuelle.Leser { shiftConfigRepository.getCurrentShiftConfig() }
 }

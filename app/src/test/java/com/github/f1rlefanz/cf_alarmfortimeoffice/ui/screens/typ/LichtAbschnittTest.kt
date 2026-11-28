@@ -116,9 +116,11 @@ class LichtAbschnittTest {
         weckerAn: Boolean = true,
         bridge: BridgeStand = BridgeStand.EINGERICHTET,
         neu: Boolean = false,
-        unaufgeloest: List<UnresolvedRuleTarget> = emptyList()
+        unaufgeloest: List<UnresolvedRuleTarget> = emptyList(),
+        // Die Kategorie kommt auf der Seite aus dem Entwurf; ungeaendert ist es die gespeicherte.
+        kategorie: ShiftKategorie = config.definitions.first { it.id == typId }.kategorie
     ) = LichtAbschnittLogik.karte(
-        config, config.definitions.first { it.id == typId }, neu, weckerAn, bridge, unaufgeloest
+        config, config.definitions.first { it.id == typId }, neu, kategorie, weckerAn, bridge, unaufgeloest
     )
 
     @Test
@@ -264,18 +266,124 @@ class LichtAbschnittTest {
         assertEquals(true, wirksam.zeilen.single().bedienbar)
     }
 
+    private val ohneWeckerKategorien = listOf(ShiftKategorie.KRANK, ShiftKategorie.IGNORIEREN)
+
     @Test
-    fun `Neuanlage sagt wann es geht, Krank und Ignorieren haben keine Karte`() {
+    fun `Krank und Ignorieren mit gespeicherter Regel - Karte da, nicht schaltbar, entfernbar, ohne Plus`() {
+        val unbekannt = UnresolvedRuleTarget("r1", "Licht r1", "1", "Leselampe", false, UnresolvedReason.NOT_FOUND)
+        ohneWeckerKategorien.forEach { kategorie ->
+            val gespeichert = typ("k", "Krankmeldung", regel("r1")).mitKategorie(kategorie)
+            val config = ShiftConfig(definitions = listOf(gespeichert))
+
+            assertTrue(kategorie.name, LichtAbschnittLogik.zeigtAbschnitt(kategorie, gespeichert, neu = false))
+            // „Wecker an diesem Tag“ ist dort versteckt: sein Stand darf nichts entscheiden.
+            listOf(true, false).forEach { weckerAn ->
+                BridgeStand.entries.forEach { bridge ->
+                    val karte = karte(config, "k", weckerAn = weckerAn, bridge = bridge, unaufgeloest = listOf(unbekannt))
+                    val fall = "$kategorie, weckerAn=$weckerAn, $bridge"
+
+                    assertEquals(fall, listOf("r1"), karte.zeilen.map { it.regel.id })
+                    assertTrue(fall, karte.ausgegraut)
+                    assertEquals("$fall: Schalter und Antippen", false, karte.zeilen.single().bedienbar)
+                    assertEquals("$fall: ×", true, karte.zeilen.single().entfernbar)
+                    assertEquals(fall, LichtFuss.KATEGORIE_WECKT_NICHT, karte.fuss)
+                    // Der Weg ueber die Warnkarte: das Ziel steht an der Zeile, ohne zum Antippen zu raten.
+                    assertEquals(
+                        fall,
+                        "Auf dieser Bridge unbekannt: Leselampe. Die Regel schaltet dafür nichts.",
+                        karte.zeilen.single().zielHinweis
+                    )
+                }
+            }
+        }
+        assertEquals(
+            "Typen dieser Kategorie wecken nicht, deshalb laufen ihre Lichtregeln nicht. Hier lassen sie sich " +
+                "nur entfernen.",
+            LichtTexte.KATEGORIE_WECKT_NICHT
+        )
+    }
+
+    @Test
+    fun `Krank und Ignorieren ohne Regel - keine Karte, auch nicht bei der Neuanlage`() {
+        ohneWeckerKategorien.forEach { kategorie ->
+            val leer = typ("k", "Krankmeldung").mitKategorie(kategorie)
+            val vorlageMitRegel = typ("neu", "Krank neu", regel("r1")).mitKategorie(kategorie)
+
+            assertEquals(kategorie.name, false, LichtAbschnittLogik.zeigtAbschnitt(kategorie, leer, neu = false))
+            assertEquals(
+                "$kategorie: eine Vorlage ist nicht gespeichert",
+                false,
+                LichtAbschnittLogik.zeigtAbschnitt(kategorie, vorlageMitRegel, neu = true)
+            )
+        }
+    }
+
+    @Test
+    fun `Die Kategorie des Entwurfs entscheidet, die Regeln bleiben die gespeicherten`() {
+        val dienst = typ("f", "Frühdienst", regel("r1"))
+        val config = ShiftConfig(definitions = listOf(dienst))
+
+        val aufKrank = karte(config, "f", kategorie = ShiftKategorie.KRANK)
+
+        assertTrue(LichtAbschnittLogik.zeigtAbschnitt(ShiftKategorie.KRANK, dienst, neu = false))
+        assertEquals(LichtFuss.KATEGORIE_WECKT_NICHT, aufKrank.fuss)
+        assertEquals(false, aufKrank.zeilen.single().bedienbar)
+
+        val krank = ShiftConfig(definitions = listOf(dienst.mitKategorie(ShiftKategorie.KRANK)))
+        val vonKrankZurueck = karte(krank, "f", kategorie = ShiftKategorie.DIENST)
+
+        assertEquals(LichtFuss.HINZU, vonKrankZurueck.fuss)
+        assertEquals(true, vonKrankZurueck.zeilen.single().bedienbar)
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class) // Dispatchers.setMain/resetMain
+    @Test
+    fun `Entfernen am Krank- und Ignorieren-Typ loescht die Regel, danach ist die Karte weg`() = runBlocking {
+        Dispatchers.setMain(Dispatchers.Unconfined)
+        val konfiguration = EchteSchichtKonfiguration(ordner.newFolder())
+        try {
+            konfiguration.repo.saveShiftConfig(
+                ShiftConfig(
+                    definitions = listOf(
+                        typ("k", "Krankmeldung", regel("am-kranken", "Krankmeldung"))
+                            .mitKategorie(ShiftKategorie.KRANK),
+                        typ("i", "Info", regel("am-ignorierten", "Info")).mitKategorie(ShiftKategorie.IGNORIEREN)
+                    )
+                )
+            ).getOrThrow()
+            val viewModel = hueViewModelAn(konfiguration.repo)
+            suspend fun gespeichert() = konfiguration.repo.getCurrentShiftConfig().getOrThrow()
+
+            listOf("k" to "am-kranken", "i" to "am-ignorierten").forEach { (typId, regelId) ->
+                assertEquals(true, karte(gespeichert(), typId).zeilen.single().entfernbar)
+
+                viewModel.fuehreAus { deleteRule(regelId) }
+
+                assertNull(viewModel.uiState.value.error)
+                val danach = gespeichert().definitions.first { it.id == typId }
+                assertTrue(danach.licht.regeln.isEmpty())
+                assertEquals(false, LichtAbschnittLogik.zeigtAbschnitt(danach.kategorie, danach, neu = false))
+            }
+        } finally {
+            konfiguration.schliessen()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun `Neuanlage sagt wann es geht, ohne Regeln haben nur Krank und Ignorieren keine Karte`() {
         val config = ShiftConfig(definitions = listOf(typ("f", "Frühdienst")))
         val vorlage = typ("neu", "Frühdienst")
 
-        val neu = LichtAbschnittLogik.karte(config, vorlage, true, true, BridgeStand.EINGERICHTET, emptyList())
+        val neu = LichtAbschnittLogik.karte(
+            config, vorlage, true, ShiftKategorie.DIENST, true, BridgeStand.EINGERICHTET, emptyList()
+        )
 
         assertEquals(LichtFuss.NEUANLAGE, neu.fuss)
         assertTrue(neu.zeilen.isEmpty())
         assertEquals(
-            listOf(ShiftKategorie.KRANK, ShiftKategorie.IGNORIEREN),
-            ShiftKategorie.entries.filterNot(LichtAbschnittLogik::zeigtAbschnitt)
+            ohneWeckerKategorien,
+            ShiftKategorie.entries.filterNot { LichtAbschnittLogik.zeigtAbschnitt(it, vorlage, neu = false) }
         )
     }
 

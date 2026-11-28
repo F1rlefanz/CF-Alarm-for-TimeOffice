@@ -381,6 +381,11 @@ internal object LichtTexte {
         "Licht startet mit dem Wecker. Ohne Weckzeit gibt es an diesem Tag kein Licht – schalte oben den " +
             "Wecker ein, gern stumm."
 
+    /** Krank und Ignorieren (#255): dort gibt es keinen Wecker zum Einschalten, nur das Entfernen. */
+    const val KATEGORIE_WECKT_NICHT =
+        "Typen dieser Kategorie wecken nicht, deshalb laufen ihre Lichtregeln nicht. Hier lassen sie sich " +
+            "nur entfernen."
+
     const val OHNE_BRIDGE =
         "Es ist noch keine Hue-Bridge eingerichtet. Erst mit einer Bridge kannst du Lichtregeln anlegen."
     const val ZU_HUE = "Zum Bereich „Philips Hue“"

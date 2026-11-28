@@ -101,7 +101,7 @@ fun MainContentScreen(
     onShowShiftConfig: () -> Unit,
     onShowCalendarSelection: () -> Unit,
     onShowEventList: () -> Unit,
-    onShowHueRuleConfig: () -> Unit,
+    onShowTypSeite: (String) -> Unit,
     onShowHueSettings: () -> Unit,
     onShowDndSettings: () -> Unit,
     onShowOrtFuerTageslicht: () -> Unit
@@ -412,8 +412,11 @@ fun MainContentScreen(
                 MainTab.HUE -> {
                     HueTabContent(
                         hueViewModel = hueViewModel,
-                        onNavigateToRuleConfig = onShowHueRuleConfig,
-                        onNavigateToSettings = onShowHueSettings
+                        shiftConfig = shiftState.currentShiftConfig,
+                        // Zurueck aus der Typ-Liste fuehrt in diesen Tab (returnToTab).
+                        onShowShiftConfig = onShowShiftConfig,
+                        onNavigateToSettings = onShowHueSettings,
+                        onTypOeffnen = onShowTypSeite
                     )
                 }
             }

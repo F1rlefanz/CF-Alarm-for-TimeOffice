@@ -45,8 +45,8 @@ import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 
 /**
- * Anlegen, Aendern und Loeschen einer Hue-Regel: im Erfolg werden Regelliste und vorgeplante
- * Hue-Jobs nachgezogen, im Fehlschlag steht die Meldung des UseCase (oder ein Standardtext)
+ * Aendern (auch Anlegen) und Loeschen einer Hue-Regel: im Erfolg werden die Regeln im Zustand und die
+ * vorgeplanten Hue-Jobs nachgezogen, im Fehlschlag steht die Meldung des UseCase (oder ein Standardtext)
  * im Zustand.
  */
 @OptIn(ExperimentalCoroutinesApi::class) // Dispatchers.setMain/resetMain, advanceUntilIdle
@@ -78,7 +78,6 @@ class HueViewModelRegelAktionTest {
     )
 
     private fun buildFixture(
-        anlegen: Result<HueSchedule> = Result.success(regel),
         aendern: Result<HueSchedule> = Result.success(regel),
         loeschen: Result<Unit> = Result.success(Unit),
         tageslicht: ITageslichtRepository = mock()
@@ -99,7 +98,6 @@ class HueViewModelRegelAktionTest {
         val ruleUseCase = mock<IHueRuleUseCase>()
         ruleUseCase.stub {
             on { getAllRules() } doReturn Result.success(emptyList())
-            on { createRule(any()) } doReturn anlegen
             on { updateRule(any()) } doReturn aendern
             on { deleteRule(any()) } doReturn loeschen
         }
@@ -122,20 +120,6 @@ class HueViewModelRegelAktionTest {
     }
 
     // ---- Erfolg ---------------------------------------------------------------------------
-
-    @Test
-    fun `createRule im Erfolg plant neu und laedt die Regeln`() = runTest {
-        val f = buildFixture()
-        advanceUntilIdle()
-
-        f.viewModel.createRule(regel)
-        advanceUntilIdle()
-
-        verify(f.scheduler, times(1)).recalculateSchedule()
-        verify(f.ruleUseCase, times(1)).getAllRules()
-        assertFalse(f.viewModel.uiState.value.isLoading)
-        assertNull(f.viewModel.uiState.value.error)
-    }
 
     @Test
     fun `updateRule im Erfolg plant neu und laedt die Regeln`() = runTest {
@@ -168,19 +152,6 @@ class HueViewModelRegelAktionTest {
     // ---- Fehlschlag mit Meldung ---------------------------------------------------------------
 
     @Test
-    fun `createRule im Fehlschlag zeigt die Meldung und plant nicht neu`() = runTest {
-        val f = buildFixture(anlegen = Result.failure(RuntimeException("x")))
-        advanceUntilIdle()
-
-        f.viewModel.createRule(regel)
-        advanceUntilIdle()
-
-        assertEquals("x", f.viewModel.uiState.value.error)
-        assertFalse(f.viewModel.uiState.value.isLoading)
-        verify(f.scheduler, never()).recalculateSchedule()
-    }
-
-    @Test
     fun `updateRule im Fehlschlag zeigt die Meldung und plant nicht neu`() = runTest {
         val f = buildFixture(aendern = Result.failure(RuntimeException("x")))
         advanceUntilIdle()
@@ -207,17 +178,6 @@ class HueViewModelRegelAktionTest {
     }
 
     // ---- Fehlschlag ohne Meldung --------------------------------------------------------------
-
-    @Test
-    fun `createRule ohne Fehlermeldung faellt auf den Standardtext`() = runTest {
-        val f = buildFixture(anlegen = Result.failure(RuntimeException()))
-        advanceUntilIdle()
-
-        f.viewModel.createRule(regel)
-        advanceUntilIdle()
-
-        assertEquals("Die Regel konnte nicht angelegt werden.", f.viewModel.uiState.value.error)
-    }
 
     @Test
     fun `updateRule ohne Fehlermeldung faellt auf den Standardtext`() = runTest {

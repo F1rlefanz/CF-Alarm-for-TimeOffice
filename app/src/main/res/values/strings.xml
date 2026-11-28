@@ -110,18 +110,11 @@
     <string name="hue_mode_sunrise_explain">Langsam heller werden — von warm nach kühl, über mehrere Minuten.</string>
 
     <!-- Nicht zuordenbare Ziele -->
-    <string name="hue_unresolved_body">Betroffen: %1$s. Die Lampen stammen von einer anderen Bridge – diese Regeln schalten dafür nichts. Was sich über den Namen wiederfinden ließ, wurde bereits automatisch zugeordnet.</string>
-    <string name="hue_unresolved_action">Regeln prüfen</string>
+    <string name="hue_unresolved_body">Die Lampen stammen von einer anderen Bridge – dafür schalten diese Regeln nichts. Was sich über den Namen wiederfinden ließ, wurde bereits automatisch zugeordnet.</string>
+    <string name="hue_unresolved_row_type">Schichttyp „%1$s“ · Regel „%2$s“</string>
+    <string name="hue_unresolved_row_rule">Regel „%1$s“</string>
+    <string name="hue_unresolved_tap">Tippe auf ein Ziel, um den Schichttyp zu öffnen.</string>
 
-
-    <!-- Regel-Editor: Schichtmuster -->
-    <string name="hue_shift_header">Schichtmuster</string>
-    <string name="hue_shift_intro">Wähle aus, für welches Schichtmuster diese Regel gilt:</string>
-    <string name="hue_shift_none_title">Keine Schichtmuster konfiguriert</string>
-    <string name="hue_shift_none_body">Lege zuerst Schichttypen an: in den Einstellungen unter „Schichttypen einrichten“.</string>
-    <string name="hue_shift_universal_hint">Gilt für jede erkannte Schicht</string>
-    <string name="hue_shift_required">Bitte wähle ein Schichtmuster aus.</string>
-    <string name="hue_shift_universal_label">Alle Schichten</string>
 
     <!-- Regel-Editor: Automatisch ausschalten -->
     <string name="hue_autooff_title">Automatisch ausschalten</string>
@@ -146,7 +139,6 @@
 
 
     <!-- Regel-Editor: Szenen-Auswahl -->
-    <string name="hue_scene_header">Szene</string>
     <string name="hue_scene_refresh">Szenen aktualisieren</string>
     <string name="hue_scene_failed">Die Szenen konnten nicht von der Bridge geladen werden. Prüfe, ob du im selben WLAN bist, und tippe dann auf das Aktualisieren-Symbol.</string>
     <string name="hue_scene_none">Auf dieser Bridge gibt es keine Szenen, die einem Raum oder einer Zone zugeordnet sind. Lege in der Hue-App eine Szene für einen Raum an – danach erscheint sie hier.</string>
@@ -190,7 +182,6 @@
     <string name="hue_preview_header">Regel-Vorschau</string>
     <string name="hue_preview_test">Regel testen</string>
     <string name="hue_preview_quoted_name">\"%1$s\"</string>
-    <string name="hue_preview_any_shift">Bei jeder Schicht:</string>
     <string name="hue_preview_shift">Bei %1$s-Schicht:</string>
     <string name="hue_preview_at_alarm">Ausführung zur Weckzeit</string>
     <string name="hue_preview_scene">🎬 Szene «%1$s» im Raum %2$s</string>
@@ -204,21 +195,9 @@
     <string name="hue_preview_status_off">Deaktiviert</string>
     <string name="hue_preview_test_rule_name">Test-Regel</string>
 
-    <!-- Regel-Liste -->
-    <string name="hue_rulecard_shift">Schichtmuster: %1$s</string>
+    <!-- Hue-Tab: Zahl der aktiven Regeln -->
     <string name="hue_rulecard_active">Aktiv</string>
-    <string name="hue_rulecard_inactive">Deaktiviert</string>
-    <string name="hue_rulecard_edit">Bearbeiten</string>
-    <string name="hue_rulecard_test">Test</string>
-    <string name="hue_rulecard_delete">Regel löschen</string>
-    <string name="hue_rulecard_delete_title">Regel löschen?</string>
-    <string name="hue_rulecard_delete_body">Die Regel \"%1$s\" wird mit allen Einstellungen (Lampenauswahl, Farbe, Auto-Aus, Sonnenaufgang) gelöscht. Das lässt sich nicht rückgängig machen.</string>
-    <string name="hue_rulecard_delete_confirm">Löschen</string>
     <string name="hue_cancel">Abbrechen</string>
-    <string name="hue_rulecard_desc_scene_room">Szene «%1$s» · %2$s</string>
-    <string name="hue_rulecard_desc_scene">Szene «%1$s»</string>
-    <string name="hue_rulecard_desc_manual">%1$s · %2$s</string>
-    <string name="hue_rulecard_no_target">kein Ziel</string>
 
     <!-- Farb-Presets -->
     <string name="hue_color_warm_white">Warmweiß</string>
@@ -239,11 +218,8 @@
     <string name="hue_save">Speichern</string>
 
 
-    <!-- Hue-Einstellungen (Regel-Liste) -->
+    <!-- Hue-Einstellungen -->
     <string name="hue_settings_title">Hue-Einstellungen</string>
-    <string name="hue_settings_new_rule">Neue Regel</string>
-    <string name="hue_settings_rule_gone">Die Regel steht nicht mehr in der Liste. Bitte den Test erneut starten.</string>
-    <string name="hue_settings_manage_header">Hue-Regeln verwalten</string>
     <string name="hue_bridge_title">Philips Hue Bridge</string>
     <string name="hue_bridge_connected">Verbunden mit %1$s</string>
     <string name="hue_bridge_disconnected">Nicht verbunden</string>
@@ -261,9 +237,6 @@
     <string name="hue_stats_scenes">Szenen</string>
     <string name="hue_stats_active">aktiv</string>
     <string name="hue_stats_available">verfügbar</string>
-    <string name="hue_empty_rules_title">Noch keine Regeln erstellt</string>
-    <string name="hue_empty_rules_body">Lege deine erste Hue-Regel an, um deine Beleuchtung automatisch zu steuern – mit einer Szene aus deiner Hue-App, eigenen Farbwerten oder einem sanften Sonnenaufgang.</string>
-    <string name="hue_empty_rules_action">Erste Regel erstellen</string>
 
     <!-- Hue-Tab -->
     <string name="hue_tab_bridge_gone">Die Bridge steht nicht mehr in der Trefferliste. Bitte erneut suchen und dann verbinden.</string>
@@ -282,13 +255,12 @@
 
     <!-- Hue-Tab: verbundene Bridge -->
     <string name="hue_connected_title">Bridge verbunden</string>
-    <string name="hue_connected_manage">Regeln verwalten</string>
+    <string name="hue_connected_bridge_lights">Bridge und Lampen</string>
+    <string name="hue_rules_at_type">Lichtregeln legst du in der Karte „Licht (Hue)“ am Schichttyp an – die Typen findest du auch in den Einstellungen unter „Schichttypen einrichten“.</string>
+    <string name="hue_rules_open_types">Schichttypen öffnen</string>
     <string name="hue_setup_done_title">🎉 Erfolgreich verbunden!</string>
-    <string name="hue_setup_done_body">Deine Philips Hue Bridge ist jetzt mit der App verbunden. Du kannst Lichtregeln für deine Wecker anlegen.</string>
+    <string name="hue_setup_done_body">Deine Philips Hue Bridge ist jetzt mit der App verbunden.</string>
     <string name="hue_setup_done_next">Wie geht es weiter?</string>
-    <string name="hue_setup_done_first_rule">Erste Hue-Regel erstellen</string>
-    <string name="hue_setup_done_settings">Einstellungen</string>
-    <string name="hue_setup_done_tip">💡 Tipp: Lege für jede Schicht eine eigene Licht-Regel an, mit eigener Farbe und Helligkeit.</string>
 
 
     <!-- Zaehlabhaengige Hue-Texte.
@@ -351,8 +323,6 @@
     <!-- Zusammengesetzte Texte, die eine der Zaehlformen oben einsetzen -->
     <string name="hue_preview_sunrise">🌅 Sunrise über %1$s an %2$s und %3$s (%4$s)</string>
     <string name="hue_preview_manual">%1$s von %2$s und %3$s</string>
-    <string name="hue_rulecard_desc_sunrise">Sonnenaufgang über %1$s · %2$s</string>
-    <string name="hue_rulecard_unresolved">%1$s auf dieser Bridge unbekannt: %2$s. Diese Regel schaltet dafür nichts – bitte in \"Bearbeiten\" neu auswählen.</string>
     <string name="hue_unresolved_title">%1$s auf dieser Bridge unbekannt</string>
     <string name="hue_targets_tab_groups">Gruppen (%1$d)</string>
     <string name="hue_targets_tab_lights">Lichter (%1$d)</string>
@@ -427,7 +397,6 @@
     <string name="tageslicht_ohne_ort_hue">Kein Ort eingestellt – die Regel läuft immer.</string>
     <string name="tageslicht_hue_naechster_an">Nächster Wecker %1$s · %2$s %3$s → Licht geht an</string>
     <string name="tageslicht_hue_naechster_aus">Nächster Wecker %1$s · %2$s %3$s → entfällt, Weckzeit liegt danach</string>
-    <string name="tageslicht_etikett_dunkel">nur bei Dunkelheit</string>
     <string name="tageslicht_ereignis_daemmerung">Dämmerung</string>
     <string name="tageslicht_ereignis_sonnenaufgang">Sonnenaufgang</string>
     <!-- Hue-Auto-Aus: spaetestens, wenn es hell wird (#143) -->

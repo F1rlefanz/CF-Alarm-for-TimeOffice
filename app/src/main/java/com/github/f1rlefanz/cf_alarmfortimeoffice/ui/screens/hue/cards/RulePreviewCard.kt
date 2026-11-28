@@ -27,7 +27,6 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.CompactButton
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.ColorMode
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.HueRuleFormState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.ColorSwatch
-import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.isUniversalShiftPattern
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.presetLabel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.previewColorForKelvin
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.previewColorForPreset
@@ -103,15 +102,9 @@ internal fun RulePreviewCard(
             }
 
             if (form.shiftPattern.isNotBlank()) {
-                // Das Universalmuster ist ein Sentinel ("ALL") und ergibt eingesetzt einen
-                // Satz, den es nicht gibt ("Bei ALL-Schicht") - deshalb ein eigener Wortlaut.
-                // Am Typ (#252) gibt es kein "Alle Schichten": dort steht immer der Typname.
+                // Immer der Name des Schichttyps (SPEC E8) - eine allgemeine Regel gibt es nicht.
                 Text(
-                    if (form.typId == null && isUniversalShiftPattern(form.shiftPattern)) {
-                        stringResource(R.string.hue_preview_any_shift)
-                    } else {
-                        stringResource(R.string.hue_preview_shift, form.shiftPattern)
-                    },
+                    stringResource(R.string.hue_preview_shift, form.shiftPattern),
                     style = MaterialTheme.typography.bodyMedium
                 )
                 Text(stringResource(R.string.hue_preview_at_alarm), style = MaterialTheme.typography.bodyMedium)

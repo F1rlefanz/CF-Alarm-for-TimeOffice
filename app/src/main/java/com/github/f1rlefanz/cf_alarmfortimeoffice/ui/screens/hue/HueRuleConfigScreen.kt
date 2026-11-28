@@ -38,7 +38,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.github.f1rlefanz.cf_alarmfortimeoffice.R
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueRuleModus
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueScheduleRule
-import com.github.f1rlefanz.cf_alarmfortimeoffice.model.waehlbareSchichtNamen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.ErrorMessage
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.LoadingScreen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.SimpleBackTopAppBar
@@ -53,7 +52,6 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.cards.RuleModeC
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.cards.SonnenaufgangCard
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.cards.RulePreviewCard
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.cards.SceneSelectionCard
-import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.cards.ShiftPatternCard
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.cards.tageslichtUrteilText
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tageslicht.TageslichtKarte
 import com.github.f1rlefanz.cf_alarmfortimeoffice.tageslicht.OrtQuelle
@@ -80,16 +78,16 @@ internal enum class HueRuleConfigNetzAktion { RULE_TEST }
  * Welche Karten sichtbar sind, entscheidet allein [HueRuleFormState.modus] - die drei
  * Betriebsarten schliessen sich aus, und der Umschalter dafuer ist die [RuleModeCard].
  *
- * AM TYP (Umbau #252, SPEC E8): mit [typId] gilt die Regel dem gespeicherten Typ dieser id - keine
+ * AM TYP (Umbau #252/#255, SPEC E8): der Editor gilt immer dem gespeicherten Typ [typId] - keine
  * Schicht-Auswahl, die Vorschau nennt den Typ, und der Editor schliesst erst, wenn die Regel
- * geschrieben ist (die Typ-Seite zeigt keine Hue-Fehler). Gibt es den Typ nicht (geloescht, noch
- * nicht angelegt), geht es ohne Speichern zurueck.
+ * geschrieben ist. Gibt es den Typ nicht (geloescht, noch nicht angelegt), geht es ohne Speichern
+ * zurueck.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HueRuleConfigScreen(
     ruleId: String?,
-    typId: String?,
+    typId: String,
     hueViewModel: HueViewModel,
     shiftViewModel: ShiftViewModel,
     onNavigateBack: () -> Unit,
@@ -110,9 +108,9 @@ fun HueRuleConfigScreen(
         }
     }
 
-    // Am Typ (#252): der GESPEICHERTE Typ, nicht der Entwurf der Typ-Seite.
-    val typ = typId?.let { id -> shiftState.currentShiftConfig?.definitions?.firstOrNull { it.id == id } }
-    if (typId != null && typ == null) {
+    // Der GESPEICHERTE Typ (#252), nicht der Entwurf der Typ-Seite.
+    val typ = shiftState.currentShiftConfig?.definitions?.firstOrNull { it.id == typId }
+    if (typ == null) {
         // Erst eine GELESENE Konfiguration sagt, dass es den Typ nicht gibt.
         val verschwunden = shiftState.currentShiftConfig != null
         val zurueckAktuell by rememberUpdatedState(onNavigateBack)
@@ -139,17 +137,17 @@ fun HueRuleConfigScreen(
     var form by rememberSaveable(stateSaver = HueRuleFormStateSaver) {
         // Die Vorbelegung am Typ ist der STARTWERT, kein Effekt: nach Drehen oder der Rueckkehr
         // vom Standort bleibt die Eingabe.
-        mutableStateOf(typ?.let { anfangsFormular(it, neueRegel = ruleId == null) } ?: HueRuleFormState())
+        mutableStateOf(anfangsFormular(typ, neueRegel = ruleId == null))
     }
-    // So lesen Vorschau, Tageslicht, Test und Speichern das Formular: am Typ ist die Schicht der Typ.
-    fun gelesen(): HueRuleFormState = typ?.let { form.amTyp(it) } ?: form
+    // So lesen Vorschau, Tageslicht, Test und Speichern das Formular: die Schicht ist der Typ.
+    fun gelesen(): HueRuleFormState = form.amTyp(typ)
     val angezeigt = gelesen()
-    // Am Typ EINE id je Editor-Sitzung: ein zweiter Tipp auf "Speichern" legt keine zweite Regel an.
+    // EINE id je Editor-Sitzung: ein zweiter Tipp auf "Speichern" legt keine zweite Regel an.
     val neueRegelId = rememberSaveable { HueScheduleRule.generateId() }
     val listenZustand = rememberLazyListState()
-    // Am Typ bleibt der Editor bei einem Fehlschlag offen - die Meldung steht oben in der Liste.
+    // Bei einem Fehlschlag bleibt der Editor offen - die Meldung steht oben in der Liste.
     LaunchedEffect(uiState.error) {
-        if (typId != null && uiState.error != null) listenZustand.animateScrollToItem(0)
+        if (uiState.error != null) listenZustand.animateScrollToItem(0)
     }
 
     // Merkt sich, fuer welche Regel das Formular schon einmal aus der gespeicherten Regel gefuellt
@@ -206,11 +204,6 @@ fun HueRuleConfigScreen(
     // #143: Zeile fuer "Auto-Aus spaetestens bei Tageslicht", gleiche Weckzeit wie oben.
     val autoAusZeile = form.autoAusUrteil(naechsteWeckzeit, tageslichtStand)?.let { autoAusUrteilText(it) }
 
-    val availableShiftPatterns = remember(shiftState.currentShiftConfig) {
-        // #142/#171: Krankmeldungs- und Ignorieren-Typen wecken nie - eine Lichtregel auf sie liefe ins Leere.
-        shiftState.currentShiftConfig?.definitions?.waehlbareSchichtNamen() ?: emptyList()
-    }
-
     fun baueRegel(id: String): HueScheduleRule = gelesen().toRule(
         id = id,
         lightNames = uiState.lightTargets.lights.associate { it.id to it.name },
@@ -263,14 +256,9 @@ fun HueRuleConfigScreen(
                         onClick = {
                             if (gelesen().validate().isNotEmpty()) {
                                 form = form.copy(showValidationErrors = true)
-                            } else if (typId != null) {
+                            } else {
                                 // Zurueck erst nach dem Schreiben, ein Fehlschlag bleibt hier stehen.
                                 hueViewModel.speichereRegelAmTyp(baueRegel(ruleId ?: neueRegelId), onSaveComplete)
-                            } else {
-                                val rule = baueRegel(ruleId ?: HueScheduleRule.generateId())
-                                if (ruleId != null) hueViewModel.updateRule(rule)
-                                else hueViewModel.createRule(rule)
-                                onSaveComplete()
                             }
                         }
                     ) {
@@ -304,19 +292,7 @@ fun HueRuleConfigScreen(
                 )
             }
 
-            // Am Typ (#252) gibt es keine Schicht-Auswahl, auch kein "Alle Schichten".
-            if (typId == null) {
-                item {
-                    ShiftPatternCard(
-                        selectedShiftPattern = form.shiftPattern,
-                        onShiftPatternChange = { form = form.copy(shiftPattern = it) },
-                        availableShiftPatterns = availableShiftPatterns,
-                        showValidationErrors = form.showValidationErrors
-                    )
-                }
-            }
-
-            // Direkt nach der Schicht: die Bedingung gehoert zum "Wann", nicht zum "Was".
+            // Direkt oben: die Bedingung gehoert zum "Wann", nicht zum "Was".
             item {
                 TageslichtKarte(
                     wahl = form.hellAb,

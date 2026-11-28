@@ -1,5 +1,9 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueScheduleRule
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.UnresolvedReason
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.UnresolvedRuleTarget
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
 import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.GateEinstieg
 import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.GateLage
@@ -16,7 +20,6 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.BatteryOptimizationHelper
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.LocalTime
@@ -360,58 +363,6 @@ class NavigationViewModelTest {
         assertEquals(NavigationState.UnusedAppRestrictions(MainTab.HOME), vm.navigationState.value)
     }
 
-    // ---- Rueckweg aus dem Regel-Editor: navigateBackFrom / navigateBackToMain ----------
-
-    @Test
-    fun `Hue-Regel ueber die Liste geoeffnet fuehrt zurueck zur Liste`() {
-        val vm = newViewModel()
-        vm.navigateToHueRuleConfig(ruleId = "r1", fromTab = MainTab.HUE, cameFromSettingsList = true)
-        vm.navigateBackFrom(vm.navigationState.value)
-        assertEquals(NavigationState.HueSettings(MainTab.HUE), vm.navigationState.value)
-    }
-
-    @Test
-    fun `Hue-Regel direkt vom Tab geoeffnet fuehrt zurueck zum Tab`() {
-        val vm = newViewModel()
-        vm.navigateToHueRuleConfig(fromTab = MainTab.HUE, cameFromSettingsList = false)
-        vm.navigateBackFrom(vm.navigationState.value)
-        // NICHT auf die Regel-Liste, die der Nutzer nie geoeffnet hat (vor v1.22.0 passiert).
-        assertEquals(NavigationState.MainContent(MainTab.HUE), vm.navigationState.value)
-    }
-
-    @Test
-    fun `navigateBackToMain loest den Rueckweg des Regel-Editors genauso auf wie navigateBackFrom`() {
-        // Eine Aufloesung, zwei Eingaenge: System-Zurueck und die Screen-Lambdas duerfen fuer
-        // denselben Einstiegspfad nie verschiedene Ziele kennen.
-        val faelle = listOf(
-            NavigationState.HueRuleConfig("r1", MainTab.HUE, cameFromSettingsList = true),
-            NavigationState.HueRuleConfig(null, MainTab.HUE, cameFromSettingsList = false)
-        )
-        for (fall in faelle) {
-            val ueberUebergebenen = newViewModel()
-            ueberUebergebenen.navigateBackFrom(fall)
-            val erwartet = ueberUebergebenen.navigationState.value
-
-            val vm = newViewModel()
-            vm.navigateToHueRuleConfig(fall.ruleId, fall.returnToTab, fall.cameFromSettingsList)
-            vm.navigateBackToMain()
-            assertEquals("Rueckweg aus $fall", erwartet, vm.navigationState.value)
-        }
-    }
-
-    @Test
-    fun `zweites Speichern nach bereits erfolgtem Rueckweg fuehrt wieder zum selben Ziel`() {
-        // Die Screen-Lambdas uebergeben den GERENDERTEN Zustand. Ein zweiter Tipp, nachdem der
-        // Zustand schon auf HueSettings gewechselt hat, darf nicht von dort aus weiter
-        // "zurueck" nach MainContent springen.
-        val vm = newViewModel()
-        vm.navigateToHueRuleConfig(ruleId = "r1", fromTab = MainTab.HUE, cameFromSettingsList = true)
-        val gerendert = vm.navigationState.value
-        vm.navigateBackFrom(gerendert)
-        vm.navigateBackFrom(gerendert)
-        assertEquals(NavigationState.HueSettings(MainTab.HUE), vm.navigationState.value)
-    }
-
     // ---- Typ-Seite (Umbau #187) ---------------------------------------------------------
 
     /** Die Typ-Seite ohne ihre sitzung (#252: bei jedem Oeffnen neu, eigener Test unten). */
@@ -619,12 +570,21 @@ class NavigationViewModelTest {
             verworfeneAblagen(editor, hueTab)
         )
         assertFalse(hueTab.imTypBereich())
+    }
 
-        // Der Einstieg ohne Typ gehoert nicht zum Typ-Bereich und haelt keinen Entwurf.
-        vm.navigateToMainWithTab(MainTab.HUE)
-        vm.navigateToHueRuleConfig(fromTab = MainTab.HUE)
-        assertFalse(vm.navigationState.value.imTypBereich())
-        assertNull(vm.navigationState.value.typEntwurfSchluessel())
+    @Test
+    fun `zweites Speichern nach bereits erfolgtem Rueckweg fuehrt wieder zum selben Ziel`() {
+        // Die Screen-Lambdas uebergeben den GERENDERTEN Zustand. Ein zweiter Tipp, nachdem der
+        // Zustand schon auf der Typ-Seite steht, darf nicht von dort weiter in die Liste springen.
+        val vm = newViewModel()
+        val seite = aufDerTypSeite(vm)
+        vm.navigateToTypLichtregel(seite, ruleId = "r1")
+        val gerendert = vm.navigationState.value
+
+        vm.navigateBackFrom(gerendert)
+        vm.navigateBackFrom(gerendert)
+
+        assertEquals(seite, vm.navigationState.value)
     }
 
     @Test
@@ -642,6 +602,74 @@ class NavigationViewModelTest {
         vm.navigateBackFrom(seite)
         vm.navigateBackNachSpeichern(editor)
         assertEquals(NavigationState.ShiftConfig(MainTab.WECKER), vm.navigationState.value)
+    }
+
+    // ---- Kein Editor ohne Typ, Ziele fuehren zum Typ (Umbau #255) ------------------------------
+
+    @Test
+    fun `kein Navigationsweg fuehrt in einen Editor ohne Typ`() {
+        // Per Reflection, damit der Test auch gegen den Stand davor uebersetzt und dort rot ist.
+        val editorAktionen = NavigationAction::class.java.declaredClasses
+            .map { it.simpleName }
+            .filter { it.contains("HueRuleConfig") || it.contains("Lichtregel") }
+        assertEquals(listOf("NavigateToTypLichtregel"), editorAktionen)
+        assertEquals(
+            emptyList<String>(),
+            NavigationViewModel::class.java.declaredMethods.map { it.name }
+                .filter { it.startsWith("navigateToHueRuleConfig") }
+        )
+        // Auch der Zustand kennt keine Herkunft neben der Typ-Seite.
+        val felder = NavigationState.HueRuleConfig::class.java.declaredFields.map { it.name }
+        assertFalse("cameFromSettingsList" in felder)
+        assertFalse("returnToTab" in felder)
+    }
+
+    private fun lichtTyp(id: String, name: String, vararg regeln: HueScheduleRule) =
+        ShiftDefinition(id = id, name = name, keywords = listOf(name), alarmTime = LocalTime.of(5, 30))
+            .let { it.copy(licht = it.licht.mitRegeln(regeln.toList())) }
+
+    private fun lichtRegel(id: String, muster: String) =
+        HueScheduleRule(id = id, name = "R $id", shiftPattern = muster, timeRanges = emptyList())
+
+    private fun unbekannt(regelId: String) = UnresolvedRuleTarget(
+        ruleId = regelId, ruleName = "R $regelId", targetId = "99", targetName = "Flur",
+        isGroup = false, reason = UnresolvedReason.NOT_FOUND
+    )
+
+    @Test
+    fun `Tippen auf ein nicht zuordenbares Ziel oeffnet die Typ-Seite des Typs, der die Regel traegt`() {
+        val config = ShiftConfig(
+            definitions = listOf(
+                lichtTyp("frueh", "Früh", lichtRegel("r-frueh", "Früh")),
+                // Kopie einer frueher allgemeinen Regel: ihr gespeichertes Muster sagt nichts ueber den Typ.
+                lichtTyp("spaet", "Spät", lichtRegel("3:alt@spaet", "ALL")),
+                // Vom gleichnamigen ersten Typ verdeckt - traegt die Regel trotzdem.
+                lichtTyp("frueh-2", "Früh", lichtRegel("r-verdeckt", "Früh"))
+            )
+        )
+        val ziele = unbekannteZieleAmTyp(
+            listOf(unbekannt("3:alt@spaet"), unbekannt("r-verdeckt"), unbekannt("r-frueh")), config
+        )
+        assertEquals(listOf("spaet", "frueh-2", "frueh"), ziele.map { it.typId })
+        assertEquals(listOf("Spät", "Früh", "Früh"), ziele.map { it.typName })
+
+        // Der Tipp: Typ-Seite aus dem Hue-Bereich, Zurueck ueber die Typ-Liste in den Hue-Bereich.
+        val vm = newViewModel()
+        vm.navigateToMainWithTab(MainTab.HUE)
+        vm.navigateToTypSeite(checkNotNull(ziele.first().typId), MainTab.HUE)
+        assertEquals(NavigationState.TypSeite("spaet", MainTab.HUE), ohneSitzung(vm.navigationState.value))
+        vm.navigateBackToMain()
+        vm.navigateBackToMain()
+        assertEquals(NavigationState.MainContent(MainTab.HUE), vm.navigationState.value)
+    }
+
+    @Test
+    fun `ein Ziel ohne bestimmbaren Typ bleibt stehen, aber ohne Typ zum Antippen`() {
+        val config = ShiftConfig(definitions = listOf(lichtTyp("frueh", "Früh", lichtRegel("r-frueh", "Früh"))))
+        val ziele = listOf(unbekannt("gibt-es-nicht"))
+        assertEquals(listOf<String?>(null), unbekannteZieleAmTyp(ziele, config).map { it.typId })
+        // Konfiguration noch nicht gelesen: nichts verschwindet.
+        assertEquals(ziele, unbekannteZieleAmTyp(ziele, null).map { it.ziel })
     }
 
     @Test

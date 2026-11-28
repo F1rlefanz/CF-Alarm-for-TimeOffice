@@ -16,10 +16,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.FlashOn
@@ -30,7 +28,6 @@ import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -62,7 +59,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.ErrorMessage
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.hue.rememberLocalNetworkPermissionGate
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.hilfe.HilfeKnopf
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.hilfe.HilfeThema
-import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.cards.HueRuleCard
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.hue.LichtregelnWeg
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.success
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.HueViewModel
 
@@ -71,18 +68,18 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.HueViewModel
  * ab API 37 erzwungen). Enum statt Lambda, damit die Absicht einen Activity-Neuaufbau waehrend
  * des offenen Berechtigungsdialogs ueberlebt - siehe [rememberLocalNetworkPermissionGate].
  */
-internal enum class HueSettingsNetzAktion { VALIDATE, LIGHT_TEST, RULE_TEST }
+internal enum class HueSettingsNetzAktion { VALIDATE, LIGHT_TEST }
 
 /**
- * Hue Settings Screen - Bridge and Rules Management
+ * Die Seite „Hue-Einstellungen“: Bridge-Karte (pruefen, testen, vergessen), Zahlen und der Weg zu den
+ * Lichtregeln - die legt man seit #255 nur noch am Schichttyp an (SPEC E8).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HueSettingsScreen(
     hueViewModel: HueViewModel,
     onNavigateBack: () -> Unit,
-    onEditRule: (String) -> Unit,
-    onCreateNewRule: () -> Unit,
+    onShowShiftConfig: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val uiState by hueViewModel.uiState.collectAsStateWithLifecycle()
@@ -99,32 +96,15 @@ fun HueSettingsScreen(
         }
     }
 
-    // Alle drei netzbeduerftigen Knoepfe dieses Bildschirms (Verbindung pruefen, Lampentest,
-    // Regeltest je Karte) laufen durch dasselbe Tor wie der Hue-Tab. Ohne das scheiterten sie ab
-    // Android 17 mit einer generischen Netzwerkmeldung, ohne dass je der Systemdialog erschien.
-    // Vor dem Tor aufgeloest: im Callback ist stringResource nicht erlaubt, und
-    // context.getString() waere dort nicht konfigurationssicher (Lint).
-    val regelWegText = stringResource(R.string.hue_settings_rule_gone)
-
+    // Beide netzbeduerftigen Knoepfe dieses Bildschirms (Verbindung pruefen, Lampentest) laufen
+    // durch dasselbe Tor wie der Hue-Tab. Ohne das scheiterten sie ab Android 17 mit einer
+    // generischen Netzwerkmeldung, ohne dass je der Systemdialog erschien.
     val gate = rememberLocalNetworkPermissionGate<HueSettingsNetzAktion>(
         onMessage = { hueViewModel.setError(it) }
-    ) { action, ruleId ->
+    ) { action, _ ->
         when (action) {
             HueSettingsNetzAktion.VALIDATE -> hueViewModel.validateBridgeConnection()
             HueSettingsNetzAktion.LIGHT_TEST -> hueViewModel.runLightTest()
-            HueSettingsNetzAktion.RULE_TEST -> {
-                // Die Regel wird ueber ihre Id neu aus dem Zustand geholt: Waehrend der Dialog
-                // offen stand, kann die Activity neu aufgebaut worden sein. Ist die Regel weg,
-                // sagen wir das, statt still nichts zu tun.
-                val rule = uiState.scheduleRules.firstOrNull { it.id == ruleId }
-                if (rule != null) {
-                    hueViewModel.testRuleExecution(rule)
-                } else {
-                    hueViewModel.setError(
-                        regelWegText
-                    )
-                }
-            }
         }
     }
 
@@ -139,9 +119,6 @@ fun HueSettingsScreen(
                 },
                 actions = {
                     HilfeKnopf(HilfeThema.ANLEITUNG_HUE)
-                    IconButton(onClick = onCreateNewRule) {
-                        Icon(Icons.Default.Add, stringResource(R.string.hue_settings_new_rule))
-                    }
                 }
             )
         }
@@ -181,32 +158,12 @@ fun HueSettingsScreen(
                 )
             }
             
+            // Lichtregeln legt man am Schichttyp an (#255, SPEC E8) - hier nur der Weg dorthin.
             item {
-                Text(
-                    stringResource(R.string.hue_settings_manage_header),
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-            
-            if (uiState.scheduleRules.isEmpty()) {
-                item {
-                    EmptyRulesCard(onCreateNewRule)
-                }
-            } else {
-                // key = id, nicht die Position: HueRuleCard haelt seinen Loeschdialog per
-                // rememberSaveable. Ohne Schluessel gehoert ein offener Dialog nach dem Wegfall
-                // einer Regel davor ploetzlich zur NAECHSTEN Regel - "Loeschen" traefe die
-                // falsche. Doppelte ids lehnt HueRuleUseCase beim Anlegen ab.
-                items(uiState.scheduleRules, key = { it.id }) { rule ->
-                    HueRuleCard(
-                        rule = rule,
-                        unresolvedTargets = uiState.unresolvedTargets.filter { it.ruleId == rule.id },
-                        onEdit = { onEditRule(rule.id) },
-                        onToggle = { hueViewModel.updateRule(rule.copy(enabled = !rule.enabled)) },
-                        onDelete = { hueViewModel.deleteRule(rule.id) },
-                        onTest = { gate(HueSettingsNetzAktion.RULE_TEST, rule.id) }
-                    )
+                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+                    Column(Modifier.fillMaxWidth().padding(16.dp)) {
+                        LichtregelnWeg(onShowShiftConfig)
+                    }
                 }
             }
         }
@@ -378,33 +335,5 @@ private fun StatItem(
         Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
         Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    }
-}
-
-@Composable
-private fun EmptyRulesCard(onCreateNewRule: () -> Unit) {
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(20.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            // dekorativ: die Ueberschrift darunter sagt es bereits
-            Icon(Icons.Default.Lightbulb, null, Modifier.size(48.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(stringResource(R.string.hue_empty_rules_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Text(
-                stringResource(R.string.hue_empty_rules_body),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Button(onClick = onCreateNewRule, modifier = Modifier.fillMaxWidth()) {
-                // dekorativ: die Knopfbeschriftung daneben sagt es bereits
-                Icon(Icons.Default.Add, null, Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text(stringResource(R.string.hue_empty_rules_action))
-            }
-        }
     }
 }

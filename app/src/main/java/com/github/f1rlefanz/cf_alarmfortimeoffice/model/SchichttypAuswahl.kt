@@ -3,11 +3,9 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.model
 /**
  * Darf eine AUSWAHLLISTE diesen Schichttyp anbieten? (Umbau Etappe 1, #171)
  *
- * Die EINE Regel hinter dem manuellen Wecker, den Zielen einer Dimmer-Regel, einer DND-Ausnahme
- * und einer Hue-Regel und der Zaehlung in der Uebersicht - vorher an sechs Stellen kopiert, vier
- * davon als `isEnabled && !isSickDay`, Dimmer und DND nur als `!isSickDay`. Eine Auswahl, die einen
- * Typ anbietet, der nie greift, ist
- * "angezeigt, wirkt nicht":
+ * Die EINE Regel hinter dem manuellen Wecker, den Tagen ohne Kalendereintrag und der Zaehlung in
+ * der Uebersicht - vorher an sechs Stellen kopiert, teils nur als `!isSickDay`. Eine Auswahl, die
+ * einen Typ anbietet, der nie greift, ist "angezeigt, wirkt nicht":
  *
  * - **deaktiviert**: die Erkennung ueberspringt ihn, er spannt keine Schicht auf.
  * - **Krank**: gibt den Tag frei, hat keine Weckzeit (#142).
@@ -30,10 +28,6 @@ fun ShiftDefinition.istWaehlbareSchicht(): Boolean =
 /** Die waehlbaren Typen in der gespeicherten Reihenfolge - siehe [istWaehlbareSchicht]. */
 fun List<ShiftDefinition>.waehlbareSchichttypen(): List<ShiftDefinition> =
     filter { it.istWaehlbareSchicht() }
-
-/** Die Namen der waehlbaren Typen (Dimmer-Regel, DND-Ausnahme und Hue-Regel binden ueber den Namen). */
-fun List<ShiftDefinition>.waehlbareSchichtNamen(): List<String> =
-    waehlbareSchichttypen().map { it.name }
 
 /**
  * Ist [titel] ein Termin, den ein aktiver Ignorieren-Typ uebergeht? (#167)

@@ -270,7 +270,8 @@ private val EntwurfSaver: Saver<TypEntwurf, Any> = Saver(
  * ([SonderfallKasten], nur Rufbereitschaft, Krank, Ignorieren) und die Karte „Wecker“
  * ([WeckerAbschnitt], nicht bei Krank und Ignorieren) mit den Karten „Bildschirm dimmen“
  * ([DimmenAbschnitt]), „Nicht stören“ ([NichtStoerenAbschnitt]) und „Licht (Hue)“ ([LichtAbschnitt])
- * darunter, an denselben Typen; zwischen „Typ“ und Sonderfall-Kasten steht die Tagesleiste „So läuft ein
+ * darunter, an denselben Typen (Ausnahme Licht: bei Krank und Ignorieren, wenn der Typ Lichtregeln traegt,
+ * nur zum Entfernen, #255); zwischen „Typ“ und Sonderfall-Kasten steht die Tagesleiste „So läuft ein
  * Tag“ ([TagesleisteKarte], nicht bei Ignorieren).
  *
  * ENTWURF STATT SOFORT-SCHREIBEN (bewusste Abweichung vom Prototyp, der keinen Speichern-Knopf
@@ -541,11 +542,13 @@ private fun TypSeiteFormular(
 
     // Die Regeln kommen aus dem gespeicherten Typ, „Wecker an diesem Tag“ aus dem Entwurf (#254).
     val bridge = LichtAbschnittLogik.bridgeStand(quellen)
-    val lichtKarte = LichtAbschnittLogik.karte(config, definition, neu, entwurf.weckerAn, bridge, licht.unaufgeloest)
+    val lichtKarte = LichtAbschnittLogik.karte(
+        config, definition, neu, entwurf.kategorie, entwurf.weckerAn, bridge, licht.unaufgeloest
+    )
+    val zeigtLicht = LichtAbschnittLogik.zeigtAbschnitt(entwurf.kategorie, definition, neu)
     // Welche Ziele die Bridge nicht kennt, steht erst nach einem Abgleich fest - wie beim Oeffnen des
     // Hue-Bereichs, und nur wenn es Regeln gibt. Laeuft nach der Rueckkehr aus dem Editor erneut.
-    val zieleAbfragen = LichtAbschnittLogik.zeigtAbschnitt(entwurf.kategorie) &&
-        lichtKarte.zeilen.isNotEmpty() && bridge == BridgeStand.EINGERICHTET
+    val zieleAbfragen = zeigtLicht && lichtKarte.zeilen.isNotEmpty() && bridge == BridgeStand.EINGERICHTET
     LaunchedEffect(zieleAbfragen) {
         if (zieleAbfragen) licht.frageZieleAb()
     }
@@ -638,7 +641,7 @@ private fun TypSeiteFormular(
                         )
                     }
                 }
-                if (LichtAbschnittLogik.zeigtAbschnitt(entwurf.kategorie)) {
+                if (zeigtLicht) {
                     item(key = "licht") {
                         LichtAbschnitt(
                             karte = lichtKarte,

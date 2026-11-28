@@ -14,12 +14,11 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.github.f1rlefanz.cf_alarmfortimeoffice.R
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueRuleModus
-import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.HueRuleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.util.HueColorConverter
 
 /**
  * Gemeinsame Hilfen des Hue-Regel-Editors: Farbdarstellung, Farb-Presets und die Beschriftung
- * des Schichtmusters.
+ * der Modi.
  */
 
 /**
@@ -48,39 +47,7 @@ internal val COLOR_PRESETS = listOf(
     HueColorConverter.ColorPreset.PINK
 )
 
-/**
- * Anzeigename des Universalmusters.
- *
- * Bewusst "Alle Schichten" (nicht "Alle Tage" wie beim Dimmer): der Dimmer meint Kalendertage
- * inklusive freier, eine Hue-Regel laeuft ausschliesslich zur Weckzeit einer erkannten Schicht.
- */
-internal val UNIVERSAL_SHIFT_LABEL: String
-    @Composable get() = stringResource(R.string.hue_shift_universal_label)
-
-/**
- * Ist [pattern] das Universalmuster?
- *
- * Vergleich gegen [HueRuleUseCase.UNIVERSAL_SHIFT_PATTERN] und `ignoreCase` - exakt derselbe
- * Massstab wie `findApplicableRules`/`HueSunriseExecutor`. Ein eigenes Literal an dieser Stelle
- * waere eine zweite Wahrheit: liefe es je auseinander, zeigte der Editor "nichts ausgewaehlt"
- * fuer eine Regel, die zur Laufzeit sehr wohl feuert.
- */
-internal fun isUniversalShiftPattern(pattern: String): Boolean =
-    pattern.equals(HueRuleUseCase.UNIVERSAL_SHIFT_PATTERN, ignoreCase = true)
-
-/**
- * Beschriftung eines gespeicherten Schichtmusters. Das Universalmuster ist ein Sentinel ("ALL")
- * und darf dem Nutzer nie roh angezeigt werden.
- */
-@Composable
-internal fun hueShiftPatternLabel(pattern: String): String =
-    if (isUniversalShiftPattern(pattern)) UNIVERSAL_SHIFT_LABEL else pattern
-
-/**
- * Beschriftung eines Regel-Modus. Liegt hier, weil sie an ZWEI Stellen gebraucht wird: der
- * Modus-Umschalter im Editor und das Abzeichen in der Regel-Liste. Zwei eigene Formulierungen
- * waeren zwei Wahrheiten - und die Regel-Liste sagte irgendwann etwas anderes als der Editor.
- */
+/** Beschriftung eines Regel-Modus (Modus-Umschalter im Editor). */
 @Composable
 internal fun hueRuleModusLabel(modus: HueRuleModus): String = stringResource(
     when (modus) {
